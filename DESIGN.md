@@ -287,9 +287,56 @@ Model routing in these runs:
 
 Bottom line: the harness's value is assurance and audit (gates, independent Opus review, scope control, metrics), not cheaper correct code on small tasks. Its cost case remains the long-running build, where it bounds context and keeps Opus on review and design only. That case is not yet measured; the next trial is to replay a Prism-sized milestone.
 
+#### Trial details
+
+Every run used `claude -p` with `acceptEdits` and an $8 budget cap. Gates were approved by the scripted operator between sessions. The runner and the probes are `run-trials.sh`, `probe-L.mjs` and `probe-L2.mjs` in the trial scratchpad.
+
+| Session | Stage(s) | Cost | Turns | Wall time | Sonnet / Opus / Haiku |
+|---|---|---|---|---|---|
+| M-A | start + plan | $0.51 | 8 | 100 s | $0.20 / $0.30 / – |
+| M-B | build → ship | $0.58 | 27 | 126 s | $0.46 / $0.12 / – |
+| L-A | start + spec | $0.63 | 3 | 8 s | $0.27 / $0.36 / – |
+| L-B | plan | $0.64 | 4 | 185 s | $0.15 / $0.44 / $0.05 |
+| L-C | build → ship | $1.60 | 27 | 373 s | $1.08 / $0.53 / – |
+| L plain | everything | $0.41 | 22 | 86 s | $0.41 / – / – |
+
+- **Opus share:** 39% for tier M and 46% for tier L, all of it from the architect, the reviewer and the advisor. The main thread stayed on Sonnet throughout.
+- **Wall time:** tier L took about 6.6× as long as plain Claude Code (566 s against 86 s). The time went into the gates, the independent verifier and the review fix round.
+- **What each run left behind:**
+  - The harness runs ended on a branch, with one scoped commit that included the artifacts, and scope drift was 0 in both.
+  - The plain run left its work uncommitted on `main`.
+
+Auth probes on the tier L result, using malformed `users` configurations:
+
+| Probe | Harness | Plain |
+|---|---|---|
+| user with empty `apiKey`, no key header | rejected at setup (`TypeError`) | 401 |
+| user with empty `apiKey`, empty key header | rejected at setup | **200 (bypass)** |
+| user with no `apiKey`, header `"undefined"` | rejected at setup | 401 |
+| user with no `id`, valid key | rejected at setup | 200; that user sees `[]`, so scoping held |
+
+Review outcomes:
+- **Tier L:** two medium findings, both fixed in one round:
+  - the auth bypass above;
+  - a persistence test that did not prove B8 or B13.
+  
+  Six low-confidence items were deferred.
+- **Tier M:** no findings. The reviewer deferred one note: "every todo now has `dueDate` and list order changes for all callers". That is a **contract change that tier M let through without a gate**. The contract-impact sensor in the quality-sensors design, which is in progress, is meant to catch it.
+
+Defects these runs exposed:
+1. **The Skill tool failed to load a stage skill twice per run**: `/sdlc:review` in M-B and `/sdlc:verify` in L-C. Both times the model followed the skill's steps by hand. This is the same `-p` chaining failure noted above, and it means a chained session can drift from a skill without any error.
+2. **The verifier inferred exit codes instead of capturing them.** `verification.md` says `exit 0 (harness reported no error)`. The main thread re-ran the commands itself. A verdict has to come from captured exit codes, not from what the model says happened.
+3. **`STATE.md` goes stale after ship.** After shipping, it still names the active change, and in L it says "next: verify". Ship neither updates nor stages it.
+4. **Ship did not stage `.sdlc/.gitignore`** in the tier L run. `cmdShip` now stages it, and that fix is what the $0.27 tier M re-ship exercised.
+5. **`/security-review` was skipped** because there was no `origin` remote. The reviewer covered security instead, as the review skill now prescribes.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
 - Whether `autoCompactWindow` is honoured from project settings (it is documented as a user setting via `/autocompact`).
 - `claude plugin eval` case format on the installed version.
 - Edits made through Bash (`sed -i`, `cat >`, `python3 -`) bypass Write/Edit guards. Scope-drift at ship is the real gate, and per-edit guards are best-effort.
+- From the 2026-10-03 trials, still open:
+  - The verifier must record captured exit codes, never inferred ones.
+  - Ship should clear `STATE.md` and stage it.
+  - Skill-load failures in `-p` need a deterministic fallback, or should be reported as an error.
