@@ -63,27 +63,30 @@ test('sibling repo edits are denied unless the consumer is in an approved impact
   assert.equal(hook(repo, 'pre-edit', { tool_input: { file_path: '/private/tmp/scratch/notes.md' } }).stdout, '', 'paths beyond siblings are left to normal permissions')
 })
 
-test('read-only agents cannot write files through Bash; their reads and the sdlc recorder are fine', () => {
+test('read-only agents: allowlist only; chained, substituted and interpreter writes are denied', () => {
   sdlc(repo, ['init'])
   const as = (agent_type: string, command: string) => decision(hook(repo, 'pre-bash', { agent_type, tool_input: { command } }))
-  assert.equal(as('sdlc:reviewer', 'echo fixed > src/app.js'), 'deny')
-  assert.equal(as('sdlc:verifier', "sed -i '' 's/a/b/' src/app.js"), 'deny')
-  assert.equal(as('sdlc:scout', 'git checkout -- src/app.js'), 'deny')
-  assert.equal(as('sdlc:reviewer', 'git diff main...HEAD 2>&1 | tail -50'), undefined)
-  assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
-  assert.equal(as('sdlc:implementer', 'echo x > src/app.js'), undefined)
+  const denied = ['touch src/app.js sdlc.ts status', 'rm f # sdlc.ts status', 'node /x/scripts/sdlc.ts status\ntouch f', 'node /x/scripts/sdlc.ts status & touch f',
+    'node /x/scripts/sdlc.ts status "$(touch f)"', "bash -c 'touch f'", 'sh -c "rm f"', 'echo "$(touch f)"', `python3 -c "import os;os.remove('f')"`, 'find . -delete',
+    'git -C . checkout -- a', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f']
+  for (const c of denied) assert.equal(as('sdlc:reviewer', c), 'deny', c)
+  const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node /x/scripts/sdlc.ts status',
+    'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current']
+  for (const c of allowed) assert.equal(as('sdlc:reviewer', c), undefined, c)
+  assert.equal(as('sdlc:scout', 'node /x/scripts/sdlc.ts run -- "npm test"'), 'deny')
+  assert.equal(as('sdlc:implementer', 'echo x > f'), undefined)
 })
 
-test('read-only guard: chained writes, recorder scope, fd redirects and common writers', () => {
+test('the verifier runs only declared verification commands, and only through the recorder', () => {
   sdlc(repo, ['init'])
-  const as = (agent_type: string, command: string) => decision(hook(repo, 'pre-bash', { agent_type, tool_input: { command } }))
-  assert.equal(as('sdlc:reviewer', 'node /x/scripts/sdlc.ts status; echo x > src/app.js'), 'deny')
-  assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "sed -i s/a/b/ f"'), 'deny')
-  assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
-  assert.equal(as('sdlc:reviewer', 'node /x/scripts/sdlc.ts run -- "npm test"'), 'deny')
-  assert.equal(as('sdlc:reviewer', 'node /x/scripts/sdlc.ts status'), undefined)
-  for (const c of ['echo x 1>f', 'echo x &>f', `python3 -c "open('f','w').write('x')"`, 'npx prettier --write src', 'git -C ../x checkout .', 'curl -o f http://x', 'tar -xf a.tgz']) assert.equal(as('sdlc:scout', c), 'deny', c)
-  for (const c of ['npm test 2>&1 | tail -5', "grep '>' src/a.ts", 'git log --format="%h -> %s"', 'cat f >/dev/null', 'echo "a; b" | wc -l']) assert.equal(as('sdlc:scout', c), undefined, c)
+  sdlc(repo, ['new', 'rate', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/rate/plan.md', '## Files\n- src/**\n\n## Verification\n- `npm test`\n')
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { agent_type: 'sdlc:verifier', tool_input: { command } }))
+  assert.equal(as('node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
+  assert.equal(as('node --disable-warning=ExperimentalWarning /x/scripts/sdlc.ts run --slug rate -- "npm  test"'), undefined)
+  assert.equal(as('node /x/scripts/sdlc.ts run -- "touch f"'), 'deny')
+  assert.equal(as('node /x/scripts/sdlc.ts run -- "npm test && touch f"'), 'deny')
+  assert.equal(as('npm test 2>&1 | tail -20'), 'deny', 'tests go through the recorder')
 })
 
 test('protected paths match case-insensitively off Linux; MultiEdit and $ in replacements are previewed literally', () => {
