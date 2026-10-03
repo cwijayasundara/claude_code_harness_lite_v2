@@ -40,7 +40,7 @@ Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, im
 
 ## Team install
 
-1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.0`), and DESIGN.md records what each one changed and measured.
+1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.1`), and DESIGN.md records what each one changed and measured.
 2. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
 3. For the PR review, add an `ANTHROPIC_API_KEY` repository secret, copy `templates/sdlc-review.yml`, and make `sdlc-check` and `sdlc-review` required checks with both workflows in CODEOWNERS.
 

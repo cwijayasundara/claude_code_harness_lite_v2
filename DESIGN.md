@@ -393,6 +393,27 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 - **Run 3 exposed a bug: a shipped turn created a phantom ad-hoc change.** Stop now records ad hoc only for uncommitted changes.
 - Each figure is one run per arm, so treat them as directional.
 
+### v0.3.0 thinner + install check (2026-10-03)
+
+- **Delegated to Claude Code built-ins:**
+  - Review uses `/code-review` (headless, $0.09 in 6 s, and it found both seeded auth bugs); sdlc keeps the plan-contract check and falls back to `sdlc:reviewer` if the skill fails to load.
+  - The default subagent model is `CLAUDE_CODE_SUBAGENT_MODEL`.
+  - Claude Code blocks sleep-polling itself.
+  - `/compact` replaces `/sdlc:handoff`.
+- **Installed from GitHub** with `claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project` and `claude plugin install sdlc@sdlc --scope project`. The installed version was 0.3.0.
+- **Lean S/M check on the installed plugin.** The task was internal: `TodoService.stats()`, no route change.
+
+  | Run | Cost | Time | Hidden check | Outcome |
+  |---|---|---|---|---|
+  | Harness | $0.31 | 58 s | 1/1 | shipped on a branch with artifacts, classified tier S, no gate |
+  | Plain Claude Code | $0.16 | 20 s | 1/1 | uncommitted |
+
+  The harness now costs about 2x plain on small work, down from 4-7x.
+- **Still to check by a person:**
+  - a real PR through `sdlc-review` (needs an `ANTHROPIC_API_KEY` secret)
+  - onboarding and the wiki on a real brownfield repo
+  - the mod's interactive parts: band, `/sdlc-approve` and the impact dialog
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
