@@ -48,6 +48,7 @@ const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh
 
 function rawSafe(cmd: string, ci: boolean): boolean {
   return cmd
+    .replace(/>\|/g, '>')
     .split(/&&|\|\||;|\||\n/)
     .filter(part => evidencePath(part, ci))
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
@@ -64,10 +65,10 @@ function wordsSafe(w: string[]): boolean {
 }
 
 // A write whose target under .sdlc/ holds an unquoted glob (run?.jsonl, run[s].jsonl, approval*.jsonl) can hit evidence.
-const WRITE_VERB = /\b(?:tee|cp|mv|dd|install|ln)\b|\bsed\s+-\w*i/
-const unquotedGlob = (t: string): boolean => /\.sdlc\//i.test(t) && /[*?[]/.test(t.replace(/"[^"]*"|'[^']*'/g, ''))
+const WRITE_VERB = /\b(?:tee|cp|mv|dd|install|ln|rm|truncate|shred|unlink)\b|\bsed\s+-\w*i/
+const unquotedGlob = (t: string): boolean => /\.sdlc\//i.test(t) && /[*?[{]/.test(t.replace(/"[^"]*"|'[^']*'/g, ''))
 export function globWrite(cmd: string): boolean {
-  return cmd.split(/&&|\|\||;|\||\n/).some(seg => {
+  return cmd.replace(/>\|/g, '>').split(/&&|\|\||;|\||\n/).some(seg => {
     const targets = [...seg.matchAll(/>>?\s*(\S+)/g)].map(m => m[1] ?? '')
     if (WRITE_VERB.test(seg)) targets.push(...seg.split(/[\s>]+/))
     return targets.some(unquotedGlob)
@@ -224,7 +225,14 @@ const emptyGate = (): Gate => ({ turn: '', blocks: {}, passed: {}, tool: [], age
 
 export function readGate(): Gate {
   try {
-    return { ...emptyGate(), ...(JSON.parse(read(GATE)) as Partial<Gate>) }
+    const g = JSON.parse(read(GATE)) as Record<string, unknown>
+    const d = emptyGate()
+    const obj = <T>(v: unknown, dflt: T): T => (v && typeof v === 'object' && !Array.isArray(v) ? (v as T) : dflt)
+    return {
+      turn: typeof g.turn === 'string' ? g.turn : d.turn, blocks: obj(g.blocks, d.blocks), passed: obj(g.passed, d.passed),
+      tool: Array.isArray(g.tool) ? g.tool.map(String) : d.tool, agents: obj(g.agents, d.agents), guides: obj(g.guides, d.guides),
+      ...(g.last && typeof g.last === 'object' ? { last: g.last as GateSummary } : {}),
+    }
   } catch {
     return emptyGate()
   }
@@ -251,9 +259,8 @@ function createAdhoc(diffs: FileDiff[], config: SensorConfig): string {
 function hookPromptSubmit(): void {
   if (!exists(SDLC)) return
   const snap = snapshot()
-  if (!snap) return
-  writeBaseline(snap)
-  writeGate({ ...readGate(), turn: snap.at, blocks: {}, passed: {}, tool: [], agents: {} })
+  if (snap) writeBaseline(snap)
+  writeGate({ ...readGate(), turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [], agents: {} })
 }
 
 function hookSubagentStart(input: HookInput): void {
@@ -264,7 +271,7 @@ function hookSubagentStart(input: HookInput): void {
 
 // The end-of-turn gate: every built-in sensor on this turn's diff, then the fast commands (main thread only).
 function hookStop(input: HookInput, sub: boolean): void {
-  if (!exists(SDLC)) return
+  if (!exists(SDLC) || (sub && !input.agent_id)) return
   const agentId = sub ? input.agent_id : undefined
   const snap = (agentId ? readBaseline(agentId) : null) ?? readBaseline()
   if (!snap) return
@@ -274,10 +281,10 @@ function hookStop(input: HookInput, sub: boolean): void {
   const diffs = turnDiff(snap).filter(d => (isSource(d.file, config) || isProtected(d.file)) && (!owned || owned.has(d.file)))
   if (!diffs.length) return
   const key = agentId ?? 'main'
-  const hash = diffHash(diffs) + sha(read(path.join(SDLC, 'sensors.json')))
+  const hash = diffHash(diffs) + sha(read(path.join(SDLC, 'sensors.json')) + read(path.join(SDLC, 'rules.json')))
   if (gate.passed[key] === hash) return
   let slug = activeSlug()
-  if (!slug && !sub) slug = createAdhoc(diffs, config)
+  if (!slug && !sub && diffs.some(d => isSource(d.file, config))) slug = createAdhoc(diffs, config)
   const result = runChecks({
     point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: sub ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
     before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null,
@@ -289,10 +296,10 @@ function hookStop(input: HookInput, sub: boolean): void {
   if (!blocks.length) {
     gate.passed[key] = hash
     writeGate(gate)
-    if (exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
+    if (!sub && exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
     return
   }
-  fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
+  if (!sub) fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
   const attempt = (gate.blocks[key] ?? 0) + 1
   if (attempt > MAX_BLOCKS) {
     writeGate(gate)

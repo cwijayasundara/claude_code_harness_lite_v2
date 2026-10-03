@@ -140,7 +140,7 @@ test('quotes and escapes cannot hide an evidence path from the guard (non-read-o
   const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
   for (const c of [`echo '{}' >> .sdlc/changes/a/run"s".jsonl`, `echo '{}' >> .sdlc/changes/a/ru'ns'.jsonl`, `echo '{}' >> .sdlc/changes/a/run\\s.jsonl`,
     'printf x > .sdlc/approvals.json"l"', `cp x .sdlc/changes/a/run's'.jsonl`, `echo '{}' | tee -a ".sdlc/waivers.jsonl"`, `node /x/scripts/sdlc.ts ap'prove' a plan`,
-    'git diff --output=.sdlc/changes/a/run"s".jsonl', 'echo "$(date)" >> .sdlc/approvals.json\\l'])
+    'git diff --output=.sdlc/changes/a/run"s".jsonl', 'echo x | tee -a .sdlc/changes/a/run{s,}.jsonl', 'tee .sdlc/{approvals,x}.jsonl', 'cp x .sdlc/changes/a/{runs,x}.jsonl', 'rm .sdlc/changes/a/run?.jsonl', 'truncate -s0 .sdlc/changes/a/run?.jsonl', 'echo x >| .sdlc/changes/a/run?.jsonl', 'echo x >| .sdlc/changes/a/runs.jsonl', 'echo "$(date)" >> .sdlc/approvals.json\\l'])
     assert.equal(as(c), 'deny', c)
   for (const c of ['git add src/a.js .sdlc/approvals.jsonl && git commit -m "feat: x"', 'cat .sdlc/approvals.jsonl', 'tail -5 .sdlc/changes/x/runs.jsonl',
     'node /x/scripts/sdlc.ts run -- "npm test"', 'git commit -m "rm > node" .sdlc/changes/a/runs.jsonl', "grep -c pass '.sdlc/changes/a/runs.jsonl'"])
@@ -243,4 +243,40 @@ test('evidence guard: $-quote forms and glob targets cannot write evidence; read
     'cp x .sdlc/changes/a/run[s].jsonl', 'echo x > .sdlc/approval*.jsonl'])
     assert.equal(as(c), 'deny', c)
   for (const c of ['cat .sdlc/changes/a/run?.jsonl', 'ls .sdlc/changes/*/']) assert.equal(as(c), undefined, c)
+})
+
+test('SubagentStop without agent_id is ignored; a clean SubagentStop leaves main unresolved.json alone', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' } }))
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  assert.equal(hook(repo, 'subagent-stop', {}).stdout, '')
+  assert.equal(JSON.parse(stop().stdout).decision, 'block', 'main still runs fast commands')
+  stop()
+  stop()
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/unresolved.json')))
+  hook(repo, 'subagent-start', { agent_id: 'B', agent_type: 'sdlc:implementer' })
+  assert.equal(hook(repo, 'subagent-stop', { agent_id: 'B', agent_type: 'sdlc:implementer' }).stdout, '')
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/unresolved.json')), 'a subagent never clears it')
+})
+
+test('a protected-only diff creates no ad-hoc change; contract edits are tier M', () => {
+  sdlc(repo, ['init'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  hook(repo, 'prompt-submit', {})
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 900 } }))
+  stop()
+  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/changes')) || fs.readdirSync(path.join(repo, '.sdlc/changes')).length === 0)
+})
+
+test('a gate file with wrongly typed fields never crashes the hooks', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  fs.writeFileSync(path.join(repo, '.sdlc/.gate'), '{"blocks":null,"agents":null}')
+  tamper()
+  assert.equal(JSON.parse(stop().stdout).decision, 'block')
 })
