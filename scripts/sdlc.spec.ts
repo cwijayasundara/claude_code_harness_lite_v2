@@ -383,11 +383,17 @@ test('waive rejects an unknown sensor name', () => {
   assert.match(r.stderr, /test-tamper/)
 })
 
-test('impact-status holds for a missing-only impact and for an absolute consumer path', () => {
+test('impact-status holds for a missing-only impact', () => {
+  run(['new', 'rate', '--type', 'feature', '--tier', 'L'])
+  write('.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'checkout', path: '../checkout' }] }))
+  write('.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['discount_rate'], hits: [], missing: ['discount_rate'] }))
+  assert.equal(JSON.parse(run(['impact-status', path.join(path.dirname(repo), 'checkout', 'a.ts'), '--json']).stdout).hold, true)
+})
+
+test('impact-status recognises a consumer declared with an absolute path', () => {
   run(['new', 'rate', '--type', 'feature', '--tier', 'L'])
   const consumerDir = path.join(path.dirname(repo), 'checkout')
   write('.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'checkout', path: consumerDir }] }))
-  write('.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['discount_rate'], hits: [], missing: ['discount_rate'] }))
-  const r = JSON.parse(run(['impact-status', path.join(consumerDir, 'a.ts'), '--json']).stdout)
-  assert.equal(r.hold, true)
+  write('.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['d'], hits: [{ consumer: 'checkout', file: 'a', line: 1, id: 'd' }], missing: [] }))
+  assert.equal(JSON.parse(run(['impact-status', path.join(consumerDir, 'a.ts'), '--json']).stdout).hold, true)
 })

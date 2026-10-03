@@ -88,3 +88,15 @@ test('fixtures must be a list of strings', () => {
   assert.match(parseConfig(JSON.stringify({ fixtures: 'x' })).errors[0] ?? '', /fixtures must be a list of strings/)
   assert.deepEqual(parseConfig(JSON.stringify({ fixtures: ['x/**'] })).config.fixtures, ['x/**'])
 })
+
+test('every sensor name emitted by the scripts is waivable', async () => {
+  const fs = await import('node:fs')
+  const path = await import('node:path')
+  const { SENSOR_NAMES } = await import('./model.ts')
+  const emitted = new Set<string>()
+  for (const f of fs.readdirSync(import.meta.dirname).filter(n => n.endsWith('.ts') && !n.endsWith('.spec.ts') && n !== 'testkit.ts')) {
+    for (const m of fs.readFileSync(path.join(import.meta.dirname, f), 'utf8').matchAll(/sensor: '([a-z-]+)'/g)) emitted.add(m[1]!)
+  }
+  assert.deepEqual([...emitted].filter(n => !SENSOR_NAMES.includes(n)), [])
+  assert.deepEqual(SENSOR_NAMES.filter(n => !emitted.has(n)), [])
+})

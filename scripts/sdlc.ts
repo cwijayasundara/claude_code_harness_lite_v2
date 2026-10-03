@@ -12,7 +12,7 @@ import {
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
-import { formatFindings, type Finding, type SensorConfig } from './model.ts'
+import { formatFindings, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
 import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
@@ -300,8 +300,6 @@ function cmdVendor(): void {
   sanctionWrites([...VENDORED.map(n => `.sdlc/bin/${n}.ts`), '.sdlc/bin/VERSION'])
   out(`vendored sdlc ${version} into .sdlc/bin (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }
-
-const SENSOR_NAMES = ['test-tamper', 'suppression', 'layering', 'size', 'secrets', 'rules', 'contract-impact', 'harness-tamper', 'traceability', 'red-proof', 'adhoc', 'commands', 'config']
 
 function cmdWaive(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
