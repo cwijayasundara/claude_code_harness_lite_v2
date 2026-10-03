@@ -79,7 +79,8 @@ test('read-only agents: allowlist only; chained, substituted and interpreter wri
     "sed '-i' s/a/b/ f", "sed -n 1p '-i' f", "sed -n '1p' f -i", "awk '-f' prog x", "awk 'BEGIN{print 1 > \"PWN8\"}'", "awk '@load \"inplace\"' x", 'awk -d x',
     'cat =(touch PWN9)', "ls *(e:'touch PWN10':)", 'ls *(+touch)', 'cat <(touch f)', 'cat $(touch f)', 'echo ${x:=1}', 'echo $HOME', 'echo "$HOME"', 'echo $"x"',
     '(touch f)', 'cat f; { touch f; }', 'cat <>PWN11', 'cat < f', 'echo x >| f', 'echo x >! f', 'echo x >> f', 'echo x 2>"/dev/null"x', 'echo x >/dev/nullx', 'echo x >&-',
-    'cat x\n#c', 'printf -v PATH /tmp x', 'X=1 cat f', 'node /x/scripts/sdlc.ts run -- npm test \\; touch f', 'node /x/scripts/sdlc.ts status -x']
+    'cat x\n#c', 'printf -v PATH /tmp x', 'X=1 cat f', 'node /x/scripts/sdlc.ts run -- npm test \\; touch f', 'node /x/scripts/sdlc.ts status -x',
+    `node '--eval=require("fs").writeFileSync("PWN12","")//sdlc.ts' status`, `node '--import=data:text/javascript,import fs from "fs";fs.writeFileSync("PWN13","")//sdlc.ts' status`, 'node /x/notsdlc.ts status']
   for (const c of denied) assert.equal(as('sdlc:reviewer', c), 'deny', c)
   const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node /x/scripts/sdlc.ts status',
     'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current',
@@ -100,6 +101,7 @@ test('the verifier runs only declared verification commands, and only through th
   assert.equal(as('node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
   assert.equal(as('node --disable-warning=ExperimentalWarning /x/scripts/sdlc.ts run --slug rate -- "npm  test"'), undefined)
   assert.equal(as('node /x/scripts/sdlc.ts run -- "touch f"'), 'deny')
+  assert.equal(as('node /x/scripts/sdlc.ts run -- "npm\ntest"'), 'deny', 'a newline would run npm and then test')
   assert.equal(as('node /x/scripts/sdlc.ts run -- "npm test && touch f"'), 'deny')
   assert.equal(as('npm test 2>&1 | tail -20'), 'deny', 'tests go through the recorder')
 })

@@ -124,8 +124,8 @@ function gitAllowed(args: string[]): boolean {
 // `node [--disable-warning=X] <path>/sdlc.ts <sub> ...`: reads for everyone; run and verify-report for reviewer and
 // verifier, and run only for a command that exactly matches a declared one (sdlc.ts joins the words after --).
 function recorderAllowed(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>): string | null {
-  const i = w.findIndex(x => /sdlc\.ts$/.test(x))
-  if (i < 0 || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
+  const i = w.findIndex(x => !x.startsWith('-'))
+  if (i < 0 || !/(?:^|\/)sdlc\.ts$/.test(w[i] ?? '') || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
   const sub = w[i + 1] ?? ''
   const rest = w.slice(i + 2)
   const dd = rest.indexOf('--')
@@ -139,8 +139,9 @@ function recorderAllowed(w: string[], agent: string, declared: (slug: string | u
   if ((sub !== 'run' && sub !== 'verify-report') || /(?:^|:)scout$/.test(agent)) return `sdlc.ts ${sub} is not available to ${agent}`
   if (sub === 'verify-report') return null
   const slug = parseArgs(head).opt.slug
-  const cmd = dd < 0 ? '' : normCmd(rest.slice(dd + 1).join(' '))
-  return cmd && declared(typeof slug === 'string' ? slug : undefined).has(cmd) ? null : `${agent} may only run the project's declared verification commands`
+  const cmd = dd < 0 ? '' : rest.slice(dd + 1).join(' ')
+  if (/[\r\n]/.test(cmd)) return 'a recorded command must be one line'
+  return cmd && declared(typeof slug === 'string' ? slug : undefined).has(normCmd(cmd)) ? null : `${agent} may only run the project's declared verification commands`
 }
 
 // Returns why one segment (its dequoted words) is not allowed, or null when it is a known read-only command.
