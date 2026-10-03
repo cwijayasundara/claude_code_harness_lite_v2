@@ -40,7 +40,7 @@ Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, im
 
 ## Team install
 
-1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.3`), and DESIGN.md records what each one changed and measured.
+1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.4`), and DESIGN.md records what each one changed and measured.
 2. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
 3. For the PR review, add a `CLAUDE_CODE_OAUTH_TOKEN` repository secret (your Pro/Max plan, from `claude setup-token`) or an `ANTHROPIC_API_KEY`, copy `templates/sdlc-review.yml`, and make `sdlc-check` and `sdlc-review` required checks with both workflows in CODEOWNERS.
 
@@ -90,5 +90,5 @@ npm run typecheck:mod                        # the mod; needs generated types, s
 claude plugin test .                         # mod tests
 npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
-tests/trials/run-trials.sh [M|L] [outdir]     # LIVE and PAID: M (about $2) or L (three arms, about $8)
+tests/trials/run-trials.sh [M|L|I] [outdir]   # LIVE and PAID: M (about $1), L (three arms, about $8), I (integration, about $1)
 ```

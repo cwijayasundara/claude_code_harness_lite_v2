@@ -414,6 +414,17 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
   - onboarding and the wiki on a real brownfield repo
   - the mod's interactive parts: band, `/sdlc-approve` and the impact dialog
 
+### Integration test (2026-10-03): onboard, wiki and one change on a four-module app
+
+`tests/trials/run-trials.sh I` runs `/sdlc:onboard` on `tests/trials/shop-app` (catalog, cart, orders, http), then takes one internal change (`bestSellers`) through ship. `assert-integration.mjs` checks every artifact deterministically.
+
+| Run | Onboard checks | Change checks | What it caught (each fixed with tests) |
+|---|---|---|---|
+| 1 | 1/8 | — | The tamper guard asked before *creating* onboarding's own files, so headless onboarding wrote nothing |
+| 2 | 7/8 | 3/8 | Onboard wrote `sensors.json` in the wrong shape; ship refused it, and the protected file could not be repaired headless |
+| 3 | 7/8 | 7/8 | A wiki page had no `path:line` citations (the prompt rule did not hold; `wiki stamp` now enforces it); the branch check was too strict |
+| 4 | **8/8** | **8/8** | Clean. Cost $0.74 and took 2 min 19 s (onboard $0.33/53 s; change $0.42/86 s) |
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
