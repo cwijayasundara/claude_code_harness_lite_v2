@@ -100,3 +100,9 @@ test('every sensor name emitted by the scripts is waivable', async () => {
   assert.deepEqual([...emitted].filter(n => !SENSOR_NAMES.includes(n)), [])
   assert.deepEqual(SENSOR_NAMES.filter(n => !emitted.has(n)), [])
 })
+
+test('maskSecrets replaces every line that matches a secret pattern', async () => {
+  const { maskSecrets } = await import('./model.ts')
+  const key = 'AKIA' + 'IOSFODNN7EXAMPLE'
+  assert.equal(maskSecrets(`ok\nkey=${key}\nend`), 'ok\n[masked by sdlc]\nend')
+})

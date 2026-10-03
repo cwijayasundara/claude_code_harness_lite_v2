@@ -48,6 +48,9 @@ export const SECRET_PATTERNS: [string, RegExp][] = [
   ['generic secret assignment', /(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*["'][^"'\s]{12,}["']/i],
 ]
 
+export const maskSecrets = (text: string): string =>
+  text.split('\n').map(l => (SECRET_PATTERNS.some(([, re]) => re.test(l)) ? '[masked by sdlc]' : l)).join('\n')
+
 // ---------- globs ----------
 
 // `**/` matches zero or more whole directories, `**` anything, `*` within one path segment.

@@ -500,3 +500,11 @@ test('I3: ship ratchets a known-red full command that now passes and commits the
   assert.deepEqual(JSON.parse(committed).knownRed, [])
   assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim(), '')
 })
+
+test('F5: a failing command that prints a key is recorded without the key', () => {
+  run(['new', 'leak', '--type', 'chore', '--tier', 'S'])
+  run(['run', '--slug', 'leak', '--', `node -e "console.log('AKIA'+'IOSFODNN7EXAMPLE'); process.exit(1)"`])
+  const runs = fs.readFileSync(path.join(repo, '.sdlc/changes/leak/runs.jsonl'), 'utf8')
+  assert.doesNotMatch(runs, /AKIA[0-9A-Z]{16}/)
+  assert.match(runs, /masked by sdlc/)
+})
