@@ -1,0 +1,153 @@
+// Orchestrates sensors at a firing point (stop, ship, ci): one set of checks everywhere, so local == CI.
+import fs from 'node:fs'
+import path from 'node:path'
+import {
+  ROOT, SDLC, WAIVERS, exists, read, out, fail, git, optString, readJsonl, activeSlug, defaultBase,
+  type Args, type Waiver,
+} from './core.ts'
+import { parseConfig, parseRules, formatFindings, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
+import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor } from './sensors.ts'
+import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
+import { runCommand, recordRun } from './runs.ts'
+
+export type Point = 'stop' | 'ship' | 'ci'
+export type CheckInput = {
+  point: Point
+  diffs: FileDiff[]
+  config: SensorConfig
+  rules: Rule[]
+  slugs: string[]
+  commands: 'fast' | 'full' | 'none'
+  budgetMs: number
+  before: (file: string) => string
+  toolEdited?: Set<string>
+  base: string | null
+}
+export type CheckResult = { findings: Finding[]; blocks: Finding[]; warns: Finding[]; waived: number }
+
+const SENSORS_JSON = '.sdlc/sensors.json'
+const TAIL_IN_FINDING = 15
+
+// With a ref (CI), config comes from the base branch, so a PR cannot loosen the rules it is judged by.
+export function loadConfig(ref: string | null = null): { config: SensorConfig; rules: Rule[]; errors: string[] } {
+  const text = (rel: string): string => (ref ? git(['show', `${ref}:${rel}`]) ?? '' : read(path.join(ROOT, rel)))
+  const c = parseConfig(text(SENSORS_JSON))
+  const r = parseRules(text('.sdlc/rules.json'))
+  return { config: c.config, rules: r.rules, errors: [...c.errors, ...r.errors.map(e => `rules.json: ${e}`)] }
+}
+
+// Once a known-red command passes, it blocks from then on: the only automatic edit to sensors.json, and it only tightens.
+function ratchet(cleared: string[]): void {
+  const file = path.join(ROOT, SENSORS_JSON)
+  if (!exists(file)) return
+  const raw = JSON.parse(read(file)) as { knownRed?: string[] }
+  raw.knownRed = (raw.knownRed ?? []).filter(k => !cleared.includes(k))
+  fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n')
+}
+
+export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug: string | null, budgetMs: number): Finding[] {
+  const findings: Finding[] = []
+  const cleared: string[] = []
+  let left = budgetMs
+  for (const [name, cmd] of Object.entries(config[prefix])) {
+    const key = `${prefix}.${name}`
+    const known = config.knownRed.includes(key)
+    if (left <= 0) {
+      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: the ${Math.round(budgetMs / 1000)} s budget ran out`, fix: `make the ${prefix} commands in .sdlc/sensors.json faster` })
+      continue
+    }
+    const row = runCommand(cmd, { timeoutMs: left })
+    left -= row.ms
+    if (slug) recordRun(slug, { ...row, source: prefix === 'fast' ? 'gate' : 'ship' })
+    if (row.exit === 0) {
+      if (known) cleared.push(key)
+      continue
+    }
+    const tail = row.tail.split('\n').slice(-TAIL_IN_FINDING).map(t => '      ' + t).join('\n')
+    findings.push({
+      sensor: 'commands',
+      severity: known ? 'warn' : 'block',
+      message: `${key} failed (exit ${row.exit}${row.timedOut ? ', timed out' : ''}): ${cmd}\n${tail}`,
+      fix: known ? 'known red before this change: fix it when you can' : `run \`${cmd}\` and fix what it reports`,
+    })
+  }
+  if (cleared.length) ratchet(cleared)
+  return findings
+}
+
+function applyWaivers(findings: Finding[], slugs: string[]): CheckResult {
+  const waivers = readJsonl<Waiver>(WAIVERS).filter(w => slugs.includes(w.slug))
+  const waived = (f: Finding): boolean => waivers.some(w => w.sensor === f.sensor && (w.file === '*' || w.file === f.file))
+  const kept = findings.filter(f => !waived(f))
+  return { findings: kept, blocks: kept.filter(f => f.severity === 'block'), warns: kept.filter(f => f.severity === 'warn'), waived: findings.length - kept.length }
+}
+
+export function runChecks(i: CheckInput): CheckResult {
+  const { diffs, config } = i
+  const findings: Finding[] = [
+    ...testTamper(diffs, config),
+    ...suppressions(diffs, config),
+    ...layering(diffs, config),
+    ...size(diffs, config, fileLines(diffs.filter(d => d.status !== 'D').map(d => d.file)), i.point),
+    ...secretsInDiff(diffs),
+    ...rulesSensor(diffs, i.rules),
+  ]
+  if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.slugs[0] ?? null, i.budgetMs))
+  return applyWaivers(findings, i.slugs)
+}
+
+// The cheap per-file subset, for PostToolUse and the mod's per-edit notices.
+export function editFindings(rel: string): Finding[] {
+  const snap = readBaseline() ?? snapshot()
+  if (!snap) return []
+  const { config, rules } = loadConfig()
+  const diffs = fileDiff(snap, rel)
+  const slug = activeSlug()
+  return applyWaivers([...testTamper(diffs, config), ...suppressions(diffs, config), ...size(diffs, config, fileLines([rel]), 'edit'), ...secretsInDiff(diffs), ...rulesSensor(diffs, rules)], slug ? [slug] : []).findings
+}
+
+const slugsIn = (diffs: FileDiff[]): string[] => [...new Set(diffs.map(d => /^\.sdlc\/changes\/([^/]+)\//.exec(d.file)?.[1]).filter((s): s is string => Boolean(s)))]
+
+function report(point: string, result: CheckResult, count: number, json: boolean): void {
+  if (json) return out(JSON.stringify(result))
+  const text = formatFindings(result.findings)
+  out(text || `sdlc check ${point}: pass (${count} file(s) checked${result.waived ? `, ${result.waived} waived` : ''})`)
+  const summary = process.env.GITHUB_STEP_SUMMARY
+  if (summary) fs.appendFileSync(summary, `## sdlc check (${point})\n\n${text ? '```\n' + text + '\n```' : 'pass'}\n`)
+}
+
+export function cmdCheck(args: Args): void {
+  const at = optString(args, 'at')
+  if (at !== 'stop' && at !== 'ship' && at !== 'ci') fail('usage: check --at stop|ship|ci [--base <ref>] [--config-from <ref>] [--slug <s>] [--budget-ms <n>] [--json]')
+  const { config, rules, errors } = loadConfig(optString(args, 'config-from') ?? null)
+  const baseRef = optString(args, 'base')
+  const base = baseRef ? git(['merge-base', 'HEAD', baseRef]) : defaultBase()
+  if (at === 'ci' && !base) fail('check --at ci needs --base <ref> with a merge-base (fetch with fetch-depth: 0)')
+  let diffs: FileDiff[]
+  let before: (f: string) => string
+  if (at === 'stop') {
+    const snap = readBaseline() ?? snapshot()
+    if (!snap) return out('sdlc check stop: nothing to compare against (no commits yet)')
+    diffs = turnDiff(snap)
+    before = f => showAt(snap.sha, f) ?? ''
+  } else {
+    diffs = branchDiff(base ?? 'HEAD')
+    before = f => showAt(base ?? 'HEAD', f) ?? ''
+  }
+  const slugArg = optString(args, 'slug')
+  const slugs = slugArg ? [slugArg] : at === 'ci' ? slugsIn(diffs) : [activeSlug()].filter((s): s is string => Boolean(s))
+  const budgetMs = Number(optString(args, 'budget-ms') ?? (at === 'stop' ? 60_000 : 1_800_000))
+  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: at === 'stop' ? 'fast' : 'full', budgetMs, before, base })
+  const configFindings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: SENSORS_JSON, message: e, fix: 'fix the file; see the sdlc README for its format' }))
+  const all = { ...result, findings: [...configFindings, ...result.findings], blocks: [...configFindings, ...result.blocks] }
+  report(at, all, diffs.length, Boolean(args.opt.json))
+  process.exitCode = all.blocks.length ? 1 : 0
+}
+
+export function cmdCheckFile(args: Args): void {
+  const rel = args.pos[0]
+  if (!rel || !exists(SDLC)) fail('usage: check-file <path> [--json]  (in an sdlc repo)')
+  const findings = editFindings(rel)
+  if (args.opt.json) return out(JSON.stringify(findings))
+  out(formatFindings(findings) || `${rel}: ok`)
+}

@@ -393,3 +393,6 @@ export function setActive(slug: string): void {
   fs.mkdirSync(SDLC, { recursive: true })
   fs.writeFileSync(STATE, `---\nchange: ${slug}\nupdated: ${now()}\n---\n${body || '# State\n'}`)
 }
+
+export const WAIVERS = path.join(SDLC, 'waivers.jsonl')
+export type Waiver = { slug: string; sensor: string; file: string; reason: string; by: string; at: string }

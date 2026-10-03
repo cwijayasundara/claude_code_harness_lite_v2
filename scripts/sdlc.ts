@@ -14,6 +14,7 @@ import {
 } from './core.ts'
 import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
+import { cmdCheck, cmdCheckFile } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 
@@ -222,6 +223,8 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   hook: cmdHook,
   metrics: cmdMetrics,
   diff: cmdDiff,
+  check: cmdCheck,
+  'check-file': cmdCheckFile,
 }
 
 const [command = '', ...rest] = process.argv.slice(2)
@@ -233,5 +236,6 @@ try {
   // Hooks must never wedge a session: a crashing hook reports and lets the action through.
   const message = err instanceof Error ? err.message : String(err)
   if (command === 'hook') process.stderr.write(`${SOFT_HOOK_FAILURE}: ${message}\n`)
+  else if (command === 'check') fail(`sdlc check crashed (fails closed): ${message}`)
   else fail(err instanceof Error ? err.stack ?? message : message)
 }

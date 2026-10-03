@@ -81,3 +81,76 @@ test('diff --turn without a baseline says so instead of diffing against now', ()
   const r = sdlc(repo, ['diff', '--turn'])
   assert.deepEqual([r.code, r.stdout.trim()], [0, 'no turn baseline yet (run a prompt first)'])
 })
+
+const sensors = (cfg: object) => write(repo, '.sdlc/sensors.json', JSON.stringify(cfg, null, 2) + '\n')
+const check = (...args: string[]) => sdlc(repo, ['check', ...args])
+
+test('check is silent-success: one pass line, exit 0', () => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'export const a = 5\n')
+  const r = check('--at', 'stop')
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /^sdlc check stop: pass/)
+})
+
+test('a failing fast command blocks with its output tail; a passing one is silent', () => {
+  sensors({ fast: { lint: 'node -e "console.log(\'src/app.js:1 no-var\'); process.exit(1)"', test: 'node -e "process.exit(0)"' } })
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'var a = 5\n')
+  const r = check('--at', 'stop')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /\[commands\]/)
+  assert.match(r.stdout, /fast\.lint failed \(exit 1\)/)
+  assert.match(r.stdout, /src\/app\.js:1 no-var/)
+  assert.doesNotMatch(r.stdout, /fast\.test/)
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/xx/runs.jsonl'), 'utf8'), /fast|no-var|process\.exit/)
+})
+
+test('a hanging command, and a grandchild holding its output, time out inside the budget and count as a failure', () => {
+  sensors({ fast: { test: `node -e "require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: 'inherit' }); setTimeout(() => {}, 20000)"` } })
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'export const a = 6\n')
+  const started = Date.now()
+  const r = check('--at', 'stop', '--budget-ms', '1500')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /timed out/)
+  assert.ok(Date.now() - started < 10_000)
+})
+
+test('known-red commands warn instead of block, and the ratchet removes them once green', () => {
+  sensors({ fast: { lint: 'node -e "process.exit(1)"' }, knownRed: ['fast.lint'] })
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'export const a = 7\n')
+  const red = check('--at', 'stop')
+  assert.equal(red.code, 0)
+  assert.match(red.stdout, /warn: \d+ \(.*commands 1/)
+  sensors({ fast: { lint: 'node -e "process.exit(0)"' }, knownRed: ['fast.lint'] })
+  check('--at', 'stop')
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8')).knownRed, [])
+})
+
+test('an invalid sensors.json blocks with the parse error', () => {
+  write(repo, '.sdlc/sensors.json', '{ "limits": { "fileLines": "big" } }')
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'export const a = 8\n')
+  const r = check('--at', 'stop')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /\[config\][\s\S]*limits\.fileLines must be a positive number/)
+})
+
+test('a human waiver for the active change drops the matching finding', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'export const a = 9 // eslint-disable-line\n')
+  assert.equal(check('--at', 'stop').code, 1)
+  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'xx', sensor: 'suppression', file: 'src/app.js', reason: 'generated file', by: 'p', at: 'now' }) + '\n')
+  assert.equal(check('--at', 'stop').code, 0)
+})
+
+test('check-file reports a single file\'s cheap sensors as JSON', () => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'test/a.test.js', "it.only('x', () => {})\n")
+  const r = JSON.parse(sdlc(repo, ['check-file', 'test/a.test.js', '--json']).stdout)
+  assert.equal(r[0].sensor, 'test-tamper')
+})
