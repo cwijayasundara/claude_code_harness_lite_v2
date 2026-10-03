@@ -12,6 +12,7 @@ export type SensorConfig = {
   full: Record<string, string>
   tests: string[]
   testSupport: string[]
+  fixtures: string[]
   ignore: string[]
   contracts: string[]
   consumers: Consumer[]
@@ -25,6 +26,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   full: {},
   tests: ['**/test/**', '**/tests/**', '**/__tests__/**', '**/*.test.*', '**/*.spec.*', '**/*_test.*', '**/test_*.py', '**/*Test.java', '**/*_spec.rb'],
   testSupport: ['**/testdata/**', '**/fixtures/**', '**/__fixtures__/**', '**/conftest.py', '**/testing/**', '**/test-helpers/**', '**/test_helpers/**'],
+  fixtures: [],
   ignore: ['**/*.md', '**/*.lock', '**/package-lock.json'],
   contracts: ['api/**', 'schema/**', 'migrations/**', '**/*.proto', '**/openapi.*'],
   consumers: [],
@@ -192,7 +194,7 @@ export function parseConfig(text: string): { config: SensorConfig; errors: strin
     if (isStringMap(value[key])) config[key] = value[key]
     else errors.push(`${key} must map names to command strings`)
   }
-  for (const key of ['tests', 'testSupport', 'ignore', 'contracts', 'knownRed'] as const) {
+  for (const key of ['tests', 'testSupport', 'fixtures', 'ignore', 'contracts', 'knownRed'] as const) {
     if (!(key in value)) continue
     if (isStringList(value[key])) config[key] = value[key]
     else errors.push(`${key} must be a list of strings`)

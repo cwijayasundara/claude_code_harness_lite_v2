@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
-import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, weakensRules, isProtected, onlyKnownRedRemoved, harnessTamper, behaviourIds, missingBehaviours } from './sensors.ts'
+import { withoutFixtures, testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, weakensRules, isProtected, onlyKnownRedRemoved, harnessTamper, behaviourIds, missingBehaviours } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
   file, status, added: added.map((text, i) => ({ n: i + 1, text })), removed: removed.map((text, i) => ({ n: i + 1, text })),
@@ -218,4 +218,19 @@ test('behaviour ids come from the named section only; a test must name each one'
   assert.deepEqual(behaviourIds(spec, 'Behaviours'), ['B1', 'B2', 'B10'])
   assert.deepEqual(missingBehaviours(['B1', 'B2', 'B10'], "test('B1 adds', ...)\n// covers B10\n"), ['B2'])
   assert.deepEqual(missingBehaviours(['B1'], "test('B11 other')"), ['B1'])
+})
+
+test('files matching fixtures skip the pattern sensors, others do not', () => {
+  const diff = [fd('scripts/detect.spec.ts', ["it.skip('x', () => {})", 'const key = "AKIAABCDEFGHIJKLMNOP"'])]
+  const fx = { ...CFG, fixtures: ['scripts/*.spec.ts'] }
+  const run = (cfg: typeof CFG) => { const d = withoutFixtures(diff, cfg); return [...testTamper(d, cfg), ...secretsInDiff(d)] }
+  assert.equal(run(fx).length, 0)
+  assert.ok(run({ ...CFG, tests: ['scripts/*.spec.ts'] }).length >= 2)
+})
+
+test('weakensConfig counts added fixtures and removed testSupport globs', () => {
+  const reasons = weakensConfig(J({ testSupport: ['a/**', 'b/**'] }), J({ testSupport: ['a/**'], fixtures: ['x/**'] })).join('\n')
+  assert.match(reasons, /fixtures added x\/\*\*/)
+  assert.match(reasons, /testSupport glob removed b\/\*\*/)
+  assert.deepEqual(weakensConfig(J({ fixtures: ['x/**'] }), J({})), [])
 })

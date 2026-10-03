@@ -1,4 +1,5 @@
 # The sdlc required check. Copy to .github/workflows/ and make "sdlc-check" a required status check.
+# sensors.json `fixtures` lists files that intentionally contain detector patterns (skipped by pattern sensors only); adding to it needs human approval.
 # The checker and its config come from the BASE branch, so a PR cannot loosen the rules it is judged by.
 name: sdlc-check
 on: pull_request

@@ -7,7 +7,7 @@ import {
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
-import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
+import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 
@@ -257,13 +257,14 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
 
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
+  const pattern = withoutFixtures(diffs, config)
   const findings: Finding[] = [
-    ...testTamper(diffs, config),
-    ...suppressions(diffs, config),
-    ...layering(diffs, config),
+    ...testTamper(pattern, config),
+    ...suppressions(pattern, config),
+    ...layering(pattern, config),
     ...size(diffs, config, fileLines(diffs.filter(d => d.status !== 'D').map(d => d.file)), i.point),
-    ...secretsInDiff(diffs),
-    ...rulesSensor(diffs, i.rules),
+    ...secretsInDiff(pattern),
+    ...rulesSensor(pattern, i.rules),
     ...contractFindings(i),
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
@@ -280,8 +281,9 @@ export function editFindings(rel: string): Finding[] {
   if (!snap) return []
   const { config, rules } = loadConfig()
   const diffs = fileDiff(snap, rel)
+  const pattern = withoutFixtures(diffs, config)
   const slug = activeSlug()
-  return applyWaivers([...testTamper(diffs, config), ...suppressions(diffs, config), ...size(diffs, config, fileLines([rel]), 'edit'), ...secretsInDiff(diffs), ...rulesSensor(diffs, rules)], slug ? [slug] : []).findings
+  return applyWaivers([...testTamper(pattern, config), ...suppressions(pattern, config), ...size(diffs, config, fileLines([rel]), 'edit'), ...secretsInDiff(pattern), ...rulesSensor(pattern, rules)], slug ? [slug] : []).findings
 }
 
 const slugsIn = (diffs: FileDiff[]): string[] => [...new Set(diffs.map(d => /^\.sdlc\/changes\/([^/]+)\//.exec(d.file)?.[1]).filter((s): s is string => Boolean(s)))]

@@ -53,6 +53,9 @@ function loweredThresholds(diffs: FileDiff[]): Finding[] {
   return findings
 }
 
+// Files that intentionally contain detector patterns (a human-approved list) are invisible to the pattern sensors only.
+export const withoutFixtures = (diffs: FileDiff[], cfg: SensorConfig): FileDiff[] => (cfg.fixtures.length ? diffs.filter(d => !matchesAny(d.file, cfg.fixtures)) : diffs)
+
 export function testTamper(diffs: FileDiff[], cfg: SensorConfig): Finding[] {
   const findings: Finding[] = []
   const tests = diffs.filter(d => isTest(d.file, cfg) && !d.binary)
@@ -219,8 +222,9 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
   const a = after.config
   const reasons: string[] = []
   for (const k of ['fileLines', 'diffLines'] as const) if (a.limits[k] > b.limits[k]) reasons.push(`limits.${k} raised ${b.limits[k]} → ${a.limits[k]}`)
-  for (const k of ['tests', 'contracts'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
+  for (const k of ['tests', 'contracts', 'testSupport'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
   for (const g of removedFrom(a.ignore, b.ignore)) reasons.push(`ignore added ${g}`)
+  for (const g of removedFrom(a.fixtures, b.fixtures)) reasons.push(`fixtures added ${g}`)
   for (const k of removedFrom(a.knownRed, b.knownRed)) reasons.push(`knownRed added ${k}`)
   for (const p of ['fast', 'full'] as const) for (const name of removedFrom(Object.keys(b[p]), Object.keys(a[p]))) reasons.push(`${p}.${name} removed`)
   for (const c of removedFrom(b.consumers.map(x => x.name), a.consumers.map(x => x.name))) reasons.push(`consumer ${c} removed`)

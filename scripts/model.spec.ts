@@ -83,3 +83,8 @@ test('findings: multi-line messages count physical lines toward the cap, fix on 
   assert.match(text, /… \d+ more/)
   assert.match(text, /l1\.0 → fixit/)
 })
+
+test('fixtures must be a list of strings', () => {
+  assert.match(parseConfig(JSON.stringify({ fixtures: 'x' })).errors[0] ?? '', /fixtures must be a list of strings/)
+  assert.deepEqual(parseConfig(JSON.stringify({ fixtures: ['x/**'] })).config.fixtures, ['x/**'])
+})
