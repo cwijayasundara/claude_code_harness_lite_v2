@@ -5,7 +5,7 @@
 set -euo pipefail
 P="$(cd "$(dirname "$0")/../.." && pwd)"
 MODE="${1:-M}"; shift || true
-case "$MODE" in M|L) ;; *) echo "usage: run-trials.sh [M|L] [outdir]" >&2; exit 2 ;; esac
+case "$MODE" in M|L|I) ;; *) echo "usage: run-trials.sh [M|L|I] [outdir]" >&2; exit 2 ;; esac
 OUT="${1:-$(mktemp -d)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -112,4 +112,24 @@ if [ "$MODE" = M ]; then
   echo "plain: ${ARM_FLAG:+$ARM_FLAG | }$(sum "$OUT/plain.json") | acceptance: $(accept plain)"
   echo "artifacts in $OUT"
   [ "$ANY_BAD" = 0 ] || { echo "run-trials: an arm crashed or errored" >&2; exit 1; }
+fi
+
+if [ "$MODE" = I ]; then
+  # Integration test: /sdlc:onboard on a four-module app, then one internal change through ship; every artifact is
+  # checked deterministically by assert-integration.mjs. LIVE and PAID (about $2).
+  TASK_I='Add a bestSellers(orders, n) function exported from src/orders/report.js. orders is an array of { lines: [{ sku, qty }] }. It returns an array of the n SKU strings with the highest total quantity sold, most first, ties broken by SKU ascending; [] for no orders. It is internal: no HTTP route. Include tests.'
+  rm -rf "$OUT/app"; cp -R "$P/tests/trials/shop-app" "$OUT/app"
+  (cd "$OUT/app" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm base)
+  settings "$OUT/app" false
+  (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm settings)
+  (cd "$OUT/app" && claude -p "/sdlc:onboard — this is an existing codebase; answer your own questions with the recommended defaults, decline CI and settings changes, and commit the onboarding files on main." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/onboard.json") || true
+  echo "onboard: $(sum "$OUT/onboard.json")"
+  node "$P/tests/trials/assert-integration.mjs" onboard "$OUT/app" "$P"; R1=$?
+  (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
+  (cd "$OUT/app" && claude -p "/sdlc:start \"$TASK_I\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/change.json") || true
+  echo "change: $(sum "$OUT/change.json")"
+  node "$P/tests/trials/assert-integration.mjs" change "$OUT/app" "$P"; R2=$?
+  node "$P/tests/trials/split.mjs" "$OUT/onboard.json" "$OUT/change.json" || true
+  echo "artifacts in $OUT/app"
+  [ "$R1" = 0 ] && [ "$R2" = 0 ] || { echo "run-trials: integration checks failed" >&2; exit 1; }
 fi

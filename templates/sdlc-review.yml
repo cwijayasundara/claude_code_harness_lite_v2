@@ -1,5 +1,6 @@
 # sdlc PR review: one background Claude review per PR push; fails on a high-severity finding or a missing verdict.
-# Copy to .github/workflows/, add an ANTHROPIC_API_KEY secret, and list this file in CODEOWNERS.
+# Copy to .github/workflows/ and list it in CODEOWNERS. Auth: set ONE repository secret, either CLAUDE_CODE_OAUTH_TOKEN
+# (your Claude Pro/Max subscription: run `claude setup-token`) or ANTHROPIC_API_KEY (API billing).
 # The verdict comes from a model reading PR content, so it is advisory: a PR's own text can try to steer it.
 # The deterministic gate is sdlc-check (templates/sdlc-check.yml), judged by the base branch's checker.
 # A PR's own text may try to steer the reviewer, so the model gets no shell, network or gh: it reads
@@ -41,6 +42,7 @@ jobs:
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: >-
             --model claude-opus-5-5 --max-turns 30
@@ -61,9 +63,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           [ -f review.md ] || { echo "::error::no review.md"; exit 1; }
-          if grep -qF -- "$KEY" review.md || grep -qF -- "$GH_TOKEN" review.md \
+          leaked() { [ -n "$1" ] && grep -qF -- "$1" review.md; }
+          if leaked "$KEY" || leaked "$OAUTH" || leaked "$GH_TOKEN" \
              || grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|AKIA[0-9A-Z]{16}|BEGIN [A-Z ]*PRIVATE KEY' review.md; then
             echo "::error::review.md looks like it contains a credential; not posting it"; exit 1
           fi
