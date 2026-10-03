@@ -164,7 +164,11 @@ Every `TAMPER_PATTERNS` row ships with a **negative fixture** in the unit tests.
   3. Run `full.test`, or each acceptance command in plan `## Slices`, through `sdlc.ts run`.
   4. **It must exit non-zero.**
 
-  This proves the property that matters: **the new tests do not pass against the old code.** It works in any language, can't be forged, and needs no history, so CI can run it. When it passes against the old code, it is a **block**: *"the new tests already pass on the base; they prove nothing about this change."* A test that fails to compile against the base counts as red. That is honest: the old code cannot satisfy it.
+  This proves the property that matters: **the new tests do not pass against the old code.**
+- **Which proof applies depends on the change type** (decided on 2026-10-03):
+  - feature and greenfield at M and L, and bugfix and incident at every tier, prove **red**: the changed tests must fail on the base.
+  - refactor at M and L proves **green on the base**: its characterization tests must pass on the old code, which pins the behaviour being preserved.
+  - chore and migration get no extra proof, because their full suite already runs as the ship gate's commands. It works in any language, can't be forged, and needs no history, so CI can run it. When it passes against the old code, it is a **block**: *"the new tests already pass on the base; they prove nothing about this change."* A test that fails to compile against the base counts as red. That is honest: the old code cannot satisfy it.
 - The `--expect-fail` rows in `runs.jsonl` stay useful as build-time evidence in `verification.md`, but no gate depends on them.
 
 ### 5.9 traceability

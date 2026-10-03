@@ -3092,6 +3092,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `missingBehaviours(ids: string[], corpus: string): string[]`
 - Produces from `check.ts`:
   - `shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff[], base: string | null): Finding[]`, with the sensors `'traceability'`, `'red-proof'` and `'adhoc'`
+  - Proof against the base depends on the change type, as the person decided on 2026-10-03:
+
+    | Change type | Tier | Rule |
+    |---|---|---|
+    | feature, greenfield | M and L | changed tests must **fail** on the base |
+    | bugfix, incident | every tier | changed tests must **fail** on the base |
+    | refactor | M and L | changed tests must **pass** on the base |
+    | chore, migration | any | no extra proof |
   - `runChecks` calls `shipVerdicts` for every slug when `point !== 'stop'`
 - `cmdShip` refuses on any block, listing the findings.
 
@@ -3134,6 +3142,17 @@ test('ship: new tests that fail on the base prove red; tests that already pass t
   const weak = check('--at', 'ship', '--base', 'main', '--slug', 'sub')
   assert.equal(weak.code, 1)
   assert.match(weak.stdout, /\[red-proof\][\s\S]*already pass on the base/)
+})
+
+test('ship: a refactor\'s characterization tests must pass on the base, not fail', () => {
+  featureRepo()
+  sdlc(repo, ['new', 'tidy', '--type', 'refactor', '--tier', 'M'])
+  write(repo, '.sdlc/changes/tidy/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. characterize add\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, 'test/add-char.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add keeps working', () => assert.equal(add(2, 3), 5))\n")
+  assert.equal(check('--at', 'ship', '--base', 'main', '--slug', 'tidy').code, 0)
+  write(repo, 'test/add-char.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add is now different', () => assert.equal(add(2, 3), 6))\n")
+  write(repo, 'src/add.js', 'export const add = (a, b) => a + b + 1\n')
+  assert.match(check('--at', 'ship', '--base', 'main', '--slug', 'tidy').stdout, /fail on the base: they do not describe the behaviour/)
 })
 
 test('ship: every behaviour needs a test that names it', () => {
@@ -3193,12 +3212,14 @@ function testCorpus(config: SensorConfig): string {
 
 const DEP_DIRS = ['node_modules', '.venv', 'vendor']
 
-// Proof of red, recomputed: the new tests on top of the base code must fail. No log entry can fake this.
-function redProof(slug: string, config: SensorConfig, diffs: FileDiff[], base: string): Finding[] {
+// Proof against the base, recomputed (no log entry can fake it): the branch's changed tests run on top of the base code.
+// 'red' (feature, bugfix, incident, greenfield): they must FAIL there, so they prove the change.
+// 'green' (refactor): they must PASS there, so they pin the old behaviour the refactor preserves.
+function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base: string, mode: 'red' | 'green'): Finding[] {
   const block = (message: string, fix: string): Finding[] => [{ sensor: 'red-proof', severity: 'block', message, fix }]
   const cmd = config.full.test ?? config.fast.test
   const tests = diffs.filter(d => d.status !== 'D' && !d.binary && isTest(d.file, config)).map(d => d.file)
-  if (!tests.length) return block('no test file changed, so nothing proves this change', 'write the failing test first')
+  if (!tests.length) return mode === 'red' ? block('no test file changed, so nothing proves this change', 'write the failing test first') : []
   if (!cmd) return block('no test command declared (full.test or fast.test in .sdlc/sensors.json)', 'declare it so red can be proven')
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-red-'))
   try {
@@ -3211,9 +3232,11 @@ function redProof(slug: string, config: SensorConfig, diffs: FileDiff[], base: s
       fs.mkdirSync(path.dirname(path.join(tmp, t)), { recursive: true })
       fs.copyFileSync(path.join(ROOT, t), path.join(tmp, t))
     }
-    const red = runCommand(cmd, { cwd: tmp })
-    recordRun(slug, { ...red, expectFail: true, source: 'ship' })
-    return red.exit === 0 ? block('the new tests already pass on the base: they prove nothing about this change', 'write a test that fails without the change, then make it pass') : []
+    const run = runCommand(cmd, { cwd: tmp })
+    recordRun(slug, mode === 'red' ? { ...run, expectFail: true, source: 'ship' } : { ...run, source: 'ship' })
+    if (mode === 'red' && run.exit === 0) return block('the new tests already pass on the base: they prove nothing about this change', 'write a test that fails without the change, then make it pass')
+    if (mode === 'green' && run.exit !== 0) return block('the refactor\'s tests fail on the base: they do not describe the behaviour being preserved', 'write characterization tests that pass on the old code first, then refactor under them')
+    return []
   } finally {
     git(['worktree', 'remove', '--force', tmp])
     fs.rmSync(tmp, { recursive: true, force: true })
@@ -3238,7 +3261,12 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
   for (const id of missingBehaviours(ids, corpus)) {
     findings.push({ sensor: 'traceability', severity: 'block', message: `${id} has no test that names it`, fix: `add a test whose name or comment says ${id} and proves it` })
   }
-  if (base && (tier !== 'S' || change.type === 'bugfix')) findings.push(...redProof(slug, config, diffs, base))
+  // Per change type: red for new behaviour, green-on-base for refactors, nothing extra for chore and migration
+  // (their full suite already runs as the ship gate's commands).
+  const RED_TYPES = ['feature', 'bugfix', 'incident', 'greenfield']
+  const always = change.type === 'bugfix' || change.type === 'incident'
+  if (base && RED_TYPES.includes(change.type) && (tier !== 'S' || always)) findings.push(...proofOnBase(slug, config, diffs, base, 'red'))
+  if (base && change.type === 'refactor' && tier !== 'S') findings.push(...proofOnBase(slug, config, diffs, base, 'green'))
   return findings
 }
 ```
