@@ -382,3 +382,13 @@ Rulings made while building it; the code is the reference.
 - The mod adds `/sdlc-waive` (sensor names validated against `SENSOR_NAMES`), the `/sdlc-sensors` pane, the band, the impact dialog and per-edit notices. The harness-tamper dialog is intentionally not in the mod: the PreToolUse `ask` reason carries the same detail.
 
 The Spec 1 live trial is recorded in §10.
+
+## 13. v0.3
+
+- **superpowers guides L builds.** Tier L and greenfield builds use superpowers subagent-driven development when it is installed (the settings template enables it), with sdlc overrides; otherwise the native sdlc implementers run.
+- **Wiki.** `/sdlc:wiki` and `agents/wiki.md` (Sonnet, low effort) build `docs/wiki/`. `scripts/wiki.ts` stamps each page with a surface hash; a wiki-stale sensor warns at ship and CI but never blocks.
+- **Guard freeze.** The local evidence guard is frozen at one best-effort rule. CI is the trust boundary.
+- **LOC cap.** The harness (scripts, hooks, skills, agents, guides, templates, workflows, plugin JSON) is capped at 5000 lines by a test.
+- **Fixes.** STATE.md follows the active change; tier L bugfix and incident get a plan gate after diagnosis; the size sensor warns on added lines over `limits.lineChars` (160); captured command output masks secrets.
+- **/sdlc:next** runs the active change's next stage and stops at human gates.
+- Trial results: see §10 (to be added after the trial).

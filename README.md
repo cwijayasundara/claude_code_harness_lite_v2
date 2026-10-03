@@ -29,6 +29,7 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 | You type | What happens |
 |---|---|
 | `/sdlc:start "add CSV export to reports"` | Classifies type and tier, writes `.sdlc/changes/<slug>/intent.md`, and prints the path and the next command. Tier S is built in the same turn. |
+| `/sdlc:next` | Runs whatever comes next for the active change, and stops only at human gates. The one command to remember. |
 | `/sdlc:spec`, `/sdlc:plan`, `/sdlc:build`, `/sdlc:diagnose`, `/sdlc:verify`, `/sdlc:review`, `/sdlc:ship` | One stage each. Every stage ends with the exact next command. |
 | `/sdlc-approve <slug> <spec\|plan>` | **Human gate.** A mod command: costs zero tokens, the model cannot invoke it, and the approval goes stale if the artifact changes afterwards. |
 | `/sdlc-waive <sensor> <file\|*> <reason>` | **Human only.** Records a waiver for a sensor finding on the active change (the sensor name is validated). Zero tokens, and the model cannot invoke it. |
@@ -37,7 +38,14 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 | `/sdlc-status` | Where every change stands. Zero tokens. |
 | `/sdlc:handoff` | Writes a STATE.md of 40 lines or fewer so you can `/clear` and resume cheaply. The band above the prompt turns red at 150k context. |
 | `/sdlc:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
+| `/sdlc:wiki` | Builds or updates the code wiki in `docs/wiki/`. |
 | `/sdlc:metrics [days]` | The playbook's 12 metrics (leading and lagging per stage) plus cost per change, stage and agent. |
+
+## Team install
+
+1. `/plugin marketplace add <git url of this repo>` and pin a release tag.
+2. Commit `templates/settings.json`, merged into the project's `.claude/settings.json`, so every engineer gets the same plugins and models.
+3. superpowers 6.4.1 or later runs tier L and greenfield builds. Without it, builds use sdlc's own implementers.
 
 ## Guides and sensors
 
@@ -57,7 +65,7 @@ For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you do
 
 | Part | Role |
 |---|---|
-| `skills/` (13) | The stages, run by the main thread (Sonnet 5.5, with Opus 5.5 as advisor). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
+| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5, with Opus 5.5 as advisor). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
 | `agents/scout.md` | Haiku, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md and plan.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
@@ -65,7 +73,7 @@ For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you do
 | `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, block sleep-polling, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
-| `scripts/*.ts` (10) | Zero-dependency Node, no build step: `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
+| `scripts/*.ts` (11) | Zero-dependency Node, no build step: `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
 | `templates/sdlc-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 
