@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { DEFAULT_CONFIG as CFG, type FileDiff } from './model.ts'
-import { testTamper, suppressions, TAMPER_PATTERNS } from './sensors.ts'
+import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
+import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
   file, status, added: added.map((text, i) => ({ n: i + 1, text })), removed: removed.map((text, i) => ({ n: i + 1, text })),
@@ -96,4 +96,38 @@ test('a lone deleted test file with assertions yields exactly one block', () => 
   const r = blocks(testTamper([fd('test/a.test.js', [], ["test('a', () => {", '  expect(add(1, 2)).toBe(3)', '})'], 'D')], CFG))
   assert.equal(r.length, 1)
   assert.match(r[0]?.message ?? '', /test file deleted/)
+})
+
+const withLayers: SensorConfig = { ...CFG, layers: [{ from: 'src/domain/**', mustNotImport: ['infra', 'http'], why: 'the domain stays framework-free' }] }
+
+test('layering blocks forbidden imports in any import syntax, and nothing else', () => {
+  for (const line of ["import { db } from '../infra/db'", 'from infra.db import session', "const h = require('../http/client')", 'use crate::infra::db;', '#include "infra/db.h"', 'import com.acme.infra.Db;']) {
+    const r = layering([fd('src/domain/order.ts', [line])], withLayers)
+    assert.equal(r.length, 1, line)
+    assert.match(r[0]?.message ?? '', /framework-free/)
+  }
+  assert.equal(layering([fd('src/domain/order.ts', ['// talks to infra later', "import { infraction } from './rules'"])], withLayers).length, 0)
+  assert.equal(layering([fd('src/app/main.ts', ["import { db } from '../infra/db'"])], withLayers).length, 0)
+})
+
+test('size warns when a file crosses the line limit, and the diff limit blocks only from ship on', () => {
+  const big = fd('src/a.ts', Array.from({ length: 30 }, () => 'x'))
+  assert.equal(size([big], CFG, { 'src/a.ts': 410 }, 'stop')[0]?.severity, 'warn')
+  assert.equal(size([big], CFG, { 'src/a.ts': 900 }, 'stop').length, 0, 'already over before this diff: no news')
+  const huge = fd('src/b.ts', Array.from({ length: 600 }, () => 'y'), [], 'A')
+  assert.equal(size([huge], CFG, { 'src/b.ts': 600 }, 'stop').find(f => !f.file)?.severity, 'warn')
+  assert.equal(size([huge], CFG, { 'src/b.ts': 600 }, 'ship').find(f => !f.file)?.severity, 'block')
+  assert.equal(size([fd('docs/x.md', Array.from({ length: 900 }, () => 'z'))], CFG, {}, 'ship').length, 0, 'ignored files do not count')
+})
+
+test('secrets in added lines block; the allow comment opts out', () => {
+  assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP"'])]).length, 1)
+  assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP" // sdlc:allow-secret test fixture'])]).length, 0)
+})
+
+test('rules apply to added lines within their paths, labelled with the rule id', () => {
+  const rules: Rule[] = [{ id: 'no-print', pattern: '\\bprint\\(', paths: ['src/**'], message: 'use the logger', why: 'stdout carries the protocol', action: 'block' }]
+  const r = rulesSensor([fd('src/a.py', ['print("x")']), fd('scripts/b.py', ['print("y")'])], rules)
+  assert.deepEqual(r.map(f => [f.file, f.labels?.[0], f.severity]), [['src/a.py', 'no-print', 'block']])
+  assert.match(r[0]?.message ?? '', /stdout carries the protocol/)
 })

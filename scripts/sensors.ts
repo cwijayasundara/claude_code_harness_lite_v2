@@ -1,6 +1,6 @@
 // Language-agnostic sensors: pure functions from a parsed diff and config to findings.
 // Language knowledge lives in the pattern tables below, never in code paths per language.
-import { type FileDiff, type Finding, type SensorConfig, isTest, isSource } from './model.ts'
+import { type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
 
 export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
   { id: 'skip-or-only', re: /\b(?:it|describe|test|context|suite)\.(?:skip|only|todo)\s*[.(]/, what: 'test skipped or focused' },
@@ -89,6 +89,67 @@ export function suppressions(diffs: FileDiff[], cfg: SensorConfig): Finding[] {
     for (const l of d.added) {
       if (SUPPRESSIONS.some(re => re.test(l.text)) && !REASONED.test(l.text)) {
         findings.push({ sensor: 'suppression', severity: 'block', file: d.file, line: l.n, message: `suppression added: ${l.text.trim()}`, fix: 'fix the warning instead, or give the reason on the same line after "--" or "because"' })
+      }
+    }
+  }
+  return findings
+}
+
+const IMPORT_LINE = /^\s*(?:import|from|require|use|using|#\s*include|include|extern\s+crate)\b|\brequire\s*\(|\bimport\s*\(/
+const word = (t: string): RegExp => new RegExp(`(?:^|[^A-Za-z0-9_])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[^A-Za-z0-9_])`)
+
+export function layering(diffs: FileDiff[], cfg: SensorConfig): Finding[] {
+  const findings: Finding[] = []
+  for (const layer of cfg.layers) {
+    const from = globToRegex(layer.from)
+    const banned = layer.mustNotImport.map(t => ({ t, re: word(t) }))
+    for (const d of diffs.filter(f => from.test(f.file) && !f.binary)) {
+      for (const l of d.added.filter(a => IMPORT_LINE.test(a.text) && !/^\s*(?:\/\/|#(?!\s*include))/.test(a.text))) {
+        const hit = banned.find(b => b.re.test(l.text))
+        if (hit) findings.push({ sensor: 'layering', severity: 'block', file: d.file, line: l.n, message: `${layer.from} must not import ${hit.t}: ${layer.why}`, fix: `depend on an interface owned by this layer and inject the ${hit.t} implementation at the boundary` })
+      }
+    }
+  }
+  return findings
+}
+
+export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<string, number>, point: 'edit' | 'stop' | 'ship' | 'ci'): Finding[] {
+  const findings: Finding[] = []
+  const counted = diffs.filter(d => isSource(d.file, cfg) && !d.binary)
+  for (const d of counted.filter(f => f.status !== 'D')) {
+    const now = fileLines[d.file]
+    if (now === undefined) continue
+    const before = now - d.added.length + d.removed.length
+    if (now > cfg.limits.fileLines && before <= cfg.limits.fileLines) {
+      findings.push({ sensor: 'size', severity: 'warn', file: d.file, message: `grew to ${now} lines (limit ${cfg.limits.fileLines})`, fix: 'split it by responsibility before it grows further' })
+    }
+  }
+  const total = counted.reduce((n, d) => n + d.added.length + d.removed.length, 0)
+  if (total > cfg.limits.diffLines && point !== 'edit') {
+    findings.push({ sensor: 'size', severity: point === 'stop' ? 'warn' : 'block', message: `diff is ${total} changed lines (limit ${cfg.limits.diffLines})`, fix: 'ship it as smaller changes, or the person records an override with /sdlc-waive size * <reason>' })
+  }
+  return findings
+}
+
+export function secretsInDiff(diffs: FileDiff[]): Finding[] {
+  const findings: Finding[] = []
+  for (const d of diffs.filter(f => !f.binary)) {
+    for (const l of d.added) {
+      if (/sdlc:allow-secret/.test(l.text)) continue
+      const hit = SECRET_PATTERNS.find(([, re]) => re.test(l.text))
+      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; for a test fixture add "sdlc:allow-secret <why>" on the line' })
+    }
+  }
+  return findings
+}
+
+export function rulesSensor(diffs: FileDiff[], rules: { id: string; pattern: string; paths?: string[]; message: string; why: string; action: 'warn' | 'block' }[]): Finding[] {
+  const findings: Finding[] = []
+  for (const rule of rules) {
+    const re = new RegExp(rule.pattern)
+    for (const d of diffs.filter(f => !f.binary && !f.file.startsWith('.sdlc/') && (!rule.paths || matchesAny(f.file, rule.paths)))) {
+      for (const l of d.added.filter(a => re.test(a.text))) {
+        findings.push({ sensor: 'rules', severity: rule.action, file: d.file, line: l.n, message: `${rule.message} (${rule.why})`, fix: `follow rule ${rule.id} in .sdlc/rules.json`, labels: [rule.id] })
       }
     }
   }
