@@ -3,7 +3,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, hook, write } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
 import { isSafeEvidenceCommand } from './hooks.ts'
 
 let repo: string
@@ -145,4 +145,102 @@ test('quotes and escapes cannot hide an evidence path from the guard (non-read-o
   for (const c of ['git add src/a.js .sdlc/approvals.jsonl && git commit -m "feat: x"', 'cat .sdlc/approvals.jsonl', 'tail -5 .sdlc/changes/x/runs.jsonl',
     'node /x/scripts/sdlc.ts run -- "npm test"', 'git commit -m "rm > node" .sdlc/changes/a/runs.jsonl', "grep -c pass '.sdlc/changes/a/runs.jsonl'"])
     assert.equal(as(c), undefined, c)
+})
+
+const stop = () => hook(repo, 'stop', { session_id: 's1' })
+const tamper = () => write(repo, 'test/a.test.js', "it.only('x', () => {})\n")
+
+test('Stop is silent outside sdlc repos and on turns that changed no source', () => {
+  write(repo, 'src/x.js', 'x\n')
+  assert.equal(stop().stdout, '')
+  sdlc(repo, ['init'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').writeFileSync(\'ran.txt\', \'1\')"' } }))
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  hook(repo, 'prompt-submit', {})
+  write(repo, '.sdlc/STATE.md', '---\nchange:\n---\nnotes\n')
+  assert.equal(stop().stdout, '')
+  assert.ok(!fs.existsSync(path.join(repo, 'ran.txt')), 'no commands run on a no-op turn')
+})
+
+test('Stop blocks twice, then lets the turn end with a system message and unresolved.json; a fix clears it', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  tamper()
+  for (const n of [1, 2]) {
+    const out = JSON.parse(stop().stdout)
+    assert.equal(out.decision, 'block')
+    assert.match(out.reason, new RegExp(`attempt ${n}/2[\\s\\S]*test-tamper[\\s\\S]*test/a\\.test\\.js:1`))
+  }
+  const third = JSON.parse(stop().stdout)
+  assert.match(third.systemMessage, /1 problem\(s\) unresolved after 2 attempts/)
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/unresolved.json')))
+  write(repo, 'test/a.test.js', "it('x', () => {})\n")
+  assert.equal(stop().stdout, '')
+  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/unresolved.json')))
+})
+
+test('a vibe-coded turn with no active change records an ad-hoc change with a computed tier', () => {
+  sdlc(repo, ['init'])
+  hook(repo, 'prompt-submit', {})
+  for (const f of ['a', 'b', 'c', 'd', 'e']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
+  stop()
+  const status = sdlc(repo, ['status']).stdout
+  assert.match(status, /▶ adhoc-\d{8}-\d{4}\s+chore\s+M/)
+})
+
+test('SubagentStop judges only files that agent edited, and runs no project commands', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').writeFileSync(\'ran.txt\', \'1\')"' } }))
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  hook(repo, 'prompt-submit', {})
+  hook(repo, 'subagent-start', { agent_id: 'A', agent_type: 'sdlc:implementer' })
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  hook(repo, 'post-edit', { agent_id: 'A', tool_input: { file_path: path.join(repo, 'src/a.js') } })
+  tamper()
+  assert.equal(hook(repo, 'subagent-stop', { agent_id: 'A', agent_type: 'sdlc:implementer' }).stdout, '')
+  assert.ok(!fs.existsSync(path.join(repo, 'ran.txt')))
+  assert.equal(JSON.parse(stop().stdout).decision, 'block', 'the main Stop still sees the other file')
+})
+
+test('a harness file changed by Bash blocks at Stop; the same change through Edit only warns', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  hook(repo, 'prompt-submit', {})
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 900 } }))
+  assert.match(JSON.parse(stop().stdout).reason, /outside Write\/Edit/)
+  hook(repo, 'prompt-submit', {})
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 950 } }))
+  hook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json') } })
+  assert.equal(stop().stdout, '')
+})
+
+test('post-edit blocks a single edited file with exit 2 and records the edit', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  tamper()
+  const r = hook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, 'test/a.test.js') } })
+  assert.equal(r.code, 2)
+  assert.match(r.stderr, /test skipped or focused/)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8')).tool, ['test/a.test.js'])
+})
+
+test('a corrupt gate file never wedges the session', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  fs.writeFileSync(path.join(repo, '.sdlc/.gate'), '{not json')
+  tamper()
+  assert.equal(JSON.parse(stop().stdout).decision, 'block')
+})
+
+test('evidence guard: $-quote forms and glob targets cannot write evidence; reads of globs are fine', () => {
+  sdlc(repo, ['init'])
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
+  for (const c of [`echo x >> .sdlc/changes/a/run$'s'.jsonl`, 'echo x >> .sdlc/changes/a/run$"s".jsonl', 'echo x >> .sdlc/changes/a/run?.jsonl',
+    'cp x .sdlc/changes/a/run[s].jsonl', 'echo x > .sdlc/approval*.jsonl'])
+    assert.equal(as(c), 'deny', c)
+  for (const c of ['cat .sdlc/changes/a/run?.jsonl', 'ls .sdlc/changes/*/']) assert.equal(as(c), undefined, c)
 })

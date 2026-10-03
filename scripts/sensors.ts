@@ -272,3 +272,10 @@ export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | '
   }
   return findings
 }
+
+// Tier of work done without /sdlc:start, from what it touches: contracts or > 15 files is L, > 3 is M.
+export function tierFromDiff(diffs: FileDiff[], cfg: SensorConfig): 'S' | 'M' | 'L' {
+  const files = diffs.filter(d => isSource(d.file, cfg))
+  if (files.some(d => matchesAny(d.file, cfg.contracts)) || files.length > 15) return 'L'
+  return files.length > 3 ? 'M' : 'S'
+}

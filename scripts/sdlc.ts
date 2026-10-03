@@ -10,7 +10,7 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
+  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
@@ -38,10 +38,7 @@ function cmdNew(args: Args): void {
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
   if (!exists(SDLC)) cmdInit()
-  ensureGitignore()
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'intent.md'), intentTemplate(slug, type, tier, optString(args, 'title') ?? slug))
-  setActive(slug)
+  createChange(slug, type, tier, optString(args, 'title') ?? slug)
   out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})`)
 }
 

@@ -425,6 +425,15 @@ created: ${now()}
 <!-- data, security, public contracts, migrations; say "none" if none -->
 `
 
+export function createChange(slug: string, type: ChangeType, tier: Tier, title: string): void {
+  const dir = path.join(CHANGES, slug)
+  if (!exists(SDLC)) fs.mkdirSync(CHANGES, { recursive: true })
+  ensureGitignore()
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'intent.md'), intentTemplate(slug, type, tier, title))
+  setActive(slug)
+}
+
 export function setActive(slug: string): void {
   const { body } = frontmatter(read(STATE))
   fs.mkdirSync(SDLC, { recursive: true })

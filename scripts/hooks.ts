@@ -2,12 +2,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
-  planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, relPosix, scanSecrets, planProblems, type Args, type HookInput,
+  ROOT, SDLC, CHANGES, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
+  planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
-import { snapshot, writeBaseline } from './diffs.ts'
-import { isProtected, weakensConfig, weakensRules } from './sensors.ts'
-import { loadConfig } from './check.ts'
+import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
+import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
+import { loadConfig, runChecks, editFindings } from './check.ts'
+import { formatFindings, isSource, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd, tokenize } from './shell.ts'
 
 function readStdin(): HookInput {
@@ -39,6 +40,8 @@ function hookSessionStart(): void {
 // macOS and Windows file systems are case-insensitive: .sdlc/Sensors.json is sensors.json there.
 const CASE_INSENSITIVE = process.platform !== 'linux'
 // git (staging, committing, inspecting) and read-only viewers may name evidence; nothing that can write to it may.
+// $'x' and $"x" are quote forms too: drop the $, then the quotes and escapes.
+const stripQuotes = (cmd: string): string => cmd.replace(/\$(?=["'])/g, '').replace(/["'\\]/g, '')
 const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|cat|head|tail|wc|grep|rg|jq)\b/
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
@@ -60,18 +63,29 @@ function wordsSafe(w: string[]): boolean {
   return /^(?:cat|head|tail|wc|grep|rg|jq)$/.test(w[0] ?? '')
 }
 
+// A write whose target under .sdlc/ holds an unquoted glob (run?.jsonl, run[s].jsonl, approval*.jsonl) can hit evidence.
+const WRITE_VERB = /\b(?:tee|cp|mv|dd|install|ln)\b|\bsed\s+-\w*i/
+const unquotedGlob = (t: string): boolean => /\.sdlc\//i.test(t) && /[*?[]/.test(t.replace(/"[^"]*"|'[^']*'/g, ''))
+export function globWrite(cmd: string): boolean {
+  return cmd.split(/&&|\|\||;|\||\n/).some(seg => {
+    const targets = [...seg.matchAll(/>>?\s*(\S+)/g)].map(m => m[1] ?? '')
+    if (WRITE_VERB.test(seg)) targets.push(...seg.split(/[\s>]+/))
+    return targets.some(unquotedGlob)
+  })
+}
+
 // Quotes and escapes must not hide an evidence path (run"s".jsonl): the raw text and a dequoted form are both checked.
 // tokenize gives exact words; where it refuses (substitutions, redirects), quotes and backslashes are simply dropped.
 export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
   if (!rawSafe(cmd, ci)) return false
   const { segs, bad } = tokenize(cmd)
-  if (bad) return rawSafe(cmd.replace(/["'\\]/g, ''), ci)
-  return segs.filter(w => evidencePath(w.join(' '), ci)).every(wordsSafe)
+  if (bad) return rawSafe(stripQuotes(cmd), ci) && !globWrite(cmd)
+  return segs.filter(w => evidencePath(w.join(' '), ci)).every(wordsSafe) && !globWrite(cmd)
 }
 
 const dequoted = (cmd: string): string => {
   const { segs, bad } = tokenize(cmd)
-  return bad ? cmd.replace(/["'\\]/g, '') : segs.map(w => w.join(' ')).join('\n')
+  return bad ? stripQuotes(cmd) : segs.map(w => w.join(' ')).join('\n')
 }
 
 export const evidencePath = (p: string, ci = CASE_INSENSITIVE): boolean => (ci ? new RegExp(EVIDENCE_RE.source, 'i') : EVIDENCE_RE).test(p)
@@ -172,8 +186,17 @@ function hookPostEdit(input: HookInput): void {
   if (!file || !exists(file)) return
   const problems = scanSecrets(file)
   if (exists(SDLC) && /\.sdlc\/changes\/[^/]+\/plan\.md$/.test(toPosix(file))) problems.push(...planProblems(file).map(p => `${file}: ${p}`))
-  if (problems.length) {
-    process.stderr.write(`sdlc check failed, fix before continuing:\n${problems.join('\n')}\n`)
+  let edits = ''
+  if (exists(SDLC)) {
+    const rel = relPosix(file)
+    const gate = readGate()
+    gate.tool = pushUnique(gate.tool, rel)
+    if (input.agent_id) gate.agents[input.agent_id] = pushUnique(gate.agents[input.agent_id] ?? [], rel)
+    writeGate(gate)
+    edits = formatFindings(editFindings(rel).filter(f => f.severity === 'block' && f.sensor !== 'secrets'))
+  }
+  if (problems.length || edits) {
+    process.stderr.write(`sdlc check failed, fix before continuing:\n${[...problems, edits].filter(Boolean).join('\n')}\n`)
     process.exitCode = 2
   }
 }
@@ -190,11 +213,94 @@ function hookSkillFailed(input: HookInput): void {
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
 }
 
-// Each prompt starts a turn: record what the tree looked like, so Stop can diff exactly this turn's changes.
+export type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number> }
+export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; agents: Record<string, string[]>; guides: Record<string, string[]>; last?: GateSummary }
+
+const GATE = path.join(SDLC, '.gate')
+const UNRESOLVED = path.join(SDLC, 'unresolved.json')
+const MAX_BLOCKS = 2
+const STOP_BUDGET_MS = 60_000
+const emptyGate = (): Gate => ({ turn: '', blocks: {}, passed: {}, tool: [], agents: {}, guides: {} })
+
+export function readGate(): Gate {
+  try {
+    return { ...emptyGate(), ...(JSON.parse(read(GATE)) as Partial<Gate>) }
+  } catch {
+    return emptyGate()
+  }
+}
+const writeGate = (g: Gate): void => fs.writeFileSync(GATE, JSON.stringify(g))
+const pushUnique = (list: string[], item: string): string[] => (list.includes(item) ? list : [...list, item])
+
+function summarize(findings: Finding[]): GateSummary {
+  const bySensor: Record<string, number> = {}
+  for (const f of findings) bySensor[f.sensor] = (bySensor[f.sensor] ?? 0) + 1
+  return { at: now(), blocks: findings.filter(f => f.severity === 'block').length, warns: findings.filter(f => f.severity === 'warn').length, bySensor }
+}
+
+function createAdhoc(diffs: FileDiff[], config: SensorConfig): string {
+  const tier: Tier = tierFromDiff(diffs, config)
+  const stamp = now().replace(/[-:T]/g, '').slice(0, 12)
+  let slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}`
+  for (let n = 2; exists(path.join(CHANGES, slug)); n++) slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}-${n}`
+  createChange(slug, 'chore', tier, 'Ad-hoc change made without /sdlc:start')
+  return slug
+}
+
+// Each prompt starts a turn: record the tree and reset the per-turn gate, so Stop diffs exactly this turn's changes.
 function hookPromptSubmit(): void {
   if (!exists(SDLC)) return
   const snap = snapshot()
-  if (snap) writeBaseline(snap)
+  if (!snap) return
+  writeBaseline(snap)
+  writeGate({ ...readGate(), turn: snap.at, blocks: {}, passed: {}, tool: [], agents: {} })
+}
+
+function hookSubagentStart(input: HookInput): void {
+  if (!exists(SDLC) || !input.agent_id) return
+  const snap = snapshot()
+  if (snap) writeBaseline(snap, input.agent_id)
+}
+
+// The end-of-turn gate: every built-in sensor on this turn's diff, then the fast commands (main thread only).
+function hookStop(input: HookInput, sub: boolean): void {
+  if (!exists(SDLC)) return
+  const agentId = sub ? input.agent_id : undefined
+  const snap = (agentId ? readBaseline(agentId) : null) ?? readBaseline()
+  if (!snap) return
+  const { config, rules, errors } = loadConfig()
+  const gate = readGate()
+  const owned = agentId ? new Set(gate.agents[agentId] ?? []) : null
+  const diffs = turnDiff(snap).filter(d => (isSource(d.file, config) || isProtected(d.file)) && (!owned || owned.has(d.file)))
+  if (!diffs.length) return
+  const key = agentId ?? 'main'
+  const hash = diffHash(diffs) + sha(read(path.join(SDLC, 'sensors.json')))
+  if (gate.passed[key] === hash) return
+  let slug = activeSlug()
+  if (!slug && !sub) slug = createAdhoc(diffs, config)
+  const result = runChecks({
+    point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: sub ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
+    before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null,
+  })
+  const configBlocks: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
+  const findings = [...configBlocks, ...result.findings]
+  const blocks = findings.filter(f => f.severity === 'block')
+  gate.last = summarize(findings)
+  if (!blocks.length) {
+    gate.passed[key] = hash
+    writeGate(gate)
+    if (exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
+    return
+  }
+  fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
+  const attempt = (gate.blocks[key] ?? 0) + 1
+  if (attempt > MAX_BLOCKS) {
+    writeGate(gate)
+    return out(JSON.stringify({ systemMessage: `sdlc quality gate: ${blocks.length} problem(s) unresolved after ${MAX_BLOCKS} attempts (.sdlc/unresolved.json). Ship and CI will refuse until they are fixed or the person waives them.` }))
+  }
+  gate.blocks[key] = attempt
+  writeGate(gate)
+  out(JSON.stringify({ decision: 'block', reason: `sdlc quality gate (attempt ${attempt}/${MAX_BLOCKS}): fix these before you finish.\n${formatFindings(findings)}` }))
 }
 
 const HOOKS: Record<string, (input: HookInput) => void> = {
@@ -204,6 +310,9 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
   'post-edit': hookPostEdit,
   'skill-failed': hookSkillFailed,
   'prompt-submit': () => hookPromptSubmit(),
+  'subagent-start': hookSubagentStart,
+  stop: i => hookStop(i, false),
+  'subagent-stop': i => hookStop(i, true),
 }
 
 export function cmdHook(args: Args): void {
