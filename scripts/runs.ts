@@ -26,7 +26,10 @@ child.on('error', () => process.exit(127))
 export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number } = {}): RunRow {
   const started = Date.now()
   const timeoutMs = opts.timeoutMs ?? 600_000
-  const r = spawnSync(process.execPath, ['-e', WRAPPER, cmd, String(timeoutMs)], { cwd: opts.cwd ?? ROOT, encoding: 'utf8', timeout: timeoutMs + 5_000, maxBuffer: 64 * 1024 * 1024 })
+  // A declared `node --test` must really run even when sdlc itself runs inside a node test process.
+  const env = { ...process.env }
+  delete env.NODE_TEST_CONTEXT
+  const r = spawnSync(process.execPath, ['-e', WRAPPER, cmd, String(timeoutMs)], { cwd: opts.cwd ?? ROOT, env, encoding: 'utf8', timeout: timeoutMs + 5_000, maxBuffer: 64 * 1024 * 1024 })
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`.replace(/\r\n/g, '\n').trimEnd()
   const ms = Date.now() - started
   const timedOut = (r.status === TIMED_OUT && ms >= timeoutMs) || (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'

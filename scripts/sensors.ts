@@ -285,4 +285,11 @@ export function behaviourIds(text: string, heading: string): string[] {
   return [...new Set(section.match(/\bB\d+\b/g) ?? [])]
 }
 
-export const missingBehaviours = (ids: string[], corpus: string): string[] => ids.filter(id => !new RegExp(`\\b${id}\\b`).test(corpus))
+// The rest of the line after the id, so a block says what the behaviour is.
+export function behaviourText(text: string, heading: string, id: string): string {
+  const section = new RegExp(`^##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'm').exec(text)?.[1] ?? ''
+  const line = section.split('\n').find(l => new RegExp(`\\b${id}\\b`).test(l)) ?? ''
+  return line.slice(line.search(new RegExp(`\\b${id}\\b`)) + id.length).replace(/^[\s:.\-–—)]+/, '').trim().slice(0, 80)
+}
+
+export const missingBehaviours = (ids: string[], corpus: string): string[] => ids.filter(id => !new RegExp(`(?<![A-Za-z0-9])${id}(?!\\d)`).test(corpus))

@@ -373,7 +373,7 @@ test('ship: every behaviour needs a test that names it', () => {
   write(repo, 'src/sub.js', 'export const sub = (a, b) => a - b\n')
   write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('B1 subtracts', () => assert.equal(sub(3, 1), 2))\n")
   const r = check('--at', 'ship', '--base', 'main', '--slug', 'sub')
-  assert.match(r.stdout, /\[traceability\][\s\S]*B2 has no test that names it/)
+  assert.match(r.stdout, /\[traceability\][\s\S]*B2 .*has no test that names it/)
 })
 
 test('an ad-hoc change that started small is re-tiered at ship as it grows', () => {
@@ -393,4 +393,29 @@ test('ship refuses an ad-hoc tier M change with no plan', () => {
   const slug = (sdlc(repo, ['status', '--json']).stdout.match(/adhoc-[\d-]+/) ?? [''])[0]
   const r = check('--at', 'ship', '--slug', slug)
   assert.match(r.stdout, /\[adhoc\][\s\S]*run \/sdlc:start adhoc-/)
+})
+
+test('sdlc run does not inherit NODE_TEST_CONTEXT: a failing node --test records a non-zero exit', () => {
+  sdlc(repo, ['new', 'rn', '--type', 'chore', '--tier', 'S'])
+  write(repo, 'test/bad.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\ntest('bad', () => assert.equal(1, 2))\n")
+  write(repo, 'package.json', '{ "type": "module" }\n')
+  sdlc(repo, ['run', '--slug', 'rn', '--', 'node --test test/bad.test.js'], { env: { NODE_TEST_CONTEXT: 'child-v8' } })
+  const rows = fs.readFileSync(path.join(repo, '.sdlc/changes/rn/runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as { exit: number })
+  assert.notEqual(rows.at(-1)?.exit, 0)
+})
+
+test('ship: an old committed test naming B2 does not satisfy this change\'s B2', () => {
+  write(repo, 'test/old.test.js', "// B2 from long ago\n")
+  featureRepo()
+  write(repo, '.sdlc/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract\n2. B2 negative numbers\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, 'src/sub.js', 'export const sub = (a, b) => a - b\n')
+  write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('test_B1_subtracts', () => assert.equal(sub(3, 1), 2))\n")
+  assert.match(check('--at', 'ship', '--base', 'main', '--slug', 'sub').stdout, /B2 \(negative numbers\) has no test that names it/)
+})
+
+test('ship: a fixture added in the branch travels with the tests, so an already-passing test is not a false red', () => {
+  featureRepo()
+  write(repo, 'test/fixtures/data.json', '{ "n": 3 }\n')
+  write(repo, 'test/data.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport fs from 'node:fs'\nimport { add } from '../src/add.js'\nconst d = JSON.parse(fs.readFileSync(new URL('./fixtures/data.json', import.meta.url), 'utf8'))\ntest('B1 uses data', () => assert.equal(add(d.n, 1), 4))\n")
+  assert.match(check('--at', 'ship', '--base', 'main', '--slug', 'sub').stdout, /already pass on the base/)
 })

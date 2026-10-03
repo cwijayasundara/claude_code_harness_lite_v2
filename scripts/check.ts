@@ -7,7 +7,7 @@ import {
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
-import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, missingBehaviours, tierFromDiff } from './sensors.ts'
+import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 
@@ -165,9 +165,9 @@ export function cmdCheckPlan(args: Args): void {
   out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /sdlc-approve ${slug} impact.${tier}`, ...rows, ...unverified, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
 }
 
-function testCorpus(config: SensorConfig): string {
-  const files = [...(git(['ls-files']) ?? '').split('\n'), ...(git(['ls-files', '--others', '--exclude-standard']) ?? '').split('\n')]
-  return files.filter(f => f && isTest(f, config)).map(f => read(path.join(ROOT, f))).join('\n')
+// Only the tests this branch adds or changes can show a behaviour is covered: an old test naming B1 proves nothing new.
+function testCorpus(config: SensorConfig, diffs: FileDiff[]): string {
+  return diffs.filter(d => d.status !== 'D' && !d.binary && isTest(d.file, config)).map(d => read(path.join(ROOT, d.file))).join('\n')
 }
 
 const DEP_DIRS = ['node_modules', '.venv', 'vendor']
@@ -175,24 +175,33 @@ const DEP_DIRS = ['node_modules', '.venv', 'vendor']
 // Proof against the base, recomputed (no log entry can fake it): the branch's changed tests run on top of the base code.
 // 'red' (feature, bugfix, incident, greenfield): they must FAIL there, so they prove the change.
 // 'green' (refactor): they must PASS there, so they pin the old behaviour the refactor preserves.
-function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base: string, mode: 'red' | 'green'): Finding[] {
+function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base: string, mode: 'red' | 'green', budgetMs: number): Finding[] {
   const block = (message: string, fix: string): Finding[] => [{ sensor: 'red-proof', severity: 'block', message, fix }]
   const cmd = config.full.test ?? config.fast.test
   const tests = diffs.filter(d => d.status !== 'D' && !d.binary && isTest(d.file, config)).map(d => d.file)
+  // Support files (fixtures, testdata) travel with the tests, or a test that needs them would fail on the base for the wrong reason.
+  const overlay = diffs.filter(d => d.status !== 'D' && !d.binary && (isTest(d.file, config) || matchesAny(d.file, config.testSupport))).map(d => d.file)
+  const t0 = Date.now()
+  const left = (): number => Math.max(1000, budgetMs - (Date.now() - t0))
   if (!tests.length) return mode === 'red' ? block('no test file changed, so nothing proves this change', 'write the failing test first') : []
   if (!cmd) return block('no test command declared (full.test or fast.test in .sdlc/sensors.json)', 'declare it so red can be proven')
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-red-'))
   try {
     if (git(['worktree', 'add', '--detach', tmp, base]) === null) return block(`could not create a worktree at ${base}`, 'run `git worktree prune` and retry')
-    for (const dep of DEP_DIRS) if (exists(path.join(ROOT, dep)) && !exists(path.join(tmp, dep))) fs.symlinkSync(path.join(ROOT, dep), path.join(tmp, dep), 'junction')
-    const sanity = runCommand(cmd, { cwd: tmp })
+    try {
+      for (const dep of DEP_DIRS) if (exists(path.join(ROOT, dep)) && !exists(path.join(tmp, dep))) fs.symlinkSync(path.join(ROOT, dep), path.join(tmp, dep), 'junction')
+    } catch (e) {
+      return block(`could not link dependencies into the base worktree: ${(e as Error).message}`, 'check permissions for symlinks, or the person waives red-proof')
+    }
+    const sanity = runCommand(cmd, { cwd: tmp, timeoutMs: left() })
     recordRun(slug, { ...sanity, source: 'ship' })
-    if (sanity.exit !== 0) return block("can't establish red: the tests fail on the base even without the new tests", 'make the test command pass from a clean checkout of the base (dependencies, fixtures), or the person waives red-proof')
-    for (const t of tests) {
+    if (sanity.exit !== 0 || sanity.timedOut) return block("can't establish red: the tests fail on the base even without the new tests", 'make the test command pass from a clean checkout of the base (dependencies, fixtures), or the person waives red-proof')
+    for (const t of overlay) {
       fs.mkdirSync(path.dirname(path.join(tmp, t)), { recursive: true })
       fs.copyFileSync(path.join(ROOT, t), path.join(tmp, t))
     }
-    const run = runCommand(cmd, { cwd: tmp })
+    const run = runCommand(cmd, { cwd: tmp, timeoutMs: left() })
+    if (run.timedOut) return block('proof timed out: the tests did not finish on the base within the budget', 'make the test command faster, or the person waives red-proof')
     recordRun(slug, mode === 'red' ? { ...run, expectFail: true, source: 'ship' } : { ...run, source: 'ship' })
     if (mode === 'red' && run.exit === 0) return block('the new tests already pass on the base: they prove nothing about this change', 'write a test that fails without the change, then make it pass')
     if (mode === 'green' && run.exit !== 0) return block('the refactor\'s tests fail on the base: they do not describe the behaviour being preserved', 'write characterization tests that pass on the old code first, then refactor under them')
@@ -203,8 +212,8 @@ function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base
   }
 }
 
-export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff[], base: string | null): Finding[] {
-  if (!exists(path.join(CHANGES, slug))) return []
+export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff[], base: string | null, budgetMs = 1_800_000): Finding[] {
+  if (!exists(path.join(CHANGES, slug))) return [{ sensor: 'traceability', severity: 'block', message: `unknown change ${slug}`, fix: 'pass a slug that exists under .sdlc/changes/' }]
   const change = loadChange(slug)
   const findings: Finding[] = []
   const hasPlan = exists(path.join(change.dir, 'plan.md'))
@@ -216,17 +225,21 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
     findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is now tier ${tier} with no plan`, fix: `run /sdlc:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
   }
   const spec = read(path.join(change.dir, 'spec.md'))
-  const ids = spec ? behaviourIds(spec, 'Behaviours') : behaviourIds(read(path.join(change.dir, 'plan.md')), 'Slices')
-  const corpus = ids.length ? testCorpus(config) : ''
+  const plan = read(path.join(change.dir, 'plan.md'))
+  let [source, heading] = [spec, 'Behaviours']
+  let ids = behaviourIds(spec, heading)
+  if (!ids.length) { [source, heading] = [plan, 'Slices']; ids = behaviourIds(plan, heading) }
+  const corpus = ids.length ? testCorpus(config, diffs) : ''
   for (const id of missingBehaviours(ids, corpus)) {
-    findings.push({ sensor: 'traceability', severity: 'block', message: `${id} has no test that names it`, fix: `add a test whose name or comment says ${id} and proves it` })
+    const what = behaviourText(source, heading, id)
+    findings.push({ sensor: 'traceability', severity: 'block', message: `${id}${what ? ` (${what})` : ''} has no test that names it`, fix: `add a test whose name or comment says ${id} and proves it` })
   }
   // Per change type: red for new behaviour, green-on-base for refactors, nothing extra for chore and migration
   // (their full suite already runs as the ship gate's commands).
-  const RED_TYPES = ['feature', 'bugfix', 'incident', 'greenfield']
   const always = change.type === 'bugfix' || change.type === 'incident'
-  if (base && RED_TYPES.includes(change.type) && (tier !== 'S' || always)) findings.push(...proofOnBase(slug, config, diffs, base, 'red'))
-  if (base && change.type === 'refactor' && tier !== 'S') findings.push(...proofOnBase(slug, config, diffs, base, 'green'))
+  const mode = ['feature', 'bugfix', 'incident', 'greenfield'].includes(change.type) && (tier !== 'S' || always) ? 'red' : change.type === 'refactor' && tier !== 'S' ? 'green' : null
+  if (mode && !base) findings.push({ sensor: 'red-proof', severity: 'warn', message: 'no base branch found; proof against the base skipped', fix: 'pass --base <branch>' })
+  else if (mode && base) findings.push(...proofOnBase(slug, config, diffs, base, mode, budgetMs))
   return findings
 }
 
@@ -242,7 +255,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...contractFindings(i),
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
-  if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base))
+  if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   return applyWaivers(findings, i.slugs)
 }
