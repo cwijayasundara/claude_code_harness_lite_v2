@@ -6,7 +6,7 @@ import {
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
-import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan } from './sensors.ts'
+import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 
@@ -174,6 +174,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...secretsInDiff(diffs),
     ...rulesSensor(diffs, i.rules),
     ...contractFindings(i),
+    ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   return applyWaivers(findings, i.slugs)

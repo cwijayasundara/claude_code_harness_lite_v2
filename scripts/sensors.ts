@@ -1,6 +1,6 @@
 // Language-agnostic sensors: pure functions from a parsed diff and config to findings.
 // Language knowledge lives in the pattern tables below, never in code paths per language.
-import { type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
+import { parseConfig, parseRules, type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
 
 export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
   { id: 'skip-or-only', re: /\b(?:it|describe|test|context|suite)\.(?:skip|only|todo)\s*[.(]/, what: 'test skipped or focused' },
@@ -202,4 +202,71 @@ export function contractsFromPlan(planText: string): string[] {
     .split('\n')
     .map(row => /^\s*[-*]\s*(?:rename|remove|drop|retire)\s+`([A-Za-z_]\w*)`/i.exec(row)?.[1])
     .filter((id): id is string => Boolean(id))
+}
+
+export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
+export const isProtected = (file: string): boolean => matchesAny(file, PROTECTED)
+const SENSORS = '.sdlc/sensors.json'
+const RULES = '.sdlc/rules.json'
+
+const removedFrom = (before: string[], after: string[]): string[] => before.filter(x => !after.includes(x))
+
+export function weakensConfig(beforeText: string, afterText: string): string[] {
+  const after = parseConfig(afterText)
+  if (after.errors.some(e => /not valid JSON|must be a JSON object/.test(e))) return ['sensors.json no longer parses']
+  const b = parseConfig(beforeText).config
+  const a = after.config
+  const reasons: string[] = []
+  for (const k of ['fileLines', 'diffLines'] as const) if (a.limits[k] > b.limits[k]) reasons.push(`limits.${k} raised ${b.limits[k]} → ${a.limits[k]}`)
+  for (const k of ['tests', 'contracts'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
+  for (const g of removedFrom(a.ignore, b.ignore)) reasons.push(`ignore added ${g}`)
+  for (const k of removedFrom(a.knownRed, b.knownRed)) reasons.push(`knownRed added ${k}`)
+  for (const p of ['fast', 'full'] as const) for (const name of removedFrom(Object.keys(b[p]), Object.keys(a[p]))) reasons.push(`${p}.${name} removed`)
+  for (const c of removedFrom(b.consumers.map(x => x.name), a.consumers.map(x => x.name))) reasons.push(`consumer ${c} removed`)
+  for (const l of b.layers) {
+    const now = a.layers.find(x => x.from === l.from)
+    if (!now) reasons.push(`layer ${l.from} removed`)
+    else for (const t of removedFrom(l.mustNotImport, now.mustNotImport)) reasons.push(`layer ${l.from} now allows ${t}`)
+  }
+  return reasons
+}
+
+export function weakensRules(beforeText: string, afterText: string): string[] {
+  const b = parseRules(beforeText).rules
+  const a = parseRules(afterText).rules
+  const reasons = removedFrom(b.map(r => r.id), a.map(r => r.id)).map(id => `rule ${id} removed`)
+  for (const r of b) if (r.action === 'block' && a.find(x => x.id === r.id)?.action === 'warn') reasons.push(`rule ${r.id} downgraded to warn`)
+  return reasons
+}
+
+export function onlyKnownRedRemoved(beforeText: string, afterText: string): boolean {
+  try {
+    const b = JSON.parse(beforeText) as Record<string, unknown> & { knownRed?: string[] }
+    const a = JSON.parse(afterText) as Record<string, unknown> & { knownRed?: string[] }
+    const { knownRed: kb = [], ...restB } = b
+    const { knownRed: ka = [], ...restA } = a
+    return JSON.stringify(restA) === JSON.stringify(restB) && ka.every(k => kb.includes(k))
+  } catch {
+    return false
+  }
+}
+
+export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | 'ci'; toolEdited?: Set<string>; before: (f: string) => string; after: (f: string) => string }): Finding[] {
+  const findings: Finding[] = []
+  for (const d of diffs.filter(f => isProtected(f.file))) {
+    const reasons = d.file === SENSORS ? weakensConfig(o.before(d.file), o.after(d.file)) : d.file === RULES ? weakensRules(o.before(d.file), o.after(d.file)) : d.status === 'D' ? [`${d.file} deleted`] : []
+    if (o.point === 'stop') {
+      if (o.toolEdited && !o.toolEdited.has(d.file)) {
+        if (d.file === SENSORS && onlyKnownRedRemoved(o.before(d.file), o.after(d.file))) continue
+        findings.push({ sensor: 'harness-tamper', severity: 'block', file: d.file, message: 'harness file changed outside Write/Edit (via Bash?)', fix: `revert it (git checkout -- ${d.file}), or ask the person to make this change` })
+      } else if (reasons.length) {
+        findings.push({ sensor: 'harness-tamper', severity: 'warn', file: d.file, message: reasons.join('; '), fix: 'the person allowed this edit; it shows in the review brief', labels: ['weakens-harness'] })
+      }
+      continue
+    }
+    findings.push(reasons.length
+      ? { sensor: 'harness-tamper', severity: 'block', file: d.file, message: reasons.join('; '), fix: `a person must approve: /sdlc-waive harness-tamper ${d.file} <reason>`, labels: ['weakens-harness'] }
+      : { sensor: 'harness-tamper', severity: 'warn', file: d.file, message: 'harness file changed', fix: 'needs human review' })
+  }
+  return findings
 }

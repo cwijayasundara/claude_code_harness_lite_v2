@@ -3,7 +3,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, hook } from './testkit.ts'
+import { makeRepo, sdlc, hook, write } from './testkit.ts'
 
 let repo: string
 beforeEach(() => {
@@ -35,4 +35,41 @@ test('evidence files are human- or script-only: model edits and Bash writes are 
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'cat .sdlc/changes/tiny/verification.md' } }).stdout, '')
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'tail -5 .sdlc/changes/tiny/runs.jsonl' } }).stdout, '')
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts run -- "npm test"' } }).stdout, '')
+})
+
+const decision = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined)
+const reasonOf = (r: { stdout: string }) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason as string
+
+test('editing a protected harness file asks the person, naming what gets weaker', () => {
+  sdlc(repo, ['init'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  const r = hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json'), old_string: '500', new_string: '5000' } })
+  assert.equal(decision(r), 'ask')
+  assert.match(reasonOf(r), /diffLines raised 500 → 5000/)
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'CLAUDE.md'), content: '# x' } })), 'ask')
+})
+
+test('sibling repo edits are denied unless the consumer is in an approved impact and the plan', () => {
+  sdlc(repo, ['init'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'checkout', path: '../checkout' }] }))
+  const consumerFile = path.join(path.dirname(repo), 'checkout', 'src', 'cart.ts')
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(path.dirname(repo), 'other', 'x.ts') } })), 'deny')
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: consumerFile } })), 'deny')
+  sdlc(repo, ['new', 'rate', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/rate/plan.md', '## Files\n- schema/**\n- ../checkout/src/**\n')
+  write(repo, '.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['discount_rate'], hits: [{ consumer: 'checkout', file: 'src/cart.ts', line: 1, id: 'discount_rate' }], missing: [] }))
+  sdlc(repo, ['approve', 'rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: consumerFile } })), undefined)
+  assert.equal(hook(repo, 'pre-edit', { tool_input: { file_path: '/private/tmp/scratch/notes.md' } }).stdout, '', 'paths beyond siblings are left to normal permissions')
+})
+
+test('read-only agents cannot write files through Bash; their reads and the sdlc recorder are fine', () => {
+  sdlc(repo, ['init'])
+  const as = (agent_type: string, command: string) => decision(hook(repo, 'pre-bash', { agent_type, tool_input: { command } }))
+  assert.equal(as('sdlc:reviewer', 'echo fixed > src/app.js'), 'deny')
+  assert.equal(as('sdlc:verifier', "sed -i '' 's/a/b/' src/app.js"), 'deny')
+  assert.equal(as('sdlc:scout', 'git checkout -- src/app.js'), 'deny')
+  assert.equal(as('sdlc:reviewer', 'git diff main...HEAD 2>&1 | tail -50'), undefined)
+  assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
+  assert.equal(as('sdlc:implementer', 'echo x > src/app.js'), undefined)
 })

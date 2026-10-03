@@ -1,10 +1,13 @@
 // sdlc settings hooks: read the hook event JSON on stdin, decide, and print the hook's JSON answer.
 import fs from 'node:fs'
+import path from 'node:path'
 import {
   SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
-  planFiles, isPlanned, EVIDENCE_RE, relPosix, scanSecrets, planProblems, type Args, type HookInput,
+  planFiles, isPlanned, approvalOf, EVIDENCE_RE, relPosix, scanSecrets, planProblems, type Args, type HookInput,
 } from './core.ts'
 import { snapshot, writeBaseline } from './diffs.ts'
+import { isProtected, weakensConfig, weakensRules } from './sensors.ts'
+import { loadConfig } from './check.ts'
 
 function readStdin(): HookInput {
   try {
@@ -44,12 +47,47 @@ function isSafeEvidenceCommand(cmd: string): boolean {
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
+// The text a Write/Edit would leave behind, so a weakening is shown before it happens.
+function proposed(file: string, t: HookInput['tool_input']): string | null {
+  if (typeof t?.content === 'string') return t.content
+  if (typeof t?.old_string !== 'string' || typeof t?.new_string !== 'string') return null
+  const current = read(file)
+  return t.replace_all ? current.split(t.old_string).join(t.new_string) : current.replace(t.old_string, t.new_string)
+}
+
+function protectedEditReason(file: string, rel: string, t: HookInput['tool_input']): string {
+  const after = proposed(file, t)
+  const reasons = after === null ? [] : rel === '.sdlc/sensors.json' ? weakensConfig(read(file), after) : rel === '.sdlc/rules.json' ? weakensRules(read(file), after) : []
+  return reasons.length
+    ? `This edit weakens the harness: ${reasons.join('; ')}. Allow it only if you, the person, want this.`
+    : `${rel} is part of the harness (peer-reviewed config). Allow this edit?`
+}
+
+// Sibling repos (../<dir>/...) are consumers at most: writable only inside an approved cross-repo change.
+function siblingEditReason(rel: string): string | null {
+  const { config } = loadConfig()
+  const consumer = config.consumers.find(c => rel.startsWith(toPosix(path.normalize(c.path)).replace(/\/$/, '') + '/'))
+  if (!consumer) return `${rel} is outside this repo and not a declared consumer. Edit only this repo.`
+  const slug = activeSlug()
+  if (!slug || approvalOf(slug, 'impact') !== 'approved') return `${consumer.name} is a consumer repo: edit it only in a change whose cross-repo impact the person approved (/sdlc-approve <slug> impact).`
+  if (!isPlanned(rel, planFiles(slug))) return `${rel} is not in ${slug}/plan.md ## Files. Add it to the plan first.`
+  return null
+}
+
+const READ_ONLY_AGENT = /(?:^|:)(?:scout|reviewer|verifier)$/
+const WRITES_FILES = /(?:^|[^0-9&>])>{1,2}(?!\s*&|\s*\/dev\/null)|\btee\b|\bsed\s+-i|\bperl\s+-i|\b(?:cp|mv|rm|rmdir|truncate|dd|touch|mkdir|chmod|ln)\s|\bgit\s+(?:add|commit|checkout|restore|reset|apply|stash|push|rebase|merge|cherry-pick|rm|mv|tag)\b|\b(?:npm|pnpm|yarn)\s+(?:install|i|add|remove|uninstall)\b|\bpip3?\s+install\b/
+const SDLC_RECORDER = /sdlc\.ts["']?\s+(?:run|verify-report|check|check-file|status|skill|diff|scope-drift)\b/
+
 function hookPreBash(input: HookInput): void {
   const cmd = String(input.tool_input?.command ?? '')
   if (HUMAN_ONLY.test(cmd) || (EVIDENCE_RE.test(cmd) && !isSafeEvidenceCommand(cmd))) {
     return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); runs.jsonl only from `sdlc.ts run`; gate state only from the hooks. Read these files with the Read tool.')
   }
   if (!exists(SDLC)) return
+  const agent = input.agent_type ?? ''
+  if (READ_ONLY_AGENT.test(agent) && WRITES_FILES.test(cmd) && !SDLC_RECORDER.test(cmd)) {
+    return decide('deny', `${agent} is read-only: it reports and never edits. Record test runs with sdlc.ts run; leave fixes to the implementer.`)
+  }
   const sleep = /(?:^|[;&|]\s*|\s)(?:sleep|Start-Sleep(?:\s+-Seconds)?)\s+(\d+)/i.exec(cmd)
   if (sleep && Number(sleep[1]) >= 30) {
     return decide('deny', 'Do not sleep-poll: background agents and shells notify you when they finish. End the turn or do other useful work.')
@@ -63,6 +101,13 @@ function hookPreEdit(input: HookInput): void {
     return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\` and generate verification.md with \`sdlc.ts verify-report <slug>\`.`)
   }
   if (!exists(SDLC)) return
+  const rel = relPosix(file)
+  if (/^\.\.\/[^/]+\//.test(rel) && !rel.startsWith('../../')) {
+    const reason = siblingEditReason(rel)
+    if (reason) return decide('deny', reason)
+    return
+  }
+  if (isProtected(rel)) return decide('ask', protectedEditReason(file, rel, input.tool_input))
   const slug = activeSlug()
   if (!slug) return
   const stage = loadChange(slug).next?.stage

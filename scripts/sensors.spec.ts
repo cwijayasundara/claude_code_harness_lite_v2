@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
-import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan } from './sensors.ts'
+import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, onlyKnownRedRemoved, harnessTamper } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
   file, status, added: added.map((text, i) => ({ n: i + 1, text })), removed: removed.map((text, i) => ({ n: i + 1, text })),
@@ -164,4 +164,35 @@ test('retired identifiers: migration history does not hide a schema rename; ever
   assert.deepEqual(retiredIdentifiers([schema], CFG, 'CREATE TABLE billing (promotional_discount NUMERIC)'), ['discount_rate'])
   const mig = fd('migrations/2.sql', ['ALTER TABLE t DROP COLUMN aaa_col, DROP COLUMN bbb_col;'], [], 'A')
   assert.deepEqual(retiredIdentifiers([mig], CFG, '').sort(), ['aaa_col', 'bbb_col'])
+})
+
+const J = (o: object) => JSON.stringify(o, null, 2)
+
+test('weakensConfig names every loosening and nothing else', () => {
+  const before = J({ fast: { lint: 'eslint .', test: 'npm test' }, limits: { diffLines: 500 }, layers: [{ from: 'src/domain/**', mustNotImport: ['infra'], why: 'w' }], knownRed: [] })
+  const after = J({ fast: { test: 'npm test' }, limits: { diffLines: 900 }, layers: [], knownRed: ['fast.test'], ignore: ['**/*.md', '**/*.lock', '**/package-lock.json', 'src/**'] })
+  const reasons = weakensConfig(before, after).join('\n')
+  for (const r of [/diffLines raised 500 → 900/, /fast\.lint removed/, /layer src\/domain\/\*\* removed/, /knownRed added fast\.test/, /ignore added src\/\*\*/]) assert.match(reasons, r)
+  assert.deepEqual(weakensConfig(before, J({ fast: { lint: 'eslint . --max-warnings 0', test: 'npm test' }, limits: { diffLines: 400 }, layers: [{ from: 'src/domain/**', mustNotImport: ['infra', 'http'], why: 'w' }] })), [])
+  assert.deepEqual(weakensConfig(before, '{ broken'), ['sensors.json no longer parses'])
+})
+
+test('onlyKnownRedRemoved accepts the ratchet and nothing more', () => {
+  const before = J({ fast: { lint: 'x' }, knownRed: ['fast.lint'] })
+  assert.ok(onlyKnownRedRemoved(before, J({ fast: { lint: 'x' }, knownRed: [] })))
+  assert.ok(!onlyKnownRedRemoved(before, J({ fast: { lint: 'y' }, knownRed: [] })))
+})
+
+test('harnessTamper: Bash-made edits block at Stop, weakening blocks at ship, plain edits warn', () => {
+  const cfgDiff = fd('.sdlc/sensors.json', ['x'], ['y'])
+  const before = () => J({ limits: { diffLines: 500 } })
+  const weaker = () => J({ limits: { diffLines: 900 } })
+  const viaBash = harnessTamper([cfgDiff], { point: 'stop', toolEdited: new Set(), before, after: weaker })
+  assert.match(viaBash[0]?.message ?? '', /outside Write\/Edit/)
+  assert.equal(viaBash[0]?.severity, 'block')
+  assert.equal(harnessTamper([cfgDiff], { point: 'stop', toolEdited: new Set(['.sdlc/sensors.json']), before, after: weaker })[0]?.severity, 'warn')
+  const ship = harnessTamper([cfgDiff], { point: 'ship', before, after: weaker })
+  assert.deepEqual([ship[0]?.severity, ship[0]?.labels], ['block', ['weakens-harness']])
+  assert.equal(harnessTamper([fd('CLAUDE.md', ['more'])], { point: 'ci', before: () => '', after: () => '' })[0]?.severity, 'warn')
+  assert.deepEqual(harnessTamper([fd('src/a.ts', ['x'])], { point: 'stop', toolEdited: new Set(), before, after: before }), [])
 })
