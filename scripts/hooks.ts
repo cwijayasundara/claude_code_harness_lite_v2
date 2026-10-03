@@ -7,7 +7,7 @@ import {
 } from './core.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
-import { loadConfig, runChecks, editFindings } from './check.ts'
+import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd, tokenize } from './shell.ts'
 
@@ -150,12 +150,6 @@ function protectedEditReason(file: string, rel: string, t: HookInput['tool_input
   return reasons.length
     ? `This edit weakens the harness: ${reasons.join('; ')}. Allow it only if you, the person, want this.`
     : `${rel} is part of the harness (peer-reviewed config). Allow this edit?`
-}
-
-// A declared consumer is recognised at any depth (../../org/checkout), whether declared relative or absolute.
-function consumerFor(rel: string): { name: string } | undefined {
-  const norm = (p: string): string => toPosix(path.normalize(path.isAbsolute(p) ? path.relative(ROOT, p) : p)).replace(/\/$/, '')
-  return loadConfig().config.consumers.find(c => rel.startsWith(norm(c.path) + '/'))
 }
 
 // Outside-repo scope (spec 8.4), deliberately narrowed: a declared consumer follows the impact and plan rules;

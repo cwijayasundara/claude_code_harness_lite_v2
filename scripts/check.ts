@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, toPosix, optString, readJsonl, activeSlug, defaultBase,
+  ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, activeSlug, defaultBase,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
@@ -327,11 +327,18 @@ export function cmdCheck(args: Args): void {
 }
 
 export function cmdCheckFile(args: Args): void {
-  const rel = args.pos[0]
-  if (!rel || !exists(SDLC)) fail('usage: check-file <path> [--json]  (in an sdlc repo)')
+  const arg = args.pos[0]
+  if (!arg || !exists(SDLC)) fail('usage: check-file <path> [--json]  (in an sdlc repo)')
+  const rel = toPosix(path.relative(ROOT, path.resolve(ROOT, arg)))
   const findings = editFindings(rel)
   if (args.opt.json) return out(JSON.stringify(findings))
   out(formatFindings(findings) || `${rel}: ok`)
+}
+
+// A declared consumer is recognised at any depth (../../org/checkout), whether declared relative or absolute.
+export function consumerFor(rel: string): { name: string } | undefined {
+  const norm = (p: string): string => toPosix(path.normalize(path.isAbsolute(p) ? path.relative(ROOT, p) : p)).replace(/\/$/, '')
+  return loadConfig().config.consumers.find(c => rel.startsWith(norm(c.path) + '/'))
 }
 
 export function cmdImpactStatus(args: Args): void {
@@ -340,7 +347,7 @@ export function cmdImpactStatus(args: Args): void {
   const { config } = loadConfig()
   const rel = toPosix(path.relative(ROOT, path.resolve(ROOT, file)))
   const impact = slug ? readImpact(slug) : null
-  const touchesContract = config.consumers.some(c => rel.startsWith(toPosix(path.normalize(c.path)).replace(/\/$/, '') + '/')) || matchesAny(rel, config.contracts)
-  const hold = Boolean(slug && impact?.hits.length && touchesContract && approvalOf(slug, 'impact') !== 'approved')
+  const touchesContract = Boolean(consumerFor(rel)) || matchesAny(rel, config.contracts)
+  const hold = Boolean(slug && needsImpact(impact) && touchesContract && approvalOf(slug, 'impact') !== 'approved')
   out(JSON.stringify({ hold, slug, consumers: [...new Set((impact?.hits ?? []).map(h => h.consumer))], hits: impact?.hits.length ?? 0 }))
 }

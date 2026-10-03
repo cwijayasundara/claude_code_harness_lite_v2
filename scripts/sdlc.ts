@@ -301,11 +301,14 @@ function cmdVendor(): void {
   out(`vendored sdlc ${version} into .sdlc/bin (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }
 
+const SENSOR_NAMES = ['test-tamper', 'suppression', 'layering', 'size', 'secrets', 'rules', 'contract-impact', 'harness-tamper', 'traceability', 'red-proof', 'adhoc', 'commands', 'config']
+
 function cmdWaive(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
   const [sensor, file, ...reason] = args.pos
   const slug = optString(args, 'slug') ?? activeSlug()
   if (!sensor || !file || !reason.length || !slug) fail('usage: waive <sensor> <file|*> <reason...>  (needs an active change)')
+  if (!SENSOR_NAMES.includes(sensor)) fail(`unknown sensor "${sensor}"; known: ${SENSOR_NAMES.join(', ')}`)
   const by = git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
   const row: Waiver = { slug, sensor, file, reason: reason.join(' '), by, at: now() }
   fs.appendFileSync(WAIVERS, JSON.stringify(row) + '\n')

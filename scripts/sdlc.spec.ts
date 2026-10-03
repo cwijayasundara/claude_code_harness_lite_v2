@@ -375,3 +375,19 @@ test('impact-status holds edits to consumer files while the impact is unapproved
   run(['approve', 'rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
   assert.equal(JSON.parse(run(['impact-status', consumerFile, '--json']).stdout).hold, false)
 })
+
+test('waive rejects an unknown sensor name', () => {
+  run(['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  const r = run(['waive', 'nonsense', '*', 'because'], { env: { SDLC_HUMAN: '1' } })
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /test-tamper/)
+})
+
+test('impact-status holds for a missing-only impact and for an absolute consumer path', () => {
+  run(['new', 'rate', '--type', 'feature', '--tier', 'L'])
+  const consumerDir = path.join(path.dirname(repo), 'checkout')
+  write('.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'checkout', path: consumerDir }] }))
+  write('.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['discount_rate'], hits: [], missing: ['discount_rate'] }))
+  const r = JSON.parse(run(['impact-status', path.join(consumerDir, 'a.ts'), '--json']).stdout)
+  assert.equal(r.hold, true)
+})

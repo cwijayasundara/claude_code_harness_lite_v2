@@ -35,17 +35,19 @@ const sdlc = ($: EngineInterface, args: string[]): string[] => sdlcArgv($.plugin
 const isInitialised = ($: EngineInterface): Promise<boolean> => $.fs.exists('.sdlc')
 const statusJson = async ($: EngineInterface): Promise<Status | null> => parseStatus((await $.process.run(sdlc($, ['status', '--json']))).stdout)
 
-async function activeStage($: EngineInterface): Promise<{ change: string | null; stage: string | null }> {
-  const status = await statusJson($)
+function stageOf(status: Status | null): { change: string | null; stage: string | null } {
   const change = status?.active ?? null
   const stage = status?.changes?.find(c => c.slug === change)?.next?.stage ?? (change ? 'done' : null)
   return { change, stage }
 }
 
+const activeStage = async ($: EngineInterface): Promise<{ change: string | null; stage: string | null }> => stageOf(await statusJson($))
+
 async function refreshBand($: EngineInterface): Promise<void> {
-  const { change, stage } = await activeStage($)
+  const status = await statusJson($)
+  const { change, stage } = stageOf(status)
   const session = await $.session.usage()
-  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: (await statusJson($))?.sensors ?? null }
+  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null }
   await update($, band, () => value)
 }
 

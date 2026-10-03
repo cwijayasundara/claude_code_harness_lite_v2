@@ -46,6 +46,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     return { value: undefined }
   })
   on('ui.log', () => ({ value: undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.notice', ($, e) => {
     world.notices.push(String((e as { text?: string }).text))
     return { value: undefined }
@@ -131,6 +132,44 @@ describe('sdlc mod', () => {
     await $.session.start(SESSION)
     const result = await $.tool.call({ tool: 'Edit', tool_use_id: 'tu2', file_path: '/work/../checkout/a.ts', old_string: 'a', new_string: 'b' })
     expect(result.result).toBe('edited')
+    expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
+  })
+
+  test('the band shows failing sensors after a refresh (state is shared with band.tsx)', async ($, on) => {
+    const world = worldOf(on)
+    world.sensors = { blocks: 1, warns: 0, bySensor: { 'test-tamper': 1 }, unresolved: 1, knownRed: 0, waivers: 0 }
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-waive', 'size * generated'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 120, scroll: { offset: 0, bodyRows: 5 }, view: {} }, viewport: { columns: 120, rows: 30 } })
+    expect(JSON.stringify(await ui.drawn())).toContain('test-tamper(1)')
+    await ui.unmount()
+  })
+
+  test('the sensors pane shows the report from /sdlc-sensors', async ($, on) => {
+    worldOf(on)
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-sensors'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-sensors', props: { title: 'sdlc sensors', isFocused: false, bodyColumns: 120, placement: 'inline', scroll: { offset: 0, bodyRows: 10 }, view: {} }, viewport: { columns: 120, rows: 30 } })
+    expect(JSON.stringify(await ui.drawn())).toContain('last gate: 0 block(s)')
+    await ui.unmount()
+  })
+
+  test('an impact hold: Approve impact runs approve as the human, Cancel denies', async ($, on) => {
+    const world = worldOf(on)
+    world.impact = { hold: true, slug: 'add-login', consumers: ['checkout'], hits: 2 }
+    let answer = 'Approve impact'
+    on('tool.call', ($2, e) =>
+      e.tool === 'AskUserQuestion' ? { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map(q => [q.question, answer])) } } : { result: 'edited' },
+    )
+    await $.session.start(SESSION)
+    const edit = { tool: 'Edit' as const, file_path: '/work/../checkout/a.ts', old_string: 'a', new_string: 'b' }
+    const ok = await $.tool.call({ ...edit, tool_use_id: 'tu3' })
+    expect(ok.result).toBe('edited')
+    expect(world.runs.find(r => r.argv.includes('approve'))?.env).toEqual({ SDLC_HUMAN: '1' })
+    world.runs.length = 0
+    answer = 'Cancel'
+    const no = await $.tool.call({ ...edit, tool_use_id: 'tu4' })
+    expect(no.deny).toContain('declined')
     expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
   })
 })

@@ -5,7 +5,7 @@
   "engines": { "node": ">=22.18" },
   "scripts": {
     "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && claude plugin test .",
-    "typecheck": "tsc -p scripts/tsconfig.json",
+    "typecheck": "tsc -p scripts/tsconfig.json && tsc -p tsconfig.json",
     "validate": "claude plugin validate .claude-plugin/plugin.json"
   },
   "devDependencies": {

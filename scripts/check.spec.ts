@@ -156,6 +156,13 @@ test('check-file reports a single file\'s cheap sensors as JSON', () => {
   assert.equal(r[0].sensor, 'test-tamper')
 })
 
+test('check-file accepts an absolute path to an untracked test file', () => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'test/a.test.js', "it.only('x', () => {})\n")
+  const r = JSON.parse(sdlc(repo, ['check-file', path.join(repo, 'test/a.test.js'), '--json']).stdout)
+  assert.equal(r[0].sensor, 'test-tamper')
+})
+
 test('an unknown --config-from ref blocks instead of falling back to defaults', () => {
   const r = check('--at', 'ci', '--base', 'main', '--config-from', 'no-such-ref')
   assert.equal(r.code, 1)

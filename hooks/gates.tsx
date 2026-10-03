@@ -32,12 +32,13 @@ export function registerGates(on: On): void {
     if (impact?.hold && impact.slug) {
       let answer: string
       try {
-        answer = await $.ui.ask(`${file} is part of a cross-repo contract change: ${impact.hits} reference(s) in ${impact.consumers.join(', ')}. Approve the impact for ${impact.slug}?`, { options: ['Approve impact', 'Cancel'], header: 'Impact' })
+        answer = await $.ui.ask(`${file.length > 120 ? '…' + file.slice(-119) : file} is part of a cross-repo contract change: ${impact.hits} reference(s) in ${impact.consumers.join(', ')}. Approve the impact for ${impact.slug}?`, { options: ['Approve impact', 'Cancel'], header: 'Impact' })
       } catch {
         return next(e)
       }
       if (answer !== 'Approve impact') return { deny: `The person declined the cross-repo impact for ${impact.slug}.` }
-      await $.process.run(sdlc($, ['approve', impact.slug, 'impact']), { env: { SDLC_HUMAN: '1' } })
+      const approved = await $.process.run(sdlc($, ['approve', impact.slug, 'impact']), { env: { SDLC_HUMAN: '1' } })
+      if (approved.exitCode !== 0) return { deny: (approved.stderr || approved.stdout).trim() || `Could not approve the impact for ${impact.slug}.` }
     }
     const result = await next(e)
     if (file && !result.deny) await notice($, e.tool_use_id, file)
