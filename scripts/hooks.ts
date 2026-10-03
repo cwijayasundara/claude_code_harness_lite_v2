@@ -86,11 +86,11 @@ const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
-function rawSafe(cmd: string, ci: boolean, loose: boolean): boolean {
+function rawSafe(cmd: string, ci: boolean): boolean {
   return cmd
     .replace(/>\|/g, '>')
     .split(/&&|\|\||;|\||\n/)
-    .filter(part => evidencePath(part, ci, loose))
+    .filter(part => evidencePath(part, ci, true))
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
@@ -117,15 +117,44 @@ export function globWrite(cmd: string): boolean {
 
 // Quotes and escapes must not hide an evidence path (run"s".jsonl): the raw text and a dequoted form are both checked.
 // tokenize gives exact words; where it refuses (substitutions, redirects), quotes and backslashes are simply dropped.
-// A command that names .sdlc anywhere (cd .sdlc && ... >> approvals.jsonl) has its bare evidence names checked too.
+// Bash cannot be resolved reliably (cd .sdlc && ... >> approvals.jsonl), so any bare evidence name counts here, even
+// a project's own results/runs.jsonl: over-denial is the accepted failure mode. Links into .sdlc are denied outright.
 export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
-  const loose = NAMES_SDLC.test(cmd) || NAMES_SDLC.test(stripQuotes(cmd))
-  if (!rawSafe(cmd, ci, loose)) return false
+  if (!rawSafe(cmd, ci) || linksIntoSdlc(cmd) || linksIntoSdlc(stripQuotes(cmd))) return false
   const { segs, bad } = tokenize(cmd)
-  if (bad) return rawSafe(stripQuotes(cmd), ci, loose) && !globWrite(cmd)
-  return segs.filter(w => evidencePath(w.join(' '), ci, loose)).every(wordsSafe) && !globWrite(cmd)
+  if (bad) return rawSafe(stripQuotes(cmd), ci) && !globWrite(cmd)
+  return segs.filter(w => evidencePath(w.join(' '), ci, true)).every(wordsSafe) && !globWrite(cmd)
 }
-const NAMES_SDLC = /\.sdlc(?![\w-])/i
+const linksIntoSdlc = (cmd: string): boolean => cmd.split(/&&|\|\||;|\||\n/).some(seg => /(?:^|\s)(?:ln|link)\s|(?:^|\s)cp\s(?:[^]*\s)?(?:-\w*s|--symbolic)/.test(seg) && /\.sdlc/i.test(seg))
+
+// Edit/Write: the target's real path (symlinked parents resolved) must not be evidence inside the real .sdlc,
+// and an existing file must not be a hard link to evidence. A project's own data/approvals.jsonl is fine.
+const EVIDENCE_IN_SDLC = /^(?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|changes\/[^/]+\/(?:runs\.jsonl|verification\.md|impact\.json))$/
+function realPath(p: string): string {
+  let dir = p
+  const rest: string[] = []
+  while (!exists(dir) && path.dirname(dir) !== dir) {
+    rest.unshift(path.basename(dir))
+    dir = path.dirname(dir)
+  }
+  try {
+    return path.join(fs.realpathSync(dir), ...rest)
+  } catch {
+    return p
+  }
+}
+export function isEvidenceFile(file: string, ci = CASE_INSENSITIVE): boolean {
+  const target = realPath(path.resolve(ROOT, file))
+  const inSdlc = toPosix(path.relative(realPath(SDLC), target))
+  if (!inSdlc.startsWith('../') && !path.isAbsolute(inSdlc) && flagged(EVIDENCE_IN_SDLC, ci).test(inSdlc)) return true
+  let st: fs.Stats
+  try { st = fs.statSync(target) } catch { return false }
+  if (st.nlink < 2) return false
+  const changes = exists(CHANGES) ? fs.readdirSync(CHANGES).flatMap(c => ['runs.jsonl', 'verification.md', 'impact.json'].map(f => path.join(CHANGES, c, f))) : []
+  return [...['approvals.jsonl', 'waivers.jsonl', '.baseline', '.gate', 'unresolved.json'].map(f => path.join(SDLC, f)), ...changes].some(e => {
+    try { const o = fs.statSync(e); return o.ino === st.ino && o.dev === st.dev } catch { return false }
+  })
+}
 
 const dequoted = (cmd: string): string => {
   const { segs, bad } = tokenize(cmd)
@@ -196,7 +225,7 @@ function hookPreBash(input: HookInput): void {
 function hookPreEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? input.tool_input?.notebook_path ?? '')
   if (!file || !exists(SDLC)) return
-  if (evidencePath(toPosix(path.resolve(ROOT, file)))) {
+  if (isEvidenceFile(file)) {
     return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\` and generate verification.md with \`sdlc.ts verify-report <slug>\`.`)
   }
   const rel = relPosix(file)

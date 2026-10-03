@@ -317,15 +317,25 @@ test('I2: the evidence guard is silent in repos without .sdlc/, even for same-na
   }
 })
 
-test('I2: in an opted-in repo only paths under .sdlc/ are evidence; cd into .sdlc cannot hide a bare name', () => {
+test('I2: in an opted-in repo Edit judges the real path: same-named project files pass, links into .sdlc do not', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  const edit = (f: string) => decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } }))
+  for (const f of ['data/approvals.jsonl', 'results/runs.jsonl', 'src/.gate', 'lib/changes/x/runs.jsonl']) assert.equal(edit(f), undefined, f)
+  for (const f of ['.sdlc/approvals.jsonl', '.sdlc/changes/tiny/runs.jsonl', '.sdlc/./waivers.jsonl']) assert.equal(edit(f), 'deny', f)
+  fs.symlinkSync(path.join(repo, '.sdlc'), path.join(repo, 'sneaky'))
+  assert.equal(edit('sneaky/approvals.jsonl'), 'deny', 'symlinked directory into .sdlc')
+  write(repo, '.sdlc/waivers.jsonl', '')
+  fs.symlinkSync(path.join(repo, '.sdlc/waivers.jsonl'), path.join(repo, 'w.jsonl'))
+  assert.equal(edit('w.jsonl'), 'deny', 'symlink to a waivers file')
+  fs.linkSync(path.join(repo, '.sdlc/waivers.jsonl'), path.join(repo, 'hard.txt'))
+  assert.equal(edit('hard.txt'), 'deny', 'hard link to a waivers file')
+})
+
+test('I2: in an opted-in repo Bash stays conservative: cd-then-relative and links into .sdlc are denied', () => {
   sdlc(repo, ['init'])
   const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
-  for (const c of ['python train.py > results/runs.jsonl', 'echo x >> data/approvals.jsonl', 'cp a lib/waivers.jsonl']) assert.equal(as(c), undefined, c)
-  for (const f of ['data/approvals.jsonl', 'results/runs.jsonl', 'src/.gate']) {
-    assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } })), undefined, f)
-  }
-  for (const c of ['cd .sdlc && echo x >> approvals.jsonl', 'cd .sdlc/changes/a && echo {} >> runs.jsonl', 'echo x >> .sdlc//approvals.jsonl', 'echo x >> .sdlc/changes/../waivers.jsonl']) assert.equal(as(c), 'deny', c)
-  for (const f of ['.sdlc/approvals.jsonl', '.sdlc/changes/a/runs.jsonl', '.sdlc/./waivers.jsonl']) {
-    assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } })), 'deny', f)
-  }
+  for (const c of ['cd .sdlc && echo x >> approvals.jsonl', 'cd .sdlc/changes/a && echo {} >> runs.jsonl', 'echo x >> .sdlc//approvals.jsonl',
+    'ln -s .sdlc/approvals.jsonl a.txt', 'ln -s "$PWD/.sdlc" s', 'cp -s .sdlc/waivers.jsonl w', 'link .sdlc/waivers.jsonl w', 'python train.py > results/runs.jsonl'])
+    assert.equal(as(c), 'deny', c)
+  for (const c of ['ls -la .sdlc', 'cp src/a.js src/b.js', 'ln -s ../lib lib2', 'cat .sdlc/approvals.jsonl']) assert.equal(as(c), undefined, c)
 })
