@@ -9,7 +9,7 @@ import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } fro
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, type FileDiff, type Finding, type SensorConfig } from './model.ts'
-import { readOnlyDenial, normCmd, tokenize } from './shell.ts'
+import { readOnlyDenial, normCmd } from './shell.ts'
 
 function readStdin(): HookInput {
   try {
@@ -97,41 +97,13 @@ function rawSafe(cmd: string, ci: boolean): boolean {
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
-// A segment's dequoted words: git staging/inspection (minus the commit message and --output) or a viewer.
-// Redirects other than /dev/null never reach here, because tokenize refuses them.
-function wordsSafe(w: string[]): boolean {
-  if (w[0] === 'git') {
-    const rest = w.slice(2).filter((x, i, a) => !/^(?:-m|--message)$/.test(a[i - 1] ?? '') || w[1] !== 'commit')
-    return /^(?:add|commit|status|diff|log|show)$/.test(w[1] ?? '') && !rest.some(x => /^--o(?:u(?:t(?:p(?:u(?:t)?)?)?)?)?(?:=|$)/.test(x))
-  }
-  return /^(?:cat|head|tail|wc|grep|rg|jq)$/.test(w[0] ?? '')
-}
-
-// A write whose target under .sdlc/ holds an unquoted glob (run?.jsonl, run[s].jsonl, approval*.jsonl) can hit evidence.
-const WRITE_VERB = /\b(?:tee|cp|mv|dd|install|ln|rm|truncate|shred|unlink)\b|\bsed\s+-\w*i/
-const unquotedGlob = (t: string): boolean => /\.sdlc\//i.test(t) && /[*?[{]/.test(t.replace(/"[^"]*"|'[^']*'/g, ''))
-export function globWrite(cmd: string): boolean {
-  return cmd.replace(/>\|/g, '>').split(/&&|\|\||;|\||\n/).some(seg => {
-    const targets = [...seg.matchAll(/>>?\s*(\S+)/g)].map(m => m[1] ?? '')
-    if (WRITE_VERB.test(seg)) targets.push(...seg.split(/[\s>]+/))
-    return targets.some(unquotedGlob)
-  })
-}
-
-// Quotes and escapes must not hide an evidence path (run"s".jsonl): the raw text and a dequoted form are both checked.
-// tokenize gives exact words; where it refuses (substitutions, redirects), quotes and backslashes are simply dropped.
-// Bash cannot be resolved reliably (cd .sdlc && ... >> approvals.jsonl), so any bare evidence name counts here, even
-// a project's own results/runs.jsonl: over-denial is the accepted failure mode. Links into .sdlc are denied outright.
+// Best-effort (spec v0.3 §5): CI is the trust boundary. A command naming evidence may only stage, inspect or view it.
 export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
-  if (!rawSafe(cmd, ci) || linksIntoSdlc(cmd) || linksIntoSdlc(stripQuotes(cmd))) return false
-  const { segs, bad } = tokenize(cmd)
-  if (bad) return rawSafe(stripQuotes(cmd), ci) && !globWrite(cmd)
-  return segs.filter(w => evidencePath(w.join(' '), ci, true)).every(wordsSafe) && !globWrite(cmd)
+  return rawSafe(cmd, ci) && rawSafe(stripQuotes(cmd), ci)
 }
-const linksIntoSdlc = (cmd: string): boolean => cmd.split(/&&|\|\||;|\||\n/).some(seg => /(?:^|\s)(?:ln|link)\s|(?:^|\s)cp\s(?:[^]*\s)?(?:-\w*s|--symbolic)/.test(seg) && /\.sdlc/i.test(seg))
 
-// Edit/Write: the target's real path (symlinked parents resolved) must not be evidence inside the real .sdlc,
-// and an existing file must not be a hard link to evidence. A project's own data/approvals.jsonl is fine.
+// Edit/Write: the target's real path (symlinked parents resolved) must not be evidence inside the real .sdlc.
+// A project's own data/approvals.jsonl is fine.
 const EVIDENCE_IN_SDLC = /^(?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|changes\/[^/]+\/(?:runs\.jsonl|verification\.md|impact\.json))$/
 function realPath(p: string): string {
   let dir = p
@@ -151,18 +123,7 @@ export function isEvidenceFile(file: string, ci = CASE_INSENSITIVE): boolean {
   const target = realPath(path.resolve(ROOT, file))
   const inSdlc = toPosix(path.relative(fold(realPath(SDLC)), fold(target)))
   if (!inSdlc.startsWith('../') && !path.isAbsolute(inSdlc) && flagged(EVIDENCE_IN_SDLC, ci).test(inSdlc)) return true
-  let st: fs.Stats
-  try { st = fs.statSync(target) } catch { return false }
-  if (st.nlink < 2) return false
-  const changes = exists(CHANGES) ? fs.readdirSync(CHANGES).flatMap(c => ['runs.jsonl', 'verification.md', 'impact.json'].map(f => path.join(CHANGES, c, f))) : []
-  return [...['approvals.jsonl', 'waivers.jsonl', '.baseline', '.gate', 'unresolved.json'].map(f => path.join(SDLC, f)), ...changes].some(e => {
-    try { const o = fs.statSync(e); return o.ino === st.ino && o.dev === st.dev } catch { return false }
-  })
-}
-
-const dequoted = (cmd: string): string => {
-  const { segs, bad } = tokenize(cmd)
-  return bad ? stripQuotes(cmd) : segs.map(w => w.join(' ')).join('\n')
+  return false
 }
 
 const flagged = (re: RegExp, ci: boolean): RegExp => (ci ? new RegExp(re.source, 'i') : re)
@@ -215,11 +176,10 @@ function hookPreBash(input: HookInput): void {
   if (!exists(SDLC)) return
   const cmd = String(input.tool_input?.command ?? '')
   // Only the person's mod commands set SDLC_HUMAN; the model never names it, however the command is spelled.
-  if (/SDLC_HUMAN/i.test(cmd) || /SDLC_HUMAN/i.test(stripQuotes(cmd)) || /SDLC_HUMAN/i.test(dequoted(cmd))) {
-    return decide('deny', 'SDLC_HUMAN is set only by the person\'s commands (/sdlc-approve, /sdlc-waive). Ask the person to run them.')
-  }
-  if (HUMAN_ONLY.test(cmd) || HUMAN_ONLY.test(dequoted(cmd)) || !isSafeEvidenceCommand(cmd)) {
-    return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); runs.jsonl only from `sdlc.ts run`; gate state only from the hooks. Read these files with the Read tool.')
+  const plain = stripQuotes(cmd)
+  if (/SDLC_HUMAN/i.test(plain) || HUMAN_ONLY.test(plain) || !isSafeEvidenceCommand(cmd)) {
+    return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); '
+      + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
   }
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands) : null
