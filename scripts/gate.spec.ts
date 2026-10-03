@@ -57,6 +57,7 @@ test('creating a missing harness file (onboarding) needs no prompt; editing an e
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'onboarded')
   fs.rmSync(path.join(repo, 'CLAUDE.md'))
   assert.equal(decision('CLAUDE.md'), 'ask', 'a committed harness file deleted mid-session still asks on re-creation')
+  assert.equal(decision('claude.md'), 'ask', 'a case variant of a committed harness file still asks')
 })
 
 test('editing a protected harness file asks the person, naming what gets weaker', () => {
