@@ -468,3 +468,19 @@ test('a section where every bullet is ignored fails instead of passing on an unr
 test('a plan with no ## Verification section keeps the all-runs fallback', () => {
   assert.match(reportFor('', [ok('npm test')]), /result: pass/)
 })
+
+test('I5: a v0.1 change whose ship.json is committed stays done and never becomes the active change', () => {
+  run(['new', 'old-chore', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/old-chore/verification.md', '---\nresult: pass\n---\n# Verification\nAll green.\n')
+  write('.sdlc/changes/old-chore/ship.json', '{ "at": "2026-01-01T00:00:00Z", "matchRatio": 1 }\n')
+  write('.sdlc/STATE.md', '---\nchange: old-chore\n---\n# State\n')
+  git('add', '-A')
+  git('commit', '-qm', 'chore: old (v0.1)')
+  const status = run(['status']).stdout
+  assert.match(status, /old-chore\s+chore\s+S\s+done/)
+  assert.doesNotMatch(status, /▶|next: /)
+  hook('prompt-submit', {})
+  write('src/new.js', 'export const n = 1\n')
+  hook('stop', {})
+  assert.match(run(['status']).stdout, /▶ adhoc-\d{8}-\d{4}/)
+})

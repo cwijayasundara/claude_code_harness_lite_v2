@@ -240,13 +240,16 @@ export function listChanges(): string[] {
 // falls back to the most recently touched change that is still unfinished.
 export function activeSlug(): string | null {
   const { data } = frontmatter(read(STATE))
-  if ('change' in data) return data.change && exists(path.join(CHANGES, data.change)) ? data.change : null
+  if ('change' in data) return data.change && exists(path.join(CHANGES, data.change)) && !isShipped(data.change) ? data.change : null
   const byMtime = listChanges()
     .filter(slug => loadChange(slug).next !== null)
     .map(slug => ({ slug, t: fs.statSync(path.join(CHANGES, slug)).mtimeMs }))
     .sort((a, b) => b.t - a.t)
   return byMtime[0]?.slug ?? null
 }
+
+// Shipped means the scope record was committed with the change, which git can prove. v0.1 changes count too.
+export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug, 'ship.json')))]))
 
 export function loadChange(slug: string): Change {
   const dir = path.join(CHANGES, slug)
@@ -274,15 +277,15 @@ export function loadChange(slug: string): Change {
       case 'review':
         return review.result === 'pass' || review.result === 'accepted'
       case 'ship':
-        // Shipped means the scope record was committed with the change, which git can prove.
-        return Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(dir, 'ship.json')))]))
+        return isShipped(slug)
       default:
         return exists(path.join(dir, ARTIFACTS[stage] ?? ''))
     }
   }
 
   let next: Next | null = null
-  for (const stage of stages) {
+  // A committed ship record ends the change, whatever older stages say (a v0.1 hand-written verification.md).
+  for (const stage of stages.includes('ship') && isShipped(slug) ? [] : stages) {
     if (!isDone(stage)) {
       next = { stage, kind: 'work' }
       break
