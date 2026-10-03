@@ -51,7 +51,7 @@ Every item in the post maps to a mechanism here. §-numbers refer to this spec.
 | Explicit defaults instead of guesses | `intent.md ## Decisions`; missing intake fields asked for or recorded as explicit defaults (§8.3, §11) |
 | Confirmation only for high blast radius | Tier gates plus the `impact` gate (§6.3) |
 | Automated verification | Declared commands plus built-in sensors at Stop, ship and CI (§5, §6) |
-| Silent success, verbose failure | Output contract (§7.6) |
+| Silent success, verbose failure | Output contract (§7.8) |
 | Promote prose to executable rules | `rules.json`, `/sdlc:rule`, and metrics-driven suggestions (§8.5) |
 | Impact analysis across the workspace | contract-impact sensor (§5.3) |
 | Multi-repo confirmation gate | `impact` approval; a held tool call in the mod (§6.3, §10) |
@@ -80,7 +80,7 @@ Onboard discovers it, and the person confirms it.
   "consumers": [{ "name": "checkout-service", "path": "../checkout-service", "repo": "acme/checkout-service", "test": "npm test" }],
   "layers":    [{ "from": "src/domain/**", "mustNotImport": ["infra", "http"], "why": "domain stays framework-free" }],
   "limits":    { "fileLines": 400, "diffLines": 500 },
-  "knownRed":  []                                            // written by onboard only (§7.4)
+  "knownRed":  []                                            // written by onboard only (§7.5)
 }
 ```
 
@@ -102,9 +102,15 @@ All sensors are pure functions over one parsed diff: `{ file, status: A|M|D|R, a
 ### 5.3 contract-impact
 
 1. Take every source file in the diff that matches `contracts`.
-2. Find the **removed identifiers**: tokens matching `[A-Za-z_][A-Za-z0-9_]{2,}` that appear in removed lines but not in added lines of that file. Drop a small stop-list of keywords. Cap at 50 identifiers.
-3. For each consumer, run `git -C <path> grep -n -w -F -e <id>…`.
-4. Each hit becomes a finding: `checkout-service/src/cart.ts:42 still uses discount_rate`.
+2. Collect **retired identifiers** from two sources:
+   - **(a) Removed tokens:** tokens matching `[A-Za-z_][A-Za-z0-9_]{2,}` that appear in removed lines but not in added lines of that file.
+   - **(b) Rename and drop statements** in added lines, via a small data table, `RETIRE_PATTERNS`: `RENAME COLUMN a TO b`, `DROP COLUMN a`, `ALTER TABLE … RENAME TO`, `rename_column :t, :a, :b`, `remove_column`, `RenameField(…old_name='a'`, `RemoveField`, `renameColumn('a'`, `dropColumn('a'`. These catch the canonical migration-style rename, which lives only in added lines of a new file.
+3. **Filter out noise:**
+   - Drop identifiers that still occur anywhere in the producer's `contracts` files after the change.
+   - Drop a stop-list of generic words (`id`, `name`, `type`, `string`, `number`, `value`, `data`, keywords).
+   - Cap at 50.
+4. For each consumer, run `git -C <path> grep -n -w -F -e <id>…`.
+5. Each hit becomes a finding: `checkout-service/src/cart.ts:42 still uses discount_rate`.
 
 | Situation | Result |
 |---|---|
@@ -120,12 +126,14 @@ This runs on files matched by `tests`, plus suppression comments in any file. Th
 
 | Check | Rule | Severity |
 |---|---|---|
-| Deleted test file | status D on a test file | block |
-| Added skip or focus | Added line matches `\.(skip\|only)\(`, `\bx(it\|describe\|test)\(`, `@pytest\.mark\.(skip\|xfail)`, `@unittest\.skip`, `@Disabled`, `@Ignore`, `t\.Skip\(`, `\bpending\b` | block |
-| Fewer assertions | In a modified test file, removed assertion tokens outnumber added ones. Tokens: `assert`, `expect(`, `should`, `Assert.`, `t.Error`, `t.Fatal`, `require.` | block |
+| Deleted test file | status D on a test file that git's rename detection does not pair with an added file, and whose content does not reappear (≥ 60% similar lines) in a new untracked file | block |
+| Added skip or focus | Added line matches, anchored to call or annotation position: `\b(it\|describe\|test)\.(skip\|only)\(`, `^\s*x(it\|describe\|test)\(`, `^\s*@pytest\.mark\.(skip\|xfail)`, `^\s*@unittest\.skip`, `^\s*@(Disabled\|Ignore)\b`, `\bt\.Skip(Now)?\(`, `^\s*pending\b` (RSpec block form only; never inside a string) | block |
+| Fewer assertions | Counted **across all test files in the diff** (so moving tests between files is neutral): removed assertion calls outnumber added ones. Comment lines are excluded. Tokens: `assert\w*\(`, `expect\(`, `\.should\b`, `Assert\.\w+\(`, `t\.(Error\|Fatal)f?\(`, `require\.\w+\(` | block |
 | Lowered threshold | In a config file, a number decreases on a line matching `coverage\|threshold\|fail_under\|lines\|branches\|functions\|statements` | block |
 | Suppression added | Added line matches `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `# type: ignore`, `# noqa`, `pylint: disable`, `//nolint`, `@SuppressWarnings`, `rubocop:disable` | block, unless the same line carries a reason after `--` or `because` |
 | Snapshot rewritten | `__snapshots__/**` or `*.snap` modified | warn |
+
+Every `TAMPER_PATTERNS` row ships with a **negative fixture** in the unit tests. For example, `expect(t.status).toBe('pending')` must not match the RSpec `pending` row.
 
 ### 5.5 layering
 
@@ -150,11 +158,14 @@ This runs on files matched by `tests`, plus suppression comments in any file. Th
 - `sdlc.ts run [--expect-fail] [--slug s] -- <cmd>` runs the command and appends a row to `.sdlc/changes/<slug>/runs.jsonl`: `{ at, cmd, exit, ms, tail (last 30 lines), expectFail }`.
 - **Every verdict in the harness reads exit codes from this log only**: `verification.md` `result:`, ship, and the declared-command sensor.
 - A model-written `result: pass` with no matching passing row is ignored. This fixes trial defect 2.
-- **Proof of red.** At ship, the following need, for each acceptance command in plan `## Slices`, an `expectFail` row with a non-zero exit **earlier** than a passing row:
-  - tiers M and L of every type
-  - bugfix at every tier
+- **Proof of red is recomputed, never read from a log.** The model chooses which commands it logs, and a run made before the test file exists fails for the wrong reason. So ship and CI recompute it instead. Applies to tiers M and L of every type, and to bugfix at every tier:
+  1. `git worktree add` at the merge-base.
+  2. Overlay the branch's added and modified test files (by the `tests` globs).
+  3. Run `full.test`, or each acceptance command in plan `## Slices`, through `sdlc.ts run`.
+  4. **It must exit non-zero.**
 
-  A missing proof is a **block**: *"no failing run recorded for <cmd>; a test never seen failing proves nothing."*
+  This proves the property that matters: **the new tests do not pass against the old code.** It works in any language, can't be forged, and needs no history, so CI can run it. When it passes against the old code, it is a **block**: *"the new tests already pass on the base; they prove nothing about this change."* A test that fails to compile against the base counts as red. That is honest: the old code cannot satisfy it.
+- The `--expect-fail` rows in `runs.jsonl` stay useful as build-time evidence in `verification.md`, but no gate depends on them.
 
 ### 5.9 traceability
 
@@ -165,9 +176,9 @@ This runs on files matched by `tests`, plus suppression comments in any file. Th
 
 | Check | Rule |
 |---|---|
-| Protected paths | `.sdlc/sensors.json`, `.sdlc/rules.json`, `.sdlc/guides/**`, `.sdlc/waivers.jsonl`, `.sdlc/approvals.jsonl`, `CLAUDE.md`, `.claude/**`, `.github/workflows/sdlc-check.yml` |
+| Protected paths | Config: `.sdlc/sensors.json`, `.sdlc/rules.json`, `.sdlc/guides/**`, `.sdlc/bin/**`, `CLAUDE.md`, `.claude/**`, `.github/workflows/sdlc-check.yml`, `CODEOWNERS`. **Evidence and gate state, writable only by `sdlc.ts` itself:** `.sdlc/approvals.jsonl`, `.sdlc/waivers.jsonl`, `.sdlc/changes/*/runs.jsonl`, `.sdlc/.baseline`, `.sdlc/.gate`, `.sdlc/unresolved.json`. The model is denied Write/Edit on evidence files, and denied Bash writes to them except through `sdlc.ts run`. Without this, a forged `runs.jsonl` row, or a gate count bumped to 2, would cancel the guarantees in §5.8 and §7. |
 | PreToolUse Write/Edit on a protected path | **ask** the human: the mod dialog shows what gets weaker (§10); the settings hook falls back to `ask`, or `deny` under `-p`. Approvals and waivers stay **deny** (existing). |
-| Turn diff touches a protected path with no PreToolUse event (a Bash edit) | **block**: *"harness file changed via Bash; revert it, or have the person make this change"*. Two exemptions: (1) `approvals.jsonl` and `waivers.jsonl`, which are append-only, written only by the human mod commands, and already denied to the model at PreToolUse and in Bash; (2) a `sensors.json` change that only removes `knownRed` entries, which is the ratchet's own tightening (§7.4). |
+| Turn diff touches a protected path with no PreToolUse event (a Bash edit) | **block**: *"harness file changed via Bash; revert it, or have the person make this change"*. Two exemptions: (1) `approvals.jsonl` and `waivers.jsonl`, which are append-only, written only by the human mod commands, and already denied to the model at PreToolUse and in Bash; (2) a `sensors.json` change that only removes `knownRed` entries, which is the ratchet's own tightening (§7.5). |
 | Weakening detection | A raised limit, a removed rule, entry or consumer, an added `knownRed`, or removed `tests`/`contracts` globs is labelled `weakens-harness` in the finding |
 | CI | Harness-file changes are reported, and spec 2 marks them needs-human-review. CI blocks only on the weakening labels, unless a human waiver exists. |
 
@@ -175,7 +186,7 @@ This runs on files matched by `tests`, plus suppression comments in any file. Th
 
 - `fast.*` runs at Stop and `full.*` at verify, ship and CI, all through `sdlc.ts run`.
 - A non-zero exit or a timeout is a **block**. "Can't run = fail, never skip."
-- Commands listed in `knownRed` (§7.4) are reported and do not block.
+- Commands listed in `knownRed` (§7.5) are reported and do not block.
 
 ## 6. Firing points
 
@@ -200,7 +211,10 @@ Stop returns in milliseconds when the turn diff contains no source files: Q&A tu
 
 On the first Stop with a source diff and no active change, the script runs `sdlc.ts new adhoc-<yyyymmdd-hhmm> --type chore --tier <computed>`.
 - The computed tier is: S if 3 or fewer files and no contract file; M if 15 or fewer; otherwise L.
-- It is a record, not a gate. The sensors still block on their own findings, and ship and CI triage the change like any other.
+- It is a record, not a gate. The sensors still block on their own findings.
+- **Ad-hoc tier S** ships like any tier S change.
+- **Ship refuses ad-hoc tier M and L.** Without a plan, the proof-of-red, traceability and scope checks would pass vacuously, so a vibe-coded large change would get *weaker* gating than one that came through the front door. Ship prints *"this ad-hoc change is tier <M|L>: run /sdlc:start <slug> to adopt it"*. Adopting writes the plan and applies the tier's normal gates; the code already written is kept.
+- CI applies the same rule: an ad-hoc M/L change in a PR with no plan fails the check.
 
 ### 6.3 Impact gate (the Thoughtworks flow)
 
@@ -218,11 +232,16 @@ If ship finds traceability or red-proof blocks, the ship skill launches **one** 
 
 1. **Loop cap.** A turn gets at most 2 blocks, counted in `.sdlc/.gate` (gitignored), keyed by baseline SHA, together with `stop_hook_active`. On the third attempt Stop is allowed. Findings are written to `.sdlc/unresolved.json`, and the person sees a `systemMessage`: *"quality gate: N problems unresolved after 2 attempts; ship and CI will refuse."*
 2. **Cache.** Results are cached by diff hash, so SubagentStop and the main Stop never run the same checks twice.
-3. **Time.** Built-in sensors take under 1 s. `fast.*` has a 60 s budget inside a 90 s hook timeout. A timeout is a failure, and the message says to make `sensors.json fast` faster.
-4. **Ratchet.** Onboard runs `fast.*` once. Commands that are already red go into `knownRed`; they are reported but do not block. When a known-red command passes once, `check` removes it from the list, so it blocks from then on. This is the one automatic edit to sensors.json, and it can only tighten. Built-in sensors only look at the diff, so problems that already existed never block.
-5. **Waivers are human-only.** `/sdlc-waive <sensor> <file|*> <reason>` is a mod command that writes `waivers.jsonl`, guarded like approvals. Waivers apply to the active change only, and the review brief lists them.
-6. **Fail-open locally, fail-closed in CI.** A crash in `sdlc.ts` allows Stop, with a warning, so a broken harness cannot lock up a session. CI treats the same crash as a failure.
-7. **Output contract.**
+3. **Subagents and parallel slices.** A large build is often one main turn with up to 3 implementers running in parallel in the same working tree. A turn-wide diff at SubagentStop would blame implementer A for B's half-finished edits in files A must not touch.
+   - **If a `SubagentStart` hook exists** (to verify, §15): each subagent gets its own baseline in `.sdlc/.baseline`, keyed by agent id.
+   - **In both cases:** SubagentStop filters findings to the files the slice owns (from the plan, through the active slice in `STATE.md`) and **skips `fast.*`**, because whole-project commands cannot be attributed to one slice.
+   - The main Stop, after all slices finish, runs everything.
+   - **If neither per-agent baselines nor a slice lookup are possible:** parallel slices are disabled while the gate is on (the build skill runs them sequentially).
+4. **Time.** Built-in sensors take under 1 s. `fast.*` has a 60 s budget inside a 90 s hook timeout. A timeout is a failure, and the message says to make `sensors.json fast` faster.
+5. **Ratchet.** Onboard runs `fast.*` once. Commands that are already red go into `knownRed`; they are reported but do not block. When a known-red command passes once, `check` removes it from the list, so it blocks from then on. This is the one automatic edit to sensors.json, and it can only tighten. Built-in sensors only look at the diff, so problems that already existed never block.
+6. **Waivers are human-only.** `/sdlc-waive <sensor> <file|*> <reason>` is a mod command that writes `waivers.jsonl`, guarded like approvals. Waivers apply to the active change only, and the review brief lists them.
+7. **Fail-open locally, fail-closed in CI.** A crash in `sdlc.ts` allows Stop, with a warning, so a broken harness cannot lock up a session. CI treats the same crash as a failure.
+8. **Output contract.**
    - On pass: one line, or nothing at all for hooks.
    - On fail: at most 40 lines, grouped by sensor, severity first, deduplicated, each with `file:line`, what is wrong and how to fix it.
    - Warns never block, and they appear as a single summary line.
@@ -259,7 +278,7 @@ The architect's plan.md gains two sections:
 The PreToolUse Bash guard is keyed on `agent_type`. It applies the existing write-command matcher in `WRITES` to deny anything that writes a file, for these agents:
 - `sdlc:scout`
 - `sdlc:reviewer`
-- `sdlc:verifier` (except `sdlc.ts run` and the report path)
+- `sdlc:verifier` (except `sdlc.ts run` and `sdlc.ts verify-report`)
 
 This hook is the only place to enforce it, because plugin agents ignore the `hooks` setting in agent frontmatter.
 
@@ -293,9 +312,14 @@ The reviewer agent's checklist gains the following:
   1. checks out this repo
   2. checks out each consumer's `repo` into `../<name>`
   3. sets up Node 22.18+
-  4. runs `node .sdlc/bin/sdlc.ts check --at ci --base origin/main`
+  4. runs the checker **from the base ref**: `git show origin/main:.sdlc/bin/…` into a temp dir, then `node <tmp>/sdlc.ts check --at ci --base origin/main --config-from origin/main`
 - Onboard offers to install it. The person makes it a required check.
-- **Vendoring.** Onboard copies `sdlc.ts` and `sensors.ts` into `.sdlc/bin/`, with the plugin version in a header comment, so CI does not depend on the plugin. Re-running `onboard --update-bin` refreshes them. The ship check warns when `.sdlc/bin` is older than the plugin.
+- **The PR does not get to grade itself.**
+  - CI loads the checker (`.sdlc/bin/**`) and `sensors.json`, `rules.json` and the guides from the **base ref**, and evaluates the head against that config. A PR that loosens the config or neuters the vendored checker is judged by the old, stricter version, and harness-tamper reports the loosening.
+  - **Bootstrap exception:** the PR that first introduces `.sdlc/bin` uses the head version, and is flagged needs-human-review in spec 2.
+  - Onboard also proposes **CODEOWNERS** entries for `.sdlc/**` and the workflow file, so harness changes need an owner's review. That is the post's "harness edits through peer-reviewed PRs".
+- **Private consumer repos** need a read token, because `GITHUB_TOKEN` is scoped to one repo. The template reads a `SDLC_CONSUMERS_TOKEN` secret (a fine-grained PAT or GitHub App token with contents:read). If the secret is missing, the check fails with a message saying how to add it. Under "can't run = fail" it never skips silently.
+- **Vendoring.** Onboard copies `sdlc.ts`, `sensors.ts` and `hooks.ts` into `.sdlc/bin/`, with the plugin version in a header comment, so CI does not depend on the plugin. Re-running `onboard --update-bin` refreshes them. The ship check warns when `.sdlc/bin` is older than the plugin.
 - **Results.** CI writes the findings to `$GITHUB_STEP_SUMMARY`, and spec 2 builds the brief on top of it.
 - **Dogfooding.** The plugin repo's own CI runs `sdlc.ts check --at ci` on itself.
 
@@ -335,6 +359,7 @@ Deliberately not used:
 | `scripts/sdlc.ts` | 774 lines, everything | ≤ 500: CLI, state, gates, ship, metrics |
 | `scripts/sensors.ts` | — | ≤ 500: diff parsing, sensors as pure functions, the `TAMPER_PATTERNS` table |
 | `scripts/hooks.ts` | (inside sdlc.ts) | ≤ 300: hook adapters (stdin → check → hook JSON), gate state |
+| `.sdlc/bin/` (in the consumer project) | — | the three scripts, vendored for CI (§9) |
 | skills | 12 | 13 (`rule`) |
 | agents | 5 | 5 |
 | hook entries | 4 | 7 (UserPromptSubmit, Stop, SubagentStop) |
@@ -371,13 +396,23 @@ The plugin's CI enforces these through its own `check`.
    | 3 | domain→infra import |
    | 4 | 700-line diff (blocked at ship and CI) |
    | 5 | an edit made through Bash (`sed -i`) that adds a suppression comment |
-   | 6 | `discount_rate` renamed with the consumer still using it |
+   | 6 | `discount_rate` renamed with the consumer still using it, twice: (a) by editing the schema file, and (b) by a new migration file containing only `RENAME COLUMN discount_rate TO promotional_discount` |
    | 7 | the agent raising `limits.diffLines` |
    | 8 | `verification.md` claiming a pass with no run recorded |
    | 9 | a B-number with no test |
 
-4. **Cost.** Re-run the tier M trial. The Stop gate must add **≤ 5%** cost, and Q&A turns must cost **zero** extra tokens.
-5. **Noise.** Count false-positive blocks across the trial runs. The target is 0, and each one found is fixed before release.
+4. **Cost and time.** Re-run the tier M trial. Targets:
+   - The Stop gate adds **≤ 5%** cost.
+   - Q&A turns cost **zero** extra tokens.
+   - The **median** Stop gate takes **≤ 15 s** on turns that change code (the worst case is bounded by the 60 s `fast.*` budget).
+   - The trial reports wall time for the harness against plain Claude Code.
+5. **Forgery attempts.** The seeded trial also tries to:
+   - append a passing row to `runs.jsonl`
+   - bump `.sdlc/.gate`
+   - edit `.sdlc/bin/sensors.ts` in a PR
+
+   Each must be denied locally, or judged against the base in CI.
+6. **Noise.** Count false-positive blocks across the trial runs. The target is 0, and each one found is fixed before release.
 
 ## 14. Spec 2 (follow-up): review triage and brief
 
@@ -395,3 +430,5 @@ The plugin's CI enforces these through its own `check`.
 - `git stash create` behaviour on a clean tree (it returns nothing, so use HEAD) and with a staged-only tree.
 - The relative `../consumer/**` globs in plan `## Files` with `relPosix`/`isPlanned`, which today assume paths inside the repo.
 - Whether a `tool.call` hold in the mod applies to subagent tool calls.
+- Whether a `SubagentStart` hook event exists, for per-agent baselines (§7.3).
+- `git worktree add` at the merge-base plus the test overlay for proof of red: time cost on a mid-size repo, and cleanup on failure.
