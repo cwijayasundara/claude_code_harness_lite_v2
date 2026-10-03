@@ -14,16 +14,26 @@ const command = (name: string, args = '', kind: 'composer' | 'sdk' = 'composer')
 type Run = { argv: readonly string[]; env?: Record<string, string> }
 
 function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
-  const world = { commands: [] as string[], runs: [] as Run[], toasts: [] as string[], costUsd, contextTokens }
+  const world = {
+    commands: [] as string[], runs: [] as Run[], toasts: [] as string[], notices: [] as string[], costUsd, contextTokens,
+    sensors: null as unknown,
+    impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
+    fileFindings: [] as unknown[],
+  }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
     world.commands.push(e.name)
     return { value: { command: e.name } }
   })
   on('process.run', ($, e) => {
-    world.runs.push({ argv: e.argv, env: e.init?.env })
-    const isStatus = e.argv.includes('status')
-    const stdout = isStatus ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }] }) : 'approved add-login plan'
+    world.runs.push({ argv: e.argv, env: (e as { init?: { env?: Record<string, string> } }).init?.env })
+    const sub = e.argv[3]
+    const stdout =
+      sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors })
+      : sub === 'impact-status' ? JSON.stringify(world.impact)
+      : sub === 'check-file' ? JSON.stringify(world.fileFindings)
+      : sub === 'sensors' ? 'last gate: 0 block(s)'
+      : 'approved add-login plan'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('session.usage', () => ({
@@ -36,6 +46,10 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     return { value: undefined }
   })
   on('ui.log', () => ({ value: undefined }))
+  on('ui.notice', ($, e) => {
+    world.notices.push(String((e as { text?: string }).text))
+    return { value: undefined }
+  })
   return world
 }
 
@@ -43,7 +57,7 @@ describe('sdlc mod', () => {
   test('session start registers the zero-token commands', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-status'])
+    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-sensors', 'sdlc-status', 'sdlc-waive'])
   })
 
   test('approve runs the script as the human only when the person typed it', async ($, on) => {
@@ -91,5 +105,32 @@ describe('sdlc mod', () => {
     await $.turn.complete({ ...turn, turnId: 't2' })
     expect(world.toasts.length).toBe(1)
     expect(world.toasts[0]).toContain('/sdlc:handoff')
+  })
+
+  test('waive runs the script as the human only when the person typed it', async ($, on) => {
+    const world = worldOf(on)
+    await $.session.start(SESSION)
+    expect((await $.command.run(command('sdlc-waive', 'size * generated', 'sdk'))).text).toContain('only when the person types it')
+    await $.command.run(command('sdlc-waive', 'size * generated'))
+    expect(world.runs.find(r => r.argv.includes('waive'))?.env).toEqual({ SDLC_HUMAN: '1' })
+  })
+
+  test('an edit with no impact hold runs, and gets a per-edit sensor notice', async ($, on) => {
+    const world = worldOf(on)
+    on('tool.call', () => ({ result: 'edited' }))
+    await $.session.start(SESSION)
+    const result = await $.tool.call({ tool: 'Edit', tool_use_id: 'tu1', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
+    expect(result.result).toBe('edited')
+    expect(world.notices).toEqual(['✓ sdlc'])
+  })
+
+  test('an impact hold with no one to ask falls through to the settings hook and approves nothing', async ($, on) => {
+    const world = worldOf(on)
+    world.impact = { hold: true, slug: 'add-login', consumers: ['checkout'], hits: 2 }
+    on('tool.call', ($2, e) => (e.tool === 'AskUserQuestion' ? { deny: 'no one to ask' } : { result: 'edited' }))
+    await $.session.start(SESSION)
+    const result = await $.tool.call({ tool: 'Edit', tool_use_id: 'tu2', file_path: '/work/../checkout/a.ts', old_string: 'a', new_string: 'b' })
+    expect(result.result).toBe('edited')
+    expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
   })
 })
