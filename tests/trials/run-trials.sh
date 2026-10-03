@@ -10,7 +10,7 @@ OUT="${1:-$(mktemp -d)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 SDLC="node --disable-warning=ExperimentalWarning $P/scripts/sdlc.ts"
-TASK='Add optional due dates to todos: POST /todos accepts dueDate (ISO YYYY-MM-DD, validated, 400 on invalid), GET /todos?overdue=true returns only not-done todos whose dueDate is before today, and GET /todos sorts by dueDate ascending with undated todos last. Include tests.'
+TASK='Add optional due dates to todos: POST /todos accepts dueDate (ISO YYYY-MM-DD, validated, 400 on invalid), GET /todos?overdue=true returns only not-done todos whose dueDate is before today, and GET /todos sorts by dueDate ascending with undated todos last. Include tests. The handler stays synchronous (it returns { status, body } directly).'
 FLAGS=(--permission-mode acceptEdits --allowedTools "Bash(node *)" "Bash(git *)" "Bash(npm *)" --max-budget-usd 8 --output-format json)
 
 fresh() { rm -rf "$OUT/$1"; cp -R "$P/tests/trials/todo-core" "$OUT/$1"; (cd "$OUT/$1" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm base); }
@@ -82,6 +82,9 @@ if [ "$MODE" = L ]; then
   for a in native sdd; do
     if [ "$a" = native ]; then st=$S1; else st=$S2; fi
     arm_flag "$st" "$OUT/$a.A.json" "$OUT/$a.B.json" "$OUT/$a.C.json"
+    ledger=0; ls "$OUT/$a"/.superpowers/sdd/*/progress.md >/dev/null 2>&1 && ledger=1
+    if [ "$a" = sdd ] && [ "$ledger" = 0 ]; then ARM_FLAG="${ARM_FLAG:+$ARM_FLAG; }SDD NOT EXERCISED"; ANY_BAD=1; fi
+    if [ "$a" = native ] && [ "$ledger" = 1 ]; then ARM_FLAG="${ARM_FLAG:+$ARM_FLAG; }SDD UNEXPECTEDLY USED"; fi
     echo "$a: ${ARM_FLAG:+$ARM_FLAG | }$(sum "$OUT/$a".?.json) | acceptance: $(acceptL "$a") | stop blocks: $(stop_blocks "$OUT/$a/.sdlc/.gate") | fallbacks: $(count_matches "$OUT/$a/.sdlc/usage.jsonl" skill-load-failed) | shipped: $(cd "$OUT/$a" && git log --oneline -1 2>/dev/null || echo n/a)"
     node "$P/tests/trials/split.mjs" "$OUT/$a".?.json || true
   done
