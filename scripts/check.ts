@@ -10,6 +10,7 @@ import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, 
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
+import { wikiFindings } from './wiki.ts'
 
 export type Point = 'stop' | 'ship' | 'ci'
 export type CheckInput = {
@@ -276,6 +277,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
+  if (i.point === 'ship' || i.point === 'ci') findings.push(...wikiFindings())
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   const result = applyWaivers(findings, i.slugs)

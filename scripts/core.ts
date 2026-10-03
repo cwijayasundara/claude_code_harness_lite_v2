@@ -369,7 +369,7 @@ export function relPosix(file: string): string {
 
 export function isPlanned(file: string, patterns: string[]): boolean {
   const rel = relPosix(file)
-  if (rel.startsWith('.sdlc/')) return true
+  if (rel.startsWith('.sdlc/') || rel.startsWith('docs/wiki/')) return true
   return patterns.some(p => globToRegex(p).test(rel))
 }
 

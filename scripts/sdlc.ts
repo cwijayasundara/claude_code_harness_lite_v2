@@ -18,6 +18,7 @@ import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
+import { cmdWiki } from './wiki.ts'
 
 // ---------- commands ----------
 
@@ -292,7 +293,7 @@ function cmdDiff(args: Args): void {
 }
 
 // Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
-const VENDORED = ['core', 'model', 'sensors', 'diffs', 'runs', 'check', 'hooks', 'metrics', 'sdlc', 'shell']
+const VENDORED = ['core', 'model', 'sensors', 'diffs', 'runs', 'check', 'hooks', 'metrics', 'wiki', 'sdlc', 'shell']
 
 function cmdVendor(): void {
   const bin = path.join(SDLC, 'bin')
@@ -367,6 +368,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   'log-usage': cmdLogUsage,
   hook: cmdHook,
   metrics: cmdMetrics,
+  wiki: cmdWiki,
   diff: cmdDiff,
   check: cmdCheck,
   'check-file': cmdCheckFile,
