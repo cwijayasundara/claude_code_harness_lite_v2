@@ -34,3 +34,8 @@ export function sdlc(repo: string, args: string[], { input, env = {} }: { input?
 }
 
 export const hook = (repo: string, name: string, payload: unknown) => sdlc(repo, ['hook', name], { input: JSON.stringify(payload) })
+
+export function verified(repo: string, slug: string): void {
+  sdlc(repo, ['run', '--slug', slug, '--', 'node -e "process.exit(0)"'])
+  sdlc(repo, ['verify-report', slug])
+}

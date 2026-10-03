@@ -10,9 +10,10 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, ARTIFACTS,
   exists, read, lines, sha, now, toPosix, out, fail, git, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  ensureGitignore, clearState, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
+  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
 } from './core.ts'
 import { cmdHook } from './hooks.ts'
+import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 
 // ---------- commands ----------
@@ -168,6 +169,32 @@ function cmdSkill(args: Args): void {
   out(body.replaceAll('${CLAUDE_PLUGIN_ROOT}', toPosix(PLUGIN_ROOT)).replaceAll('$ARGUMENTS', rest.join(' ')).replace(/\$0\b/g, rest[0] ?? ''))
 }
 
+// `run` takes its command after `--`, as one quoted argument: sdlc.ts run [--slug s] [--expect-fail] -- "npm test"
+function cmdRun(): void {
+  const argv = process.argv.slice(3)
+  const dash = argv.indexOf('--')
+  if (dash < 0 || dash === argv.length - 1) fail('usage: run [--slug s] [--expect-fail] -- "<command>"')
+  const head = parseArgs(argv.slice(0, dash))
+  const cmd = argv.slice(dash + 1).join(' ')
+  const slug = optString(head, 'slug') ?? activeSlug()
+  if (!slug) fail('no active change: run /sdlc:start first, or pass --slug')
+  const expectFail = Boolean(head.opt['expect-fail'])
+  const row = runCommand(cmd)
+  recordRun(slug, expectFail ? { ...row, expectFail: true } : row)
+  if (row.tail) out(row.tail)
+  out(`sdlc run: exit ${row.exit}${row.timedOut ? ' (timed out)' : ''} in ${row.ms} ms, recorded in ${slug}/runs.jsonl`)
+  process.exitCode = expectFail ? (row.exit !== 0 ? 0 : 1) : row.exit
+}
+
+function cmdVerifyReport(args: Args): void {
+  const slug = args.pos[0] ?? activeSlug()
+  if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: verify-report <slug>')
+  const rows = readRuns(slug)
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), planVerification(slug))
+  fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
+  out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   init: cmdInit,
   new: cmdNew,
@@ -177,6 +204,8 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   'scope-drift': cmdScopeDrift,
   ship: cmdShip,
   skill: cmdSkill,
+  run: () => cmdRun(),
+  'verify-report': cmdVerifyReport,
   secrets: cmdSecrets,
   'log-usage': cmdLogUsage,
   hook: cmdHook,

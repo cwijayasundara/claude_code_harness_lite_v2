@@ -228,8 +228,12 @@ export function loadChange(slug: string): Change {
       case 'build':
       case 'diagnose':
         return exists(path.join(dir, 'verification.md'))
-      case 'verify':
-        return verification.result === 'pass'
+      case 'verify': {
+        // Only a report sdlc generated from runs.jsonl counts (see runs.ts renderVerification).
+        const v = frontmatter(read(path.join(dir, 'verification.md'))).data
+        const runs = read(path.join(dir, 'runs.jsonl')).split('\n').slice(0, Number(v.runs)).join('\n')
+        return v.generated === 'sdlc' && v.result === 'pass' && sha(runs) === v.digest
+      }
       case 'review':
         return review.result === 'pass' || review.result === 'accepted'
       case 'ship':
@@ -266,6 +270,16 @@ export function nextCommand(change: Change): string {
   return `/sdlc:${next.stage} ${change.slug}`
 }
 // ---------- plan parsing & scope drift ----------
+
+// Evidence and gate state: written only by sdlc itself or the person's mod commands.
+export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)/
+
+// The plan's ## Verification commands: backticked text, or the rest of the bullet.
+export function planVerification(slug: string): string[] {
+  const body = read(path.join(CHANGES, slug, 'plan.md'))
+  const m = /^##\s+Verification\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(body)
+  return (m?.[1] ?? '').split('\n').map(row => /^\s*[-*]\s+(?:`([^`]+)`|(.+))$/.exec(row)).filter((x): x is RegExpExecArray => Boolean(x)).map(x => (x[1] ?? x[2] ?? '').trim())
+}
 
 export function planFiles(slug: string): string[] {
   const { body } = frontmatter(read(path.join(CHANGES, slug, 'plan.md')))

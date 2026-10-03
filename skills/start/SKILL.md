@@ -29,8 +29,8 @@ If the request is empty or names an existing folder under `.sdlc/changes/`: run 
    - Spike: also answer the question in `notes.md` in at most one page, then stop.
 5. **Tier S fast path** (any type except spike and greenfield). The change is small, so ceremony must cost less than the change. Do the whole build here in this turn, with no subagents and no other skills:
    1. Write a minimal `plan.md` of 15 lines or fewer, holding only `## Files` and `## Verification`.
-   2. Write the failing test, implement, and run the targeted tests quietly. Stay inside `## Files`.
-   3. Run the `## Verification` commands. Write `verification.md` with frontmatter `result: pass`, but only if every command exited 0, and paste each command and the last lines of its real output.
+   2. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record. Implement, and run the targeted tests quietly. Stay inside `## Files`.
+   3. Run the `## Verification` commands. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then generate `verification.md` with `sdlc.ts verify-report <slug>`. Never write it by hand.
    4. The next command is then `/sdlc:ship <slug>`, which includes the review pass for tier S.
 6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates:
    - Tier M: the person approves the plan.

@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import {
   SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
-  planFiles, isPlanned, relPosix, scanSecrets, planProblems, type Args, type HookInput,
+  planFiles, isPlanned, EVIDENCE_RE, relPosix, scanSecrets, planProblems, type Args, type HookInput,
 } from './core.ts'
 
 function readStdin(): HookInput {
@@ -31,21 +31,22 @@ function hookSessionStart(): void {
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context.join('\n') } }))
 }
 
-// git (staging, committing, inspecting) and read-only viewers may name the approvals log; nothing that can write to it may.
-const SAFE_APPROVALS_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|cat|head|tail|wc|grep|rg)\b/
+// git (staging, committing, inspecting) and read-only viewers may name evidence; nothing that can write to it may.
+const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|cat|head|tail|wc|grep|rg|jq)\b/
+const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
-function isSafeApprovalsCommand(cmd: string): boolean {
+function isSafeEvidenceCommand(cmd: string): boolean {
   return cmd
     .split(/&&|\|\||;|\|/)
-    .filter(part => /approvals\.jsonl/.test(part))
-    .every(part => SAFE_APPROVALS_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
+    .filter(part => EVIDENCE_RE.test(part))
+    .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
 function hookPreBash(input: HookInput): void {
   const cmd = String(input.tool_input?.command ?? '')
-  if (/sdlc\.(?:m?js|ts)["']?\s+approve\b/.test(cmd) || (/approvals\.jsonl/.test(cmd) && !isSafeApprovalsCommand(cmd))) {
-    return decide('deny', 'Approvals are human-only. Read approvals.jsonl with the Read tool; only the person writes it, with /sdlc-approve <slug> <stage>.')
+  if (HUMAN_ONLY.test(cmd) || (EVIDENCE_RE.test(cmd) && !isSafeEvidenceCommand(cmd))) {
+    return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); runs.jsonl only from `sdlc.ts run`; gate state only from the hooks. Read these files with the Read tool.')
   }
   if (!exists(SDLC)) return
   const sleep = /(?:^|[;&|]\s*|\s)(?:sleep|Start-Sleep(?:\s+-Seconds)?)\s+(\d+)/i.exec(cmd)
@@ -57,8 +58,8 @@ function hookPreBash(input: HookInput): void {
 function hookPreEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? input.tool_input?.notebook_path ?? '')
   if (!file) return
-  if (toPosix(file).endsWith('.sdlc/approvals.jsonl')) {
-    return decide('deny', 'approvals.jsonl is written only by the human /sdlc-approve command.')
+  if (EVIDENCE_RE.test(toPosix(file))) {
+    return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\`.`)
   }
   if (!exists(SDLC)) return
   const slug = activeSlug()

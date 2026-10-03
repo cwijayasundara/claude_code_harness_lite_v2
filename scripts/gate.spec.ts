@@ -19,3 +19,17 @@ test('a failed sdlc skill load injects the deterministic fallback command and lo
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /skill-load-failed/)
   assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'superpowers:brainstorming' } }).stdout, '')
 })
+
+test('evidence files are human- or script-only: model edits and Bash writes are denied, reads allowed', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  for (const f of ['.sdlc/changes/tiny/runs.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gate', '.sdlc/.baseline', '.sdlc/unresolved.json']) {
+    const edit = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f) } }).stdout)
+    assert.equal(edit.hookSpecificOutput.permissionDecision, 'deny', f)
+  }
+  const append = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: `echo '{"exit":0}' >> .sdlc/changes/tiny/runs.jsonl` } }).stdout)
+  assert.equal(append.hookSpecificOutput.permissionDecision, 'deny')
+  const waive = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts waive size * because' } }).stdout)
+  assert.equal(waive.hookSpecificOutput.permissionDecision, 'deny')
+  assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'tail -5 .sdlc/changes/tiny/runs.jsonl' } }).stdout, '')
+  assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts run -- "npm test"' } }).stdout, '')
+})

@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
+import { verified } from './testkit.ts'
 
 const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
 let repo: string
@@ -80,8 +81,8 @@ test('tier S chore has no gates and skips spec and plan', () => {
 
 test('tier S feature is the fast path: plan, build, verify, ship with no review stage', () => {
   run(['new', 'tiny', '--type', 'feature', '--tier', 'S'])
+  verified(repo, 'tiny')
   write('.sdlc/changes/tiny/plan.md', PLAN)
-  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
   assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
 })
 
@@ -94,7 +95,7 @@ test('log-usage keeps the change and stage captured at turn start', () => {
 
 test('ship is done only once the scope record is committed', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  verified(repo, 'tiny')
   run(['scope-drift', 'tiny', '--record'])
   assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
   git('add', '-A')
@@ -102,11 +103,11 @@ test('ship is done only once the scope record is committed', () => {
   assert.match(run(['status']).stdout, /done/)
 })
 
-test('verification result in the body still counts, and ship commits code plus artifacts on a branch', () => {
+test('ship commits code plus artifacts on a branch', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  verified(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
-  write('.sdlc/changes/tiny/verification.md', '# Verification\n\n**result:** pass\n')
   assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
   const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
@@ -121,8 +122,8 @@ test('verification result in the body still counts, and ship commits code plus a
 test('ship refuses scope drift and unfinished changes', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   assert.match(run(['ship', 'tiny', '--message', 'chore: x']).stderr, /not ready to ship/)
+  verified(repo, 'tiny')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
-  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
   write('src/other.js', 'y\n')
   const r = run(['ship', 'tiny', '--message', 'chore: x'])
   assert.notEqual(r.code, 0)
@@ -214,9 +215,9 @@ test('log-usage tags rows with the active change; metrics report cost and unmeas
 
 test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active change', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  verified(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
-  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
   const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
   const files = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: repo, encoding: 'utf8' })
@@ -229,9 +230,9 @@ test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active
 
 test('activeSlug never falls back to a finished change', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  verified(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
-  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
   run(['ship', 'tiny', '--message', 'chore: tiny'])
   fs.rmSync(path.join(repo, '.sdlc/STATE.md'))
   assert.doesNotMatch(run(['status']).stdout, /▶ tiny/)
@@ -244,4 +245,38 @@ test('skill prints a stage skill with plugin root and arguments substituted', ()
   assert.doesNotMatch(r.stdout, /\$\{CLAUDE_PLUGIN_ROOT\}/)
   assert.doesNotMatch(r.stdout, /^---\nname:/)
   assert.notEqual(run(['skill', 'no-such-skill']).code, 0)
+})
+
+test('run records exit codes; verify-report generates verification.md; a hand-written pass does not count', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  assert.match(run(['status']).stdout, /next: \/sdlc:verify tiny/)
+
+  const red = run(['run', '--expect-fail', '--', 'node -e "process.exit(3)"'])
+  assert.equal(red.code, 0)
+  const bad = run(['run', '--', 'node -e "process.exit(2)"'])
+  assert.equal(bad.code, 2)
+  const rows = fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/runs.jsonl'), 'utf8').trim().split('\n').map(r => JSON.parse(r))
+  assert.deepEqual(rows.map(r => [r.exit, Boolean(r.expectFail)]), [[3, true], [2, false]])
+
+  run(['verify-report', 'tiny'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: fail/)
+  run(['run', '--', 'node -e "process.exit(0)"'])
+  run(['verify-report', 'tiny'])
+  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+
+  run(['run', '--', 'node -e "process.exit(1)"'])
+  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/, 'runs appended after the report do not invalidate it')
+})
+
+test('verification judges only the plan commands, ignoring gate rows and abandoned exploratory runs', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "process.exit(0)"`\n')
+  write('.sdlc/changes/tiny/runs.jsonl', JSON.stringify({ at: 'x', cmd: 'eslint .', exit: 1, ms: 1, tail: '', source: 'gate' }) + '\n')
+  run(['run', '--', 'node -e "process.exit(4)"'])
+  run(['verify-report', 'tiny'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: fail[\s\S]*Not run/)
+  run(['run', '--', 'node -e "process.exit(0)"'])
+  run(['verify-report', 'tiny'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: pass/)
 })

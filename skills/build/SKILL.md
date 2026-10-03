@@ -13,9 +13,8 @@ Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sd
 
 ## Small builds: do it here
 Use this section for tier S, and for tier M when the plan has 3 or fewer slices and touches 8 or fewer files. At that size, subagent start-up and orchestration turns cost more than the context they protect. Work directly in this conversation:
-1. Write the failing test, implement, and run the targeted tests quietly. Stay inside the plan's `## Files`.
-2. Run the plan's `## Verification` commands.
-3. Write `verification.md` with `result: pass` only if every command exited 0. Paste the command and the last lines of its real output.
+1. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record. Implement, and run the targeted tests quietly. Stay inside the plan's `## Files`.
+2. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then generate `verification.md` with `sdlc.ts verify-report <slug>`. Never write it by hand.
 
 Next:
 - Tier S: `/sdlc:ship <slug>`, which includes the review pass.

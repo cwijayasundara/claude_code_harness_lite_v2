@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 
 1. **Reproduce.**
    - Read `intent.md`.
-   - Write the smallest failing test that shows the bug, as a regression test in the project's suite.
+   - Write the smallest failing test that shows the bug, as a regression test in the project's suite. Run it once with `sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record.
    - Run it and confirm it fails for the reported reason.
    - If you cannot reproduce in 3 attempts, stop and ask the person for data.
 2. **Isolate.**
@@ -22,7 +22,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
    - Apply the smallest change that makes the regression test pass and keeps the rest green.
    - Do not refactor along the way.
    - If the fix touches more than 3 files or a contract, stop: it is a feature or refactor, so tell the person.
-4. **Record.** Write `## Files` (touched files) and `## Verification` (test commands) into `.sdlc/changes/$0/plan.md`, using 15 lines or fewer and no code. Then launch `sdlc:verifier`, telling it to write `.sdlc/changes/$0/verification.md`.
+4. **Record.** Write `## Files` (touched files) and `## Verification` (test commands) into `.sdlc/changes/$0/plan.md`, using 15 lines or fewer and no code. Then launch `sdlc:verifier`, telling it to run the commands with `sdlc.ts run` and generate `.sdlc/changes/$0/verification.md` with `sdlc.ts verify-report $0`.
 
 Three failed hypotheses means consult the advisor or the person. Do not keep guessing.
 
