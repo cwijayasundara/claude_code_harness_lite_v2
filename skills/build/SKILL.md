@@ -33,6 +33,7 @@ You are the orchestrator. **Do not write production code in this conversation**;
    - the acceptance tests and the B-numbers they prove
    - the fast test command
    - relevant conventions from CLAUDE.md
+   - the guides that apply to its files (names from `.sdlc/guides/`), and the rule that the red run goes through `sdlc.ts run --expect-fail` and the refactor step happens under green tests
 
    Never paste whole files. The implementer reads what it needs.
    - Run independent slices in parallel (at most 3, in one message) **only** when their file sets do not overlap.
@@ -40,6 +41,7 @@ You are the orchestrator. **Do not write production code in this conversation**;
 3. After each report:
    - **Done:** update STATE.md (slice done, test command and result).
    - **Blocked:** decide once. Either clarify and relaunch, or, if the blocker changes scope, stop and ask the person.
+   - **Gate blocked:** if a subagent's end-of-turn gate listed findings it could not fix, treat it as blocked.
    - **Blocked twice on the same slice:** consult the advisor, or ask the person. Do not loop.
 4. Glance at `git diff --stat` against the plan's `## Files`. Anything outside the plan gets added to the plan with the person's agreement, or reverted.
 5. When all slices are done, continue with `/sdlc:verify $0`.

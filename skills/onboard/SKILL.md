@@ -33,9 +33,9 @@ Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sd
 3. Write `CLAUDE.md` as above, then `git init` if needed.
 
 ## Both
-Show the person the project settings this harness expects and offer to merge them into `.claude/settings.json`. Write them only on a yes. The template is `${CLAUDE_PLUGIN_ROOT}/templates/settings.json`, which:
-- enables `sdlc` and disables unrelated plugins
-- sets `model: sonnet`, `advisorModel: opus` and `autoCompactWindow: 200000`
-- adds the `.sdlc/**` edit allow rule
+1. **Sensors.** From scout (b), write `.sdlc/sensors.json`: `fast` (lint, typecheck, targeted test; under 60 s together), `full` (full test, coverage, arch if any), `tests` and `contracts` globs if the defaults miss the repo's layout, and `limits`. Ask with AskUserQuestion whether other repos consume this one's API or schema. Each one becomes a `consumers` entry with `name`, `path` (sibling checkout), `repo` (owner/name) and `test`.
+2. **Ratchet.** Run each `fast` command once through `sdlc.ts run`. Any that already fail go into `knownRed`, so the gate never blocks on debt it did not create. Tell the person which.
+3. **CI.** Offer to run `sdlc.ts vendor` and copy `${CLAUDE_PLUGIN_ROOT}/templates/sdlc-check.yml` to `.github/workflows/`. Say they must make `sdlc-check` a required check, add CODEOWNERS entries for `.sdlc/**` and the workflow, and add an `SDLC_CONSUMERS_TOKEN` secret if any consumer repo is private. Write the files only on a yes.
+4. **Settings.** Show the project settings this harness expects and offer to merge `${CLAUDE_PLUGIN_ROOT}/templates/settings.json` into `.claude/settings.json`. Write them only on a yes.
 
 End with: `Next: /sdlc:start "<first task>"`.

@@ -303,3 +303,8 @@ test('run rejects a slug with no change folder and creates nothing', () => {
   assert.notEqual(r.code, 0)
   assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/nope')), false)
 })
+
+test('a new intent has a Decisions section for explicit defaults', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/add-login/intent.md'), 'utf8'), /## Decisions\n<!-- skipped optional steps and defaults taken, one line each -->/)
+})

@@ -423,6 +423,9 @@ created: ${now()}
 
 ## Risks
 <!-- data, security, public contracts, migrations; say "none" if none -->
+
+## Decisions
+<!-- skipped optional steps and defaults taken, one line each -->
 `
 
 export function createChange(slug: string, type: ChangeType, tier: Tier, title: string): void {

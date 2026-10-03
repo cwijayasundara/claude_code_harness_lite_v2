@@ -9,14 +9,13 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. Shipping needs `verification.md` to show `result: pass`, and `review.md` to show `pass` or `accepted` where the path includes review. Otherwise stop and say what is missing.
 2. **Tier S review.** Tier S has no separate review stage. Launch the Opus `sdlc:reviewer` agent once on the diff, in the foreground. Fix only the findings it keeps. Then write `review.md` with `result: pass` or `accepted`, `rounds` and `caught`.
-3. **Ship it.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ship $0 --message "<type(scope): summary>\n\n<the intent's outcome>"`. The script does all of the following deterministically:
-   - checks that the change is ready to ship
-   - runs the scope gate
-   - creates `sdlc/$0` if you are on main
-   - stages the planned code files, the change's artifacts and the approvals
-   - commits
+3. **Ship it.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ship $0 --message "<type(scope): summary>\n\n<the intent's outcome>"`. The script deterministically:
+   - checks readiness and the scope gate
+   - runs the ship gate: every sensor over the branch diff, the full commands, traceability (every B-number has a named test) and proof of red (the new tests fail on the base)
+   - runs each changed consumer's tests, then commits each consumer on `sdlc/$0`
+   - creates `sdlc/$0` here if you are on main, stages the planned code, artifacts, approvals, waivers and STATE.md, and commits
 
-   If it reports scope drift, stop. The person decides whether to add those files to `plan.md` or revert them. Do not stage or commit by hand.
+   **If the gate refuses** with traceability or red-proof findings, launch **one** `sdlc:implementer` with only those findings, then run ship again. Anything still failing, or any other finding, goes to the person: they fix it, or waive it with `/sdlc-waive <sensor> <file|*> <reason>`. Never stage or commit by hand.
 4. **Never stage** `usage.jsonl`, `.env*` or unrelated files. The script already excludes them.
 5. **Confirm before anything leaves the machine.** Show the branch, the commit and the PR title, and ask the person before `git push` and `gh pr create`.
 6. **PR body:**
