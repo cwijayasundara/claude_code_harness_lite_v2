@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { parseRules } from './model.ts'
 import {
   ROOT, SDLC, APPROVALS, USAGE, MIN_SAMPLE, exists, read, frontmatter, readJsonl, git, fail, out, optString, toPosix,
   listChanges, loadChange, type Args, type Approval, type Change, type UsageRow,
@@ -136,8 +137,30 @@ export function cmdMetrics(args: Args): void {
     opus_token_share: written ? Number((opusWritten / written).toFixed(3)) : null,
   }
 
-  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost } }, null, 2))
+  const events = readJsonl<UsageRow>(USAGE).filter(r => r.kind === 'event')
+  const fired = events.filter(e => e.event === 'rule-fired')
+  const ruleIds = parseRules(read(path.join(SDLC, 'rules.json'))).rules.map(r => r.id)
+  const ninetyDays = Date.now() - 90 * 86_400_000
+  const rulesAge = firstCommitTime('.sdlc/rules.json')
+  const recent = new Set(fired.filter(e => Date.parse(e.at) >= ninetyDays).map(e => e.rule))
+  const categories = changes.flatMap(c => [...read(path.join(c.dir, 'review.md')).matchAll(/category:\s*([\w-]+)/gi)].map(m => (m[1] ?? '').toLowerCase()))
+  const byCategory = categories.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c]: (acc[c] ?? 0) + 1 }), {})
+  const harness = {
+    rule_fires: sumBy(fired.filter(e => Date.parse(e.at) >= since), r => r.rule ?? 'unknown', () => 1),
+    prune_candidates: rulesAge && Date.parse(rulesAge) < ninetyDays ? ruleIds.filter(id => !recent.has(id)) : [],
+    rule_suggestions: Object.entries(byCategory).filter(([, n]) => n >= 3).map(([c, n]) => `${c} (${n} findings): consider /sdlc:rule`),
+    skill_load_failures: events.filter(e => e.event === 'skill-load-failed' && Date.parse(e.at) >= since).length,
+    unresolved: (() => {
+      try {
+        return (JSON.parse(read(path.join(SDLC, 'unresolved.json'))) as { findings: unknown[] }).findings.length
+      } catch {
+        return 0
+      }
+    })(),
+  }
+
+  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, harness } }, null, 2))
   const fmt = (v: Metric): string => (v.value === null ? `unmeasured (n=${v.n}${v.note ? ', ' + v.note : ''})` : `${Number(v.value.toFixed(2))} (n=${v.n})`)
   const rows = Object.entries(m).map(([k, v]) => `${k.padEnd(30)} ${fmt(v)}`)
-  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2)].join('\n'))
+  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), 'harness', JSON.stringify(harness, null, 2)].join('\n'))
 }

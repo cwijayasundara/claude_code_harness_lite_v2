@@ -58,6 +58,7 @@ test('rules: why is required and patterns must compile', () => {
   const good = parseRules(JSON.stringify([{ id: 'no-print', pattern: 'print\\(', message: 'use the logger', why: 'stdout is the protocol', action: 'block' }]))
   assert.deepEqual([good.errors, good.rules.length], [[], 1])
   assert.match(parseRules(JSON.stringify([{ id: 'x', pattern: 'a', message: 'm', action: 'warn' }])).errors[0] ?? '', /why/)
+  assert.match(parseRules(JSON.stringify([{ id: 'x', message: 'm', why: 'w', action: 'warn' }])).errors[0] ?? '', /needs a pattern/)
   assert.match(parseRules(JSON.stringify([{ id: 'x', pattern: '(', message: 'm', why: 'w', action: 'warn' }])).errors[0] ?? '', /pattern/)
 })
 

@@ -13,7 +13,7 @@ Request: $ARGUMENTS
 
 ## Resume
 If the request is empty or names an existing folder under `.sdlc/changes/`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts activate <slug>` (when named), then `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`, read that change's artifacts and `.sdlc/STATE.md`, and continue with the printed next command. Stop here.
-If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:start: fill intent.md from the diff (`node ... sdlc.ts diff --base main`), confirm type and tier with the person, then continue with the printed next command (the plan and gates apply).
+If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:start: fill intent.md from the diff (`node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts diff --base main`), confirm type and tier with the person, then continue with the printed next command (the plan and gates apply).
 
 ## New change
 1. **Context hygiene.** If this conversation already carries unrelated work, tell the person to `/clear` and rerun this command, and stop.

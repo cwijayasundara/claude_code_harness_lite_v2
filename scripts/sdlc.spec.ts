@@ -308,3 +308,18 @@ test('a new intent has a Decisions section for explicit defaults', () => {
   run(['new', 'add-login', '--type', 'feature', '--tier', 'M'])
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/add-login/intent.md'), 'utf8'), /## Decisions\n<!-- skipped optional steps and defaults taken, one line each -->/)
 })
+
+test('metrics report rule fires, prune candidates and recurring review categories', () => {
+  run(['new', 'a1', '--type', 'feature', '--tier', 'S'])
+  write('.sdlc/rules.json', JSON.stringify([
+    { id: 'no-print', pattern: 'print\\(', message: 'use the logger', why: 'stdout is the protocol', action: 'block' },
+    { id: 'old-rule', pattern: 'never-matches-xyz', message: 'm', why: 'w', action: 'warn' },
+  ]))
+  write('.sdlc/changes/a1/review.md', '- [severity: medium] [category: coupling] a\n- [severity: medium] [category: coupling] b\n- [severity: high] [category: coupling] c\n')
+  write('src/a.py', 'print("x")\n')
+  run(['check', '--at', 'ship'])
+  const h = JSON.parse(run(['metrics', '--json']).stdout).metrics.harness
+  assert.equal(h.rule_fires['no-print'], 1)
+  assert.match(h.rule_suggestions.join('\n'), /coupling \(3 findings\)/)
+  assert.ok(Array.isArray(h.prune_candidates))
+})

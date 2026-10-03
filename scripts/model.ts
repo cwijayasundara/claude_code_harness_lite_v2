@@ -233,9 +233,10 @@ export function parseRules(text: string): { rules: Rule[]; errors: string[] } {
     if (!isObject(r) || typeof r.id !== 'string' || typeof r.message !== 'string') return errors.push(`rule ${id}: needs id and message`)
     if (typeof r.why !== 'string' || !r.why.trim()) return errors.push(`rule ${id}: needs a why (earn every rule)`)
     if (r.action !== 'warn' && r.action !== 'block') return errors.push(`rule ${id}: action must be warn or block`)
+    if (typeof r.pattern !== 'string') return errors.push(`rule ${id}: needs a pattern`)
     if (r.paths !== undefined && !isStringList(r.paths)) return errors.push(`rule ${id}: paths must be a list of globs`)
     try {
-      new RegExp(String(r.pattern))
+      new RegExp(r.pattern)
     } catch {
       return errors.push(`rule ${id}: pattern is not a valid regular expression`)
     }

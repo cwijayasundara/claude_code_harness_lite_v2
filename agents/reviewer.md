@@ -25,7 +25,7 @@ Reply in 30 lines or fewer:
 ```
 verdict: pass | changes-needed
 ## Findings
-- [severity: critical|high|medium] [category: correctness|security|contract|data|coupling|responsibility|abstraction|duplication|tests] path:line: problem → fix (confidence NN)
+- [severity: critical|high|medium] [category: <exactly one of: correctness, security, contract, data, coupling, responsibility, abstraction, duplication, tests>] path:line: problem → fix (confidence NN)
 ## Deferred
 - ...
 ## One thing

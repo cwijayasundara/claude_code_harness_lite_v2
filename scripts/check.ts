@@ -79,6 +79,12 @@ export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug:
   return findings
 }
 
+function logRuleFires(findings: Finding[]): void {
+  if (!exists(SDLC)) return
+  const rows = findings.filter(f => f.sensor === 'rules').map(f => JSON.stringify({ at: new Date().toISOString(), kind: 'event', event: 'rule-fired', rule: f.labels?.[0] }))
+  if (rows.length) fs.appendFileSync(path.join(SDLC, 'usage.jsonl'), rows.join('\n') + '\n')
+}
+
 function applyWaivers(findings: Finding[], slugs: string[]): CheckResult {
   const waivers = readJsonl<Waiver>(WAIVERS).filter(w => slugs.includes(w.slug))
   const waived = (f: Finding): boolean => waivers.some(w => w.sensor === f.sensor && (w.file === '*' || w.file === f.file))
@@ -257,7 +263,9 @@ export function runChecks(i: CheckInput): CheckResult {
   ]
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
-  return applyWaivers(findings, i.slugs)
+  const result = applyWaivers(findings, i.slugs)
+  logRuleFires(result.findings)
+  return result
 }
 
 // The cheap per-file subset, for PostToolUse and the mod's per-edit notices.
