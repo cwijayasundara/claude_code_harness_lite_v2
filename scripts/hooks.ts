@@ -138,14 +138,15 @@ function realPath(p: string): string {
     dir = path.dirname(dir)
   }
   try {
-    return path.join(fs.realpathSync(dir), ...rest)
+    return path.join(fs.realpathSync.native(dir), ...rest) // native: on-disk casing, so .SDLC resolves to .sdlc
   } catch {
     return p
   }
 }
 export function isEvidenceFile(file: string, ci = CASE_INSENSITIVE): boolean {
+  const fold = (p: string): string => (ci ? p.toLowerCase() : p)
   const target = realPath(path.resolve(ROOT, file))
-  const inSdlc = toPosix(path.relative(realPath(SDLC), target))
+  const inSdlc = toPosix(path.relative(fold(realPath(SDLC)), fold(target)))
   if (!inSdlc.startsWith('../') && !path.isAbsolute(inSdlc) && flagged(EVIDENCE_IN_SDLC, ci).test(inSdlc)) return true
   let st: fs.Stats
   try { st = fs.statSync(target) } catch { return false }

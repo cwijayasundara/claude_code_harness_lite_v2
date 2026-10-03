@@ -339,3 +339,10 @@ test('I2: in an opted-in repo Bash stays conservative: cd-then-relative and link
     assert.equal(as(c), 'deny', c)
   for (const c of ['ls -la .sdlc', 'cp src/a.js src/b.js', 'ln -s ../lib lib2', 'cat .sdlc/approvals.jsonl']) assert.equal(as(c), undefined, c)
 })
+
+test('I2: a mixed-case path into .sdlc is still evidence on a case-insensitive file system', t => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  if (!fs.existsSync(path.join(repo, '.SDLC'))) return t.skip('this file system is case-sensitive: .SDLC is a different directory')
+  const edit = (f: string) => decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } }))
+  for (const f of ['.SDLC/Approvals.jsonl', '.sdlc/CHANGES/tiny/RUNS.jsonl', '.Sdlc/Waivers.JSONL']) assert.equal(edit(f), 'deny', f)
+})
