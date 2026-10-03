@@ -74,13 +74,14 @@ arm_flag() {
 }
 if [ "$MODE" = L ]; then
   harness_arm native false & P1=$!
-  harness_arm sdd true & P2=$!
+  # SDD=0 skips the opt-in SDD arm (it alone ran past 20 minutes in the second v0.3 trial).
+  ARMS="native"; P2=""; if [ "${SDD:-1}" != 0 ]; then harness_arm sdd true & P2=$!; ARMS="native sdd"; fi
   ( fresh plain; settings "$OUT/plain" false; cd "$OUT/plain" && claude -p "$TASK_L" "${FLAGS_L[@]}" > "$OUT/plain.json" ) & P3=$!
   S1=0; S2=0; S3=0
   wait "$P1" || S1=$?
-  wait "$P2" || S2=$?
+  [ -z "$P2" ] || wait "$P2" || S2=$?
   wait "$P3" || S3=$?
-  for a in native sdd; do
+  for a in $ARMS; do
     if [ "$a" = native ]; then st=$S1; else st=$S2; fi
     arm_flag "$st" "$OUT/$a.A.json" "$OUT/$a.B.json" "$OUT/$a.C.json"
     ledger=0; ls "$OUT/$a"/.superpowers/sdd/*/progress.md >/dev/null 2>&1 && ledger=1
