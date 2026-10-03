@@ -15,4 +15,4 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm ci || npm install
       - run: npm run typecheck
-      - run: node --disable-warning=ExperimentalWarning --test scripts/sdlc.spec.ts
+      - run: node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts
