@@ -4,5 +4,5 @@
   "tests": ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/test_*.py", "**/*Test.java", "**/*_spec.rb", "scripts/*.spec.ts"],
   "fixtures": ["scripts/check.spec.ts", "scripts/gate.spec.ts", "scripts/sensors.spec.ts", "scripts/seeded.spec.ts"],
   "ignore": ["**/*.md", "**/*.lock", "**/package-lock.json", "tests/trials/**"],
-  "limits": { "fileLines": 500, "diffLines": 1500 }
+  "limits": { "fileLines": 500, "diffLines": 1500, "lineChars": 160 }
 }

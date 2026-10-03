@@ -106,3 +106,10 @@ test('maskSecrets replaces every line that matches a secret pattern', async () =
   const key = 'AKIA' + 'IOSFODNN7EXAMPLE'
   assert.equal(maskSecrets(`ok\nkey=${key}\nend`), 'ok\n[masked by sdlc]\nend')
 })
+
+test('limits.lineChars is validated and raising it weakens the config', async () => {
+  const { parseConfig } = await import('./model.ts')
+  assert.deepEqual(parseConfig('{"limits":{"lineChars":0}}').errors, ['limits.lineChars must be a positive number'])
+  const { weakensConfig } = await import('./sensors.ts')
+  assert.deepEqual(weakensConfig('{"limits":{"lineChars":120}}', '{"limits":{"lineChars":200}}'), ['limits.lineChars raised 120 → 200'])
+})

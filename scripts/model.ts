@@ -20,7 +20,7 @@ export type SensorConfig = {
   contracts: string[]
   consumers: Consumer[]
   layers: Layer[]
-  limits: { fileLines: number; diffLines: number }
+  limits: { fileLines: number; diffLines: number; lineChars: number }
   knownRed: string[]
 }
 
@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   contracts: ['api/**', 'schema/**', 'migrations/**', '**/*.proto', '**/openapi.*'],
   consumers: [],
   layers: [],
-  limits: { fileLines: 400, diffLines: 500 },
+  limits: { fileLines: 400, diffLines: 500, lineChars: 160 },
   knownRed: [],
 }
 
@@ -218,7 +218,7 @@ export function parseConfig(text: string): { config: SensorConfig; errors: strin
   }
   if ('limits' in value) {
     const limits = isObject(value.limits) ? value.limits : {}
-    for (const k of ['fileLines', 'diffLines'] as const) {
+    for (const k of ['fileLines', 'diffLines', 'lineChars'] as const) {
       if (!(k in limits)) continue
       const v = limits[k]
       if (typeof v === 'number' && v > 0) config.limits[k] = v

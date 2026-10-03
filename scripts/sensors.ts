@@ -132,6 +132,17 @@ export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<str
   if (total > cfg.limits.diffLines && point !== 'edit') {
     findings.push({ sensor: 'size', severity: point === 'stop' ? 'warn' : 'block', message: `diff is ${total} changed lines (limit ${cfg.limits.diffLines})`, fix: 'ship it as smaller changes, or the person records an override with /sdlc-waive size * <reason>' })
   }
+  if (point !== 'edit') {
+    for (const d of counted) {
+      const long = d.added.filter(l => l.text.length > cfg.limits.lineChars)
+      if (!long.length) continue
+      findings.push({
+        sensor: 'size', severity: 'warn', file: d.file, line: long[0]?.n,
+        message: `${long.length} added line(s) over ${cfg.limits.lineChars} characters`,
+        fix: 'one idea per line: name intermediate values instead of nesting expressions',
+      })
+    }
+  }
   return findings
 }
 
@@ -222,7 +233,9 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
   const b = parseConfig(beforeText).config
   const a = after.config
   const reasons: string[] = []
-  for (const k of ['fileLines', 'diffLines'] as const) if (a.limits[k] > b.limits[k]) reasons.push(`limits.${k} raised ${b.limits[k]} → ${a.limits[k]}`)
+  for (const k of ['fileLines', 'diffLines', 'lineChars'] as const) {
+    if (a.limits[k] > b.limits[k]) reasons.push(`limits.${k} raised ${b.limits[k]} → ${a.limits[k]}`)
+  }
   for (const k of ['tests', 'contracts', 'testSupport'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
   for (const g of removedFrom(a.ignore, b.ignore)) reasons.push(`ignore added ${g}`)
   for (const g of removedFrom(a.fixtures, b.fixtures)) reasons.push(`fixtures added ${g}`)
