@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false,
+    "security-guidance@claude-plugins-official": false,
+    "financial-analysis@claude-for-financial-services": false,
+    "private-equity@claude-for-financial-services": false,
+    "aws-serverless@claude-plugins-official": false,
+    "harness@harness-local": false,
+    "harness-eng-v2@harness-eng-v2": false
+  },
+  "model": "sonnet",
+  "advisorModel": "opus"
+}

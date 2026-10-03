@@ -31,10 +31,25 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 | `/sdlc:start "add CSV export to reports"` | Classifies type and tier, writes `.sdlc/changes/<slug>/intent.md`, and prints the path and the next command. Tier S is built in the same turn. |
 | `/sdlc:spec`, `/sdlc:plan`, `/sdlc:build`, `/sdlc:diagnose`, `/sdlc:verify`, `/sdlc:review`, `/sdlc:ship` | One stage each. Every stage ends with the exact next command. |
 | `/sdlc-approve <slug> <spec\|plan>` | **Human gate.** A mod command: costs zero tokens, the model cannot invoke it, and the approval goes stale if the artifact changes afterwards. |
+| `/sdlc-waive <sensor> <file\|*> <reason>` | **Human only.** Records a waiver for a sensor finding on the active change (the sensor name is validated). Zero tokens, and the model cannot invoke it. |
+| `/sdlc-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
+| `/sdlc:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
 | `/sdlc-status` | Where every change stands. Zero tokens. |
 | `/sdlc:handoff` | Writes a STATE.md of 40 lines or fewer so you can `/clear` and resume cheaply. The band above the prompt turns red at 150k context. |
 | `/sdlc:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
 | `/sdlc:metrics [days]` | The playbook's 12 metrics (leading and lagging per stage) plus cost per change, stage and agent. |
+
+## Guides and sensors
+
+Computational sensors run on the hot path at zero tokens; one inferential review runs per change. `sdlc.ts check` is the single entry point, so local equals CI.
+- **Config** is `.sdlc/sensors.json`: `fast`/`full` commands, `tests`, `testSupport` (overlaid with the tests when proving against the base), `fixtures` (exempt from pattern sensors only; deletions stay tracked and adding a glob counts as weakening), `ignore`, `contracts`, `consumers`, `layers`, `limits`, `knownRed`. `.sdlc/rules.json` holds regex rules.
+- **Sensors:** test-tamper, suppression, layering, size, secrets, rules, contract-impact, harness-tamper, traceability and red-proof, plus ad-hoc, commands and config findings.
+- **When they fire:** on each edit (secrets, tamper and guide context, as notices), at Stop (the turn's diff), at plan and ship (traceability, red-proof, impact), and in CI.
+- **Red-proof** depends on the change type: changed tests must fail on the base for bugfix and incident, and for feature and greenfield at M and L; they must pass on the base for refactor at M and L; chore and migration are exempt.
+- **Stop cap:** a turn is blocked at most 2 times, then the findings go to `.sdlc/unresolved.json` and ship and CI refuse them, so a loop cannot wedge a session. Findings that are red on the base are ratcheted as known-red rather than blamed on the change.
+- **Waivers** come only from the person (`/sdlc-waive`). Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `impact.json`, `.gate`) are written only by sdlc.
+- **Guides** (contracts, engineering, testing) are copied to `.sdlc/guides/` by init and injected on first touch of a matching path.
+- **CI:** `sdlc.ts vendor` copies the checker into `.sdlc/bin`; copy `templates/sdlc-check.yml` and require `sdlc-check`. CI runs the base branch's checker and config.
 
 For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you don't have to keep typing "continue".
 
@@ -50,14 +65,20 @@ For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you do
 | `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, block sleep-polling, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.tsx` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
-| `scripts/sdlc.ts` | Zero-dependency core: change state, approvals, scope drift, secret scanning, hook decisions, metrics. |
+| `scripts/*.ts` (10) | Zero-dependency Node, no build step: `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
+| `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
+| `templates/sdlc-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 
 Artifacts live in **`.sdlc/`** at the repo root and are committed; `usage.jsonl` is gitignored. They are not under `.claude/`, which Claude Code protects: writes there always prompt, or are denied in headless runs, and allow rules can't change that.
 
 ## Develop
 
 ```bash
-node --test tests/*.test.mjs                 # core script (12 tests)
-claude plugin test .                         # mod (4 tests)
+npm run typecheck                            # scripts only (what CI runs)
+node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts
+npm run typecheck:mod                        # the mod; needs generated types, so local only
+claude plugin test .                         # mod tests
+npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
+tests/trials/run-trials.sh [outdir]          # LIVE and PAID (about $2): tier M with the harness vs plain Claude Code
 ```
