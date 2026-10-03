@@ -11,7 +11,7 @@ const filesIn = (dir: string, keep: (name: string) => boolean): string[] =>
 
 const LIMITS: [string, string[], number][] = [
   ['script', filesIn('scripts', n => n.endsWith('.ts') && !n.endsWith('.spec.ts') && n !== 'testkit.ts'), 500],
-  ['mod file', filesIn('hooks', n => n.endsWith('.tsx')), 300],
+  ['mod file', filesIn('hooks', n => /\.tsx?$/.test(n)), 300],
   ['skill', filesIn('skills', () => true).map(d => path.join(d, 'SKILL.md')).filter(fs.existsSync), 60],
   ['guide', filesIn('guides', n => n.endsWith('.md')), 60],
 ]
@@ -22,3 +22,21 @@ for (const [kind, files, max] of LIMITS) {
     assert.deepEqual(over, [], `${kind}s over ${max} lines`)
   })
 }
+
+const isFile = (f: string): boolean => fs.statSync(f).isFile()
+const CAPPED = [
+  ...filesIn('scripts', n => n.endsWith('.ts') && !n.endsWith('.spec.ts') && n !== 'testkit.ts'),
+  ...filesIn('hooks', () => true),
+  ...filesIn('skills', () => true).map(d => path.join(d, 'SKILL.md')).filter(fs.existsSync),
+  ...filesIn('agents', n => n.endsWith('.md')),
+  ...filesIn('guides', n => n.endsWith('.md')),
+  ...filesIn('templates', () => true),
+  ...filesIn('.github/workflows', () => true),
+  ...filesIn('.claude-plugin', n => n.endsWith('.json')),
+  path.join(ROOT, 'package.json'),
+].filter(isFile)
+
+test('the harness is at most 5000 lines (tests and docs excluded)', () => {
+  const total = CAPPED.reduce((n, f) => n + count(f), 0)
+  assert.ok(total <= 5000, `harness is ${total} lines`)
+})
