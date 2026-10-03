@@ -73,3 +73,12 @@ test('findings: silent when empty, blocks first, deduplicated, capped, warns sum
   assert.equal(many.split('\n').length, 40)
   assert.match(many, /… 22 more/)
 })
+
+test('findings: multi-line messages count physical lines toward the cap, fix on the first line', () => {
+  const big = (i: number): Finding => ({ sensor: 'commands', severity: 'block', message: Array.from({ length: 20 }, (_, k) => `l${i}.${k}`).join('\n'), fix: 'fixit' })
+  const warn: Finding = { sensor: 'size', severity: 'warn', message: 'w', fix: 'f' }
+  const text = formatFindings([big(1), big(2), big(3), big(4), warn])
+  assert.ok(text.split('\n').length <= 40)
+  assert.match(text, /… \d+ more/)
+  assert.match(text, /l1\.0 → fixit/)
+})

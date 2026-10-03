@@ -154,3 +154,37 @@ test('check-file reports a single file\'s cheap sensors as JSON', () => {
   const r = JSON.parse(sdlc(repo, ['check-file', 'test/a.test.js', '--json']).stdout)
   assert.equal(r[0].sensor, 'test-tamper')
 })
+
+test('an unknown --config-from ref blocks instead of falling back to defaults', () => {
+  const r = check('--at', 'ci', '--base', 'main', '--config-from', 'no-such-ref')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /\[config\]/)
+  assert.match(r.stdout, /does not exist/)
+})
+
+test('ci with a base-branch config never ratchets sensors.json or records runs', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  sensors({ fast: {}, full: { t: 'node -e "process.exit(0)"' }, knownRed: ['full.t'] })
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  const file = path.join(repo, '.sdlc/sensors.json')
+  const before = fs.readFileSync(file, 'utf8')
+  const r = check('--at', 'ci', '--base', 'main', '--config-from', 'main')
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.equal(fs.readFileSync(file, 'utf8'), before)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/xx/runs.jsonl')), false)
+})
+
+test('a known-red command that times out still blocks', () => {
+  sensors({ fast: { t: 'node -e "setTimeout(() => {}, 20000)"' }, knownRed: ['fast.t'] })
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/app.js', 'export const a = 11\n')
+  assert.equal(check('--at', 'stop', '--budget-ms', '1000').code, 1)
+})
+
+test('a non-numeric --budget-ms is a usage error', () => {
+  hook(repo, 'prompt-submit', {})
+  const r = check('--at', 'stop', '--budget-ms', 'soon')
+  assert.equal(r.code, 1)
+  assert.match(r.stderr, /budget-ms/)
+})

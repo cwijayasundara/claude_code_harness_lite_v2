@@ -255,17 +255,26 @@ export function formatFindings(findings: Finding[], max = 40): string {
   })
   const blocks = unique.filter(f => f.severity === 'block')
   const warns = unique.filter(f => f.severity === 'warn')
-  const rows: string[] = []
+  const rows: string[][] = []
   for (const sensor of [...new Set(blocks.map(f => f.sensor))]) {
-    rows.push(`[${sensor}]`)
+    rows.push([`[${sensor}]`])
     for (const f of blocks.filter(b => b.sensor === sensor)) {
       const where = f.file ? `${f.file}${f.line ? ':' + f.line : ''}: ` : ''
       const labels = f.labels?.length ? ` (${f.labels.join(', ')})` : ''
-      rows.push(`  ✗ ${where}${f.message}${labels} → ${f.fix}`)
+      const [first = '', ...rest] = f.message.split('\n')
+      rows.push([`  ✗ ${where}${first}${labels} → ${f.fix}`, ...rest])
     }
   }
   const tail = warns.length ? [`warn: ${warns.length} (${[...new Set(warns.map(w => w.sensor))].map(s => `${s} ${warns.filter(w => w.sensor === s).length}`).join(', ')})`] : []
+  const total = rows.reduce((n, r) => n + r.length, 0)
   const room = max - tail.length
-  const shown = rows.length > room ? [...rows.slice(0, room - 1), `  … ${rows.length - room + 1} more (run sdlc.ts check to see all)`] : rows
-  return [...shown, ...tail].join('\n')
+  if (total <= room) return [...rows.flat(), ...tail].join('\n')
+  // Cap physical lines: whole rows while they fit, then one "more" line.
+  const shown: string[] = []
+  for (const r of rows) {
+    if (shown.length + r.length > room - 1) break
+    shown.push(...r)
+  }
+  if (!shown.length) shown.push(...(rows[0] ?? []).slice(0, room - 1))
+  return [...shown, `  … ${total - shown.length} more (run sdlc.ts check to see all)`, ...tail].join('\n')
 }

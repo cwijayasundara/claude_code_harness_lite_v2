@@ -22,6 +22,7 @@ export type CheckInput = {
   before: (file: string) => string
   toolEdited?: Set<string>
   base: string | null
+  ratchet?: boolean
 }
 export type CheckResult = { findings: Finding[]; blocks: Finding[]; warns: Finding[]; waived: number }
 
@@ -30,6 +31,7 @@ const TAIL_IN_FINDING = 15
 
 // With a ref (CI), config comes from the base branch, so a PR cannot loosen the rules it is judged by.
 export function loadConfig(ref: string | null = null): { config: SensorConfig; rules: Rule[]; errors: string[] } {
+  if (ref && git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]) === null) return { config: parseConfig('').config, rules: [], errors: [`config ref ${ref} does not exist`] }
   const text = (rel: string): string => (ref ? git(['show', `${ref}:${rel}`]) ?? '' : read(path.join(ROOT, rel)))
   const c = parseConfig(text(SENSORS_JSON))
   const r = parseRules(text('.sdlc/rules.json'))
@@ -40,12 +42,13 @@ export function loadConfig(ref: string | null = null): { config: SensorConfig; r
 function ratchet(cleared: string[]): void {
   const file = path.join(ROOT, SENSORS_JSON)
   if (!exists(file)) return
-  const raw = JSON.parse(read(file)) as { knownRed?: string[] }
+  let raw: { knownRed?: string[] }
+  try { raw = JSON.parse(read(file)) as { knownRed?: string[] } } catch { return }
   raw.knownRed = (raw.knownRed ?? []).filter(k => !cleared.includes(k))
   fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n')
 }
 
-export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug: string | null, budgetMs: number): Finding[] {
+export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug: string | null, budgetMs: number, allowRatchet = false): Finding[] {
   const findings: Finding[] = []
   const cleared: string[] = []
   let left = budgetMs
@@ -66,12 +69,12 @@ export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug:
     const tail = row.tail.split('\n').slice(-TAIL_IN_FINDING).map(t => '      ' + t).join('\n')
     findings.push({
       sensor: 'commands',
-      severity: known ? 'warn' : 'block',
+      severity: known && !row.timedOut ? 'warn' : 'block',
       message: `${key} failed (exit ${row.exit}${row.timedOut ? ', timed out' : ''}): ${cmd}\n${tail}`,
-      fix: known ? 'known red before this change: fix it when you can' : `run \`${cmd}\` and fix what it reports`,
+      fix: known && !row.timedOut ? 'known red before this change: fix it when you can' : `run \`${cmd}\` and fix what it reports`,
     })
   }
-  if (cleared.length) ratchet(cleared)
+  if (cleared.length && allowRatchet) ratchet(cleared)
   return findings
 }
 
@@ -92,13 +95,13 @@ export function runChecks(i: CheckInput): CheckResult {
     ...secretsInDiff(diffs),
     ...rulesSensor(diffs, i.rules),
   ]
-  if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.slugs[0] ?? null, i.budgetMs))
+  if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   return applyWaivers(findings, i.slugs)
 }
 
 // The cheap per-file subset, for PostToolUse and the mod's per-edit notices.
 export function editFindings(rel: string): Finding[] {
-  const snap = readBaseline() ?? snapshot()
+  const snap = readBaseline()
   if (!snap) return []
   const { config, rules } = loadConfig()
   const diffs = fileDiff(snap, rel)
@@ -137,7 +140,8 @@ export function cmdCheck(args: Args): void {
   const slugArg = optString(args, 'slug')
   const slugs = slugArg ? [slugArg] : at === 'ci' ? slugsIn(diffs) : [activeSlug()].filter((s): s is string => Boolean(s))
   const budgetMs = Number(optString(args, 'budget-ms') ?? (at === 'stop' ? 60_000 : 1_800_000))
-  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: at === 'stop' ? 'fast' : 'full', budgetMs, before, base })
+  if (!Number.isFinite(budgetMs) || budgetMs <= 0) fail('--budget-ms must be a positive number')
+  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: at === 'stop' ? 'fast' : 'full', budgetMs, before, base, ratchet: !optString(args, 'config-from') })
   const configFindings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: SENSORS_JSON, message: e, fix: 'fix the file; see the sdlc README for its format' }))
   const all = { ...result, findings: [...configFindings, ...result.findings], blocks: [...configFindings, ...result.blocks] }
   report(at, all, diffs.length, Boolean(args.opt.json))
