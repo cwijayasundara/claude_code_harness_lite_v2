@@ -107,6 +107,12 @@ test('maskSecrets replaces every line that matches a secret pattern', async () =
   assert.equal(maskSecrets(`ok\nkey=${key}\nend`), 'ok\n[masked by sdlc]\nend')
 })
 
+test('maskSecrets masks a whole private-key block through its END line', async () => {
+  const { maskSecrets } = await import('./model.ts')
+  const pem = ['-----BEGIN RSA ' + 'PRIVATE KEY-----', 'MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu', '-----END RSA ' + 'PRIVATE KEY-----']
+  assert.equal(maskSecrets(['before', ...pem, 'after'].join('\n')), 'before\n[masked by sdlc]\n[masked by sdlc]\n[masked by sdlc]\nafter')
+})
+
 test('limits.lineChars is validated and raising it weakens the config', async () => {
   const { parseConfig } = await import('./model.ts')
   assert.deepEqual(parseConfig('{"limits":{"lineChars":0}}').errors, ['limits.lineChars must be a positive number'])

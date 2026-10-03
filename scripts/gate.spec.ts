@@ -385,3 +385,21 @@ test('a failed superpowers SDD load sends the model back to native orchestration
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /"skill":"superpowers:subagent-driven-development"/)
   assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'other:thing' } }).stdout, '')
 })
+
+test('SDD ledger files under .superpowers/sdd/ never trigger the not-in-plan ask', () => {
+  sdlc(repo, ['init'])
+  sdlc(repo, ['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  write(repo, '.sdlc/changes/add-login/plan.md', '# Plan\n## Files\n- src/app.js\n## Verification\n- npm test\n')
+  const ask = hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'src/other.js') } })
+  assert.equal(decision(ask), 'ask', 'control: unplanned source asks')
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.superpowers/sdd/x/progress.md') } })), undefined)
+})
+
+test('tier L bugfix: source edits ask until plan.md is approved; tests do not', () => {
+  sdlc(repo, ['init'])
+  sdlc(repo, ['new', 'fix-it', '--type', 'bugfix', '--tier', 'L'])
+  const src = hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'src/app.js') } })
+  assert.equal(decision(src), 'ask')
+  assert.match(reasonOf(src), /src\/app\.js: tier L bug fixes wait for the person to approve plan\.md .* \/sdlc-approve fix-it plan\./)
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'tests/app.test.js') } })), undefined)
+})

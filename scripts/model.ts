@@ -51,8 +51,19 @@ export const SECRET_PATTERNS: [string, RegExp][] = [
   ['generic secret assignment', /(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*["'][^"'\s]{12,}["']/i],
 ]
 
-export const maskSecrets = (text: string): string =>
-  text.split('\n').map(l => (SECRET_PATTERNS.some(([, re]) => re.test(l)) ? '[masked by sdlc]' : l)).join('\n')
+// A private key spans lines: after its BEGIN line, mask every line through the matching END line (or to the end).
+export function maskSecrets(text: string): string {
+  let inKey = false
+  return text.split('\n').map(l => {
+    if (inKey) {
+      inKey = !/-----END [A-Z ]*PRIVATE KEY-----/.test(l)
+      return '[masked by sdlc]'
+    }
+    if (!SECRET_PATTERNS.some(([, re]) => re.test(l))) return l
+    inKey = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(l) && !/-----END [A-Z ]*PRIVATE KEY-----/.test(l)
+    return '[masked by sdlc]'
+  }).join('\n')
+}
 
 // ---------- globs ----------
 
@@ -84,9 +95,11 @@ export function matchesAny(file: string, globs: string[]): boolean {
     return re.test(file)
   })
 }
+// The wiki's own pages are docs, not source: only its manifest and markdown pages.
+export const WIKI_DOC = /^docs\/wiki\/(?:.*\.md|manifest\.json)$/
 export const isTest = (file: string, cfg: SensorConfig): boolean => matchesAny(file, cfg.tests)
 export const isSource = (file: string, cfg: SensorConfig): boolean =>
-  !file.startsWith('.sdlc/') && !file.startsWith('docs/wiki/') && !matchesAny(file, cfg.ignore)
+  !file.startsWith('.sdlc/') && !WIKI_DOC.test(file) && !matchesAny(file, cfg.ignore)
 
 // ---------- unified diff ----------
 

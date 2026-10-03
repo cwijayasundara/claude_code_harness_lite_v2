@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, read, exists, sha, out, git, toPosix, sanctionWrites, type Args } from './core.ts'
-import { globToRegex, isSource, type Finding } from './model.ts'
+import { matchesAny, isSource, isTest, type Finding } from './model.ts'
 import { loadConfig } from './check.ts'
 
 export const WIKI_DIR = 'docs/wiki'
@@ -22,7 +22,7 @@ function readManifest(): Manifest | null {
 }
 
 const tracked = (): string[] => (git(['ls-files', '--cached', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean)
-const filesFor = (globs: string[], all: string[]): string[] => all.filter(f => globs.some(g => globToRegex(g).test(f))).sort()
+const filesFor = (globs: string[], all: string[]): string[] => all.filter(f => matchesAny(f, globs)).sort()
 
 function surfaceOf(files: string[]): string {
   const lines = files.flatMap(f => [`# ${f}`, ...read(path.join(ROOT, f)).split('\n').filter(l => SURFACE.test(l)).map(l => l.trim())])
@@ -42,15 +42,15 @@ export function wikiStatus(): { stale: string[]; missing: string[]; uncovered: s
     else if (p.surface !== surfaceOf(files)) stale.push(page)
   }
   const globs = Object.values(m.pages).flatMap(p => p.globs ?? [])
-  const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config)).map(f => f.split('/')[0] ?? ''))
-  const uncovered = [...dirs].filter(d => !all.some(f => f.startsWith(`${d}/`) && globs.some(g => globToRegex(g).test(f)))).sort()
+  const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
+  const uncovered = [...dirs].filter(d => !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
   return { stale: stale.sort(), missing: missing.sort(), uncovered }
 }
 
 export function wikiFindings(): Finding[] {
   const s = wikiStatus()
   if (!s) return []
-  const fix = 'run /sdlc:wiki --update (it rewrites only these pages)'
+  const fix = 'run /sdlc:wiki update (it rewrites only these pages)'
   const warn = (file: string, message: string): Finding => ({ sensor: 'wiki-stale', severity: 'warn', file, message, fix })
   return [
     ...s.stale.map(p => warn(`${WIKI_DIR}/${p}`, 'the module\'s public surface changed since this page was written')),
@@ -71,13 +71,22 @@ export function cmdWiki(args: Args): void {
   if (sub === 'stamp') {
     const m = readManifest()
     if (!m) return out('no docs/wiki/manifest.json to stamp')
+    const unknown = pages.filter(n => !(n in m.pages))
+    if (unknown.length) {
+      process.stderr.write(`unknown page(s): ${unknown.join(', ')}\n`)
+      process.exitCode = 1
+      return
+    }
     const all = tracked()
+    let stamped = 0
     for (const [page, p] of Object.entries(m.pages)) {
-      if (!pages.length || pages.includes(page)) p.surface = surfaceOf(filesFor(p.globs ?? [], all))
+      if (pages.length && !pages.includes(page)) continue
+      p.surface = surfaceOf(filesFor(p.globs ?? [], all))
+      stamped++
     }
     fs.writeFileSync(MANIFEST, JSON.stringify(m, null, 2) + '\n')
     sanctionWrites([toPosix(path.relative(ROOT, MANIFEST))])
-    return out(`stamped ${pages.length || Object.keys(m.pages).length} page(s)`)
+    return out(`stamped ${stamped} page(s)`)
   }
   out('usage: wiki status [--json] | wiki stamp [page...]')
 }

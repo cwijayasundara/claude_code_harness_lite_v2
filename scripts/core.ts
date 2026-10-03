@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { globToRegex, SECRET_PATTERNS } from './model.ts'
+import { globToRegex, WIKI_DOC, SECRET_PATTERNS } from './model.ts'
 
 export { globToRegex }
 
@@ -369,7 +369,7 @@ export function relPosix(file: string): string {
 
 export function isPlanned(file: string, patterns: string[]): boolean {
   const rel = relPosix(file)
-  if (rel.startsWith('.sdlc/') || rel.startsWith('docs/wiki/')) return true
+  if (rel.startsWith('.sdlc/') || WIKI_DOC.test(rel)) return true
   return patterns.some(p => globToRegex(p).test(rel))
 }
 

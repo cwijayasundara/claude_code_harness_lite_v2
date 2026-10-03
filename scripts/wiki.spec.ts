@@ -50,3 +50,37 @@ test('wiki-stale warns at ship and ci only when a manifest exists; docs/wiki is 
   const { isPlanned } = await import('./core.ts')
   assert.equal(isPlanned('docs/wiki/modules/src.md', ['src/**']), true)
 })
+
+test('uncovered ignores dot dirs and test dirs', () => {
+  const repo = makeRepo()
+  write(repo, 'src/a.js', 'export const a = 1\n'); write(repo, 'tests/a.test.js', 'test()\n'); write(repo, '.github/x.yml', 'a: 1\n')
+  manifest(repo, { 'modules/src.md': { globs: ['src/**'] } })
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'a')
+  assert.deepEqual(status(repo).uncovered, [])
+})
+
+test('docs/wiki exempts only the manifest and markdown pages', async () => {
+  const { isPlanned } = await import('./core.ts')
+  const { isSource, parseConfig } = await import('./model.ts')
+  const cfg = parseConfig('{}').config
+  assert.equal(isPlanned('docs/wiki/evil.js', ['src/**']), false)
+  assert.equal(isSource('docs/wiki/evil.js', cfg), true)
+  for (const f of ['docs/wiki/modules/a.md', 'docs/wiki/manifest.json']) {
+    assert.equal(isPlanned(f, ['src/**']), true, f)
+    assert.equal(isSource(f, cfg), false, f)
+  }
+})
+
+test('wiki stamp rejects unknown pages without writing and counts what it stamped', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  manifest(repo, { 'modules/src.md': { globs: ['src/**'] }, 'modules/b.md': { globs: ['b/**'] } })
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'a')
+  const bad = sdlc(repo, ['wiki', 'stamp', 'modules/src.md', 'nope.md'])
+  assert.equal(bad.code, 1)
+  assert.match(bad.stderr, /unknown page\(s\): nope\.md/)
+  assert.deepEqual(status(repo).stale, ['modules/src.md'], 'nothing written')
+  const ok = sdlc(repo, ['wiki', 'stamp', 'modules/src.md'])
+  assert.match(ok.stdout, /stamped 1 page/)
+})

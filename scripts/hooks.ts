@@ -65,8 +65,9 @@ function hookSessionStart(input: HookInput): void {
     delete gate.guides[input.session_id ?? 'default']
     writeGate(gate)
   }
-  const guides = listGuides(loadConfig().config).map(g => g.name)
-  const wikiMissing = !exists(path.join(ROOT, 'docs/wiki')) && (git(['ls-files']) ?? '').split('\n').some(f => isSource(f, loadConfig().config))
+  const cfg = loadConfig().config
+  const guides = listGuides(cfg).map(g => g.name)
+  const wikiMissing = !exists(path.join(ROOT, 'docs/wiki')) && (git(['ls-files']) ?? '').split('\n').some(f => isSource(f, cfg))
   const active = activeSlug()
   const c = active ? loadChange(active) : null
   const state = frontmatter(read(STATE)).body.trim().split('\n').slice(0, 15).join('\n')
@@ -209,9 +210,17 @@ function hookPreEdit(input: HookInput): void {
   }
   const context = guidesFor(rel, input.session_id ?? 'default')
   if (isProtected(rel, CASE_INSENSITIVE)) return decide('ask', protectedEditReason(file, rel, input.tool_input), context)
+  if (rel.startsWith('.superpowers/sdd/')) return respond({ context }) // SDD's gitignored ledger, briefs and reports
   const slug = activeSlug()
   if (!slug) return respond({ context })
-  const stage = loadChange(slug).next?.stage
+  const change = loadChange(slug)
+  const stage = change.next?.stage
+  const { config } = loadConfig()
+  if ((change.type === 'bugfix' || change.type === 'incident') && change.tier === 'L' && (stage === 'plan' || approvalOf(slug, 'plan') !== 'approved')
+    && isSource(rel, config) && !isTest(rel, config)) {
+    const why = `${rel}: tier L bug fixes wait for the person to approve plan.md (root cause and fix). `
+    return decide('ask', `${why}Write the failing test now; fix after /sdlc-approve ${slug} plan.`, context)
+  }
   if (stage !== 'build' && stage !== 'diagnose') return respond({ context })
   const patterns = planFiles(slug)
   if (patterns.length && !isPlanned(file, patterns)) {

@@ -243,7 +243,8 @@ test('a deleted test file matching fixtures is still reported', () => {
 
 test('size warns once per file on added lines over limits.lineChars, not at edit time', () => {
   const cfg = { ...CFG, limits: { ...CFG.limits, lineChars: 20 } }
-  const d = { file: 'src/a.ts', status: 'M' as const, added: [{ n: 3, text: 'x'.repeat(21) }, { n: 4, text: 'ok' }, { n: 9, text: 'y'.repeat(30) }], removed: [] }
+  const added = [{ n: 3, text: 'x'.repeat(21) }, { n: 4, text: 'ok' }, { n: 9, text: 'y'.repeat(30) }]
+  const d = { file: 'src/a.ts', status: 'M' as const, added, removed: [] }
   const f = size([d], cfg, { 'src/a.ts': 10 }, 'stop')
   assert.deepEqual(f.map(x => [x.sensor, x.severity, x.line, x.message]), [['size', 'warn', 3, '2 added line(s) over 20 characters']])
   assert.deepEqual(size([d], cfg, { 'src/a.ts': 10 }, 'edit'), [])
