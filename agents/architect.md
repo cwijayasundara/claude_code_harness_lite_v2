@@ -19,7 +19,7 @@ Write only the requested file inside the change folder. Never edit source code.
 - `## Contracts`: one line per contract identifier added, renamed or removed: ``- add `x` ``, ``- rename `a` → `b` ``, ``- remove `a` ``. Write `none` if none. Renames follow expand–migrate–contract (guides/contracts.md).
 - `## Files`: one `- path/or/glob` per line, tests included. This is the ownership contract. Consumer repo files are `../<repo>/...` globs.
 - `## Slices`: thin vertical slices, each with its goal, files, interface sketch, acceptance tests naming the B-numbers they prove, and its fast test command.
-- `## Verification`: exact commands, including lint and type-check from `.sdlc/sensors.json`, and each affected consumer's test command.
+- `## Verification`: one backticked command per bullet, starting the bullet (``- `npm test` ``); notes only after the command. Include lint and type-check from `.sdlc/sensors.json` and each affected consumer's test command. Nothing else in the section: put "none configured" and other notes under Risks.
 - `## Risks & rollback`.
 
 Order slices by change type: greenfield, a walking skeleton first; refactor, characterization tests first; migration, inventory, then a pilot unit, then fan-out. Prefer the fewest slices that keep each one testable.

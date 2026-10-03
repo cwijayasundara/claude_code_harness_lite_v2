@@ -316,11 +316,20 @@ export function nextCommand(change: Change): string {
 // Evidence and gate state: written only by sdlc itself or the person's mod commands.
 export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)|\.sdlc[\\/]changes[\\/][^\\/]+[\\/](?:verification\.md|impact\.json)/
 
-// The plan's ## Verification commands: backticked text, or the rest of the bullet.
+// The plan's ## Verification commands, one per bullet. A command is the first backticked span when it
+// sits in command position: right after the bullet marker, or after one leading `Label: `. Backticks later
+// in prose (a path mentioned in a note) are not commands. A bullet with no backticks and no `: ` is a bare
+// command (`- npm test`); a backtick-free `Label: prose` bullet is a note. Harness invocations (`sdlc.ts ...`,
+// e.g. the red-first `run --expect-fail` or `check`) are not verification evidence and are not required.
 export function planVerification(slug: string): string[] {
   const body = read(path.join(CHANGES, slug, 'plan.md'))
   const m = /^##\s+Verification\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(body)
-  return (m?.[1] ?? '').split('\n').map(row => /^\s*[-*]\s+(?:`([^`]+)`|(.+))$/.exec(row)).filter((x): x is RegExpExecArray => Boolean(x)).map(x => (x[1] ?? x[2] ?? '').trim())
+  return (m?.[1] ?? '').split('\n').flatMap(row => {
+    const text = /^\s*[-*]\s+(.+)$/.exec(row)?.[1]
+    if (!text) return []
+    const cmd = (/^(?:[^`:]+:\s+)?`([^`]+)`/.exec(text)?.[1] ?? (text.includes('`') || text.includes(': ') ? '' : text)).trim()
+    return cmd && !/\bsdlc\.ts\b/.test(cmd) ? [cmd] : []
+  })
 }
 
 export function planFiles(slug: string): string[] {

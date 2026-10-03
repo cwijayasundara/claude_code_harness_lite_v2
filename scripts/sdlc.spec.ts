@@ -397,3 +397,47 @@ test('impact-status recognises a consumer declared with an absolute path', () =>
   write('.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['d'], hits: [{ consumer: 'checkout', file: 'a', line: 1, id: 'd' }], missing: [] }))
   assert.equal(JSON.parse(run(['impact-status', path.join(consumerDir, 'a.ts'), '--json']).stdout).hold, true)
 })
+
+// Real artifacts from the 2026-10-03 live trial: the architect's labelled bullets and the runs the build agent recorded.
+const TRIAL = path.resolve(import.meta.dirname, '../tests/trials/live-2026-10-03')
+const reportFor = (verification: string, rows: object[]) => {
+  if (!fs.existsSync(path.join(repo, '.sdlc/changes/tiny'))) run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/tiny/plan.md', `## Files\n- src/**\n${verification}`)
+  write('.sdlc/changes/tiny/runs.jsonl', rows.map(r => JSON.stringify(r)).join('\n') + '\n')
+  run(['verify-report', 'tiny'])
+  return fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8')
+}
+const ok = (cmd: string, extra: object = {}) => ({ at: 'x', cmd, exit: 0, ms: 1, tail: '', ...extra })
+
+test('verify-report passes on the live trial plan: labelled bullets, prose notes and a red run (regression)', () => {
+  const rows = fs.readFileSync(path.join(TRIAL, 'runs.jsonl'), 'utf8').trim().split('\n').map(r => JSON.parse(r))
+  const text = reportFor(fs.readFileSync(path.join(TRIAL, 'plan-verification.md'), 'utf8'), rows)
+  assert.match(text, /result: pass/)
+  assert.doesNotMatch(text, /Not run/)
+})
+
+test('a labelled bullet "- Label: `cmd` prose" requires cmd, not the label or the prose', () => {
+  const plan = '## Verification\n- Full suite: `npm test`, which runs `node --test`.\n'
+  assert.match(reportFor(plan, []), /result: fail[\s\S]*Not run[\s\S]*- `npm test`/)
+  assert.match(reportFor(plan, [ok('npm test')]), /result: pass/)
+})
+
+test('a prose bullet whose backticks are not in command position is not a required command', () => {
+  const plan = '## Verification\n- `npm test`\n- Lint and type-check: none configured. `.sdlc/sensors.json` only defines `npm test`.\n'
+  const text = reportFor(plan, [ok('npm test')])
+  assert.match(text, /result: pass/)
+  assert.doesNotMatch(text, /sensors\.json/)
+})
+
+test('an expected-red bullet wrapping `sdlc.ts run --expect-fail` is not a required green command', () => {
+  const plan = '## Verification\n- Red first: `sdlc.ts run --expect-fail -- "node --test a.js"`.\n- `npm test`\n'
+  const text = reportFor(plan, [ok('npm test')])
+  assert.match(text, /result: pass/)
+  assert.doesNotMatch(text, /Not run/)
+})
+
+test('a bare-command bullet stays a command; a backtick-free "Label: prose" bullet does not', () => {
+  assert.match(reportFor('## Verification\n- npm test\n', []), /Not run[\s\S]*- `npm test`/)
+  const text = reportFor('## Verification\n- npm test\n- Lint: none configured\n', [ok('npm test')])
+  assert.match(text, /result: pass/)
+})
