@@ -10,7 +10,7 @@
   },
   "enabledPlugins": {
     "sdlc@sdlc": true,
-    "superpowers@claude-plugins-official": false,
+    "superpowers@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
     "financial-analysis@claude-for-financial-services": false,
     "private-equity@claude-for-financial-services": false,

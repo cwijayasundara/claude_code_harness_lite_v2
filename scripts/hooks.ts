@@ -244,6 +244,12 @@ function hookPostEdit(input: HookInput): void {
 function hookSkillFailed(input: HookInput): void {
   if (!exists(SDLC)) return
   const skill = String(input.tool_input?.skill ?? '')
+  if (skill === 'superpowers:subagent-driven-development') {
+    fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
+    const context = 'superpowers SDD is unavailable. Continue with the "Large builds: orchestrate" section of /sdlc:build '
+      + '(sdlc:implementer subagents). Say "skill fallback: native build" in your reply.'
+    return out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
+  }
   const m = /^sdlc:([a-z-]+)$/.exec(skill)
   if (!m) return
   fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')

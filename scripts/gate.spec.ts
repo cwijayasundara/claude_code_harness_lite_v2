@@ -377,3 +377,11 @@ test('I4: Bash naming SDLC_HUMAN or a human-only command is denied, quoted or no
     assert.equal(as(c), 'deny', c)
   assert.equal(as('echo hello'), undefined)
 })
+
+test('a failed superpowers SDD load sends the model back to native orchestration and logs it', () => {
+  const repo = makeRepo(); sdlc(repo, ['init'])
+  const r = JSON.parse(hook(repo, 'skill-failed', { tool_input: { skill: 'superpowers:subagent-driven-development' } }).stdout)
+  assert.match(r.hookSpecificOutput.additionalContext, /Large builds: orchestrate/)
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /"skill":"superpowers:subagent-driven-development"/)
+  assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'other:thing' } }).stdout, '')
+})
