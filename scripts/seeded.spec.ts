@@ -61,6 +61,11 @@ for (const [name, sensor, apply] of DEFECTS) {
 test('seeded: a 700-line diff warns at Stop and blocks in CI', () => {
   write(repo, 'src/huge.js', Array.from({ length: 700 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
   assert.notEqual(JSON.parse(hook(repo, 'stop', {}).stdout || '{}').decision, 'block')
+  // A warn emits nothing; the proof the size sensor ran and warned is the gate summary Stop records.
+  const last = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8')).last
+  assert.ok(last, 'Stop recorded a gate summary')
+  assert.ok(last.bySensor.size >= 1 && last.warns >= 1, `size warned at Stop: ${JSON.stringify(last)}`)
+  assert.equal(last.blocks, 0)
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'pr')
   assert.match(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main']).stdout, /\[size\][\s\S]*limit 500/)
