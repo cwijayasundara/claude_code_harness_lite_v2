@@ -350,6 +350,33 @@ Targets:
 - **Interactive checks (spec §15) not performed**: the trial was headless. The mod impact dialog (main-thread and subagent edits), the `sensors ✓/✗` band and the `/sdlc-sensors` pane are pending a human.
 - Observation: `STATE.md` in the trial repo said "No active change" while `sdlc status` showed `todo-due-dates` at verify. See §11.
 
+### v0.3 trial (2026-10-03): three arms, tier L, todo-core
+
+Task: API-key auth, per-user isolation, pagination, atomic file store (`tests/trials/run-trials.sh L`). The arms ran in parallel; the whole run took 14 min 15 s. Hidden acceptance: `tests/trials/acceptance-L.test.js`, 5 cases including the empty-key bypass.
+
+| Arm | Cost | Wall time | Acceptance | Outcome |
+|---|---|---|---|---|
+| Plain Claude Code | $0.37 | 80 s | 5/5 | done, uncommitted on main |
+| Harness, native build | $3.12 | 474 s | 3/5 | stopped before Task 3 (pagination) on an open plan question; nothing committed |
+| Harness, superpowers SDD build | $4.01 | 588 s | 5/5 | all 4 tasks built and committed per task; stopped at `Next: /sdlc:verify` (not verified, reviewed or shipped) |
+
+Estimated cost split (`tests/trials/split.mjs`):
+
+| Line | Native | SDD |
+|---|---|---|
+| Opus advisor (main thread) | $1.25 | $1.16 |
+| Sonnet main thread | $1.11 | $1.49 |
+| Opus architect | $0.38 | $0.33 |
+| Sonnet implementers | $0.29 | $0.46 + $0.48 (SDD subagents) |
+| Haiku scout | $0.06 | $0.05 |
+
+Findings:
+- **The Opus advisor is the largest single cost:** about 30–40% of each harness arm, three times the architect. This settles §11's open question. The §9 rule ("demote the architect if it dominates Opus spend") does not fire.
+- **SDD stays the default for tier L.** It cost 1.28× native, under the 1.5× threshold, and finished every task. Native stalled.
+- **Defect: plans carry unresolved gating questions.** The architect wrote "confirm the `GET /todos` shape before Task 3" into an approved plan. Headless, nobody answers it, so the native build stopped. Approval has to mean every open question is resolved or defaulted in `## Decisions`.
+- **Defect: chained stages stop at the build's end line.** Both harness arms ended at `Next: /sdlc:verify` despite a prompt to continue. Neither verified nor shipped.
+- **Plain Claude Code passed 5/5 at a tenth of the cost**, with no auth bypass this time. On a clear tier L task, the harness bought process and audit, not correctness.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
@@ -391,4 +418,4 @@ The Spec 1 live trial is recorded in §10.
 - **LOC cap.** The harness (scripts, hooks, skills, agents, guides, templates, workflows, plugin JSON) is capped at 5000 lines by a test.
 - **Fixes.** STATE.md follows the active change; tier L bugfix and incident get a plan gate after diagnosis; the size sensor warns on added lines over `limits.lineChars` (160); captured command output masks secrets.
 - **/sdlc:next** runs the active change's next stage and stops at human gates.
-- Trial results: see §10 (to be added after the trial).
+- Trial results: see §10, v0.3 trial.
