@@ -4,6 +4,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { globToRegex, SECRET_PATTERNS } from './model.ts'
+
+export { globToRegex }
 
 // ---------- types ----------
 
@@ -292,21 +295,6 @@ export function planFiles(slug: string): string[] {
     .map(toPosix)
 }
 
-export function globToRegex(glob: string): RegExp {
-  let re = ''
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i] ?? ''
-    if (c === '*' && glob[i + 1] === '*') {
-      re += '.*'
-      i++
-      if (glob[i + 1] === '/') i++
-    } else if (c === '*') re += '[^/]*'
-    else if (c === '?') re += '[^/]'
-    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  }
-  return new RegExp('^' + re + (glob.endsWith('/') ? '.*' : '') + '$')
-}
-
 // Paths are compared in POSIX form so plans written on macOS match edits made on Windows.
 export function relPosix(file: string): string {
   return toPosix(path.isAbsolute(file) ? path.relative(ROOT, file) : file)
@@ -339,16 +327,6 @@ export function scopeDrift(slug: string, base: string | null) {
   return { slug, base, patterns, changed, drift, matchRatio: changed.length ? (changed.length - drift.length) / changed.length : 1 }
 }
 // ---------- secrets & plan quality ----------
-
-export const SECRET_PATTERNS: [string, RegExp][] = [
-  ['AWS access key', /AKIA[0-9A-Z]{16}/],
-  ['private key', /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
-  ['Anthropic key', /sk-ant-[A-Za-z0-9_-]{20,}/],
-  ['OpenAI-style key', /\bsk-[A-Za-z0-9]{32,}\b/],
-  ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
-  ['Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
-  ['generic secret assignment', /(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*["'][^"'\s]{12,}["']/i],
-]
 
 export function scanSecrets(file: string): string[] {
   const text = read(file)
