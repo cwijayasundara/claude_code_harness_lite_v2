@@ -377,6 +377,22 @@ Findings:
 - **Defect: chained stages stop at the build's end line.** Both harness arms ended at `Next: /sdlc:verify` despite a prompt to continue. Neither verified nor shipped.
 - **Plain Claude Code passed 5/5 at a tenth of the cost**, with no auth bypass this time. On a clear tier L task, the harness bought process and audit, not correctness.
 
+### v0.3 lean trials (2026-10-03): the three fixes, then lean S/M
+
+Same tier L task and hidden test. The table compares the harness runs, oldest first.
+
+| Run | Harness cost | Wall time | Acceptance | Shipped | Plain Claude Code |
+|---|---|---|---|---|---|
+| 1. v0.3 as built (advisor on, per-stage sessions) | $3.12 native, $4.01 SDD | 474 s / 588 s | 3/5 native, 5/5 SDD | neither | $0.37, 80 s, 5/5 |
+| 2. advisor "opt-in", questions resolved, stages chained | $4.08 native; SDD cut at 20 min | ~12 min | 5/5 | native stopped at the 500-line size block | $0.35, 81 s, **4/5 (empty-key auth bypass)** |
+| 3. advisor really off, size warns once the plan is approved, SDD opt-in | **$2.67** native | **516 s** | **5/5** | **yes**, one scoped commit with artifacts | $0.24, 45 s, **4/5 (bypass)** |
+
+- **Run 2's advisor was still on.** The user-level `advisorModel` applied because the project only removed the key. `CLAUDE_CODE_DISABLE_ADVISOR_TOOL` in the project `env` turns it off. Run 3's main-thread transcripts show Sonnet calls only.
+- **Run 3 cost split:** main thread Sonnet $1.30, implementer $0.40, architect $0.25, reviewer $0.19, and $0.45 of Opus spend that no transcript explains.
+- **The harness shipped on a branch with a review that fixed one finding. Plain Claude Code twice left an auth bypass.** That is the assurance the extra cost buys on tier L. Tier S and M now skip gates and the in-session review, so their path is plan, build, verify and ship in one turn.
+- **Run 3 exposed a bug: a shipped turn created a phantom ad-hoc change.** Stop now records ad hoc only for uncommitted changes.
+- Each figure is one run per arm, so treat them as directional.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
