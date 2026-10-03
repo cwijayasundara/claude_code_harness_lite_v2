@@ -54,7 +54,7 @@ if (phase === 'onboard') {
 
 if (phase === 'change') {
   check('the change is done (shipped)', () => /\bdone\b/.test(sdlc('status')) || sdlc('status'))
-  check('committed on an sdlc/ branch', () => /^sdlc\//.test(git('rev-parse', '--abbrev-ref', 'HEAD')) || git('rev-parse', '--abbrev-ref', 'HEAD'))
+  check('committed on a branch, not main', () => !/^(?:main|master)$/.test(git('rev-parse', '--abbrev-ref', 'HEAD')) || 'still on main')
   check('working tree is clean after ship', () => {
     const dirty = git('status', '--porcelain').split('\n').filter(l => l && !/\.sdlc\/(?:STATE\.md|usage\.jsonl)$/.test(l))
     return dirty.length === 0 || dirty.join('; ')

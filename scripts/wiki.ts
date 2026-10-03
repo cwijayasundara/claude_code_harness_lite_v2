@@ -7,6 +7,7 @@ import { loadConfig } from './check.ts'
 
 export const WIKI_DIR = 'docs/wiki'
 const MANIFEST = path.join(ROOT, WIKI_DIR, 'manifest.json')
+const CITATION = /[\w./-]+\.\w+:\d+/
 const SURFACE = /^\s*(?:export|pub |def |class |func |public |interface |type |module\.exports)/
 type Page = { globs: string[]; surface?: string }
 type Manifest = { pages: Record<string, Page> }
@@ -79,13 +80,23 @@ export function cmdWiki(args: Args): void {
     }
     const all = tracked()
     let stamped = 0
+    const uncited: string[] = []
     for (const [page, p] of Object.entries(m.pages)) {
       if (pages.length && !pages.includes(page)) continue
+      // A page that cites no `path:line` is not a map an engineer can follow; it stays unstamped (stale) until fixed.
+      if (!CITATION.test(read(path.join(ROOT, WIKI_DIR, page)))) {
+        uncited.push(page)
+        continue
+      }
       p.surface = surfaceOf(filesFor(p.globs ?? [], all))
       stamped++
     }
     fs.writeFileSync(MANIFEST, JSON.stringify(m, null, 2) + '\n')
     sanctionWrites([toPosix(path.relative(ROOT, MANIFEST))])
+    if (uncited.length) {
+      process.stderr.write(`uncited page(s): ${uncited.join(', ')}: cite each claim as path:line, then stamp again\n`)
+      process.exitCode = 1
+    }
     return out(`stamped ${stamped} page(s)`)
   }
   out('usage: wiki status [--json] | wiki stamp [page...]')

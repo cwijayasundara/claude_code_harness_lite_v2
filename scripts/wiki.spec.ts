@@ -4,7 +4,10 @@ import { makeRepo, write, sdlc, gitIn } from './testkit.ts'
 
 type Status = { stale: string[]; missing: string[]; uncovered: string[] }
 type Out = { findings: { sensor: string; severity: string }[] }
-const manifest = (repo: string, pages: object): void => write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages }))
+const manifest = (repo: string, pages: object): void => {
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages }))
+  for (const page of Object.keys(pages)) write(repo, `docs/wiki/${page}`, `# ${page}\n- \`README.md:1\` cited\n`)
+}
 const status = (repo: string) => JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as Status
 const ciCheck = (repo: string) => JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json']).stdout) as Out
 
@@ -83,4 +86,19 @@ test('wiki stamp rejects unknown pages without writing and counts what it stampe
   assert.deepEqual(status(repo).stale, ['modules/src.md'], 'nothing written')
   const ok = sdlc(repo, ['wiki', 'stamp', 'modules/src.md'])
   assert.match(ok.stdout, /stamped 1 page/)
+})
+
+test('wiki stamp refuses a page with no path:line citation and stamps the cited ones', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  write(repo, 'src/a/x.js', 'export const x = 1\n')
+  write(repo, 'src/b/y.js', 'export const y = 1\n')
+  manifest(repo, { 'modules/a.md': { globs: ['src/a/**'] }, 'modules/b.md': { globs: ['src/b/**'] } })
+  write(repo, 'docs/wiki/modules/a.md', '# a\n- `src/a/x.js:1` exports x\n')
+  write(repo, 'docs/wiki/modules/b.md', '# b\nIt exports y.\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'a')
+  const r = sdlc(repo, ['wiki', 'stamp'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /uncited page\(s\): modules\/b\.md/)
+  assert.deepEqual(status(repo).stale, ['modules/b.md'], 'the cited page was stamped, the uncited one was not')
 })
