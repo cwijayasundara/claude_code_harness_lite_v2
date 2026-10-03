@@ -313,8 +313,10 @@ export function nextCommand(change: Change): string {
 }
 // ---------- plan parsing & scope drift ----------
 
-// Evidence and gate state: written only by sdlc itself or the person's mod commands.
-export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)|\.sdlc[\\/]changes[\\/][^\\/]+[\\/](?:verification\.md|impact\.json)/
+// Evidence and gate state: written only by sdlc itself or the person's mod commands. Only paths under .sdlc/ count,
+// so a project's own results/runs.jsonl is not evidence; EVIDENCE_NAME_RE catches bare names once a command names .sdlc.
+export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json))/
+export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl/
 
 // The plan's ## Verification bullets, split into required commands and ignored bullets (never dropped silently).
 // A command is the first backticked span in command position: right at the bullet start, or right after the

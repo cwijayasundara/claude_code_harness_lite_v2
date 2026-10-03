@@ -307,3 +307,25 @@ test('session start lists guide names without their bodies', () => {
   assert.match(ctx, /Guides \(injected when you first touch matching files\): contracts, engineering, testing/)
   assert.doesNotMatch(ctx, /Iron rules/)
 })
+
+test('I2: the evidence guard is silent in repos without .sdlc/, even for same-named files', () => {
+  for (const command of ['python train.py > results/runs.jsonl', 'echo x >> data/approvals.jsonl', 'cp a waivers.jsonl']) {
+    assert.equal(hook(repo, 'pre-bash', { tool_input: { command } }).stdout, '', command)
+  }
+  for (const f of ['data/approvals.jsonl', 'results/runs.jsonl', 'waivers.jsonl']) {
+    assert.equal(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } }).stdout, '', f)
+  }
+})
+
+test('I2: in an opted-in repo only paths under .sdlc/ are evidence; cd into .sdlc cannot hide a bare name', () => {
+  sdlc(repo, ['init'])
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
+  for (const c of ['python train.py > results/runs.jsonl', 'echo x >> data/approvals.jsonl', 'cp a lib/waivers.jsonl']) assert.equal(as(c), undefined, c)
+  for (const f of ['data/approvals.jsonl', 'results/runs.jsonl', 'src/.gate']) {
+    assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } })), undefined, f)
+  }
+  for (const c of ['cd .sdlc && echo x >> approvals.jsonl', 'cd .sdlc/changes/a && echo {} >> runs.jsonl', 'echo x >> .sdlc//approvals.jsonl', 'echo x >> .sdlc/changes/../waivers.jsonl']) assert.equal(as(c), 'deny', c)
+  for (const f of ['.sdlc/approvals.jsonl', '.sdlc/changes/a/runs.jsonl', '.sdlc/./waivers.jsonl']) {
+    assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } })), 'deny', f)
+  }
+})

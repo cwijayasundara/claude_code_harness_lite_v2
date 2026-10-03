@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
-  planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
+  planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
@@ -86,11 +86,11 @@ const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
-function rawSafe(cmd: string, ci: boolean): boolean {
+function rawSafe(cmd: string, ci: boolean, loose: boolean): boolean {
   return cmd
     .replace(/>\|/g, '>')
     .split(/&&|\|\||;|\||\n/)
-    .filter(part => evidencePath(part, ci))
+    .filter(part => evidencePath(part, ci, loose))
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
@@ -117,19 +117,23 @@ export function globWrite(cmd: string): boolean {
 
 // Quotes and escapes must not hide an evidence path (run"s".jsonl): the raw text and a dequoted form are both checked.
 // tokenize gives exact words; where it refuses (substitutions, redirects), quotes and backslashes are simply dropped.
+// A command that names .sdlc anywhere (cd .sdlc && ... >> approvals.jsonl) has its bare evidence names checked too.
 export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
-  if (!rawSafe(cmd, ci)) return false
+  const loose = NAMES_SDLC.test(cmd) || NAMES_SDLC.test(stripQuotes(cmd))
+  if (!rawSafe(cmd, ci, loose)) return false
   const { segs, bad } = tokenize(cmd)
-  if (bad) return rawSafe(stripQuotes(cmd), ci) && !globWrite(cmd)
-  return segs.filter(w => evidencePath(w.join(' '), ci)).every(wordsSafe) && !globWrite(cmd)
+  if (bad) return rawSafe(stripQuotes(cmd), ci, loose) && !globWrite(cmd)
+  return segs.filter(w => evidencePath(w.join(' '), ci, loose)).every(wordsSafe) && !globWrite(cmd)
 }
+const NAMES_SDLC = /\.sdlc(?![\w-])/i
 
 const dequoted = (cmd: string): string => {
   const { segs, bad } = tokenize(cmd)
   return bad ? stripQuotes(cmd) : segs.map(w => w.join(' ')).join('\n')
 }
 
-export const evidencePath = (p: string, ci = CASE_INSENSITIVE): boolean => (ci ? new RegExp(EVIDENCE_RE.source, 'i') : EVIDENCE_RE).test(p)
+const flagged = (re: RegExp, ci: boolean): RegExp => (ci ? new RegExp(re.source, 'i') : re)
+export const evidencePath = (p: string, ci = CASE_INSENSITIVE, loose = false): boolean => flagged(EVIDENCE_RE, ci).test(p) || (loose && flagged(EVIDENCE_NAME_RE, ci).test(p))
 
 const replaceOnce = (text: string, o: string, n: string, all?: boolean): string => (all ? text.split(o).join(n) : text.replace(o, () => n))
 
@@ -175,11 +179,11 @@ function declaredCommands(slug: string | undefined): Set<string> {
 }
 
 function hookPreBash(input: HookInput): void {
+  if (!exists(SDLC)) return
   const cmd = String(input.tool_input?.command ?? '')
   if (HUMAN_ONLY.test(cmd) || HUMAN_ONLY.test(dequoted(cmd)) || !isSafeEvidenceCommand(cmd)) {
     return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); runs.jsonl only from `sdlc.ts run`; gate state only from the hooks. Read these files with the Read tool.')
   }
-  if (!exists(SDLC)) return
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands) : null
   if (why) return decide('deny', `${agent} is read-only: ${why}. It reports and never edits; record test runs with sdlc.ts run -- "<declared command>" and leave fixes to the implementer.`)
@@ -191,11 +195,10 @@ function hookPreBash(input: HookInput): void {
 
 function hookPreEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? input.tool_input?.notebook_path ?? '')
-  if (!file) return
-  if (evidencePath(toPosix(file))) {
+  if (!file || !exists(SDLC)) return
+  if (evidencePath(toPosix(path.resolve(ROOT, file)))) {
     return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\` and generate verification.md with \`sdlc.ts verify-report <slug>\`.`)
   }
-  if (!exists(SDLC)) return
   const rel = relPosix(file)
   if (rel.startsWith('../')) {
     const consumer = consumerFor(rel)
