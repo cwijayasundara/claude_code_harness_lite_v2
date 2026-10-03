@@ -10,7 +10,7 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, ARTIFACTS,
   exists, read, lines, sha, now, toPosix, out, fail, git, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  ensureGitignore, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
+  ensureGitignore, clearState, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
 } from './core.ts'
 import { cmdHook } from './hooks.ts'
 import { cmdMetrics } from './metrics.ts'
@@ -128,7 +128,8 @@ function cmdShip(args: Args): void {
   fs.writeFileSync(shipFile, JSON.stringify({ at: now(), base, changed: r.changed.length, drift: [], matchRatio: 1 }, null, 2) + '\n')
   ensureGitignore()
   const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
-  const extras = ['.sdlc/approvals.jsonl', '.sdlc/.gitignore'].filter(f => exists(path.join(ROOT, f)))
+  clearState(slug)
+  const extras = ['.sdlc/approvals.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md'].filter(f => exists(path.join(ROOT, f)))
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', changeDir, ...extras, ...code]) === null) fail('git add failed')
   if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')
@@ -156,6 +157,17 @@ function cmdLogUsage(args: Args): void {
 
 // ---------- main ----------
 
+// Deterministic fallback when the Skill tool fails to load a stage skill (seen in `claude -p`):
+// prints the same instructions the skill would have loaded.
+function cmdSkill(args: Args): void {
+  const [name, ...rest] = args.pos
+  const skills = path.join(PLUGIN_ROOT, 'skills')
+  const file = path.join(skills, name ?? '', 'SKILL.md')
+  if (!name || !exists(file)) fail(`no skill named ${name ?? ''}; one of ${exists(skills) ? fs.readdirSync(skills).join(', ') : '(none here)'}`)
+  const body = frontmatter(read(file)).body
+  out(body.replaceAll('${CLAUDE_PLUGIN_ROOT}', toPosix(PLUGIN_ROOT)).replaceAll('$ARGUMENTS', rest.join(' ')).replace(/\$0\b/g, rest[0] ?? ''))
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   init: cmdInit,
   new: cmdNew,
@@ -164,6 +176,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   approve: cmdApprove,
   'scope-drift': cmdScopeDrift,
   ship: cmdShip,
+  skill: cmdSkill,
   secrets: cmdSecrets,
   'log-usage': cmdLogUsage,
   hook: cmdHook,

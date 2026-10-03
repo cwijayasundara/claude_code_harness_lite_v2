@@ -11,6 +11,9 @@
     ],
     "PostToolUse": [
       { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook post-edit", "timeout": 15 } ] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "Skill", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook skill-failed", "timeout": 10 } ] }
     ]
   }
 }

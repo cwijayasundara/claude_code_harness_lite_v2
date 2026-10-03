@@ -1,7 +1,7 @@
 // sdlc settings hooks: read the hook event JSON on stdin, decide, and print the hook's JSON answer.
 import fs from 'node:fs'
 import {
-  SDLC, STATE, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
+  SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
   planFiles, isPlanned, relPosix, scanSecrets, planProblems, type Args, type HookInput,
 } from './core.ts'
 
@@ -25,7 +25,7 @@ function hookSessionStart(): void {
   const context = [
     'sdlc harness is active in this repo (artifacts in .sdlc/).',
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : 'No active change. Start one with /sdlc:start "<request>".',
-    'Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /sdlc:handoff.',
+    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /sdlc:handoff. If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
   ].filter(Boolean)
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context.join('\n') } }))
@@ -82,11 +82,24 @@ function hookPostEdit(input: HookInput): void {
   }
 }
 
+// A stage skill that fails to load leaves the model to improvise. Hand it the exact instructions instead.
+function hookSkillFailed(input: HookInput): void {
+  if (!exists(SDLC)) return
+  const skill = String(input.tool_input?.skill ?? '')
+  const m = /^sdlc:([a-z-]+)$/.exec(skill)
+  if (!m) return
+  fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
+  const cmd = `node --disable-warning=ExperimentalWarning "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill ${m[1]} ${input.tool_input?.args ?? ''}`.trim()
+  const context = `The ${skill} skill failed to load. Run \`${cmd}\` and follow the printed steps exactly, as if the skill had loaded. Say "skill fallback: ${skill}" in your reply.`
+  out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
+}
+
 const HOOKS: Record<string, (input: HookInput) => void> = {
   'session-start': hookSessionStart,
   'pre-bash': hookPreBash,
   'pre-edit': hookPreEdit,
   'post-edit': hookPostEdit,
+  'skill-failed': hookSkillFailed,
 }
 
 export function cmdHook(args: Args): void {

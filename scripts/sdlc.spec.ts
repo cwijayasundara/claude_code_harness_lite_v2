@@ -70,7 +70,7 @@ test('tier M feature needs plan approval; approval is human-only and goes stale 
 test('new writes .sdlc/.gitignore even when .sdlc already exists', () => {
   fs.mkdirSync(path.join(repo, '.sdlc'))
   run(['new', 'x-change', '--type', 'chore', '--tier', 'S'])
-  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/.gitignore'), 'utf8'), 'usage.jsonl\n')
+  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/.gitignore'), 'utf8'), 'usage.jsonl\n.baseline\n.gate\nunresolved.json\n')
 })
 
 test('tier S chore has no gates and skips spec and plan', () => {
@@ -210,4 +210,38 @@ test('log-usage tags rows with the active change; metrics report cost and unmeas
   assert.equal(m.cost.turns_over_150k, 1)
   assert.ok(m.cost.tokens_by_agent_type.implementer > 0)
   assert.equal(m.first_pass_share.value, null)
+})
+
+test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active change', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('src/app.js', 'x\n')
+  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
+  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(shipped.code, 0, shipped.stderr)
+  const files = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: repo, encoding: 'utf8' })
+  assert.match(files, /\.sdlc\/STATE\.md/)
+  assert.match(files, /\.sdlc\/\.gitignore/)
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /No active change\. Last shipped: tiny\./)
+  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim(), '')
+  assert.doesNotMatch(run(['status']).stdout, /next: /)
+})
+
+test('activeSlug never falls back to a finished change', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('src/app.js', 'x\n')
+  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  run(['ship', 'tiny', '--message', 'chore: tiny'])
+  fs.rmSync(path.join(repo, '.sdlc/STATE.md'))
+  assert.doesNotMatch(run(['status']).stdout, /▶ tiny/)
+})
+
+test('skill prints a stage skill with plugin root and arguments substituted', () => {
+  const r = run(['skill', 'verify', 'add-login'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /# Verify add-login/)
+  assert.doesNotMatch(r.stdout, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  assert.doesNotMatch(r.stdout, /^---\nname:/)
+  assert.notEqual(run(['skill', 'no-such-skill']).code, 0)
 })

@@ -33,7 +33,7 @@ export type Approval = { slug: string; stage: string; by: string; at: string; di
 
 export type UsageRow = {
   at: string
-  kind: 'main' | 'agent'
+  kind: 'main' | 'agent' | 'event'
   change: string | null
   stage: string | null
   model?: string | null
@@ -44,10 +44,29 @@ export type UsageRow = {
   cw?: number
   usd?: number
   ctx?: number
+  event?: string
+  skill?: string
+  rule?: string
 }
 
 export type Args = { pos: string[]; opt: Record<string, string | true> }
-export type HookInput = { tool_input?: { command?: string; file_path?: string; notebook_path?: string } }
+export type HookInput = {
+  session_id?: string
+  agent_id?: string
+  agent_type?: string
+  source?: string
+  tool_input?: {
+    command?: string
+    file_path?: string
+    notebook_path?: string
+    content?: string
+    old_string?: string
+    new_string?: string
+    replace_all?: boolean
+    skill?: string
+    args?: string
+  }
+}
 
 // ---------- constants ----------
 
@@ -174,10 +193,13 @@ export function listChanges(): string[] {
     .map(d => d.name)
 }
 
+// STATE.md decides when it names a change, even an empty one (after ship). Only a missing STATE.md
+// falls back to the most recently touched change that is still unfinished.
 export function activeSlug(): string | null {
   const { data } = frontmatter(read(STATE))
-  if (data.change && exists(path.join(CHANGES, data.change))) return data.change
+  if ('change' in data) return data.change && exists(path.join(CHANGES, data.change)) ? data.change : null
   const byMtime = listChanges()
+    .filter(slug => loadChange(slug).next !== null)
     .map(slug => ({ slug, t: fs.statSync(path.join(CHANGES, slug)).mtimeMs }))
     .sort((a, b) => b.t - a.t)
   return byMtime[0]?.slug ?? null
@@ -336,9 +358,19 @@ export function planProblems(file: string): string[] {
   return problems
 }
 
+export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
+const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json']
+
 export function ensureGitignore(): void {
+  if (!exists(SDLC)) return
   const ignore = path.join(SDLC, '.gitignore')
-  if (exists(SDLC) && !exists(ignore)) fs.writeFileSync(ignore, 'usage.jsonl\n')
+  const have = new Set(read(ignore).split('\n').filter(Boolean))
+  const missing = GITIGNORED.filter(f => !have.has(f))
+  if (missing.length) fs.appendFileSync(ignore, missing.join('\n') + '\n')
+}
+
+export function clearState(shipped: string): void {
+  fs.writeFileSync(STATE, `---\nchange:\n---\n# State\n\nNo active change. Last shipped: ${shipped}.\n`)
 }
 
 export const intentTemplate = (slug: string, type: ChangeType, tier: Tier, title: string): string => `---
