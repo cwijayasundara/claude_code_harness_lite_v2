@@ -1529,7 +1529,7 @@ test('size warns when a file crosses the line limit, and the diff limit blocks o
 })
 
 test('secrets in added lines block; the allow comment opts out', () => {
-  assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP"'])]).length, 1)
+  assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP"'])]).length, 1) // sdlc:allow-secret fixture quoted from the plan
   assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP" // sdlc:allow-secret test fixture'])]).length, 0)
 })
 

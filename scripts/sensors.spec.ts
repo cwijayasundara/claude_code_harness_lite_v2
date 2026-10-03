@@ -234,3 +234,9 @@ test('weakensConfig counts added fixtures and removed testSupport globs', () => 
   assert.match(reasons, /testSupport glob removed b\/\*\*/)
   assert.deepEqual(weakensConfig(J({ fixtures: ['x/**'] }), J({})), [])
 })
+
+test('a deleted test file matching fixtures is still reported', () => {
+  const cfg = { ...CFG, tests: ['scripts/*.spec.ts'], fixtures: ['scripts/*.spec.ts'] }
+  const d = withoutFixtures([fd('scripts/a.spec.ts', [], ['it("x", () => {})'], 'D')], cfg)
+  assert.ok(testTamper(d, cfg).some(f => f.message === 'test file deleted'))
+})

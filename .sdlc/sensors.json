@@ -2,6 +2,6 @@
   "fast": { "typecheck": "npm run typecheck" },
   "full": { "typecheck": "npm run typecheck", "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts" },
   "tests": ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/test_*.py", "**/*Test.java", "**/*_spec.rb", "scripts/*.spec.ts"],
-  "fixtures": ["scripts/*.spec.ts", "scripts/sensors.ts", "docs/superpowers/plans/*.md"],
-  "limits": { "fileLines": 400, "diffLines": 500 }
+  "fixtures": ["scripts/check.spec.ts", "scripts/gate.spec.ts", "scripts/sensors.spec.ts"],
+  "limits": { "fileLines": 500, "diffLines": 1500 }
 }

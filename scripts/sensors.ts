@@ -14,8 +14,8 @@ export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
 ]
 
 export const SUPPRESSIONS: RegExp[] = [
-  /eslint-disable/, /@ts-(?:ignore|expect-error|nocheck)\b/, /#\s*type:\s*ignore/, /#\s*noqa\b/, /pylint:\s*disable/,
-  /\/\/\s*nolint\b/, /@SuppressWarnings\b/, /rubocop:disable/, /#\s*pragma:\s*no\s*cover/, /istanbul\s+ignore/,
+  /eslint-disable/, /@ts-(?:ignore|expect-error|nocheck)\b/, /#\s*type:\s*ignore/, /#\s*noqa\b/, /pylint:\s*disable/, // -- the detector's own patterns
+  /\/\/\s*nolint\b/, /@SuppressWarnings\b/, /rubocop:disable/, /#\s*pragma:\s*no\s*cover/, /istanbul\s+ignore/, // -- the detector's own patterns
 ]
 
 const REASONED = /(?:\s--\s*|\bbecause\b\s*)\S/i
@@ -54,7 +54,8 @@ function loweredThresholds(diffs: FileDiff[]): Finding[] {
 }
 
 // Files that intentionally contain detector patterns (a human-approved list) are invisible to the pattern sensors only.
-export const withoutFixtures = (diffs: FileDiff[], cfg: SensorConfig): FileDiff[] => (cfg.fixtures.length ? diffs.filter(d => !matchesAny(d.file, cfg.fixtures)) : diffs)
+// Deletions stay visible, so removing a fixture or test file is still reported.
+export const withoutFixtures = (diffs: FileDiff[], cfg: SensorConfig): FileDiff[] => (cfg.fixtures.length ? diffs.filter(d => d.status === 'D' || !matchesAny(d.file, cfg.fixtures)) : diffs)
 
 export function testTamper(diffs: FileDiff[], cfg: SensorConfig): Finding[] {
   const findings: Finding[] = []
