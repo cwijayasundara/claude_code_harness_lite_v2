@@ -26,9 +26,12 @@ export function write(repo: string, rel: string, text: string): void {
   fs.writeFileSync(path.join(repo, rel), text)
 }
 
+// The runner marks its children as nested test runs; a consumer repo's own `node --test` must really run.
+const { NODE_TEST_CONTEXT: _nested, ...CLEAN_ENV } = process.env
+
 export function sdlc(repo: string, args: string[], { input, env = {} }: { input?: string; env?: Record<string, string> } = {}) {
   const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], {
-    cwd: repo, input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...process.env, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: '', ...env },
+    cwd: repo, input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...CLEAN_ENV, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: '', ...env },
   })
   return { code: r.status, stdout: r.stdout, stderr: r.stderr }
 }

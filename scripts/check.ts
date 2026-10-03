@@ -1,12 +1,13 @@
 // Orchestrates sensors at a firing point (stop, ship, ci): one set of checks everywhere, so local == CI.
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, exists, read, out, fail, git, gitIn, approvalOf, readImpact, optString, readJsonl, activeSlug, defaultBase,
+  ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, optString, readJsonl, activeSlug, defaultBase,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
-import { parseConfig, parseRules, formatFindings, matchesAny, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
-import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper } from './sensors.ts'
+import { parseConfig, parseRules, formatFindings, matchesAny, isTest, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
+import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 
@@ -164,6 +165,71 @@ export function cmdCheckPlan(args: Args): void {
   out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /sdlc-approve ${slug} impact.${tier}`, ...rows, ...unverified, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
 }
 
+function testCorpus(config: SensorConfig): string {
+  const files = [...(git(['ls-files']) ?? '').split('\n'), ...(git(['ls-files', '--others', '--exclude-standard']) ?? '').split('\n')]
+  return files.filter(f => f && isTest(f, config)).map(f => read(path.join(ROOT, f))).join('\n')
+}
+
+const DEP_DIRS = ['node_modules', '.venv', 'vendor']
+
+// Proof against the base, recomputed (no log entry can fake it): the branch's changed tests run on top of the base code.
+// 'red' (feature, bugfix, incident, greenfield): they must FAIL there, so they prove the change.
+// 'green' (refactor): they must PASS there, so they pin the old behaviour the refactor preserves.
+function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base: string, mode: 'red' | 'green'): Finding[] {
+  const block = (message: string, fix: string): Finding[] => [{ sensor: 'red-proof', severity: 'block', message, fix }]
+  const cmd = config.full.test ?? config.fast.test
+  const tests = diffs.filter(d => d.status !== 'D' && !d.binary && isTest(d.file, config)).map(d => d.file)
+  if (!tests.length) return mode === 'red' ? block('no test file changed, so nothing proves this change', 'write the failing test first') : []
+  if (!cmd) return block('no test command declared (full.test or fast.test in .sdlc/sensors.json)', 'declare it so red can be proven')
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-red-'))
+  try {
+    if (git(['worktree', 'add', '--detach', tmp, base]) === null) return block(`could not create a worktree at ${base}`, 'run `git worktree prune` and retry')
+    for (const dep of DEP_DIRS) if (exists(path.join(ROOT, dep)) && !exists(path.join(tmp, dep))) fs.symlinkSync(path.join(ROOT, dep), path.join(tmp, dep), 'junction')
+    const sanity = runCommand(cmd, { cwd: tmp })
+    recordRun(slug, { ...sanity, source: 'ship' })
+    if (sanity.exit !== 0) return block("can't establish red: the tests fail on the base even without the new tests", 'make the test command pass from a clean checkout of the base (dependencies, fixtures), or the person waives red-proof')
+    for (const t of tests) {
+      fs.mkdirSync(path.dirname(path.join(tmp, t)), { recursive: true })
+      fs.copyFileSync(path.join(ROOT, t), path.join(tmp, t))
+    }
+    const run = runCommand(cmd, { cwd: tmp })
+    recordRun(slug, mode === 'red' ? { ...run, expectFail: true, source: 'ship' } : { ...run, source: 'ship' })
+    if (mode === 'red' && run.exit === 0) return block('the new tests already pass on the base: they prove nothing about this change', 'write a test that fails without the change, then make it pass')
+    if (mode === 'green' && run.exit !== 0) return block('the refactor\'s tests fail on the base: they do not describe the behaviour being preserved', 'write characterization tests that pass on the old code first, then refactor under them')
+    return []
+  } finally {
+    git(['worktree', 'remove', '--force', tmp])
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff[], base: string | null): Finding[] {
+  if (!exists(path.join(CHANGES, slug))) return []
+  const change = loadChange(slug)
+  const findings: Finding[] = []
+  const hasPlan = exists(path.join(change.dir, 'plan.md'))
+  // An ad-hoc change is tiered on its first Stop; vibe coding keeps growing it, so re-tier it from the branch diff.
+  const RANK = { S: 0, M: 1, L: 2 } as const
+  const fromDiff = tierFromDiff(diffs, config)
+  const tier = slug.startsWith('adhoc-') && RANK[fromDiff] > RANK[change.tier] ? fromDiff : change.tier
+  if (slug.startsWith('adhoc-') && tier !== 'S' && !hasPlan) {
+    findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is now tier ${tier} with no plan`, fix: `run /sdlc:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
+  }
+  const spec = read(path.join(change.dir, 'spec.md'))
+  const ids = spec ? behaviourIds(spec, 'Behaviours') : behaviourIds(read(path.join(change.dir, 'plan.md')), 'Slices')
+  const corpus = ids.length ? testCorpus(config) : ''
+  for (const id of missingBehaviours(ids, corpus)) {
+    findings.push({ sensor: 'traceability', severity: 'block', message: `${id} has no test that names it`, fix: `add a test whose name or comment says ${id} and proves it` })
+  }
+  // Per change type: red for new behaviour, green-on-base for refactors, nothing extra for chore and migration
+  // (their full suite already runs as the ship gate's commands).
+  const RED_TYPES = ['feature', 'bugfix', 'incident', 'greenfield']
+  const always = change.type === 'bugfix' || change.type === 'incident'
+  if (base && RED_TYPES.includes(change.type) && (tier !== 'S' || always)) findings.push(...proofOnBase(slug, config, diffs, base, 'red'))
+  if (base && change.type === 'refactor' && tier !== 'S') findings.push(...proofOnBase(slug, config, diffs, base, 'green'))
+  return findings
+}
+
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
   const findings: Finding[] = [
@@ -176,6 +242,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...contractFindings(i),
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
+  if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   return applyWaivers(findings, i.slugs)
 }

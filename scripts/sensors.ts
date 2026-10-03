@@ -279,3 +279,10 @@ export function tierFromDiff(diffs: FileDiff[], cfg: SensorConfig): 'S' | 'M' | 
   if (files.length > 15) return 'L'
   return files.length > 3 || files.some(d => matchesAny(d.file, cfg.contracts)) ? 'M' : 'S'
 }
+
+export function behaviourIds(text: string, heading: string): string[] {
+  const section = new RegExp(`^##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'm').exec(text)?.[1] ?? ''
+  return [...new Set(section.match(/\bB\d+\b/g) ?? [])]
+}
+
+export const missingBehaviours = (ids: string[], corpus: string): string[] => ids.filter(id => !new RegExp(`\\b${id}\\b`).test(corpus))

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
-import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, weakensRules, isProtected, onlyKnownRedRemoved, harnessTamper } from './sensors.ts'
+import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, weakensRules, isProtected, onlyKnownRedRemoved, harnessTamper, behaviourIds, missingBehaviours } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
   file, status, added: added.map((text, i) => ({ n: i + 1, text })), removed: removed.map((text, i) => ({ n: i + 1, text })),
@@ -211,4 +211,11 @@ test('isProtected compares case-insensitively when asked; a deleted sensors.json
   assert.ok(isProtected('.sdlc/Sensors.json', true))
   const gone = harnessTamper([fd('.sdlc/sensors.json', [], ['x'], 'D')], { point: 'ship', before: () => J({}), after: () => '' })
   assert.match(gone[0]?.message ?? '', /\.sdlc\/sensors\.json deleted/)
+})
+
+test('behaviour ids come from the named section only; a test must name each one', () => {
+  const spec = '## Context\nB9 is context\n## Behaviours\n- B1 given...\n- B2 given...\n- B10 given...\n## Out of scope\nB3\n'
+  assert.deepEqual(behaviourIds(spec, 'Behaviours'), ['B1', 'B2', 'B10'])
+  assert.deepEqual(missingBehaviours(['B1', 'B2', 'B10'], "test('B1 adds', ...)\n// covers B10\n"), ['B2'])
+  assert.deepEqual(missingBehaviours(['B1'], "test('B11 other')"), ['B1'])
 })

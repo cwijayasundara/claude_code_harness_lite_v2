@@ -12,9 +12,10 @@ import {
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
-import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
+import { formatFindings } from './model.ts'
+import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
-import { cmdCheck, cmdCheckFile } from './check.ts'
+import { cmdCheck, cmdCheckFile, loadConfig, runChecks } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 
@@ -121,6 +122,12 @@ function cmdShip(args: Args): void {
   const base = defaultBase() ?? (head && ['main', 'master'].includes(head) ? git(['rev-parse', 'HEAD']) : null)
   const r = scopeDrift(slug, base)
   if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to plan.md ## Files (and re-approve if gated) or revert them.`)
+  const { config, rules, errors } = loadConfig()
+  const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base })
+  if (errors.length || gate.blocks.length) {
+    const configFindings = errors.map(e => `[config] ${e}`)
+    fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /sdlc-waive <sensor> <file|*> <reason>.`)
+  }
 
   if (head === 'main' || head === 'master') {
     if (git(['checkout', '-b', `sdlc/${slug}`]) === null) fail(`could not create branch sdlc/${slug}`)

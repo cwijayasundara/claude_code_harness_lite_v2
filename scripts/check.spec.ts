@@ -330,3 +330,67 @@ test('check --at ship reports a weakened committed sensors.json as harness-tampe
   assert.equal(r.code, 1)
   assert.match(r.stdout, /\[harness-tamper\]/)
 })
+
+function featureRepo(): void {
+  sensors({ full: { test: 'node --test test/*.test.js' } })
+  write(repo, 'src/add.js', 'export const add = (a, b) => a + b\n')
+  write(repo, 'test/add.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add', () => assert.equal(add(1, 2), 3))\n")
+  write(repo, 'package.json', '{ "type": "module" }\n')
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'base')
+  gitIn(repo, 'checkout', '-qb', 'feature')
+  sdlc(repo, ['new', 'sub', '--type', 'feature', '--tier', 'M'])
+  write(repo, '.sdlc/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract\n## Verification\n- node --test test/*.test.js\n')
+}
+
+test('ship: new tests that fail on the base prove red; tests that already pass there do not', () => {
+  featureRepo()
+  write(repo, 'src/sub.js', 'export const sub = (a, b) => a - b\n')
+  write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('B1 subtracts', () => assert.equal(sub(3, 1), 2))\n")
+  const ok = check('--at', 'ship', '--base', 'main', '--slug', 'sub')
+  assert.equal(ok.code, 0, ok.stdout)
+  fs.rmSync(path.join(repo, 'test/sub.test.js'))
+  write(repo, 'test/add2.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('B1 add again', () => assert.equal(add(2, 2), 4))\n")
+  const weak = check('--at', 'ship', '--base', 'main', '--slug', 'sub')
+  assert.equal(weak.code, 1)
+  assert.match(weak.stdout, /\[red-proof\][\s\S]*already pass on the base/)
+})
+
+test('ship: a refactor\'s characterization tests must pass on the base, not fail', () => {
+  featureRepo()
+  sdlc(repo, ['new', 'tidy', '--type', 'refactor', '--tier', 'M'])
+  write(repo, '.sdlc/changes/tidy/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. characterize add\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, 'test/add-char.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add keeps working', () => assert.equal(add(2, 3), 5))\n")
+  assert.equal(check('--at', 'ship', '--base', 'main', '--slug', 'tidy').code, 0)
+  write(repo, 'test/add-char.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add is now different', () => assert.equal(add(2, 3), 6))\n")
+  write(repo, 'src/add.js', 'export const add = (a, b) => a + b + 1\n')
+  assert.match(check('--at', 'ship', '--base', 'main', '--slug', 'tidy').stdout, /fail on the base: they do not describe the behaviour/)
+})
+
+test('ship: every behaviour needs a test that names it', () => {
+  featureRepo()
+  write(repo, '.sdlc/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract, B2 negative\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, 'src/sub.js', 'export const sub = (a, b) => a - b\n')
+  write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('B1 subtracts', () => assert.equal(sub(3, 1), 2))\n")
+  const r = check('--at', 'ship', '--base', 'main', '--slug', 'sub')
+  assert.match(r.stdout, /\[traceability\][\s\S]*B2 has no test that names it/)
+})
+
+test('an ad-hoc change that started small is re-tiered at ship as it grows', () => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/one.js', 'export const one = 1\n')
+  hook(repo, 'stop', {})
+  const slug = (sdlc(repo, ['status', '--json']).stdout.match(/adhoc-[\d-]+/) ?? [''])[0]
+  assert.match(fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/intent.md`), 'utf8'), /tier: S/)
+  for (const f of ['a', 'b', 'c', 'd']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
+  assert.match(check('--at', 'ship', '--slug', slug).stdout, /\[adhoc\][\s\S]*now tier M/)
+})
+
+test('ship refuses an ad-hoc tier M change with no plan', () => {
+  hook(repo, 'prompt-submit', {})
+  for (const f of ['a', 'b', 'c', 'd']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
+  hook(repo, 'stop', {})
+  const slug = (sdlc(repo, ['status', '--json']).stdout.match(/adhoc-[\d-]+/) ?? [''])[0]
+  const r = check('--at', 'ship', '--slug', slug)
+  assert.match(r.stdout, /\[adhoc\][\s\S]*run \/sdlc:start adhoc-/)
+})
