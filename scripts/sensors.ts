@@ -205,7 +205,8 @@ export function contractsFromPlan(planText: string): string[] {
 }
 
 export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
-export const isProtected = (file: string): boolean => matchesAny(file, PROTECTED)
+// ci: compare case-insensitively (macOS and Windows file systems treat CLAUDE.MD and CLAUDE.md as one file).
+export const isProtected = (file: string, ci = false): boolean => (ci ? matchesAny(file.toLowerCase(), PROTECTED.map(p => p.toLowerCase())) : matchesAny(file, PROTECTED))
 const SENSORS = '.sdlc/sensors.json'
 const RULES = '.sdlc/rules.json'
 
@@ -254,7 +255,8 @@ export function onlyKnownRedRemoved(beforeText: string, afterText: string): bool
 export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | 'ci'; toolEdited?: Set<string>; before: (f: string) => string; after: (f: string) => string }): Finding[] {
   const findings: Finding[] = []
   for (const d of diffs.filter(f => isProtected(f.file))) {
-    const reasons = d.file === SENSORS ? weakensConfig(o.before(d.file), o.after(d.file)) : d.file === RULES ? weakensRules(o.before(d.file), o.after(d.file)) : d.status === 'D' ? [`${d.file} deleted`] : []
+    const weaker = d.file === SENSORS ? weakensConfig(o.before(d.file), o.after(d.file)) : d.file === RULES ? weakensRules(o.before(d.file), o.after(d.file)) : []
+    const reasons = d.status === 'D' ? [`${d.file} deleted`, ...weaker] : weaker
     if (o.point === 'stop') {
       if (o.toolEdited && !o.toolEdited.has(d.file)) {
         if (d.file === SENSORS && onlyKnownRedRemoved(o.before(d.file), o.after(d.file))) continue

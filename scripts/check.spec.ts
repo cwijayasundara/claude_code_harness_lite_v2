@@ -318,3 +318,15 @@ test('impact.json is evidence: pre-edit denies writing it; approving impact with
   assert.match(JSON.stringify(r), /deny/)
   assert.notEqual(sdlc(repo, ['approve', 'ev', 'impact'], { env: { SDLC_HUMAN: '1' } }).code, 0)
 })
+
+test('check --at ship reports a weakened committed sensors.json as harness-tamper', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.sdlc/sensors.json')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'feature')
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
+  gitIn(repo, 'commit', '-qam', 'loosen')
+  const r = check('--at', 'ship', '--base', 'main')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /\[harness-tamper\]/)
+})

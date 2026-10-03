@@ -66,6 +66,7 @@ export type HookInput = {
     old_string?: string
     new_string?: string
     replace_all?: boolean
+    edits?: { old_string?: string; new_string?: string; replace_all?: boolean }[]
     skill?: string
     args?: string
   }

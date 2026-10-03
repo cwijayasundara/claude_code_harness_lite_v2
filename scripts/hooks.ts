@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
+  ROOT, SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
   planFiles, isPlanned, approvalOf, EVIDENCE_RE, relPosix, scanSecrets, planProblems, type Args, type HookInput,
 } from './core.ts'
 import { snapshot, writeBaseline } from './diffs.ts'
@@ -47,26 +47,41 @@ function isSafeEvidenceCommand(cmd: string): boolean {
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
-// The text a Write/Edit would leave behind, so a weakening is shown before it happens.
+// macOS and Windows file systems are case-insensitive: .sdlc/Sensors.json is sensors.json there.
+const CASE_INSENSITIVE = process.platform !== 'linux'
+const evidencePath = (p: string): boolean => (CASE_INSENSITIVE ? new RegExp(EVIDENCE_RE.source, 'i') : EVIDENCE_RE).test(p)
+
+const replaceOnce = (text: string, o: string, n: string, all?: boolean): string => (all ? text.split(o).join(n) : text.replace(o, () => n))
+
+// The text a Write/Edit/MultiEdit would leave behind, so a weakening is shown before it happens.
 function proposed(file: string, t: HookInput['tool_input']): string | null {
   if (typeof t?.content === 'string') return t.content
+  if (Array.isArray(t?.edits)) {
+    return t.edits.reduce((text, e) => (typeof e.old_string === 'string' && typeof e.new_string === 'string' ? replaceOnce(text, e.old_string, e.new_string, e.replace_all) : text), read(file))
+  }
   if (typeof t?.old_string !== 'string' || typeof t?.new_string !== 'string') return null
-  const current = read(file)
-  return t.replace_all ? current.split(t.old_string).join(t.new_string) : current.replace(t.old_string, t.new_string)
+  return replaceOnce(read(file), t.old_string, t.new_string, t.replace_all)
 }
 
 function protectedEditReason(file: string, rel: string, t: HookInput['tool_input']): string {
   const after = proposed(file, t)
-  const reasons = after === null ? [] : rel === '.sdlc/sensors.json' ? weakensConfig(read(file), after) : rel === '.sdlc/rules.json' ? weakensRules(read(file), after) : []
+  const key = rel.toLowerCase()
+  const reasons = after === null ? [] : key === '.sdlc/sensors.json' ? weakensConfig(read(file), after) : key === '.sdlc/rules.json' ? weakensRules(read(file), after) : []
   return reasons.length
     ? `This edit weakens the harness: ${reasons.join('; ')}. Allow it only if you, the person, want this.`
     : `${rel} is part of the harness (peer-reviewed config). Allow this edit?`
 }
 
-// Sibling repos (../<dir>/...) are consumers at most: writable only inside an approved cross-repo change.
-function siblingEditReason(rel: string): string | null {
-  const { config } = loadConfig()
-  const consumer = config.consumers.find(c => rel.startsWith(toPosix(path.normalize(c.path)).replace(/\/$/, '') + '/'))
+// A declared consumer is recognised at any depth (../../org/checkout), whether declared relative or absolute.
+function consumerFor(rel: string): { name: string } | undefined {
+  const norm = (p: string): string => toPosix(path.normalize(path.isAbsolute(p) ? path.relative(ROOT, p) : p)).replace(/\/$/, '')
+  return loadConfig().config.consumers.find(c => rel.startsWith(norm(c.path) + '/'))
+}
+
+// Outside-repo scope (spec 8.4), deliberately narrowed: a declared consumer follows the impact and plan rules;
+// otherwise only ../<dir>/... and ../<file> (the immediate parent) are denied. Paths that escape further
+// (../../...) and are no consumer are left to normal permissions, so scratch and temp directories keep working.
+function siblingEditReason(rel: string, consumer: { name: string } | undefined): string | null {
   if (!consumer) return `${rel} is outside this repo and not a declared consumer. Edit only this repo.`
   const slug = activeSlug()
   if (!slug || approvalOf(slug, 'impact') !== 'approved') return `${consumer.name} is a consumer repo: edit it only in a change whose cross-repo impact the person approved (/sdlc-approve <slug> impact).`
@@ -75,8 +90,53 @@ function siblingEditReason(rel: string): string | null {
 }
 
 const READ_ONLY_AGENT = /(?:^|:)(?:scout|reviewer|verifier)$/
-const WRITES_FILES = /(?:^|[^0-9&>])>{1,2}(?!\s*&|\s*\/dev\/null)|\btee\b|\bsed\s+-i|\bperl\s+-i|\b(?:cp|mv|rm|rmdir|truncate|dd|touch|mkdir|chmod|ln)\s|\bgit\s+(?:add|commit|checkout|restore|reset|apply|stash|push|rebase|merge|cherry-pick|rm|mv|tag)\b|\b(?:npm|pnpm|yarn)\s+(?:install|i|add|remove|uninstall)\b|\bpip3?\s+install\b/
-const SDLC_RECORDER = /sdlc\.ts["']?\s+(?:run|verify-report|check|check-file|status|skill|diff|scope-drift)\b/
+const RECORDER = /sdlc\.ts["']?\s+(run|verify-report|check-file|check|status|diff|skill|scope-drift)\b/
+const GIT_WRITES = '(?:add|commit|checkout|restore|reset|apply|stash|push|rebase|merge|cherry-pick|rm|mv|tag|clean|pull)'
+const WRITERS = new RegExp(
+  [
+    '\\btee\\b', '\\b(?:sed|perl)\\s+-i', '\\b(?:cp|mv|rm|rmdir|truncate|dd|touch|mkdir|chmod|ln)\\s', `\\bgit\\s+(?:-C\\s+\\S+\\s+)?${GIT_WRITES}\\b`,
+    '\\b(?:npm|pnpm|yarn)\\s+(?:install|i|add|remove|uninstall)\\b', '\\bpip3?\\s+install\\b', '--write\\b', '--fix\\b', '^\\s*(?:sudo\\s+)?patch\\b',
+    '\\binstall\\s+-', '\\bcurl\\b[^|;&]*\\s(?:-o|-O|--output)\\b', '\\btar\\s+-?x', '\\bunzip\\b',
+  ].join('|'),
+)
+const INTERPRETER_WRITES = /\b(?:python3?\s+-c|node\s+(?:-e|--eval)|ruby\s+-e|perl\s+-e)\b[^]*(?:write|open\([^)]*['"][wa]|writeFile|appendFile|unlink)/
+const unquote = (s: string): string => s.replace(/'[^']*'|"[^"]*"/g, "''")
+// Only fd duplication (2>&1) and discarding to /dev/null are not writes; 1>f, 2>f and &>f are.
+const hasRedirect = (s: string): boolean => /&?\d*>/.test(unquote(s).replace(/\d*>&\d+|&?\d*>>?\s*\/dev\/null/g, ''))
+const writes = (seg: string): boolean => INTERPRETER_WRITES.test(seg) || hasRedirect(seg) || WRITERS.test(unquote(seg))
+
+// Quote-aware split on && || ; | so a separator inside a string does not cut a command in two.
+function splitCommand(cmd: string): string[] {
+  const parts: string[] = []
+  let cur = ''
+  let q = ''
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i] ?? ''
+    if (q) { if (ch === q) q = ''; cur += ch; continue }
+    if (ch === "'" || ch === '"') { q = ch; cur += ch; continue }
+    if (ch === ';' || ch === '|' || (ch === '&' && cmd[i + 1] === '&')) {
+      if (ch !== ';' && cmd[i + 1] === ch) i++
+      parts.push(cur)
+      cur = ''
+      continue
+    }
+    cur += ch
+  }
+  return [...parts, cur].filter(p => p.trim())
+}
+
+// recorders: status/check/check-file/diff/skill/scope-drift only read; run and verify-report record, for the verifier only,
+// and the command that run executes must itself not write.
+function segmentWrites(seg: string, agent: string): boolean {
+  const m = RECORDER.exec(seg)
+  if (!m) return writes(seg)
+  if (hasRedirect(seg)) return true
+  if (m[1] !== 'run' && m[1] !== 'verify-report') return false
+  if (!/(?:^|:)verifier$/.test(agent)) return true
+  if (m[1] === 'verify-report') return false
+  const inner = /\s--\s+([^]*)$/.exec(seg)?.[1]?.trim().replace(/^(["'])([^]*)\1$/, '$2') ?? ''
+  return splitCommand(inner).some(writes)
+}
 
 function hookPreBash(input: HookInput): void {
   const cmd = String(input.tool_input?.command ?? '')
@@ -85,7 +145,7 @@ function hookPreBash(input: HookInput): void {
   }
   if (!exists(SDLC)) return
   const agent = input.agent_type ?? ''
-  if (READ_ONLY_AGENT.test(agent) && WRITES_FILES.test(cmd) && !SDLC_RECORDER.test(cmd)) {
+  if (READ_ONLY_AGENT.test(agent) && splitCommand(cmd).some(seg => segmentWrites(seg, agent))) {
     return decide('deny', `${agent} is read-only: it reports and never edits. Record test runs with sdlc.ts run; leave fixes to the implementer.`)
   }
   const sleep = /(?:^|[;&|]\s*|\s)(?:sleep|Start-Sleep(?:\s+-Seconds)?)\s+(\d+)/i.exec(cmd)
@@ -97,17 +157,20 @@ function hookPreBash(input: HookInput): void {
 function hookPreEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? input.tool_input?.notebook_path ?? '')
   if (!file) return
-  if (EVIDENCE_RE.test(toPosix(file))) {
+  if (evidencePath(toPosix(file))) {
     return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\` and generate verification.md with \`sdlc.ts verify-report <slug>\`.`)
   }
   if (!exists(SDLC)) return
   const rel = relPosix(file)
-  if (/^\.\.\/[^/]+\//.test(rel) && !rel.startsWith('../../')) {
-    const reason = siblingEditReason(rel)
-    if (reason) return decide('deny', reason)
+  if (rel.startsWith('../')) {
+    const consumer = consumerFor(rel)
+    if (consumer || !rel.startsWith('../../')) {
+      const reason = siblingEditReason(rel, consumer)
+      if (reason) return decide('deny', reason)
+    }
     return
   }
-  if (isProtected(rel)) return decide('ask', protectedEditReason(file, rel, input.tool_input))
+  if (isProtected(rel, CASE_INSENSITIVE)) return decide('ask', protectedEditReason(file, rel, input.tool_input))
   const slug = activeSlug()
   if (!slug) return
   const stage = loadChange(slug).next?.stage

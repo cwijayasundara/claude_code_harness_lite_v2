@@ -73,3 +73,38 @@ test('read-only agents cannot write files through Bash; their reads and the sdlc
   assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
   assert.equal(as('sdlc:implementer', 'echo x > src/app.js'), undefined)
 })
+
+test('read-only guard: chained writes, recorder scope, fd redirects and common writers', () => {
+  sdlc(repo, ['init'])
+  const as = (agent_type: string, command: string) => decision(hook(repo, 'pre-bash', { agent_type, tool_input: { command } }))
+  assert.equal(as('sdlc:reviewer', 'node /x/scripts/sdlc.ts status; echo x > src/app.js'), 'deny')
+  assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "sed -i s/a/b/ f"'), 'deny')
+  assert.equal(as('sdlc:verifier', 'node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
+  assert.equal(as('sdlc:reviewer', 'node /x/scripts/sdlc.ts run -- "npm test"'), 'deny')
+  assert.equal(as('sdlc:reviewer', 'node /x/scripts/sdlc.ts status'), undefined)
+  for (const c of ['echo x 1>f', 'echo x &>f', `python3 -c "open('f','w').write('x')"`, 'npx prettier --write src', 'git -C ../x checkout .', 'curl -o f http://x', 'tar -xf a.tgz']) assert.equal(as('sdlc:scout', c), 'deny', c)
+  for (const c of ['npm test 2>&1 | tail -5', "grep '>' src/a.ts", 'git log --format="%h -> %s"', 'cat f >/dev/null', 'echo "a; b" | wc -l']) assert.equal(as('sdlc:scout', c), undefined, c)
+})
+
+test('protected paths match case-insensitively off Linux; MultiEdit and $ in replacements are previewed literally', () => {
+  sdlc(repo, ['init'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  const file = path.join(repo, '.sdlc/sensors.json')
+  const r = hook(repo, 'pre-edit', { tool_input: { file_path: file, edits: [{ old_string: '500', new_string: '$&$&' }, { old_string: '$&$&', new_string: '7000' }] } })
+  assert.match(reasonOf(r), /diffLines raised 500 → 7000/)
+  if (process.platform !== 'linux') assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'claude.MD'), content: 'x' } })), 'ask')
+})
+
+test('outside-repo scope: parent files denied, deep consumers follow impact and plan, farther paths are left alone', () => {
+  sdlc(repo, ['init'])
+  const deep = path.join(path.dirname(repo), 'org', 'checkout', 'src', 'a.ts')
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'checkout', path: path.relative(repo, path.join(path.dirname(repo), 'org', 'checkout')) }] }))
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(path.dirname(repo), 'x.ts') } })), 'deny')
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: deep } })), 'deny')
+  sdlc(repo, ['new', 'rate', '--type', 'feature', '--tier', 'L'])
+  const rel = path.relative(repo, deep).split(path.sep).join('/')
+  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- ${rel}\n`)
+  write(repo, '.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['a'], hits: [], missing: [] }))
+  sdlc(repo, ['approve', 'rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
+  assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: deep } })), undefined)
+})

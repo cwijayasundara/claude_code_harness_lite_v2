@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
-import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, onlyKnownRedRemoved, harnessTamper } from './sensors.ts'
+import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, weakensRules, isProtected, onlyKnownRedRemoved, harnessTamper } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
   file, status, added: added.map((text, i) => ({ n: i + 1, text })), removed: removed.map((text, i) => ({ n: i + 1, text })),
@@ -195,4 +195,20 @@ test('harnessTamper: Bash-made edits block at Stop, weakening blocks at ship, pl
   assert.deepEqual([ship[0]?.severity, ship[0]?.labels], ['block', ['weakens-harness']])
   assert.equal(harnessTamper([fd('CLAUDE.md', ['more'])], { point: 'ci', before: () => '', after: () => '' })[0]?.severity, 'warn')
   assert.deepEqual(harnessTamper([fd('src/a.ts', ['x'])], { point: 'stop', toolEdited: new Set(), before, after: before }), [])
+})
+
+test('weakensRules names removed and downgraded rules only', () => {
+  const rule = (id: string, action: string) => ({ id, action, pattern: 'x', message: 'm', why: 'w' })
+  const before = J([rule('a', 'block'), rule('b', 'block'), rule('c', 'warn')])
+  const reasons = weakensRules(before, J([rule('a', 'warn'), rule('c', 'warn')]))
+  assert.deepEqual(reasons, ['rule b removed', 'rule a downgraded to warn'])
+  assert.deepEqual(weakensRules(before, before), [])
+})
+
+test('isProtected compares case-insensitively when asked; a deleted sensors.json is reported', () => {
+  assert.ok(!isProtected('CLAUDE.MD'))
+  assert.ok(isProtected('CLAUDE.MD', true))
+  assert.ok(isProtected('.sdlc/Sensors.json', true))
+  const gone = harnessTamper([fd('.sdlc/sensors.json', [], ['x'], 'D')], { point: 'ship', before: () => J({}), after: () => '' })
+  assert.match(gone[0]?.message ?? '', /\.sdlc\/sensors\.json deleted/)
 })
