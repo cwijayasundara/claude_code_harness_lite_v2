@@ -28,7 +28,7 @@ export function write(repo: string, rel: string, text: string): void {
 
 export function sdlc(repo: string, args: string[], { input, env = {} }: { input?: string; env?: Record<string, string> } = {}) {
   const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], {
-    cwd: repo, input, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: '', ...env },
+    cwd: repo, input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...process.env, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: '', ...env },
   })
   return { code: r.status, stdout: r.stdout, stderr: r.stderr }
 }
