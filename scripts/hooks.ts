@@ -8,7 +8,7 @@ import {
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
-import { formatFindings, isSource, isTest, matchesAny, type FileDiff, type Finding, type SensorConfig } from './model.ts'
+import { formatFindings, isSource, isTest, matchesAny, parseConfig, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd } from './shell.ts'
 
 function readStdin(): HookInput {
@@ -154,7 +154,7 @@ function safeCreation(file: string, rel: string, t: HookInput['tool_input']): bo
   if (key === 'claude.md') return true
   const after = proposed(file, t)
   if (after === null) return false
-  if (key === '.sdlc/sensors.json') return weakensConfig('{}', after).length === 0
+  if (key === '.sdlc/sensors.json') return !parseConfig(after).errors.length && !weakensConfig('{}', after).length
   if (key === '.sdlc/rules.json') return weakensRules('[]', after).length === 0
   return false
 }
@@ -162,6 +162,9 @@ function safeCreation(file: string, rel: string, t: HookInput['tool_input']): bo
 function protectedEditReason(file: string, rel: string, t: HookInput['tool_input']): string {
   const after = proposed(file, t)
   const key = rel.toLowerCase()
+  const invalid = after !== null && key === '.sdlc/sensors.json' ? parseConfig(after).errors : []
+  const shape = '{ "fast": { "test": "<cmd>" }, "full": { "test": "<cmd>" } }'
+  if (invalid.length) return `The new .sdlc/sensors.json is invalid: ${invalid.join('; ')}. Use the shape ${shape}.`
   const reasons = after === null ? [] : key === '.sdlc/sensors.json' ? weakensConfig(read(file), after) : key === '.sdlc/rules.json' ? weakensRules(read(file), after) : []
   return reasons.length
     ? `This edit weakens the harness: ${reasons.join('; ')}. Allow it only if you, the person, want this.`

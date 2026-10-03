@@ -50,6 +50,10 @@ test('creating a missing harness file (onboarding) needs no prompt; editing an e
   assert.equal(decision('.claude/settings.json'), 'ask', 'other new harness files still ask')
   const weak = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json'), content: '{"ignore":["**"]}' } }).stdout)
   assert.equal(weak.hookSpecificOutput.permissionDecision, 'ask', 'a new sensors.json weaker than the defaults asks')
+  const badInput = { file_path: path.join(repo, '.sdlc/sensors.json'), content: '{"fast":[{"name":"test","cmd":"npm test"}]}' }
+  const bad = JSON.parse(hook(repo, 'pre-edit', { tool_input: badInput }).stdout)
+  assert.equal(bad.hookSpecificOutput.permissionDecision, 'ask', 'an invalid new sensors.json asks')
+  assert.match(bad.hookSpecificOutput.permissionDecisionReason, /invalid: fast must map names to command strings/)
   write(repo, '.sdlc/sensors.json', '{}')
   write(repo, 'CLAUDE.md', '# x')
   assert.equal(decision('.sdlc/sensors.json'), 'ask')
