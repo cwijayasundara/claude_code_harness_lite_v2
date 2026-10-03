@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
+  ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
   planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
@@ -66,6 +66,7 @@ function hookSessionStart(input: HookInput): void {
     writeGate(gate)
   }
   const guides = listGuides(loadConfig().config).map(g => g.name)
+  const wikiMissing = !exists(path.join(ROOT, 'docs/wiki')) && (git(['ls-files']) ?? '').split('\n').some(f => isSource(f, loadConfig().config))
   const active = activeSlug()
   const c = active ? loadChange(active) : null
   const state = frontmatter(read(STATE)).body.trim().split('\n').slice(0, 15).join('\n')
@@ -74,6 +75,7 @@ function hookSessionStart(input: HookInput): void {
     ROUTING_LINE,
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : 'No active change. Start one with /sdlc:start "<request>".',
     `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /sdlc:handoff. If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
+    wikiMissing ? 'No code wiki yet: /sdlc:wiki builds it.' : '',
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
   ].filter(Boolean)

@@ -213,6 +213,16 @@ test('session-start tells the model that sdlc routes work, not superpowers', () 
   assert.match(ctx, /use superpowers skills only when an sdlc skill names one/)
 })
 
+test('session start nudges once toward the wiki when source exists and docs/wiki does not', () => {
+  run(['init'])
+  fs.writeFileSync(path.join(repo, 'app.js'), 'export const a = 1\n')
+  git('add', '.'); git('commit', '-qm', 'src')
+  const ctx = () => JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext as string
+  assert.match(ctx(), /No code wiki yet: \/sdlc:wiki builds it\./)
+  fs.mkdirSync(path.join(repo, 'docs/wiki'), { recursive: true })
+  assert.doesNotMatch(ctx(), /No code wiki yet/)
+})
+
 test('session-start injects the active change and next command', () => {
   run(['new', 'add-login', '--type', 'bugfix', '--tier', 'S'])
   const ctx = JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext
