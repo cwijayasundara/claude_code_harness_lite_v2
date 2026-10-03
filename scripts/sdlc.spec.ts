@@ -426,7 +426,8 @@ test('a prose bullet whose backticks are not in command position is not a requir
   const plan = '## Verification\n- `npm test`\n- Lint and type-check: none configured. `.sdlc/sensors.json` only defines `npm test`.\n'
   const text = reportFor(plan, [ok('npm test')])
   assert.match(text, /result: pass/)
-  assert.doesNotMatch(text, /sensors\.json/)
+  assert.doesNotMatch(text, /Not run/)
+  assert.match(text, /## Ignored[\s\S]*sensors\.json/)
 })
 
 test('an expected-red bullet wrapping `sdlc.ts run --expect-fail` is not a required green command', () => {
@@ -440,4 +441,30 @@ test('a bare-command bullet stays a command; a backtick-free "Label: prose" bull
   assert.match(reportFor('## Verification\n- npm test\n', []), /Not run[\s\S]*- `npm test`/)
   const text = reportFor('## Verification\n- npm test\n- Lint: none configured\n', [ok('npm test')])
   assert.match(text, /result: pass/)
+})
+
+test('sdlc.ts run -- "cmd" is unwrapped to a required command; red runs and check bullets are skipped', () => {
+  const plan = `## Verification\n- Suite: \`sdlc.ts run -- "npm test"\`\n- \`sdlc.ts run --expect-fail -- "node --test a.js"\`\n- Impact: \`sdlc.ts check --at plan\`\n`
+  assert.match(reportFor(plan, []), /result: fail[\s\S]*Not run[\s\S]*- `npm test`/)
+  const text = reportFor(plan, [ok('npm test')])
+  assert.match(text, /result: pass/)
+  assert.match(text, /## Ignored[\s\S]*expect-fail[\s\S]*check --at plan/)
+})
+
+test('a label containing backticks still yields the command after the first ": "', () => {
+  const plan = '## Verification\n- Unit tests for `foo`: `npm test` (fast)\n- `npm run lint`\n'
+  assert.match(reportFor(plan, [ok('npm run lint')]), /result: fail[\s\S]*Not run[\s\S]*- `npm test`/)
+  assert.match(reportFor(plan, [ok('npm run lint'), ok('npm test')]), /result: pass/)
+})
+
+test('a section where every bullet is ignored fails instead of passing on an unrelated green run', () => {
+  const plan = '## Verification\n- Unit: npm test\n- Lint: none configured\n'
+  const text = reportFor(plan, [ok('node -e "1"')])
+  assert.match(text, /result: fail/)
+  assert.match(text, /## Ignored \(not commands; listed in plan ## Verification\)\n- Unit: npm test\n- Lint: none configured/)
+  assert.match(text, /one leading backticked command per bullet/)
+})
+
+test('a plan with no ## Verification section keeps the all-runs fallback', () => {
+  assert.match(reportFor('', [ok('npm test')]), /result: pass/)
 })

@@ -10,7 +10,7 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
+  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { formatFindings, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
@@ -273,7 +273,8 @@ function cmdVerifyReport(args: Args): void {
   const slug = args.pos[0] ?? activeSlug()
   if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: verify-report <slug>')
   const rows = readRuns(slug)
-  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), planVerification(slug))
+  const plan = planVerificationBullets(slug)
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored)
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }

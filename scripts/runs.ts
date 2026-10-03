@@ -52,13 +52,15 @@ const norm = (cmd: string): string => cmd.trim().replace(/\s+/g, ' ')
 // The verdict is the latest explicit run of each plan ## Verification command (or of every explicit command
 // when the plan lists none). Expect-fail rows are evidence of red, and gate/ship rows are the sensors' own runs:
 // neither is a verdict, so a known-red lint at Stop or an abandoned exploratory run cannot poison verification.
-export function renderVerification(rows: RunRow[], digest: string, planned: string[] = []): { text: string; result: 'pass' | 'fail' } {
+export function renderVerification(rows: RunRow[], digest: string, planned: string[] = [], ignored: string[] = []): { text: string; result: 'pass' | 'fail' } {
   const latest = new Map<string, RunRow>()
   for (const r of rows) if (!r.expectFail && !r.source) latest.set(norm(r.cmd), r)
   const wanted = planned.map(norm)
-  const verdicts = wanted.length ? wanted.flatMap(c => latest.get(c) ?? []) : [...latest.values()]
+  // A section whose bullets all failed to parse requires nothing; that must fail, not fall back to every run.
+  const unparsed = wanted.length === 0 && ignored.length > 0
+  const verdicts = wanted.length ? wanted.flatMap(c => latest.get(c) ?? []) : unparsed ? [] : [...latest.values()]
   const notRun = wanted.filter(c => !latest.has(c))
-  const result = verdicts.length > 0 && notRun.length === 0 && verdicts.every(r => r.exit === 0) ? 'pass' : 'fail'
+  const result = !unparsed && verdicts.length > 0 && notRun.length === 0 && verdicts.every(r => r.exit === 0) ? 'pass' : 'fail'
   const fence = (t: string): string => '```\n' + t + '\n```'
   const red = rows.filter(r => r.expectFail)
   const text = [
@@ -68,7 +70,9 @@ export function renderVerification(rows: RunRow[], digest: string, planned: stri
     ...verdicts.flatMap(r => [`- \`${r.cmd}\` → exit ${r.exit}${r.timedOut ? ' (timed out)' : ''} in ${r.ms} ms`, fence(r.tail)]),
     ...(red.length ? ['', '## Red runs (expected to fail)', ...red.map(r => `- \`${r.cmd}\` → exit ${r.exit}`)] : []),
     ...(notRun.length ? ['', '## Not run (listed in plan ## Verification)', ...notRun.map(c => `- \`${c}\``)] : []),
-    verdicts.length ? '' : '\nNo commands were run: record them with `sdlc.ts run -- "<command>"`.',
+    ...(ignored.length ? ['', '## Ignored (not commands; listed in plan ## Verification)', ...ignored.map(t => `- ${t}`)] : []),
+    ...(unparsed ? ['', 'No bullet in plan ## Verification parsed as a command. The architect must write one leading backticked command per bullet.'] : []),
+    verdicts.length || unparsed ? '' : '\nNo commands were run: record them with `sdlc.ts run -- "<command>"`.',
   ].join('\n')
   return { text: text + '\n', result }
 }

@@ -316,21 +316,32 @@ export function nextCommand(change: Change): string {
 // Evidence and gate state: written only by sdlc itself or the person's mod commands.
 export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)|\.sdlc[\\/]changes[\\/][^\\/]+[\\/](?:verification\.md|impact\.json)/
 
-// The plan's ## Verification commands, one per bullet. A command is the first backticked span when it
-// sits in command position: right after the bullet marker, or after one leading `Label: `. Backticks later
-// in prose (a path mentioned in a note) are not commands. A bullet with no backticks and no `: ` is a bare
-// command (`- npm test`); a backtick-free `Label: prose` bullet is a note. Harness invocations (`sdlc.ts ...`,
-// e.g. the red-first `run --expect-fail` or `check`) are not verification evidence and are not required.
-export function planVerification(slug: string): string[] {
+// The plan's ## Verification bullets, split into required commands and ignored bullets (never dropped silently).
+// A command is the first backticked span in command position: right at the bullet start, or right after the
+// first `: ` (so a label may itself contain backticks). Backticks later in prose are not commands. A bullet with
+// no backticks and no `: ` is a bare command (`- npm test`); anything else is ignored. `sdlc.ts run -- "cmd"` is
+// unwrapped to cmd; `sdlc.ts run --expect-fail ...` (red evidence), `sdlc.ts check ...` and other sdlc.ts
+// invocations are ignored.
+export function planVerificationBullets(slug: string): { commands: string[]; ignored: string[] } {
   const body = read(path.join(CHANGES, slug, 'plan.md'))
   const m = /^##\s+Verification\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(body)
-  return (m?.[1] ?? '').split('\n').flatMap(row => {
-    const text = /^\s*[-*]\s+(.+)$/.exec(row)?.[1]
-    if (!text) return []
-    const cmd = (/^(?:[^`:]+:\s+)?`([^`]+)`/.exec(text)?.[1] ?? (text.includes('`') || text.includes(': ') ? '' : text)).trim()
-    return cmd && !/\bsdlc\.ts\b/.test(cmd) ? [cmd] : []
-  })
+  const commands: string[] = []
+  const ignored: string[] = []
+  for (const row of (m?.[1] ?? '').split('\n')) {
+    const text = /^\s*[-*]\s+(.+)$/.exec(row)?.[1]?.trim()
+    if (!text) continue
+    const rest = text.startsWith('`') ? text : text.includes(': ') ? text.slice(text.indexOf(': ') + 2).trimStart() : text
+    let cmd = (rest.startsWith('`') ? /^`([^`]+)`/.exec(rest)?.[1] : text.includes('`') || text.includes(': ') ? undefined : text)?.trim()
+    const wrapped = cmd && /\bsdlc\.ts\s+(.*)$/.exec(cmd)?.[1]
+    if (wrapped !== undefined && wrapped !== '') cmd = /^run\s+(?:--slug\s+\S+\s+)?--\s+(["'])(.+)\1$/.exec(wrapped)?.[2]
+    else if (wrapped === '') cmd = undefined
+    if (cmd) commands.push(cmd)
+    else ignored.push(text)
+  }
+  return { commands, ignored }
 }
+
+export const planVerification = (slug: string): string[] => planVerificationBullets(slug).commands
 
 export function planFiles(slug: string): string[] {
   const { body } = frontmatter(read(path.join(CHANGES, slug, 'plan.md')))
