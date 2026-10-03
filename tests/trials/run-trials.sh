@@ -98,17 +98,18 @@ if [ "$MODE" = L ]; then
 fi
 
 if [ "$MODE" = M ]; then
-  fresh harness
-  (cd "$OUT/harness" && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json && git add -A && git -c user.email=t@e -c user.name=T commit -qm onboard)
-  (cd "$OUT/harness" && claude -p "/sdlc:start \"$TASK\" — then continue into the plan stage and stop at the human gate." --plugin-dir "$P" "${FLAGS[@]}" > "$OUT/harness.A.json")
-  SLUG="$(one_slug "$OUT/harness")"
-  (cd "$OUT/harness" && SDLC_HUMAN=1 $SDLC approve "$SLUG" plan --by trial-operator >/dev/null)
-  (cd "$OUT/harness" && claude -p "/sdlc:build $SLUG — then continue through review and ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS[@]}" > "$OUT/harness.B.json")
-  echo "harness A: $(stat "$OUT/harness.A.json") | B: $(stat "$OUT/harness.B.json") | acceptance: $(accept harness)"
-  echo "harness Stop blocks: $(stop_blocks "$OUT/harness/.sdlc/.gate"); skill fallbacks: $(count_matches "$OUT/harness/.sdlc/usage.jsonl" skill-load-failed)"
-
-  fresh plain
-  (cd "$OUT/plain" && claude -p "$TASK" "${FLAGS[@]}" > "$OUT/plain.json")
-  echo "plain: $(stat "$OUT/plain.json") | acceptance: $(accept plain)"
+  # Lean tier M: one harness session from /sdlc:start to ship (no gate), against plain Claude Code, in parallel.
+  ( fresh harness; settings "$OUT/harness" false
+    cd "$OUT/harness" && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json \
+      && git add -A && git -c user.email=t@e -c user.name=T commit -qm onboard \
+      && claude -p "/sdlc:start \"$TASK\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS[@]}" > "$OUT/harness.A.json" ) & P1=$!
+  ( fresh plain; settings "$OUT/plain" false; cd "$OUT/plain" && claude -p "$TASK" "${FLAGS[@]}" > "$OUT/plain.json" ) & P2=$!
+  S1=0; S2=0; wait "$P1" || S1=$?; wait "$P2" || S2=$?
+  arm_flag "$S1" "$OUT/harness.A.json"
+  echo "harness: ${ARM_FLAG:+$ARM_FLAG | }$(sum "$OUT/harness.A.json") | acceptance: $(accept harness) | stop blocks: $(stop_blocks "$OUT/harness/.sdlc/.gate") | shipped: $(cd "$OUT/harness" && git log --oneline -1 2>/dev/null || echo n/a)"
+  node "$P/tests/trials/split.mjs" "$OUT/harness.A.json" || true
+  arm_flag "$S2" "$OUT/plain.json"
+  echo "plain: ${ARM_FLAG:+$ARM_FLAG | }$(sum "$OUT/plain.json") | acceptance: $(accept plain)"
   echo "artifacts in $OUT"
+  [ "$ANY_BAD" = 0 ] || { echo "run-trials: an arm crashed or errored" >&2; exit 1; }
 fi
