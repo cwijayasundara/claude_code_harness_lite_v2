@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { makeRepo, sdlc, hook, write } from './testkit.ts'
+import { isSafeEvidenceCommand } from './hooks.ts'
 
 let repo: string
 beforeEach(() => {
@@ -68,10 +69,12 @@ test('read-only agents: allowlist only; chained, substituted and interpreter wri
   const as = (agent_type: string, command: string) => decision(hook(repo, 'pre-bash', { agent_type, tool_input: { command } }))
   const denied = ['touch src/app.js sdlc.ts status', 'rm f # sdlc.ts status', 'node /x/scripts/sdlc.ts status\ntouch f', 'node /x/scripts/sdlc.ts status & touch f',
     'node /x/scripts/sdlc.ts status "$(touch f)"', "bash -c 'touch f'", 'sh -c "rm f"', 'echo "$(touch f)"', `python3 -c "import os;os.remove('f')"`, 'find . -delete',
-    'git -C . checkout -- a', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f']
+    'git -C . checkout -- a', 'echo \\"; touch f; echo \\"', "echo \\' > src/app.js \\'", 'echo "unterminated', 'echo x\\', 'sort -uo f x', 'sort -of x', 'sort --outp=f x',
+    'cat f >&2f', "sed -n -e 'w f' x", 'sed -s -n 1p x', "awk -f prog.awk x", "awk -i inplace 1 x", 'node /x/scripts/sdlc.ts status --at a --at b', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f']
   for (const c of denied) assert.equal(as('sdlc:reviewer', c), 'deny', c)
   const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node /x/scripts/sdlc.ts status',
-    'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current']
+    'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current',
+    'rg -n "\\bfoo\\b" src', "grep -n 'a\\|b' f", 'echo "say \\"hi\\""', 'sort -u x', 'sort -n x', 'git --no-pager diff', 'cat f >&2']
   for (const c of allowed) assert.equal(as('sdlc:reviewer', c), undefined, c)
   assert.equal(as('sdlc:scout', 'node /x/scripts/sdlc.ts run -- "npm test"'), 'deny')
   assert.equal(as('sdlc:implementer', 'echo x > f'), undefined)
@@ -110,4 +113,10 @@ test('outside-repo scope: parent files denied, deep consumers follow impact and 
   write(repo, '.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['a'], hits: [], missing: [] }))
   sdlc(repo, ['approve', 'rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
   assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: deep } })), undefined)
+})
+
+test('the evidence guard honours case-insensitive paths when asked', () => {
+  assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/changes/a/RUNS.JSONL', true), false)
+  assert.equal(isSafeEvidenceCommand('cat .sdlc/changes/a/RUNS.JSONL', true), true)
+  assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/changes/a/RUNS.JSONL', false), true, 'case-sensitive: not an evidence path')
 })

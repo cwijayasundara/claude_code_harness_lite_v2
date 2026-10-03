@@ -35,21 +35,21 @@ function hookSessionStart(): void {
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context.join('\n') } }))
 }
 
+// macOS and Windows file systems are case-insensitive: .sdlc/Sensors.json is sensors.json there.
+const CASE_INSENSITIVE = process.platform !== 'linux'
 // git (staging, committing, inspecting) and read-only viewers may name evidence; nothing that can write to it may.
 const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|cat|head|tail|wc|grep|rg|jq)\b/
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
-function isSafeEvidenceCommand(cmd: string): boolean {
+export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
   return cmd
     .split(/&&|\|\||;|\|/)
-    .filter(part => EVIDENCE_RE.test(part))
+    .filter(part => evidencePath(part, ci))
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
 }
 
-// macOS and Windows file systems are case-insensitive: .sdlc/Sensors.json is sensors.json there.
-const CASE_INSENSITIVE = process.platform !== 'linux'
-const evidencePath = (p: string): boolean => (CASE_INSENSITIVE ? new RegExp(EVIDENCE_RE.source, 'i') : EVIDENCE_RE).test(p)
+export const evidencePath = (p: string, ci = CASE_INSENSITIVE): boolean => (ci ? new RegExp(EVIDENCE_RE.source, 'i') : EVIDENCE_RE).test(p)
 
 const replaceOnce = (text: string, o: string, n: string, all?: boolean): string => (all ? text.split(o).join(n) : text.replace(o, () => n))
 
@@ -92,31 +92,49 @@ function siblingEditReason(rel: string, consumer: { name: string } | undefined):
 // Read-only agents (scout, reviewer, verifier) get an allowlist, not a blacklist: a Bash command passes only if
 // every segment starts with a known read-only command. Anything else is denied, naming the first offender.
 const READ_ONLY_AGENT = /(?:^|:)(?:scout|reviewer|verifier)$/
-const OK_REDIRECT = /\d*>&\d+|\d*>>?\s*\/dev\/null\b/g
-const unquote = (s: string): string => s.replace(/'[^']*'|"[^"]*"/g, "''")
+const OK_REDIRECT = /\d*>&\d+(?![^\s;&|])|\d*>>?\s*\/dev\/null(?![^\s;&|])/g
 
-// Quote-aware split on newline, && || ; | and a single & (not the & of 2>&1).
-function splitCommand(cmd: string): string[] {
-  const parts: string[] = []
+// Follows bash quoting: outside quotes \X is a literal X; in "..." only \" \\ \` \$ escape; '...' has no escapes.
+// segs splits on newline, && || ; | and a single & (not the & of 2>&1); bare is the command with quoted text removed.
+// ok is false for an unterminated quote or a trailing lone backslash.
+function scan(cmd: string): { segs: string[]; bare: string; ok: boolean } {
+  const segs: string[] = []
   let cur = ''
+  let bare = ''
   let q = ''
+  let ok = true
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i] ?? ''
-    if (q) { if (ch === q) q = ''; cur += ch; continue }
-    if (ch === "'" || ch === '"') { q = ch; cur += ch; continue }
-    if (ch === '&' && cmd[i - 1] === '>') { cur += ch; continue }
+    const next = cmd[i + 1] ?? ''
+    if (q === "'") { cur += ch; if (ch === "'") q = ''; continue }
+    if (q === '"') {
+      if (ch === '\\' && /["\\`$]/.test(next)) { cur += ch + next; i++; continue }
+      cur += ch
+      if (ch === '"') q = ''
+      continue
+    }
+    if (ch === '\\') {
+      if (!next) ok = false
+      cur += ch + next
+      i++
+      continue
+    }
+    if (ch === "'" || ch === '"') { q = ch; cur += ch; bare += "''"; continue }
+    if (ch === '&' && cmd[i - 1] === '>') { cur += ch; bare += ch; continue }
     if (ch === '\n' || ch === ';' || ch === '|' || ch === '&') {
-      if ((ch === '|' || ch === '&') && cmd[i + 1] === ch) i++
-      parts.push(cur)
+      if ((ch === '|' || ch === '&') && next === ch) i++
+      segs.push(cur)
       cur = ''
+      bare += ' '
       continue
     }
     cur += ch
+    bare += ch
   }
-  return [...parts, cur].filter(p => p.trim())
+  return { segs: [...segs, cur].filter(p => p.trim()), bare, ok: ok && !q }
 }
 
-const SIMPLE_READERS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'ls', 'pwd', 'echo', 'printf', 'cut', 'tr', 'diff', 'cmp', 'stat', 'file', 'which', 'jq'])
+const SIMPLE_READERS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'ls', 'pwd', 'echo', 'printf', 'cut', 'tr', 'diff', 'cmp', 'stat', 'which', 'jq'])
 const GIT_READ = new Set(['diff', 'log', 'show', 'status', 'blame', 'grep', 'ls-files', 'rev-parse', 'merge-base', 'describe', 'cat-file'])
 const FIND_WRITES = /^-(?:delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)$/
 const RECORDER_READS = new Set(['status', 'check', 'check-file', 'diff', 'skill', 'scope-drift'])
@@ -124,7 +142,8 @@ const RECORDER_FLAGS = new Set(['--slug', '--json', '--at', '--base', '--expect-
 const SED_PRINT = /^['"]?(?:\d+|\$|\/[^/]*\/)?(?:,(?:\d+|\$|\/[^/]*\/))?p['"]?$/
 const norm = (s: string): string => s.trim().replace(/\s+/g, ' ')
 
-function gitAllowed(w: string[]): boolean {
+function gitAllowed(args: string[]): boolean {
+  const w = args[0] === '--no-pager' ? args.slice(1) : args
   const [sub = '', arg = ''] = w
   if (w.some(x => /^--(?:output|open-files-in-pager|ext-diff)\b|^-O/.test(x))) return false
   if (sub === 'branch') return w.slice(1).every(f => /^(?:--show-current|-a|-r|--list|-v|-vv)$/.test(f))
@@ -146,6 +165,7 @@ function recorderAllowed(w: string[], seg: string, agent: string): string | null
   const sub = w[i + 1] ?? ''
   const dd = /\s--\s+([^]*)$/.exec(seg)
   const flags = (dd ? seg.slice(0, dd.index) : seg).split(/\s+/).filter(x => x.startsWith('--') && !x.startsWith('--disable-warning'))
+  if (new Set(flags).size !== flags.length) return 'sdlc.ts options may not be repeated'
   if (flags.some(f => !RECORDER_FLAGS.has(f))) return `sdlc.ts option ${flags.find(f => !RECORDER_FLAGS.has(f))} is not allowed`
   if (RECORDER_READS.has(sub)) return null
   if ((sub !== 'run' && sub !== 'verify-report') || /(?:^|:)scout$/.test(agent)) return `sdlc.ts ${sub} is not available to ${agent}`
@@ -164,8 +184,10 @@ function segmentDenied(seg: string, agent: string): string | null {
   if (c === 'node') return recorderAllowed(w.slice(1), text, agent)
   if (c === 'find') return w.some(x => FIND_WRITES.test(x)) ? 'find may not delete or execute' : null
   if (c === 'rg') return w.some(x => x === '--pre' || x.startsWith('--pre=')) ? 'rg --pre runs commands' : null
-  if (c === 'sort') return w.some(x => x === '-o' || x.startsWith('--output')) ? 'sort -o writes a file' : null
+  if (c === 'sort') return w.some(x => /^-[^-]*o|^--o/.test(x)) ? 'sort -o writes a file' : null
   if (c === 'uniq') return w.slice(1).filter(x => !x.startsWith('-')).length > 1 ? 'uniq with an output file writes' : null
+  if (c === 'sed' && w.some(x => /^-[a-zA-Z]*[iefs]|^--(?:in-place|expression|file|separate)/.test(x))) return 'sed may not edit in place or run scripts from options'
+  if (c === 'awk' && w.some(x => /^-[a-zA-Z]*[iof]|^--(?:include|dump-variables|profile|file|source)/.test(x))) return 'awk may not write files or load programs'
   if (c === 'sed') return w[1] === '-n' && w.length > 2 && SED_PRINT.test(w[2] ?? '') ? null : 'only sed -n with a print address is read-only'
   if (c === 'awk') return /[>|]|system\s*\(|getline/.test(text) ? 'awk programs may not write or run commands' : null
   return SIMPLE_READERS.has(c) ? null : `${c || 'this command'} is not on the read-only allowlist`
@@ -173,8 +195,10 @@ function segmentDenied(seg: string, agent: string): string | null {
 
 function readOnlyDenial(cmd: string, agent: string): string | null {
   if (/\$\(|`|<<|[<>]\(/.test(cmd)) return 'command substitution, here-docs and process substitution are not allowed'
-  if (/>/.test(unquote(cmd).replace(OK_REDIRECT, ''))) return 'output redirects are not allowed (only 2>&1 and > /dev/null)'
-  for (const seg of splitCommand(cmd)) {
+  const { segs, bare, ok } = scan(cmd)
+  if (!ok) return 'unterminated quote or trailing backslash'
+  if (/>/.test(bare.replace(OK_REDIRECT, ''))) return 'output redirects are not allowed (only 2>&1 and > /dev/null)'
+  for (const seg of segs) {
     const why = segmentDenied(seg, agent)
     if (why) return `"${seg.trim().slice(0, 60)}": ${why}`
   }
