@@ -53,8 +53,8 @@ test('new creates intent and makes the change active; status prints next command
   assert.match(status, /next: \/sdlc:plan add-login/)
 })
 
-test('tier M feature needs plan approval; approval is human-only and goes stale on edit', () => {
-  run(['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+test('tier L plan needs approval; approval is human-only and goes stale on edit', () => {
+  run(['new', 'add-login', '--type', 'refactor', '--tier', 'L'])
   write('.sdlc/changes/add-login/plan.md', PLAN)
   assert.match(run(['status']).stdout, /awaiting approval/)
 
@@ -560,4 +560,15 @@ test('a spec or plan with unresolved open questions cannot be approved; resolved
   assert.notEqual(run(['approve', 'qs', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0, 'an open Q in prose also blocks')
   write('.sdlc/changes/qs/plan.md', PLAN + '\n## Open questions\nnone\n\n## Decisions\n- Q1 swap in place → yes (default)\n')
   assert.equal(run(['approve', 'qs', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+})
+
+test('lean S/M: tier M has no plan gate and no review stage; tier L keeps both', () => {
+  run(['new', 'mid', '--type', 'feature', '--tier', 'M'])
+  write('.sdlc/changes/mid/plan.md', PLAN)
+  assert.match(run(['status']).stdout, /next: \/sdlc:build mid/)
+  const st = JSON.parse(run(['status', '--json']).stdout) as { changes: { slug: string }[] }
+  assert.ok(st.changes.some(c => c.slug === 'mid'))
+  run(['new', 'big', '--type', 'refactor', '--tier', 'L'])
+  write('.sdlc/changes/big/plan.md', PLAN)
+  assert.match(run(['status']).stdout, /human gate: review big\/plan\.md/)
 })

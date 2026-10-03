@@ -97,10 +97,12 @@ export const PATHS: Record<ChangeType, Stage[]> = {
   spike: ['intent', 'notes'],
 }
 // Human gates per tier; greenfield is always gated like L.
-export const GATES: Record<Tier, GatedStage[]> = { S: [], M: ['plan'], L: ['spec', 'plan'] }
+// Tier M has no human gate: contract, data and security changes are tier L (v0.3 trial: gates by risk, not size).
+export const GATES: Record<Tier, GatedStage[]> = { S: [], M: [], L: ['spec', 'plan'] }
 // Tier S is the fast path: no spec, and review folds into ship (one /code-review pass).
 export const SKIPPED_FOR_S = new Set<Stage>(['spec', 'review'])
-export const SKIPPED_FOR_M = new Set<Stage>(['spec'])
+// Tier M review runs on the PR (templates/sdlc-review.yml), not as an in-session stage.
+export const SKIPPED_FOR_M = new Set<Stage>(['spec', 'review'])
 export const ARTIFACTS: Partial<Record<Stage, string>> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', notes: 'notes.md' }
 
 export const APPROVAL_ARTIFACTS: Record<GatedStage, string> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', impact: 'plan.md' }
@@ -262,7 +264,7 @@ export function loadChange(slug: string): Change {
   if (tier === 'S' && type !== 'greenfield') stages = stages.filter(s => !SKIPPED_FOR_S.has(s))
   const isBug = type === 'bugfix' || type === 'incident'
   if (isBug && tier !== 'L') stages = stages.filter(s => s !== 'plan')
-  if (type === 'feature' && tier === 'M') stages = stages.filter(s => !SKIPPED_FOR_M.has(s))
+  if (tier === 'M' && type !== 'greenfield') stages = stages.filter(s => !SKIPPED_FOR_M.has(s))
   const gates = type === 'greenfield' ? GATES.L : GATES[tier]
   const approvalState = (gate: GatedStage): ApprovalState => approvalOf(slug, gate)
   const isDone = (stage: Stage): boolean => {

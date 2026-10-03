@@ -1,0 +1,41 @@
+# sdlc PR review: one background Claude review per PR push, failing only on a high-severity finding.
+# Copy to .github/workflows/ and add an ANTHROPIC_API_KEY secret. Docs: https://code.claude.com/docs/en/github-actions
+name: sdlc-review
+on:
+  pull_request:
+    types: [opened, synchronize]
+concurrency:
+  group: sdlc-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: --model claude-opus-5-5 --max-turns 30 --allowedTools "Read,Grep,Glob,Write,Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*)"
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }}: `git diff origin/${{ github.base_ref }}...HEAD`.
+            Read the change's intent.md, spec.md and plan.md under .sdlc/changes/ if the diff touches one.
+            Report only findings you are at least 80% sure are real, in lines the diff changed, in this order:
+            correctness, security, contract changes the plan did not announce, data loss, missing tests for a behaviour.
+            Skip anything a linter, type checker or the sdlc-check CI job already catches, and style preferences.
+            Post exactly one comment with `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body-file review.md`.
+            The comment lists each finding as `[high|medium] path:line: problem -> fix`, or says "No findings."
+            Finally write one word to review-verdict.txt: HIGH if any finding is high severity, else PASS.
+      - name: Fail on a high-severity finding
+        run: |
+          if grep -qx HIGH review-verdict.txt 2>/dev/null; then
+            echo "::error::sdlc review found a high-severity issue; see the PR comment"
+            exit 1
+          fi

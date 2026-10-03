@@ -25,6 +25,7 @@ export type SensorConfig = {
   layers: Layer[]
   limits: { fileLines: number; diffLines: number; lineChars: number }
   knownRed: string[]
+  build: 'native' | 'sdd'
 }
 
 export const DEFAULT_CONFIG: SensorConfig = {
@@ -39,6 +40,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   layers: [],
   limits: { fileLines: 400, diffLines: 500, lineChars: 160 },
   knownRed: [],
+  build: 'native',
 }
 
 export const SECRET_PATTERNS: [string, RegExp][] = [
@@ -250,6 +252,10 @@ export function parseConfig(text: string): { config: SensorConfig; errors: strin
       if (typeof v === 'number' && v > 0) config.limits[k] = v
       else errors.push(`limits.${k} must be a positive number`)
     }
+  }
+  if ('build' in value) {
+    if (value.build === 'native' || value.build === 'sdd') config.build = value.build
+    else errors.push('build must be "native" or "sdd"')
   }
   for (const k of Object.keys(value)) if (!(k in DEFAULT_CONFIG)) errors.push(`unknown key "${k}"`)
   return { config, errors }

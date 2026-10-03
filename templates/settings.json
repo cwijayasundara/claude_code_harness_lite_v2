@@ -10,7 +10,7 @@
   },
   "enabledPlugins": {
     "sdlc@sdlc": true,
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "security-guidance@claude-plugins-official": false,
     "financial-analysis@claude-for-financial-services": false,
     "private-equity@claude-for-financial-services": false,
@@ -31,5 +31,8 @@
       "Edit(.env)",
       "Edit(.env.*)"
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true"
   }
 }

@@ -32,13 +32,14 @@ stop_blocks() { python3 -c "import json,sys; print(sum(json.load(open(sys.argv[1
 TASK_L='Add API-key authentication, per-user todos, pagination and a file-backed store to todo-core. createHandler(service, { users }) takes users as [{ id, apiKey }]. Requests gain headers; every request must carry header x-api-key (lowercase key in the headers object); a missing or unknown key is 401 { error }. Todos belong to the user who created them: GET /todos and PATCH /todos/:id/complete only see the caller'"'"'s todos (another user'"'"'s id is 404). GET /todos returns { items, total } and accepts query limit (default 50, 1..100) and offset (default 0, >= 0); any other value is 400. new TodoService(store) keeps its signature. Add FileTodoStore(path) in src/file-store.js with the same methods as TodoStore that persists to a JSON file, loads it on construction, and writes atomically (write a temp file, then rename). Include tests.'
 settings() { # $1 dir, $2 superpowers true|false
   mkdir -p "$1/.claude"
-  printf '{"enabledPlugins":{"superpowers@claude-plugins-official":%s,"security-guidance@claude-plugins-official":false,"financial-analysis@claude-for-financial-services":false,"private-equity@claude-for-financial-services":false,"aws-serverless@claude-plugins-official":false,"harness@harness-local":false,"harness-eng-v2@harness-eng-v2":false},"model":"claude-sonnet-5-5"}\n' "$2" > "$1/.claude/settings.json"
+  printf '{"enabledPlugins":{"superpowers@claude-plugins-official":%s,"security-guidance@claude-plugins-official":false,"financial-analysis@claude-for-financial-services":false,"private-equity@claude-for-financial-services":false,"aws-serverless@claude-plugins-official":false,"harness@harness-local":false,"harness-eng-v2@harness-eng-v2":false},"model":"claude-sonnet-5-5","env":{"CLAUDE_CODE_DISABLE_ADVISOR_TOOL":"true"}}\n' "$2" > "$1/.claude/settings.json"
 }
 # --max-budget-usd is a per-call runaway guard; arms are compared on actual spend.
 FLAGS_L=(--permission-mode acceptEdits --allowedTools "Bash(node *)" "Bash(git *)" "Bash(npm *)" "Bash(bash *)" --max-budget-usd 12 --output-format json)
 harness_arm() { # $1 arm name, $2 superpowers true|false
   local d="$OUT/$1"; fresh "$1"; settings "$d" "$2"
-  (cd "$d" && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json && git add -A && git -c user.email=t@e -c user.name=T commit -qm onboard)
+  local build=native; [ "$2" = true ] && build=sdd
+  (cd "$d" && $SDLC init >/dev/null && echo "{ \"fast\": { \"test\": \"npm test\" }, \"full\": { \"test\": \"npm test\" }, \"build\": \"$build\" }" > .sdlc/sensors.json && git add -A && git -c user.email=t@e -c user.name=T commit -qm onboard)
   (cd "$d" && claude -p "/sdlc:start \"$TASK_L\" — this is tier L; continue into the spec stage and stop at the human gate." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.A.json")
   local slug; slug="$(one_slug "$d")"
   (cd "$d" && SDLC_HUMAN=1 $SDLC approve "$slug" spec --by trial-operator >/dev/null)

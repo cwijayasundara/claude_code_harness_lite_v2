@@ -276,6 +276,10 @@ export function runChecks(i: CheckInput): CheckResult {
     ...contractFindings(i),
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
+  // A diff whose plan the person approved is big by design: the diff-size limit warns instead of blocking.
+  if (i.slugs.length && i.slugs.every(s => approvalOf(s, 'plan') === 'approved')) {
+    for (const f of findings) if (f.sensor === 'size' && !f.file) f.severity = 'warn'
+  }
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.point === 'ship' || i.point === 'ci') findings.push(...wikiFindings())
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))

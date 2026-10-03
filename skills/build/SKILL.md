@@ -18,8 +18,8 @@ Tier S, and tier M with 3 or fewer slices and 8 or fewer files. Subagent start-u
 
 Next: tier S `/sdlc:ship $0` (includes review); tier M `/sdlc:review $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
 
-## Tier L and greenfield: superpowers SDD
-Use this when `superpowers:subagent-driven-development` is in your available skills; otherwise use the next section.
+## Tier L and greenfield, opt-in: superpowers SDD
+Use this only when `.sdlc/sensors.json` has `"build": "sdd"` and `superpowers:subagent-driven-development` is in your available skills; otherwise use the next section. SDD costs several times the tokens of the native build, so it suits plans with many independent slices.
 1. If on main or master: `git checkout -b sdlc/$0`.
 2. Invoke `superpowers:subagent-driven-development` on `.sdlc/changes/$0/plan.md` (spec: `.sdlc/changes/$0/spec.md`). These caller instructions override the skill:
    - Work in this tree on `sdlc/$0`. Do not use `using-git-worktrees`.

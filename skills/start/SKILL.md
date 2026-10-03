@@ -23,8 +23,8 @@ If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:st
    - Type: greenfield, feature, bugfix, refactor, migration, chore, spike or incident.
    - Tier:
      - **S**: at most 3 files, and no public contract, data or security impact.
-     - **M**: at most 15 files, or it touches a contract.
-     - **L**: auth, payments, data migration, security, public API, or more than 15 files.
+     - **M**: at most 15 files, and no public contract, data or security impact.
+     - **L**: auth, payments, data migration, security, a public API or contract change, or more than 15 files.
 
    Delegate any code lookup to the `sdlc:scout` agent. Do not read files yourself. Ask at most two questions with AskUserQuestion, and only when the type, tier or outcome is genuinely ambiguous.
 4. **Record.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts new <kebab-slug> --type <type> --tier <S|M|L> --title "<title>"`. Then fill in `intent.md` in at most 40 lines covering problem, outcome (how we will check it), non-goals and risks.
@@ -36,7 +36,7 @@ If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:st
    3. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then generate `verification.md` with `sdlc.ts verify-report <slug>`. Never write it by hand.
    4. The next command is then `/sdlc:ship <slug>`, which includes the review pass for tier S. Keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop.
 6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates:
-   - Tier M: the person approves the plan.
+   - Tier S and M: no human gate; review runs on the PR (`templates/sdlc-review.yml`).
    - Tier L or greenfield: the person approves the spec and the plan.
 
 End with exactly one line: `Next: <command from status>`.

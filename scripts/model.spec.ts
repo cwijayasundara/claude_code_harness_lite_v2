@@ -119,3 +119,10 @@ test('limits.lineChars is validated and raising it weakens the config', async ()
   const { weakensConfig } = await import('./sensors.ts')
   assert.deepEqual(weakensConfig('{"limits":{"lineChars":120}}', '{"limits":{"lineChars":200}}'), ['limits.lineChars raised 120 → 200'])
 })
+
+test('config build mode is native by default and only native or sdd', async () => {
+  const { parseConfig } = await import('./model.ts')
+  assert.equal(parseConfig('{}').config.build, 'native')
+  assert.equal(parseConfig('{"build":"sdd"}').config.build, 'sdd')
+  assert.deepEqual(parseConfig('{"build":"fast"}').errors, ['build must be "native" or "sdd"'])
+})

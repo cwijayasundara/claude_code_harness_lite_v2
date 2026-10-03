@@ -576,3 +576,21 @@ test('I4: PR-controlled waiver fields cannot break out of the review listing', (
     assert.equal((text.match(/```/g) ?? []).length % 2, 0, 'fences stay balanced')
   }
 })
+
+test('a big diff blocks in CI unless the person approved the change plan; then it only warns', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 50 } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  gitIn(repo, 'checkout', '-qb', 'big')
+  sdlc(repo, ['new', 'big-change', '--type', 'refactor', '--tier', 'L'])
+  write(repo, '.sdlc/changes/big-change/plan.md', '# Plan\n\n## Files\n- src/**\n\n## Verification\n- `node -e 0`\n')
+  write(repo, 'src/a.js', Array.from({ length: 80 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'work')
+  const size = () => (JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json']).stdout) as { findings: { sensor: string; severity: string; file?: string }[] })
+    .findings.filter(f => f.sensor === 'size' && !f.file).map(f => f.severity)
+  assert.deepEqual(size(), ['block'])
+  sdlc(repo, ['approve', 'big-change', 'plan'], { env: { SDLC_HUMAN: '1' } })
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'approved')
+  assert.deepEqual(size(), ['warn'])
+})

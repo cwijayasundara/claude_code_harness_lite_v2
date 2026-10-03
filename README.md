@@ -44,9 +44,11 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 
 1. `/plugin marketplace add <git url of this repo>` and pin a release tag.
 2. Commit `templates/settings.json`, merged into the project's `.claude/settings.json`, so every engineer gets the same plugins and models.
-3. superpowers 6.4.1 or later runs tier L and greenfield builds. Without it, builds use sdlc's own implementers.
+3. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
 
-**Opus advisor: opt-in.** In the v0.3 trial an Opus advisor on the main thread was the largest single cost, about a third of each run. The template leaves it off. Add `"advisorModel": "claude-opus-5-5"` to a project's settings only where the extra second opinion is worth it. Opus still writes specs and plans (architect) and does the one review per change.
+**Opus advisor: off.** In the v0.3 trials an Opus advisor on the main thread was the largest single cost, about a third of each run. A user-level `advisorModel` still applies to every project, so the template turns the advisor off with `"env": { "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true" }`. Remove that line to opt back in. Opus still writes tier L specs and plans (architect) and reviews.
+
+**Gates by risk, not size.** Tier S and M have no human gate and no in-session review: they run plan, build, verify and ship in one turn. Their single review runs on the PR from `templates/sdlc-review.yml` (Opus, one sticky comment, fails only on a high-severity finding; needs an `ANTHROPIC_API_KEY` secret). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and the in-session Opus review. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
 
 ## Guides and sensors
 
@@ -77,6 +79,7 @@ For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you do
 | `scripts/*.ts` (11) | Zero-dependency Node, no build step: `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `wiki` (surface hash and stale pages), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
 | `templates/sdlc-check.yml` | The required CI check, judged by the base branch's vendored checker. |
+| `templates/sdlc-review.yml` | One background Claude review per PR, for tier S and M and as a second look on L. |
 
 Artifacts live in **`.sdlc/`** at the repo root and are committed; `usage.jsonl` is gitignored. They are not under `.claude/`, which Claude Code protects: writes there always prompt, or are denied in headless runs, and allow rules can't change that.
 
@@ -89,5 +92,5 @@ npm run typecheck:mod                        # the mod; needs generated types, s
 claude plugin test .                         # mod tests
 npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
-tests/trials/run-trials.sh [outdir]          # LIVE and PAID (about $2): tier M with the harness vs plain Claude Code
+tests/trials/run-trials.sh [M|L] [outdir]     # LIVE and PAID: M (about $2) or L (three arms, about $8)
 ```
