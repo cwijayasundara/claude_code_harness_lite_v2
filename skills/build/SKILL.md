@@ -3,7 +3,7 @@ name: build
 description: Execute an approved plan, then hand off to verification. Small builds run inline; tier L and greenfield run through superpowers subagent-driven development when it is installed, otherwise through sdlc:implementer subagents.
 argument-hint: <slug>
 effort: medium
-allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Bash(git *), Bash(bash *), Read, Write, Edit, Glob, Grep, Agent, Skill
+allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Bash(git checkout*), Bash(git status*), Bash(git diff*), Bash(git log*), Bash(git rev-parse*), Bash(bash *subagent-driven-development/scripts/*), Read, Write, Edit, Glob, Grep, Agent, Skill
 ---
 # Build $0
 

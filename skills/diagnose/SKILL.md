@@ -18,7 +18,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
    - Use `sdlc:scout` to trace the path.
    - List at most 3 hypotheses, ranked.
    - Test the top one with a probe (a log line, a narrower test). Never use a speculative fix.
-3. **Fix.**
+3. **Fix** (tier L: only after the plan is approved; see step 4).
    - Apply the smallest change that makes the regression test pass and keeps the rest green.
    - Do not refactor along the way.
    - If the fix touches more than 3 files or a contract, stop: it is a feature or refactor, so tell the person.

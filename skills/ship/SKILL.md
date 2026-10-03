@@ -9,7 +9,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. Shipping needs `verification.md` to show `result: pass`, and `review.md` to show `pass` or `accepted` where the path includes review. Otherwise stop and say what is missing.
 2. **Tier S review.** Tier S has no separate review stage. Launch the Opus `sdlc:reviewer` agent once on the diff, in the foreground. Fix only the findings it keeps. Then write `review.md` with `result: pass` or `accepted`, `rounds` and `caught`.
-3. **Wiki.** If `docs/wiki/manifest.json` exists, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki status`. If it lists anything, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill wiki --update $0` and follow the printed steps. The script stages `docs/wiki/` with the change.
+3. **Wiki.** If `docs/wiki/manifest.json` exists, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki status`. If it lists anything, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill wiki update $0` and follow the printed steps. The script stages `docs/wiki/` with the change.
 4. **Ship it.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ship $0 --message "<type(scope): summary>\n\n<the intent's outcome>"`. The script deterministically:
    - checks readiness and the scope gate
    - runs the ship gate: every sensor over the branch diff, the full commands, traceability (every B-number has a named test) and proof of red (the new tests fail on the base)

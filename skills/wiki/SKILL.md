@@ -1,7 +1,7 @@
 ---
 name: wiki
 description: Build or update the code wiki in docs/wiki/ - a map of modules, entry points, data flow and contracts that engineers can browse on GitHub. Run once after onboard; ship runs the update when pages are stale.
-argument-hint: '[--update [<slug>]]'
+argument-hint: '[update [<slug>]]'
 effort: low
 allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Bash(git diff*), Read, Write, Edit, Glob, Grep, Agent
 ---
@@ -9,11 +9,11 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 **Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running.
 
-## Update (when `docs/wiki/manifest.json` exists)
+## Update (when the first argument is `update` or `docs/wiki/manifest.json` exists)
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki status --json`. If every list is empty, say "wiki up to date" and stop.
-2. For each `stale` page, launch one `sdlc:wiki` agent (at most 3 per message) with the page path, its globs from the manifest, the change slug from the arguments (or `unreleased`), and the changed files under those globs (`git diff --name-only main...HEAD`, plus the working tree).
+2. For each `stale` page, launch one `sdlc:wiki` agent (at most 3 per message) with the page path, its globs from the manifest, the change slug (the second argument, or `unreleased` if absent), and the changed files under those globs (`git diff --name-only main...HEAD`, plus the working tree).
 3. For each `missing` page, fix its globs in the manifest or delete the page. For each `uncovered` directory, add a manifest entry and launch an agent for it as in Build step 3.
-4. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki stamp`.
+4. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki stamp <page> ...`, naming only the pages you actually wrote.
 
 ## Build (no manifest yet)
 1. Module map: reuse onboard's scout (a) map if this conversation has it; otherwise launch one `sdlc:scout`: "list the top-level modules (at most 12), each with its directory globs and one line on what it does".

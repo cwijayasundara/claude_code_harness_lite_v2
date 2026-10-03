@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
 ---
 # Next step
 
-1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status --json`.
+1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status --json`. If `initialised` is false, follow `/sdlc:onboard` steps via `sdlc.ts skill onboard`. Otherwise use the entry in `changes` whose `slug` equals `active`.
 2. **No active change:** ask the person in one question what they want to build, then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill start "<their answer>"` and follow the printed steps.
 3. **Human gate** (the active change's `command` starts with `human gate`): show it word for word and stop. Never approve for the person.
 4. **Done:** say so and suggest `/sdlc:start "<next task>"`.
