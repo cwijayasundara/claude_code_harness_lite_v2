@@ -12,6 +12,7 @@ import {
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
 } from './core.ts'
+import { readBaseline, snapshot, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
@@ -195,6 +196,15 @@ function cmdVerifyReport(args: Args): void {
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }
 
+function cmdDiff(args: Args): void {
+  const base = optString(args, 'base')
+  const snap = args.opt.turn ? readBaseline() ?? snapshot() : null
+  if (!base && !snap) fail('usage: diff (--turn | --base <ref>) [--json]  (no baseline and no commits yet)')
+  const diffs = base ? branchDiff(git(['merge-base', 'HEAD', base]) ?? base) : turnDiff(snap as Snapshot)
+  if (args.opt.json) return out(JSON.stringify(diffs))
+  out(diffs.map(d => `${d.status} ${d.file} (+${d.added.length} -${d.removed.length})`).join('\n') || 'no changes')
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   init: cmdInit,
   new: cmdNew,
@@ -210,6 +220,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   'log-usage': cmdLogUsage,
   hook: cmdHook,
   metrics: cmdMetrics,
+  diff: cmdDiff,
 }
 
 const [command = '', ...rest] = process.argv.slice(2)

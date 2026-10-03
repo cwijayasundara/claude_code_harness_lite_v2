@@ -122,13 +122,15 @@ export function fail(message: string, code = 1): never {
   process.exit(code)
 }
 
-export function git(args: string[]): string | null {
+// A diff larger than the default 1 MB buffer must not turn into "no changes": allow 256 MB.
+export function gitIn(cwd: string, args: string[]): string | null {
   try {
-    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }).trim()
   } catch {
     return null
   }
 }
+export const git = (args: string[]): string | null => gitIn(ROOT, args)
 
 export function frontmatter(text: string): { data: Fields; body: string } {
   const m = /^---\n([\s\S]*?)\n---\n?/.exec(text)

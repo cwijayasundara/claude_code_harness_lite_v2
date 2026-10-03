@@ -4,6 +4,7 @@ import {
   SDLC, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
   planFiles, isPlanned, EVIDENCE_RE, relPosix, scanSecrets, planProblems, type Args, type HookInput,
 } from './core.ts'
+import { snapshot, writeBaseline } from './diffs.ts'
 
 function readStdin(): HookInput {
   try {
@@ -95,12 +96,20 @@ function hookSkillFailed(input: HookInput): void {
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
 }
 
+// Each prompt starts a turn: record what the tree looked like, so Stop can diff exactly this turn's changes.
+function hookPromptSubmit(): void {
+  if (!exists(SDLC)) return
+  const snap = snapshot()
+  if (snap) writeBaseline(snap)
+}
+
 const HOOKS: Record<string, (input: HookInput) => void> = {
   'session-start': hookSessionStart,
   'pre-bash': hookPreBash,
   'pre-edit': hookPreEdit,
   'post-edit': hookPostEdit,
   'skill-failed': hookSkillFailed,
+  'prompt-submit': () => hookPromptSubmit(),
 }
 
 export function cmdHook(args: Args): void {
