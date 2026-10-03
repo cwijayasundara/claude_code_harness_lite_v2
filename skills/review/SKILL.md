@@ -27,4 +27,4 @@ The budget is **one review pass and at most one fix round**. Reviews that chase 
    The body lists findings with severity, category and disposition, then the deferred items. Keep each finding's category tag in review.md, because metrics counts recurring categories to suggest new rules.
 5. **Unresolved findings.** If any remain, set `result: blocked`, and the person decides.
 
-Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. End with: `Next: <command from status>`.
+Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. End with: `Next: <command from status>`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.

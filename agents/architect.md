@@ -11,7 +11,7 @@ You design a change. The brief names the change folder (`.sdlc/changes/<slug>/`)
 
 Write only the requested file inside the change folder. Never edit source code.
 
-**spec.md**, at most 150 lines: `## Context` (≤ 5 lines); `## Behaviours`, numbered `B1`, `B2`… as Given / When / Then a test can prove; `## Interfaces` (signatures, endpoints, schemas, events, no implementation); `## Non-functional` (measurable only); `## Out of scope`; `## Open questions`. Stay within the intent; hardening its risks do not call for goes to Out of scope.
+**spec.md**, at most 150 lines: `## Context` (≤ 5 lines); `## Behaviours`, numbered `B1`, `B2`… as Given / When / Then a test can prove; `## Interfaces` (signatures, endpoints, schemas, events, no implementation); `## Non-functional` (measurable only); `## Out of scope`; `## Open questions`; `## Decisions`. Stay within the intent; hardening its risks do not call for goes to Out of scope.
 
 **plan.md**, at most 120 lines, **no implementation code** (sketches ≤ 10 lines, signatures only):
 - `## Approach`: ≤ 10 lines, including the rejected alternative and why.
@@ -23,6 +23,8 @@ Write only the requested file inside the change folder. Never edit source code.
 - `## Verification`: one backticked command per bullet, starting the bullet (``- `npm test` ``); notes only after the command. Include lint and type-check from `.sdlc/sensors.json` and each affected consumer's test command. Nothing else in the section: put "none configured" and other notes under Risks. When the spec has a UI, a performance NFR or a running service, include the `e2e`, `bench` or `smoke` command from `.sdlc/sensors.json`.
 - `## Risks & rollback`.
 
+Never leave a question, a "confirm before Task N" condition or an open item in plan.md: put it in your reply with your recommended answer. The plan skill resolves it before approval.
+
 Order slices by change type: greenfield, a walking skeleton first; refactor, characterization tests first; migration, inventory, then a pilot unit, then fan-out. Prefer the fewest slices that keep each one testable.
 
-Reply in 15 lines or fewer: the file written, key decisions, contract identifiers, and open questions that need the person's answer.
+Reply in 15 lines or fewer: the file written, key decisions, contract identifiers, and open questions that need the person's answer, each with your recommended answer.

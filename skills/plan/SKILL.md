@@ -19,7 +19,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
    Do not draft the plan yourself.
 3. **Check.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. If it warns about the plan's size, its code blocks or a missing `## Files`, send the warning back to the architect once.
 4. **Impact.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts check --at plan --slug $0`. If it reports consumer references, the change is now tier L: tell the person which repos are affected, make sure `## Files` lists the consumer files and `## Verification` lists each consumer's test, and say that `/sdlc-approve $0 impact` is required before build.
-5. **Resolve questions.** If the architect raised open questions, ask the person with AskUserQuestion (at most 3) and apply the answers with small edits.
+5. **Resolve questions.** If the architect raised open questions, ask the person with AskUserQuestion (at most 3) and apply the answers with small edits. Ask with AskUserQuestion. If you get no answer (a headless run, or the person defers), take your recommended option. Either way, record each as `- Q<n>: <question> → <answer> (person|default)` under `## Decisions`, and leave `## Open questions` as `none`: approval is refused while any question is open, so a build never stalls on one.
 
 Then:
 - **Tier M/L:** ask the person to review plan.md (and impact.json when present) and run /sdlc-approve $0 plan (and impact).

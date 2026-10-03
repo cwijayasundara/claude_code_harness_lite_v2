@@ -549,3 +549,15 @@ test('F2: a tier L bugfix stops at a plan gate after diagnosis; S and M do not',
   const st = JSON.parse(run(['status', '--json']).stdout) as { changes: { slug: string; command: string }[] }
   assert.equal(st.changes.find(c => c.slug === 'small-bug')?.command, '/sdlc:diagnose small-bug')
 })
+
+test('a spec or plan with unresolved open questions cannot be approved; resolved or defaulted ones can', () => {
+  run(['new', 'qs', '--type', 'feature', '--tier', 'M'])
+  write('.sdlc/changes/qs/plan.md', PLAN + '\n## Open questions\n- Q1 swap GET /todos in place or add /v2?\n')
+  const refused = run(['approve', 'qs', 'plan'], { env: { SDLC_HUMAN: '1' } })
+  assert.notEqual(refused.code, 0)
+  assert.match(refused.stderr, /open question.*Q1 swap/s)
+  write('.sdlc/changes/qs/plan.md', PLAN + '\n## Risks\n- Q1 is still open: confirm before Task 3.\n')
+  assert.notEqual(run(['approve', 'qs', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0, 'an open Q in prose also blocks')
+  write('.sdlc/changes/qs/plan.md', PLAN + '\n## Open questions\nnone\n\n## Decisions\n- Q1 swap in place → yes (default)\n')
+  assert.equal(run(['approve', 'qs', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+})

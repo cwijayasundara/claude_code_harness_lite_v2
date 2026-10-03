@@ -19,7 +19,6 @@
     "harness-eng-v2@harness-eng-v2": false
   },
   "model": "claude-sonnet-5-5",
-  "advisorModel": "claude-opus-5-5",
   "autoCompactWindow": 200000,
   "permissions": {
     "allow": [

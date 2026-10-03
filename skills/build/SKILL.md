@@ -16,7 +16,7 @@ Tier S, and tier M with 3 or fewer slices and 8 or fewer files. Subagent start-u
 1. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"`. Implement; run targeted tests quietly. Stay inside `## Files`.
 2. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then `sdlc.ts verify-report $0`. Never write verification.md by hand.
 
-Next: tier S `/sdlc:ship $0` (includes review); tier M `/sdlc:review $0`.
+Next: tier S `/sdlc:ship $0` (includes review); tier M `/sdlc:review $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
 
 ## Tier L and greenfield: superpowers SDD
 Use this when `superpowers:subagent-driven-development` is in your available skills; otherwise use the next section.
@@ -27,7 +27,7 @@ Use this when `superpowers:subagent-driven-development` is in your available ski
    - **At most one fix round per task.** Record still-open findings in the ledger and move on; sdlc's review sees them.
    - Tell each implementer: red runs go through `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --expect-fail -- "<cmd>"`, and only the task's files may change.
    - **Skip** the final whole-branch review and `finishing-a-development-branch`. When every task is complete, stop the skill and continue here.
-3. Next: `/sdlc:verify $0`.
+3. Next: `/sdlc:verify $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
 
 ## Large builds: orchestrate
 Tier M with more than 3 slices or 8 files, or tier L without superpowers. You orchestrate; subagents write the code.
@@ -38,4 +38,4 @@ Tier M with more than 3 slices or 8 files, or tier L without superpowers. You or
 
 For a long unattended run, suggest: `/goal every slice of .sdlc/changes/$0/plan.md is done and $0/verification.md says result: pass, or stop after 40 turns`
 
-End with: `Next: /sdlc:verify $0`.
+End with: `Next: /sdlc:verify $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.

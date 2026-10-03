@@ -13,7 +13,6 @@ It handles every kind of task: greenfield, brownfield, feature, bugfix, refactor
      "extraKnownMarketplaces": { "sdlc": { "source": { "source": "directory", "path": "/abs/path/to/claude_code_harness_lite_v2" } } },
      "enabledPlugins": { "sdlc@sdlc": true, "superpowers@claude-plugins-official": false, "security-guidance@claude-plugins-official": false },
      "model": "sonnet",
-     "advisorModel": "opus",
      "autoCompactWindow": 200000
    }
    ```
@@ -47,6 +46,8 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 2. Commit `templates/settings.json`, merged into the project's `.claude/settings.json`, so every engineer gets the same plugins and models.
 3. superpowers 6.4.1 or later runs tier L and greenfield builds. Without it, builds use sdlc's own implementers.
 
+**Opus advisor: opt-in.** In the v0.3 trial an Opus advisor on the main thread was the largest single cost, about a third of each run. The template leaves it off. Add `"advisorModel": "claude-opus-5-5"` to a project's settings only where the extra second opinion is worth it. Opus still writes specs and plans (architect) and does the one review per change.
+
 ## Guides and sensors
 
 Computational sensors run on the hot path at zero tokens; one inferential review runs per change. `sdlc.ts check` is the single entry point, so local equals CI.
@@ -65,7 +66,7 @@ For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you do
 
 | Part | Role |
 |---|---|
-| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5, with Opus 5.5 as advisor). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
+| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
 | `agents/scout.md` | Haiku, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md and plan.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |

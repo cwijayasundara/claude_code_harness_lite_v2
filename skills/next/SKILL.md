@@ -11,5 +11,6 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
 3. **Human gate** (the active change's `command` starts with `human gate`): show it word for word and stop. Never approve for the person.
 4. **Done:** say so and suggest `/sdlc:start "<next task>"`.
 5. **Otherwise** the command is `/sdlc:<stage> <slug>`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill <stage> <slug>` and follow the printed steps exactly, as if that skill had loaded. Never chain stages through the Skill tool.
+6. **Loop.** When that stage finishes with a `Next: /sdlc:<stage>` command, go back to step 1 in this same turn. Stop only at a human gate, when the change is done, when a stage fails or needs the person's answer, or when ship asks before pushing. Every extra session re-reads the whole system prompt, so finishing in one turn is cheaper.
 
-End with: `Next: /sdlc:next`.
+End with the last stage's `Next:` line.
