@@ -10,7 +10,7 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
+  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
@@ -18,6 +18,7 @@ import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
+import { cmdVendor } from './vendor.ts'
 import { cmdWiki } from './wiki.ts'
 
 // ---------- commands ----------
@@ -58,7 +59,7 @@ function cmdActivate(args: Args): void {
 
 function cmdStatus(args: Args): void {
   const json = Boolean(args.opt.json)
-  if (!exists(SDLC)) return out(json ? JSON.stringify({ initialised: false }) : 'sdlc not initialised here: run /sdlc:start')
+  if (!exists(SDLC)) return out(json ? JSON.stringify({ initialised: false }) : `sdlc not initialised here: run ${skillRef('start')}`)
   const active = activeSlug()
   const changes = listChanges().map(loadChange)
   const warnings: string[] = []
@@ -72,7 +73,7 @@ function cmdStatus(args: Args): void {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, next: c.next, command: nextCommand(c) }))
     return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus() }))
   }
-  if (!changes.length) return out('no changes yet: run /sdlc:start "<what you want>"')
+  if (!changes.length) return out(`no changes yet: run ${skillRef('start')} "<what you want>"`)
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
   const rows = changes
     .sort((a, b) => (a.slug === active ? -1 : b.slug === active ? 1 : 0))
@@ -253,8 +254,8 @@ function cmdLogUsage(args: Args): void {
 // prints the same instructions the skill would have loaded.
 function cmdSkill(args: Args): void {
   const [name, ...rest] = args.pos
-  const skills = path.join(PLUGIN_ROOT, 'skills')
-  const file = path.join(skills, name ?? '', 'SKILL.md')
+  const skills = IS_VENDORED ? path.join(ROOT, '.claude', 'skills') : path.join(PLUGIN_ROOT, 'skills')
+  const file = path.join(skills, IS_VENDORED ? `sdlc-${name ?? ''}` : name ?? '', 'SKILL.md')
   if (!name || !exists(file)) fail(`no skill named ${name ?? ''}; one of ${exists(skills) ? fs.readdirSync(skills).join(', ') : '(none here)'}`)
   const body = frontmatter(read(file)).body
   out(body.replaceAll('${CLAUDE_PLUGIN_ROOT}', toPosix(PLUGIN_ROOT)).replaceAll('$ARGUMENTS', rest.join(' ')).replace(/\$0\b/g, rest[0] ?? ''))
@@ -298,18 +299,6 @@ function cmdDiff(args: Args): void {
 }
 
 // Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
-const VENDORED = ['core', 'model', 'sensors', 'diffs', 'runs', 'check', 'hooks', 'metrics', 'wiki', 'sdlc', 'shell']
-
-function cmdVendor(): void {
-  const bin = path.join(SDLC, 'bin')
-  fs.mkdirSync(bin, { recursive: true })
-  for (const name of VENDORED) fs.copyFileSync(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`), path.join(bin, `${name}.ts`))
-  const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
-  fs.writeFileSync(path.join(bin, 'VERSION'), `${version}\n`)
-  sanctionWrites([...VENDORED.map(n => `.sdlc/bin/${n}.ts`), '.sdlc/bin/VERSION'])
-  out(`vendored sdlc ${version} into .sdlc/bin (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
-}
-
 function cmdWaive(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
   const [sensor, file, ...reason] = args.pos
@@ -377,7 +366,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   diff: cmdDiff,
   check: cmdCheck,
   'check-file': cmdCheckFile,
-  vendor: () => cmdVendor(),
+  vendor: cmdVendor,
   waive: cmdWaive,
   sensors: () => cmdSensors(),
   'impact-status': cmdImpactStatus,

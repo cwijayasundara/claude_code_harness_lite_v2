@@ -446,6 +446,25 @@ Tier L rerun on todo-core, after the thinning:
 
 Harness cost split: main thread Sonnet $1.29, unattributed Opus $0.40, implementer $0.32, architect $0.28. The main-thread orchestration is now the largest cost on tier L.
 
+### Real codebase and the Prism timeline (2026-10-03)
+
+**Onboarding Prism** (`edm_sementic_layer_v2.0`: 42.5k lines, 381 files, Python backend and Next.js frontend), on a clean clone:
+
+- **Cost and time:** $1.28 and 233 s.
+- **What it wrote:** a 54-line CLAUDE.md; seven module wiki pages (agent, db, frontend, gateway, graph, mcp, sim-evals) plus an index, all with `path:line` citations; and `sensors.json` with `make test-fast`, lint, the full tests, the UI tests and e2e.
+- **Checks:** 7/8. `docs/` and `scripts/` were reported as uncovered, so the wiki manifest now takes a `skip` list.
+- **Cost split:** wiki agents $0.56, main thread $0.53, scouts $0.14.
+
+**Where Prism's 3 days went**, from its 175 session and 240 subagent transcripts:
+
+- **The span was 79.5 h, but only 23.7 h was active.** Active means no gap longer than 5 minutes.
+- **Idle gaps over 30 minutes totalled 36.6 h**, with no activity in any session or subagent. The longest was 7 h. Only 1.6 h of these gaps were spent waiting on the person; the rest fell while a tool or subagent was running, which fits the laptop being asleep.
+- **Waits of 5–30 minutes totalled 19.2 h**, mostly long tool runs.
+- **The person sent 301 prompts, and 65 of them were "continue", "yes" or "proceed".**
+- **Tokens processed:** Opus 594M (66%), Sonnet 294M, Haiku 14M.
+
+**Implication: running in the cloud recovers the time lost to a sleeping laptop.** `sdlc.ts vendor --cloud` puts the harness in the repo so a cloud session can run it.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.

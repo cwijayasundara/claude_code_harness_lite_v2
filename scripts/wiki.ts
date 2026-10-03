@@ -10,7 +10,7 @@ const MANIFEST = path.join(ROOT, WIKI_DIR, 'manifest.json')
 const CITATION = /[\w./-]+\.\w+:\d+/
 const SURFACE = /^\s*(?:export|pub |def |class |func |public |interface |type |module\.exports)/
 type Page = { globs: string[]; surface?: string }
-type Manifest = { pages: Record<string, Page> }
+type Manifest = { pages: Record<string, Page>; skip?: string[] }
 
 function readManifest(): Manifest | null {
   if (!exists(MANIFEST)) return null
@@ -44,7 +44,8 @@ export function wikiStatus(): { stale: string[]; missing: string[]; uncovered: s
   }
   const globs = Object.values(m.pages).flatMap(p => p.globs ?? [])
   const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
-  const uncovered = [...dirs].filter(d => !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
+  const skip = new Set(m.skip ?? [])
+  const uncovered = [...dirs].filter(d => !skip.has(d) && !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
   return { stale: stale.sort(), missing: missing.sort(), uncovered }
 }
 

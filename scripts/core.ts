@@ -314,10 +314,10 @@ export function nextCommand(change: Change): string {
     const what = next.gate === 'impact' ? `the cross-repo impact in ${change.slug}/impact.json and plan.md` : `${change.slug}/${APPROVAL_ARTIFACTS[next.gate]}`
     return `human gate: review ${what}, then run /sdlc-approve ${change.slug} ${next.gate}${why}`
   }
-  if (next.stage === 'intent') return `/sdlc:start ${change.slug}`
-  if (next.stage === 'notes') return `/sdlc:start ${change.slug} (spike: answer in notes.md)`
-  if (next.stage === 'plan' && (change.type === 'bugfix' || change.type === 'incident')) return `/sdlc:diagnose ${change.slug}`
-  return `/sdlc:${next.stage} ${change.slug}`
+  if (next.stage === 'intent') return `${skillRef('start')} ${change.slug}`
+  if (next.stage === 'notes') return `${skillRef('start')} ${change.slug} (spike: answer in notes.md)`
+  if (next.stage === 'plan' && (change.type === 'bugfix' || change.type === 'incident')) return `${skillRef('diagnose')} ${change.slug}`
+  return `${skillRef(next.stage)} ${change.slug}`
 }
 // ---------- plan parsing & scope drift ----------
 
@@ -420,6 +420,10 @@ export function planProblems(file: string): string[] {
 }
 
 export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
+// Cloud mode runs a project's own copy from .sdlc/bin, where skills are /sdlc-<name> and agents sdlc-<name>.
+export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
+export const skillRef = (name: string): string => `/sdlc${IS_VENDORED ? '-' : ':'}${name}`
+export const agentRef = (name: string): string => `sdlc${IS_VENDORED ? '-' : ':'}${name}`
 const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json']
 
 export function ensureGitignore(): void {

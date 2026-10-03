@@ -102,3 +102,12 @@ test('wiki stamp refuses a page with no path:line citation and stamps the cited 
   assert.match(r.stderr, /uncited page\(s\): modules\/b\.md/)
   assert.deepEqual(status(repo).stale, ['modules/b.md'], 'the cited page was stamped, the uncited one was not')
 })
+
+test('top-level directories listed under "skip" are never uncovered', () => {
+  const repo = makeRepo()
+  write(repo, 'src/a.js', 'export const a = 1\n'); write(repo, 'scripts/run.sh', 'echo hi\n')
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/src.md': { globs: ['src/**'] } }, skip: ['scripts'] }))
+  write(repo, 'docs/wiki/modules/src.md', '# src\n- `src/a.js:1` a\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'a')
+  assert.deepEqual(status(repo).uncovered, [])
+})

@@ -40,13 +40,30 @@ Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, im
 
 ## Team install
 
-1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.4`), and DESIGN.md records what each one changed and measured.
+1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.5`), and DESIGN.md records what each one changed and measured.
 2. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
 3. For the PR review, add a `CLAUDE_CODE_OAUTH_TOKEN` repository secret (your Pro/Max plan, from `claude setup-token`) or an `ANTHROPIC_API_KEY`, copy `templates/sdlc-review.yml`, and make `sdlc-check` and `sdlc-review` required checks with both workflows in CODEOWNERS.
 
 **Opus advisor: off.** In the v0.3 trials an Opus advisor on the main thread was the largest single cost, about a third of each run. A user-level `advisorModel` still applies to every project, so the template turns the advisor off with `"env": { "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true" }`. Remove that line to opt back in. Opus still writes tier L specs and plans (architect) and reviews.
 
 **Gates by risk, not size.** Tier S and M have no human gate and no in-session review: they run plan, build, verify and ship in one turn. Their single review runs on the PR from `templates/sdlc-review.yml` (Opus with no shell or network, reading a prepared diff; a model-free step posts the comment after a credential check; fails only on a high-severity finding; needs a `CLAUDE_CODE_OAUTH_TOKEN` secret from `claude setup-token` for a Pro/Max plan, or an `ANTHROPIC_API_KEY`). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and an in-session `/code-review` plus the plan-contract check. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
+
+## Cloud mode
+
+Long builds belong in a Claude Code cloud session (claude.ai/code or `claude --cloud`). It keeps running while your laptop sleeps. In the Prism build, the laptop sleeping accounted for most of the 3 days. Cloud sessions load no plugins, so put the harness in the repo itself:
+
+```bash
+node /path/to/claude_code_harness_lite_v2/scripts/sdlc.ts vendor --cloud   # then commit .sdlc/ and .claude/
+```
+
+This copies the scripts to `.sdlc/bin`, the skills to `.claude/skills/sdlc-*` (run them as `/sdlc-start`, `/sdlc-next` and so on), the agents to `.claude/agents/sdlc-*`, and the hooks into `.claude/settings.json`. Re-run it after upgrading the plugin; `.sdlc/bin/VERSION` records which version is in the repo.
+
+The mod does not run in the cloud, so there is no band and no `/sdlc-approve`. Do the gated stages locally and the long build in the cloud:
+
+1. Locally, with the plugin: `/sdlc:start`, then for tier L the spec and plan, and `/sdlc-approve` for each gate. Push the branch.
+2. In the cloud: `claude --cloud "/sdlc-next — continue through ship; commit on the branch"`. The result comes back as a pushed branch or PR, and `--teleport` brings the session back to your machine.
+
+Tier S and M changes have no gates, so they can run in the cloud from start to finish.
 
 ## Guides and sensors
 

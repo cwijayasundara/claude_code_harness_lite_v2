@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
+  ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
   planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
@@ -56,7 +56,7 @@ function guidesFor(rel: string, session: string): string | undefined {
   return fresh.map(g => g.body).join('\n\n')
 }
 
-export const ROUTING_LINE = 'sdlc routes all work in this repo: start with /sdlc:start; use superpowers skills only when an sdlc skill names one.'
+export const ROUTING_LINE = `sdlc routes all work in this repo: start with ${skillRef('start')}; use superpowers skills only when an sdlc skill names one.`
 
 function hookSessionStart(input: HookInput): void {
   if (!exists(SDLC)) return
@@ -74,9 +74,9 @@ function hookSessionStart(input: HookInput): void {
   const context = [
     'sdlc harness is active in this repo (artifacts in .sdlc/).',
     ROUTING_LINE,
-    c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : 'No active change. Start one with /sdlc:start "<request>".',
-    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .sdlc/STATE.md). If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
-    wikiMissing ? 'No code wiki yet: /sdlc:wiki builds it.' : '',
+    c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : `No active change. Start one with ${skillRef('start')} "<request>".`,
+    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to ${agentRef('scout')} and slices to ${agentRef('implementer')}; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .sdlc/STATE.md). If an sdlc skill fails to load, run \`node "${SCRIPT()}" skill <stage> <slug>\` and follow it exactly.`,
+    wikiMissing ? `No code wiki yet: ${skillRef('wiki')} builds it.` : '',
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
   ].filter(Boolean)
@@ -184,7 +184,9 @@ function siblingEditReason(rel: string, consumer: { name: string } | undefined):
 
 // Read-only agents (scout, reviewer, verifier) get an allowlist, not a blacklist (scripts/shell.ts): a Bash command
 // passes only if it tokenizes cleanly and every segment is a known read-only command.
-const READ_ONLY_AGENT = /(?:^|:)(?:scout|reviewer|verifier)$/
+// The sdlc script as the model should call it: the plugin's copy, or the project's own in cloud mode.
+const SCRIPT = () => (IS_VENDORED ? '.sdlc/bin/sdlc.ts' : `${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts`)
+const READ_ONLY_AGENT = /(?:^|[:-])(?:scout|reviewer|verifier)$/
 
 // `sdlc.ts run -- "<cmd>"` may only execute a command the plan or sensors.json declares.
 function declaredCommands(slug: string | undefined): Set<string> {
@@ -282,10 +284,10 @@ function hookSkillFailed(input: HookInput): void {
     fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
     return out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: external } }))
   }
-  const m = /^sdlc:([a-z-]+)$/.exec(skill)
+  const m = /^sdlc[:-]([a-z-]+)$/.exec(skill)
   if (!m) return
   fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
-  const cmd = `node --disable-warning=ExperimentalWarning "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill ${m[1]} ${input.tool_input?.args ?? ''}`.trim()
+  const cmd = `node --disable-warning=ExperimentalWarning "${SCRIPT()}" skill ${m[1]} ${input.tool_input?.args ?? ''}`.trim()
   const context = `The ${skill} skill failed to load. Run \`${cmd}\` and follow the printed steps exactly, as if the skill had loaded. Say "skill fallback: ${skill}" in your reply.`
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
 }
