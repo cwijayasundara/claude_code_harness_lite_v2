@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { makeRepo, sdlc, hook, write, gitIn, verified } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
 
 let repo: string
 beforeEach(() => {
@@ -64,4 +64,20 @@ test('no commits yet: prompt-submit is silent and writes no baseline', () => {
   const r = hook(bare, 'prompt-submit', {})
   assert.deepEqual([r.code, r.stdout], [0, ''])
   assert.ok(!fs.existsSync(path.join(bare, '.sdlc/.baseline')))
+})
+
+test('an edit made before the turn is not blamed on it, even with no git identity configured', () => {
+  gitIn(repo, 'config', 'user.name', '')
+  gitIn(repo, 'config', 'user.email', '')
+  const env = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
+  write(repo, 'src/app.js', 'export const a = 9\n')
+  sdlc(repo, ['hook', 'prompt-submit'], { input: '{}', env })
+  write(repo, 'src/other.js', 'y\n')
+  const r = sdlc(repo, ['diff', '--turn', '--json'], { env })
+  assert.deepEqual(JSON.parse(r.stdout).map((d: { file: string }) => d.file), ['src/other.js'])
+})
+
+test('diff --turn without a baseline says so instead of diffing against now', () => {
+  const r = sdlc(repo, ['diff', '--turn'])
+  assert.deepEqual([r.code, r.stdout.trim()], [0, 'no turn baseline yet (run a prompt first)'])
 })

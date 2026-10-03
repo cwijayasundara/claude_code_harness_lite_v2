@@ -12,7 +12,7 @@ import {
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
 } from './core.ts'
-import { readBaseline, snapshot, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
+import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
@@ -198,8 +198,9 @@ function cmdVerifyReport(args: Args): void {
 
 function cmdDiff(args: Args): void {
   const base = optString(args, 'base')
-  const snap = args.opt.turn ? readBaseline() ?? snapshot() : null
-  if (!base && !snap) fail('usage: diff (--turn | --base <ref>) [--json]  (no baseline and no commits yet)')
+  if (!base && !args.opt.turn) fail('usage: diff (--turn | --base <ref>) [--json]')
+  const snap = base ? null : readBaseline()
+  if (!base && !snap) return out('no turn baseline yet (run a prompt first)')
   const diffs = base ? branchDiff(git(['merge-base', 'HEAD', base]) ?? base) : turnDiff(snap as Snapshot)
   if (args.opt.json) return out(JSON.stringify(diffs))
   out(diffs.map(d => `${d.status} ${d.file} (+${d.added.length} -${d.removed.length})`).join('\n') || 'no changes')

@@ -27,7 +27,11 @@ function fingerprint(rel: string): string {
 export function snapshot(): Snapshot | null {
   const head = git(['rev-parse', '--verify', '--quiet', 'HEAD'])
   if (!head) return null
-  return { sha: git(['stash', 'create']) || head, at: now(), untracked: Object.fromEntries(untrackedFiles().map(f => [f, fingerprint(f)])) }
+  // stash create needs a committer identity; give it a fixed one. '' means a clean tree (use HEAD); null is a real failure,
+  // and no baseline beats a wrong one that would blame earlier uncommitted edits on this turn.
+  const stash = git(['-c', 'user.name=sdlc', '-c', 'user.email=sdlc@localhost', 'stash', 'create'])
+  if (stash === null) return null
+  return { sha: stash || head, at: now(), untracked: Object.fromEntries(untrackedFiles().map(f => [f, fingerprint(f)])) }
 }
 
 function readAll(): Baselines {
