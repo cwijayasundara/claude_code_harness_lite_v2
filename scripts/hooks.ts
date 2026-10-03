@@ -8,7 +8,7 @@ import {
 import { snapshot, writeBaseline } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules } from './sensors.ts'
 import { loadConfig } from './check.ts'
-import { readOnlyDenial, normCmd } from './shell.ts'
+import { readOnlyDenial, normCmd, tokenize } from './shell.ts'
 
 function readStdin(): HookInput {
   try {
@@ -43,11 +43,35 @@ const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
-export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
+function rawSafe(cmd: string, ci: boolean): boolean {
   return cmd
-    .split(/&&|\|\||;|\|/)
+    .split(/&&|\|\||;|\||\n/)
     .filter(part => evidencePath(part, ci))
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
+}
+
+// A segment's dequoted words: git staging/inspection (minus the commit message and --output) or a viewer.
+// Redirects other than /dev/null never reach here, because tokenize refuses them.
+function wordsSafe(w: string[]): boolean {
+  if (w[0] === 'git') {
+    const rest = w.slice(2).filter((x, i, a) => !/^(?:-m|--message)$/.test(a[i - 1] ?? '') || w[1] !== 'commit')
+    return /^(?:add|commit|status|diff|log|show)$/.test(w[1] ?? '') && !rest.some(x => /^--o(?:u(?:t(?:p(?:u(?:t)?)?)?)?)?(?:=|$)/.test(x))
+  }
+  return /^(?:cat|head|tail|wc|grep|rg|jq)$/.test(w[0] ?? '')
+}
+
+// Quotes and escapes must not hide an evidence path (run"s".jsonl): the raw text and a dequoted form are both checked.
+// tokenize gives exact words; where it refuses (substitutions, redirects), quotes and backslashes are simply dropped.
+export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boolean {
+  if (!rawSafe(cmd, ci)) return false
+  const { segs, bad } = tokenize(cmd)
+  if (bad) return rawSafe(cmd.replace(/["'\\]/g, ''), ci)
+  return segs.filter(w => evidencePath(w.join(' '), ci)).every(wordsSafe)
+}
+
+const dequoted = (cmd: string): string => {
+  const { segs, bad } = tokenize(cmd)
+  return bad ? cmd.replace(/["'\\]/g, '') : segs.map(w => w.join(' ')).join('\n')
 }
 
 export const evidencePath = (p: string, ci = CASE_INSENSITIVE): boolean => (ci ? new RegExp(EVIDENCE_RE.source, 'i') : EVIDENCE_RE).test(p)
@@ -103,7 +127,7 @@ function declaredCommands(slug: string | undefined): Set<string> {
 
 function hookPreBash(input: HookInput): void {
   const cmd = String(input.tool_input?.command ?? '')
-  if (HUMAN_ONLY.test(cmd) || (evidencePath(cmd) && !isSafeEvidenceCommand(cmd))) {
+  if (HUMAN_ONLY.test(cmd) || HUMAN_ONLY.test(dequoted(cmd)) || !isSafeEvidenceCommand(cmd)) {
     return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); runs.jsonl only from `sdlc.ts run`; gate state only from the hooks. Read these files with the Read tool.')
   }
   if (!exists(SDLC)) return

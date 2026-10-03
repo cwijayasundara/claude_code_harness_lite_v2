@@ -134,3 +134,15 @@ test('the evidence guard honours case-insensitive paths when asked', () => {
   assert.equal(isSafeEvidenceCommand('cat .sdlc/changes/a/RUNS.JSONL', true), true)
   assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/changes/a/RUNS.JSONL', false), true, 'case-sensitive: not an evidence path')
 })
+
+test('quotes and escapes cannot hide an evidence path from the guard (non-read-only agents)', () => {
+  sdlc(repo, ['init'])
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
+  for (const c of [`echo '{}' >> .sdlc/changes/a/run"s".jsonl`, `echo '{}' >> .sdlc/changes/a/ru'ns'.jsonl`, `echo '{}' >> .sdlc/changes/a/run\\s.jsonl`,
+    'printf x > .sdlc/approvals.json"l"', `cp x .sdlc/changes/a/run's'.jsonl`, `echo '{}' | tee -a ".sdlc/waivers.jsonl"`, `node /x/scripts/sdlc.ts ap'prove' a plan`,
+    'git diff --output=.sdlc/changes/a/run"s".jsonl', 'echo "$(date)" >> .sdlc/approvals.json\\l'])
+    assert.equal(as(c), 'deny', c)
+  for (const c of ['git add src/a.js .sdlc/approvals.jsonl && git commit -m "feat: x"', 'cat .sdlc/approvals.jsonl', 'tail -5 .sdlc/changes/x/runs.jsonl',
+    'node /x/scripts/sdlc.ts run -- "npm test"', 'git commit -m "rm > node" .sdlc/changes/a/runs.jsonl', "grep -c pass '.sdlc/changes/a/runs.jsonl'"])
+    assert.equal(as(c), undefined, c)
+})
