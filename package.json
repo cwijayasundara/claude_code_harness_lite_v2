@@ -1,0 +1,15 @@
+{
+  "name": "sdlc-plugin",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && claude plugin test .",
+    "typecheck": "tsc -p scripts/tsconfig.json",
+    "validate": "claude plugin validate .claude-plugin/plugin.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

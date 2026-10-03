@@ -1,0 +1,213 @@
+// Tests for scripts/sdlc.ts. Run with: npm test (node --test scripts/*.spec.ts)
+import { test, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawnSync, execFileSync } from 'node:child_process'
+
+const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
+let repo: string
+
+function run(args: string[], { input, env = {} }: { input?: string; env?: Record<string, string> } = {}) {
+  const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], { cwd: repo, input, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: '', ...env } })
+  return { code: r.status, stdout: r.stdout, stderr: r.stderr }
+}
+
+const hook = (name: string, payload: unknown) => run(['hook', name], { input: JSON.stringify(payload) })
+const write = (rel: string, text: string) => {
+  fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true })
+  fs.writeFileSync(path.join(repo, rel), text)
+}
+const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' })
+
+const PLAN = `# Plan
+## Approach
+Small.
+## Files
+- src/app.js
+- tests/**
+## Slices
+1. do it
+## Verification
+- npm test
+`
+
+beforeEach(() => {
+  repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-test-'))
+  git('init', '-q', '-b', 'main')
+  git('config', 'user.email', 't@example.com')
+  git('config', 'user.name', 'Tester')
+  write('README.md', 'hi\n')
+  git('add', '.')
+  git('commit', '-qm', 'init')
+})
+
+test('new creates intent and makes the change active; status prints next command', () => {
+  assert.equal(run(['new', 'add-login', '--type', 'feature', '--tier', 'M']).code, 0)
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/changes/add-login/intent.md')))
+  const status = run(['status']).stdout
+  assert.match(status, /▶ add-login/)
+  assert.match(status, /next: \/sdlc:plan add-login/)
+})
+
+test('tier M feature needs plan approval; approval is human-only and goes stale on edit', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  write('.sdlc/changes/add-login/plan.md', PLAN)
+  assert.match(run(['status']).stdout, /awaiting approval/)
+
+  const byModel = run(['approve', 'add-login', 'plan'])
+  assert.equal(byModel.code, 3)
+  assert.match(byModel.stderr, /human-only/)
+
+  assert.equal(run(['approve', 'add-login', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+  assert.match(run(['status']).stdout, /next: \/sdlc:build add-login/)
+
+  write('.sdlc/changes/add-login/plan.md', PLAN + '\n- extra\n')
+  assert.match(run(['status']).stdout, /stale/)
+})
+
+test('new writes .sdlc/.gitignore even when .sdlc already exists', () => {
+  fs.mkdirSync(path.join(repo, '.sdlc'))
+  run(['new', 'x-change', '--type', 'chore', '--tier', 'S'])
+  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/.gitignore'), 'utf8'), 'usage.jsonl\n')
+})
+
+test('tier S chore has no gates and skips spec and plan', () => {
+  run(['new', 'bump-deps', '--type', 'chore', '--tier', 'S'])
+  assert.match(run(['status']).stdout, /next: \/sdlc:build bump-deps/)
+})
+
+test('tier S feature is the fast path: plan, build, verify, ship with no review stage', () => {
+  run(['new', 'tiny', '--type', 'feature', '--tier', 'S'])
+  write('.sdlc/changes/tiny/plan.md', PLAN)
+  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+})
+
+test('log-usage keeps the change and stage captured at turn start', () => {
+  run(['new', 'a-change', '--type', 'feature', '--tier', 'M'])
+  run(['log-usage', JSON.stringify({ kind: 'main', usd: 0.1, change: 'a-change', stage: 'intent' })])
+  const row = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8').trim())
+  assert.equal(row.stage, 'intent')
+})
+
+test('ship is done only once the scope record is committed', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  run(['scope-drift', 'tiny', '--record'])
+  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+  git('add', '-A')
+  git('commit', '-qm', 'chore: tiny')
+  assert.match(run(['status']).stdout, /done/)
+})
+
+test('verification result in the body still counts, and ship commits code plus artifacts on a branch', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('src/app.js', 'x\n')
+  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
+  write('.sdlc/changes/tiny/verification.md', '# Verification\n\n**result:** pass\n')
+  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+  const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(shipped.code, 0, shipped.stderr)
+  assert.match(shipped.stdout, /sdlc\/tiny/)
+  const files = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: repo, encoding: 'utf8' })
+  assert.match(files, /src\/app\.js/)
+  assert.match(files, /\.sdlc\/changes\/tiny\/verification\.md/)
+  assert.doesNotMatch(files, /usage\.jsonl/)
+  assert.match(run(['status']).stdout, /done/)
+})
+
+test('ship refuses scope drift and unfinished changes', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  assert.match(run(['ship', 'tiny', '--message', 'chore: x']).stderr, /not ready to ship/)
+  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
+  write('src/other.js', 'y\n')
+  const r = run(['ship', 'tiny', '--message', 'chore: x'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /scope drift/)
+})
+
+test('scope-drift flags files outside plan ## Files and records ship.json', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  write('.sdlc/changes/add-login/plan.md', PLAN)
+  write('src/app.js', 'x\n')
+  write('tests/app.test.js', 'x\n')
+  assert.equal(run(['scope-drift', 'add-login']).code, 0)
+
+  write('src/other.js', 'y\n')
+  const r = run(['scope-drift', 'add-login', '--record'])
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /src\/other\.js/)
+  const ship = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/add-login/ship.json'), 'utf8'))
+  assert.deepEqual(ship.drift, ['src/other.js'])
+})
+
+test('pre-bash hook denies model approvals and long sleeps, allows normal commands', () => {
+  run(['init'])
+  const approve = JSON.parse(hook('pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts approve a plan' } }).stdout)
+  assert.equal(approve.hookSpecificOutput.permissionDecision, 'deny')
+  assert.equal(hook('pre-bash', { tool_input: { command: 'git add src/a.js .sdlc/approvals.jsonl && git commit -m "feat: x"' } }).stdout, '')
+  assert.equal(hook('pre-bash', { tool_input: { command: 'cat .sdlc/approvals.jsonl' } }).stdout, '')
+  const redirect = JSON.parse(hook('pre-bash', { tool_input: { command: 'echo {} >> .sdlc/approvals.jsonl' } }).stdout)
+  assert.equal(redirect.hookSpecificOutput.permissionDecision, 'deny')
+  const restore = JSON.parse(hook('pre-bash', { tool_input: { command: 'git checkout -- .sdlc/approvals.jsonl' } }).stdout)
+  assert.equal(restore.hookSpecificOutput.permissionDecision, 'deny')
+  const forged = JSON.parse(hook('pre-bash', { tool_input: { command: `python3 -c "open('.sdlc/approvals.jsonl','a').write('x')"` } }).stdout)
+  assert.equal(forged.hookSpecificOutput.permissionDecision, 'deny')
+  const sleep = JSON.parse(hook('pre-bash', { tool_input: { command: 'sleep 120 && cat out.log' } }).stdout)
+  assert.equal(sleep.hookSpecificOutput.permissionDecision, 'deny')
+  assert.equal(hook('pre-bash', { tool_input: { command: 'sleep 2' } }).stdout, '')
+  assert.equal(hook('pre-bash', { tool_input: { command: 'npm test' } }).stdout, '')
+})
+
+test('hooks are silent in repos that never opted in', () => {
+  assert.equal(hook('pre-bash', { tool_input: { command: 'sleep 300' } }).stdout, '')
+  assert.equal(hook('session-start', {}).stdout, '')
+  assert.equal(hook('pre-edit', { tool_input: { file_path: path.join(repo, 'src/x.js') } }).stdout, '')
+})
+
+test('pre-edit asks for files outside the plan during build and denies approvals.jsonl', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  write('.sdlc/changes/add-login/plan.md', PLAN)
+  const outside = JSON.parse(hook('pre-edit', { tool_input: { file_path: path.join(repo, 'src/other.js') } }).stdout)
+  assert.equal(outside.hookSpecificOutput.permissionDecision, 'ask')
+  assert.equal(hook('pre-edit', { tool_input: { file_path: path.join(repo, 'src/app.js') } }).stdout, '')
+  const approvals = JSON.parse(hook('pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/approvals.jsonl') } }).stdout)
+  assert.equal(approvals.hookSpecificOutput.permissionDecision, 'deny')
+})
+
+test('post-edit blocks secrets and code-heavy plans with exit 2', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  write('src/config.js', 'const key = "AKIAABCDEFGHIJKLMNOP"\n')
+  const secret = hook('post-edit', { tool_input: { file_path: path.join(repo, 'src/config.js') } })
+  assert.equal(secret.code, 2)
+  assert.match(secret.stderr, /AWS access key/)
+
+  const code = '```js\n' + 'line\n'.repeat(15) + '```\n'
+  write('.sdlc/changes/add-login/plan.md', PLAN + code)
+  const plan = hook('post-edit', { tool_input: { file_path: path.join(repo, '.sdlc/changes/add-login/plan.md') } })
+  assert.equal(plan.code, 2)
+  assert.match(plan.stderr, /not implementation code/)
+})
+
+test('session-start injects the active change and next command', () => {
+  run(['new', 'add-login', '--type', 'bugfix', '--tier', 'S'])
+  const ctx = JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext
+  assert.match(ctx, /add-login/)
+  assert.match(ctx, /\/sdlc:diagnose add-login/)
+})
+
+test('log-usage tags rows with the active change; metrics report cost and unmeasured samples', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  run(['log-usage', JSON.stringify({ kind: 'main', model: 'claude-sonnet-5-5', in: 10, out: 100, cr: 1000, cw: 50, usd: 0.12, ctx: 160000 })])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'implementer', model: 'claude-sonnet-5-5', in: 5, out: 50, cr: 500, cw: 20 })])
+  const row = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8').split('\n')[0] ?? '{}')
+  assert.equal(row.change, 'add-login')
+  const m = JSON.parse(run(['metrics', '--json']).stdout).metrics
+  assert.equal(m.cost.usd_total, 0.12)
+  assert.equal(m.cost.turns_over_150k, 1)
+  assert.ok(m.cost.tokens_by_agent_type.implementer > 0)
+  assert.equal(m.first_pass_share.value, null)
+})

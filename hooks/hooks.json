@@ -1,0 +1,16 @@
+{
+  "description": "sdlc: session context, human-only approvals, no sleep-polling, plan ownership, secret and plan-size checks; the mod adds usage capture, the context band and zero-token commands",
+  "modules": ["./register.tsx"],
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook session-start", "timeout": 10 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook pre-bash", "timeout": 10 } ] },
+      { "matcher": "Write|Edit|MultiEdit|NotebookEdit", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook pre-edit", "timeout": 10 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook post-edit", "timeout": 15 } ] }
+    ]
+  }
+}
