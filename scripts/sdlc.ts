@@ -10,7 +10,7 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
+  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { formatFindings, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
@@ -26,6 +26,11 @@ function cmdInit(): void {
   fs.mkdirSync(path.join(SDLC, 'incidents'), { recursive: true })
   ensureGitignore()
   if (!exists(STATE)) fs.writeFileSync(STATE, '---\nchange:\n---\n# State\n\nNo active change.\n')
+  const guides = path.join(SDLC, 'guides')
+  if (!exists(guides) && exists(path.join(PLUGIN_ROOT, 'guides'))) {
+    fs.cpSync(path.join(PLUGIN_ROOT, 'guides'), guides, { recursive: true })
+    sanctionWrites(fs.readdirSync(guides).map(f => `.sdlc/guides/${f}`))
+  }
   out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}`)
 }
 
@@ -208,7 +213,7 @@ function cmdShip(args: Args): void {
   ensureGitignore()
   const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   clearState(slug)
-  const extras = ['.sdlc/approvals.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md'].filter(f => exists(path.join(ROOT, f)))
+  const extras = ['.sdlc/approvals.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides'].filter(f => exists(path.join(ROOT, f)))
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', changeDir, ...extras, ...code]) === null) fail('git add failed')
   if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')

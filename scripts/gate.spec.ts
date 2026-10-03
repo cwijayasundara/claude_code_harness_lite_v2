@@ -280,3 +280,30 @@ test('a gate file with wrongly typed fields never crashes the hooks', () => {
   tamper()
   assert.equal(JSON.parse(stop().stdout).decision, 'block')
 })
+
+const contextOf = (r: { stdout: string }) => (r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput?.additionalContext as string | undefined) : undefined)
+const edit = (rel: string, session = 's1') => hook(repo, 'pre-edit', { session_id: session, tool_input: { file_path: path.join(repo, rel) } })
+
+test('init copies the default guides into .sdlc/guides', () => {
+  sdlc(repo, ['init'])
+  assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc/guides')).sort(), ['contracts.md', 'engineering.md', 'testing.md'])
+})
+
+test('a guide is injected the first time a matching file is edited in a session, and again after compaction', () => {
+  sdlc(repo, ['init'])
+  assert.match(contextOf(edit('src/order.ts')) ?? '', /# Engineering rules/)
+  assert.equal(contextOf(edit('src/other.ts')), undefined)
+  assert.match(contextOf(edit('test/order.test.ts')) ?? '', /# Testing rules/)
+  assert.match(contextOf(edit('schema/billing.sql')) ?? '', /# Contract rules/)
+  assert.match(contextOf(edit('src/order.ts', 's2')) ?? '', /# Engineering rules/, 'a new session gets the guides again')
+  hook(repo, 'session-start', { session_id: 's1', source: 'compact' })
+  assert.match(contextOf(edit('src/order.ts')) ?? '', /# Engineering rules/)
+  assert.equal(contextOf(edit('README.md', 's3')), undefined, 'ignored files get no engineering guide')
+})
+
+test('session start lists guide names without their bodies', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  const ctx = JSON.parse(hook(repo, 'session-start', { session_id: 's1', source: 'startup' }).stdout).hookSpecificOutput.additionalContext
+  assert.match(ctx, /Guides \(injected when you first touch matching files\): contracts, engineering, testing/)
+  assert.doesNotMatch(ctx, /Iron rules/)
+})

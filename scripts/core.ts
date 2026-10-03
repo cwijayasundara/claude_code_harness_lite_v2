@@ -442,3 +442,16 @@ export function setActive(slug: string): void {
 
 export const WAIVERS = path.join(SDLC, 'waivers.jsonl')
 export type Waiver = { slug: string; sensor: string; file: string; reason: string; by: string; at: string }
+
+// Files sdlc itself wrote this turn count as sanctioned edits for the Stop gate's harness-tamper rule.
+export function sanctionWrites(rels: string[]): void {
+  const file = path.join(SDLC, '.gate')
+  let gate: { tool?: string[] } = {}
+  try {
+    gate = JSON.parse(read(file)) as { tool?: string[] }
+  } catch {
+    gate = {}
+  }
+  gate.tool = [...new Set([...(gate.tool ?? []), ...rels.map(toPosix)])]
+  fs.writeFileSync(file, JSON.stringify(gate))
+}

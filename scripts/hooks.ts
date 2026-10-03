@@ -8,7 +8,7 @@ import {
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings } from './check.ts'
-import { formatFindings, isSource, type FileDiff, type Finding, type SensorConfig } from './model.ts'
+import { formatFindings, isSource, isTest, matchesAny, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd, tokenize } from './shell.ts'
 
 function readStdin(): HookInput {
@@ -19,12 +19,51 @@ function readStdin(): HookInput {
   }
 }
 
-function decide(decision: 'allow' | 'ask' | 'deny', reason: string): void {
-  out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason } }))
+function respond(o: { decision?: 'allow' | 'ask' | 'deny'; reason?: string; context?: string }): void {
+  if (!o.decision && !o.context) return
+  const h: Record<string, unknown> = { hookEventName: 'PreToolUse' }
+  if (o.decision) {
+    h.permissionDecision = o.decision
+    h.permissionDecisionReason = o.reason
+  }
+  if (o.context) h.additionalContext = o.context
+  out(JSON.stringify({ hookSpecificOutput: h }))
+}
+const decide = (decision: 'allow' | 'ask' | 'deny', reason: string, context?: string): void => respond({ decision, reason, context })
+
+type Guide = { name: string; globs: string[]; sourceOnly: boolean; body: string }
+
+export function listGuides(config: SensorConfig): Guide[] {
+  const dir = path.join(SDLC, 'guides')
+  if (!exists(dir)) return []
+  return fs.readdirSync(dir).filter(f => f.endsWith('.md')).sort().map(f => {
+    const { data, body } = frontmatter(read(path.join(dir, f)))
+    const tokens = (data.paths ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    const globs = tokens.flatMap(t => (t === '@source' ? ['**'] : t === '@tests' ? config.tests : t === '@contracts' ? config.contracts : [t]))
+    return { name: data.name || f.replace(/\.md$/, ''), globs, sourceOnly: tokens.includes('@source'), body: body.trim() }
+  })
 }
 
-function hookSessionStart(): void {
+// Progressive disclosure: a guide enters the context the first time this session touches a matching file.
+function guidesFor(rel: string, session: string): string | undefined {
+  const { config } = loadConfig()
+  const gate = readGate()
+  const seen = gate.guides[session] ?? []
+  const fresh = listGuides(config).filter(g => !seen.includes(g.name) && matchesAny(rel, g.globs) && (!g.sourceOnly || (isSource(rel, config) && !isTest(rel, config))))
+  if (!fresh.length) return undefined
+  gate.guides[session] = [...seen, ...fresh.map(g => g.name)]
+  writeGate(gate)
+  return fresh.map(g => g.body).join('\n\n')
+}
+
+function hookSessionStart(input: HookInput): void {
   if (!exists(SDLC)) return
+  if (input.source === 'compact' || input.source === 'clear') {
+    const gate = readGate()
+    delete gate.guides[input.session_id ?? 'default']
+    writeGate(gate)
+  }
+  const guides = listGuides(loadConfig().config).map(g => g.name)
   const active = activeSlug()
   const c = active ? loadChange(active) : null
   const state = frontmatter(read(STATE)).body.trim().split('\n').slice(0, 15).join('\n')
@@ -32,6 +71,7 @@ function hookSessionStart(): void {
     'sdlc harness is active in this repo (artifacts in .sdlc/).',
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : 'No active change. Start one with /sdlc:start "<request>".',
     `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /sdlc:handoff. If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
+    guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
   ].filter(Boolean)
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context.join('\n') } }))
@@ -171,15 +211,17 @@ function hookPreEdit(input: HookInput): void {
     }
     return
   }
-  if (isProtected(rel, CASE_INSENSITIVE)) return decide('ask', protectedEditReason(file, rel, input.tool_input))
+  const context = guidesFor(rel, input.session_id ?? 'default')
+  if (isProtected(rel, CASE_INSENSITIVE)) return decide('ask', protectedEditReason(file, rel, input.tool_input), context)
   const slug = activeSlug()
-  if (!slug) return
+  if (!slug) return respond({ context })
   const stage = loadChange(slug).next?.stage
-  if (stage !== 'build' && stage !== 'diagnose') return
+  if (stage !== 'build' && stage !== 'diagnose') return respond({ context })
   const patterns = planFiles(slug)
   if (patterns.length && !isPlanned(file, patterns)) {
-    return decide('ask', `${relPosix(file)} is not in ${slug}/plan.md ## Files. Add it to the plan if it belongs to this change, otherwise leave it alone.`)
+    return decide('ask', `${relPosix(file)} is not in ${slug}/plan.md ## Files. Add it to the plan if it belongs to this change, otherwise leave it alone.`, context)
   }
+  respond({ context })
 }
 
 function hookPostEdit(input: HookInput): void {
