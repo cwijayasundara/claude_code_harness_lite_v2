@@ -8,11 +8,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
-  exists, read, lines, sha, now, toPosix, out, fail, git, frontmatter, parseArgs, optString, isChangeType, isTier,
+  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
-import { formatFindings } from './model.ts'
+import { formatFindings, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, loadConfig, runChecks } from './check.ts'
@@ -107,6 +107,35 @@ function cmdScopeDrift(args: Args): void {
   process.exitCode = 1
 }
 
+type ShippedRepo = { name: string; branch: string; commit: string }
+
+// Consumers with uncommitted work in this change: each must be planned and green before anything is committed.
+function changedConsumers(slug: string, config: SensorConfig): { name: string; dir: string; test?: string }[] {
+  const planned = planFiles(slug)
+  return config.consumers
+    .map(c => ({ name: c.name, dir: path.resolve(ROOT, c.path), test: c.test, rel: toPosix(path.normalize(c.path)).replace(/\/+$/, '') }))
+    .filter(c => exists(c.dir) && Boolean(gitIn(c.dir, ['status', '--porcelain'])))
+    .map(c => {
+      if (!planned.some(p => p.startsWith(c.rel + '/'))) fail(`${c.name} has uncommitted changes but is not in ${slug}/plan.md ## Files`)
+      return c
+    })
+}
+
+function commitConsumer(c: { name: string; dir: string }, slug: string, message: string): ShippedRepo {
+  const branch = `sdlc/${slug}`
+  const head = gitIn(c.dir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (head === 'main' || head === 'master') {
+    if (gitIn(c.dir, ['checkout', '-b', branch]) === null) fail(`could not create ${branch} in ${c.name}`)
+  }
+  gitIn(c.dir, ['add', '-A'])
+  const body = `${message}\n\nPart of ${path.basename(ROOT)}@${branch}`
+  // The consumer's own identity first; a checkout with none configured gets a neutral one.
+  const ok = gitIn(c.dir, ['commit', '-q', '-m', body]) !== null
+    || gitIn(c.dir, ['-c', 'user.name=sdlc', '-c', 'user.email=sdlc@localhost', 'commit', '-q', '-m', body]) !== null
+  if (!ok) fail(`commit failed in ${c.name}`)
+  return { name: c.name, branch: gitIn(c.dir, ['rev-parse', '--abbrev-ref', 'HEAD']) ?? branch, commit: gitIn(c.dir, ['rev-parse', 'HEAD']) ?? '' }
+}
+
 // Ships a change deterministically: preconditions, scope gate, branch, staging and commit. The model only writes the message.
 function cmdShip(args: Args): void {
   const slug = args.pos[0] ?? activeSlug()
@@ -129,11 +158,20 @@ function cmdShip(args: Args): void {
     fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /sdlc-waive <sensor> <file|*> <reason>.`)
   }
 
+  const consumers = changedConsumers(slug, config)
+  for (const c of consumers) {
+    if (!c.test) continue
+    const row = runCommand(c.test, { cwd: c.dir })
+    recordRun(slug, { ...row, source: 'ship' })
+    if (row.exit !== 0) fail(`not shipping: ${c.name} tests failed (exit ${row.exit}):\n${row.tail}`)
+  }
+  const repos = consumers.map(c => commitConsumer(c, slug, message))
+
   if (head === 'main' || head === 'master') {
     if (git(['checkout', '-b', `sdlc/${slug}`]) === null) fail(`could not create branch sdlc/${slug}`)
   }
   const shipFile = path.join(CHANGES, slug, 'ship.json')
-  fs.writeFileSync(shipFile, JSON.stringify({ at: now(), base, changed: r.changed.length, drift: [], matchRatio: 1 }, null, 2) + '\n')
+  fs.writeFileSync(shipFile, JSON.stringify({ at: now(), base, changed: r.changed.length, drift: [], matchRatio: 1, repos }, null, 2) + '\n')
   ensureGitignore()
   const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   clearState(slug)

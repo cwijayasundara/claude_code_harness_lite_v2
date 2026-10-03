@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn, verified } from './testkit.ts'
 
 let repo: string
 beforeEach(() => {
@@ -418,4 +418,34 @@ test('ship: a fixture added in the branch travels with the tests, so an already-
   write(repo, 'test/fixtures/data.json', '{ "n": 3 }\n')
   write(repo, 'test/data.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport fs from 'node:fs'\nimport { add } from '../src/add.js'\nconst d = JSON.parse(fs.readFileSync(new URL('./fixtures/data.json', import.meta.url), 'utf8'))\ntest('B1 uses data', () => assert.equal(add(d.n, 1), 4))\n")
   assert.match(check('--at', 'ship', '--base', 'main', '--slug', 'sub').stdout, /already pass on the base/)
+})
+
+test('ship commits a changed consumer on the same branch after its tests pass, and records it', () => {
+  const rel = consumerRepo('checkout2', 'src/cart.ts', 'const r = order.discount_rate\n')
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] })
+  sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
+  write(repo, 'src/app.js', 'export const a = 10\n')
+  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
+  write(path.resolve(repo, rel), 'src/cart.ts', 'const r = order.promotional_discount\n')
+  verified(repo, 'rate')
+  const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: rename rate'])
+  assert.equal(r.code, 0, r.stderr)
+  const shipped = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/rate/ship.json'), 'utf8'))
+  assert.equal(shipped.repos[0].branch, 'sdlc/rate')
+  assert.match(gitIn(path.resolve(repo, rel), 'log', '-1', '--format=%B', 'sdlc/rate'), /Part of .*@sdlc\/rate/)
+})
+
+test('ship refuses and commits nothing when a changed consumer\'s tests fail', () => {
+  const rel = consumerRepo('checkout3', 'src/cart.ts', 'x\n')
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(1)"' }] })
+  sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
+  write(repo, 'src/app.js', 'export const a = 11\n')
+  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
+  write(path.resolve(repo, rel), 'src/cart.ts', 'y\n')
+  verified(repo, 'rate')
+  const head = gitIn(repo, 'rev-parse', 'HEAD')
+  const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: x'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /checkout-service tests failed/)
+  assert.equal(gitIn(repo, 'rev-parse', 'HEAD'), head)
 })
