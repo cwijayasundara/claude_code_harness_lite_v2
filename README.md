@@ -6,22 +6,21 @@ It handles every kind of task: greenfield, brownfield, feature, bugfix, refactor
 
 ## Install
 
-1. Add this folder as a marketplace and enable the plugin in the project's `.claude/settings.json`. [`templates/settings.json`](templates/settings.json) has the full recommended block:
+For a team, once per project:
 
-   ```jsonc
-   {
-     "extraKnownMarketplaces": { "sdlc": { "source": { "source": "directory", "path": "/abs/path/to/claude_code_harness_lite_v2" } } },
-     "enabledPlugins": { "sdlc@sdlc": true, "superpowers@claude-plugins-official": false, "security-guidance@claude-plugins-official": false },
-     "model": "sonnet",
-     "autoCompactWindow": 200000
-   }
+1. Add the marketplace and install the plugin for the project (it lands in the committed `.claude/settings.json`):
+
+   ```bash
+   claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project
+   claude plugin install sdlc@sdlc --scope project
    ```
 
-   To try it for a single session, run `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2` instead.
+2. Merge [`templates/settings.json`](templates/settings.json) into `.claude/settings.json` and commit it, so every engineer gets the same models and switches: Sonnet main thread, advisor off (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL`), Sonnet as the default subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`), and the unrelated plugins off.
+3. Run `/sdlc:onboard` once. It sets up `.sdlc/` and the sensors, offers the CI check and the PR review workflow, writes a compact CLAUDE.md and builds the code wiki in `docs/wiki/`.
 
-2. In the project, run `/sdlc:onboard`. It runs once per repo and writes a compact CLAUDE.md, or scaffolds a walking skeleton for a new project.
+To try it for one session without installing: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
 
-Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and settings hooks work on older versions.
+Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, impact dialog). The skills, agents and settings hooks work on older versions.
 
 ## Use
 
@@ -41,13 +40,13 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 
 ## Team install
 
-1. `/plugin marketplace add <git url of this repo>` and pin a release tag.
-2. Commit `templates/settings.json`, merged into the project's `.claude/settings.json`, so every engineer gets the same plugins and models.
-3. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
+1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.0`), and DESIGN.md records what each one changed and measured.
+2. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
+3. For the PR review, add an `ANTHROPIC_API_KEY` repository secret, copy `templates/sdlc-review.yml`, and make `sdlc-check` and `sdlc-review` required checks with both workflows in CODEOWNERS.
 
 **Opus advisor: off.** In the v0.3 trials an Opus advisor on the main thread was the largest single cost, about a third of each run. A user-level `advisorModel` still applies to every project, so the template turns the advisor off with `"env": { "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true" }`. Remove that line to opt back in. Opus still writes tier L specs and plans (architect) and reviews.
 
-**Gates by risk, not size.** Tier S and M have no human gate and no in-session review: they run plan, build, verify and ship in one turn. Their single review runs on the PR from `templates/sdlc-review.yml` (Opus, one sticky comment, fails only on a high-severity finding; needs an `ANTHROPIC_API_KEY` secret). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and the in-session Opus review. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
+**Gates by risk, not size.** Tier S and M have no human gate and no in-session review: they run plan, build, verify and ship in one turn. Their single review runs on the PR from `templates/sdlc-review.yml` (Claude Code's built-in `/code-review high --comment`, failing only on a high-severity finding; needs an `ANTHROPIC_API_KEY` secret). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and an in-session `/code-review` plus the plan-contract check. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
 
 ## Guides and sensors
 
