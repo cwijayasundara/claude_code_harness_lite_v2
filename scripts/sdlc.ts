@@ -179,7 +179,9 @@ function cmdShip(args: Args): void {
   const r = scopeDrift(slug, base)
   if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to plan.md ## Files (and re-approve if gated) or revert them.`)
   const { config, rules, errors } = loadConfig()
-  const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base })
+  const sensorsBefore = read(path.join(SDLC, 'sensors.json'))
+  const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })
+  const ratcheted = read(path.join(SDLC, 'sensors.json')) !== sensorsBefore
   if (errors.length || gate.blocks.length) {
     const configFindings = errors.map(e => `[config] ${e}`)
     fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /sdlc-waive <sensor> <file|*> <reason>.`)
@@ -213,7 +215,7 @@ function cmdShip(args: Args): void {
   ensureGitignore()
   const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   clearState(slug)
-  const extras = ['.sdlc/approvals.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides'].filter(f => exists(path.join(ROOT, f)))
+  const extras = ['.sdlc/approvals.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides', ...(ratcheted ? ['.sdlc/sensors.json'] : [])].filter(f => exists(path.join(ROOT, f)))
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', changeDir, ...extras, ...code]) === null) fail('git add failed')
   if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')

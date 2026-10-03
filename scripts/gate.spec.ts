@@ -346,3 +346,21 @@ test('I2: a mixed-case path into .sdlc is still evidence on a case-insensitive f
   const edit = (f: string) => decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f), content: '{}' } }))
   for (const f of ['.SDLC/Approvals.jsonl', '.sdlc/CHANGES/tiny/RUNS.jsonl', '.Sdlc/Waivers.JSONL']) assert.equal(edit(f), 'deny', f)
 })
+
+test('I3: Stop ratchets a known-red command that now passes; it then blocks when it fails again', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  const lint = 'node -e "process.exit(require(\'fs\').existsSync(\'bad.flag\') ? 1 : 0)"'
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { lint }, knownRed: ['fast.lint'] }, null, 2) + '\n')
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  assert.equal(stop().stdout, '')
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8')).knownRed, [])
+  write(repo, 'src/a.js', 'export const a = 2\n')
+  assert.equal(stop().stdout, '', 'the ratchet write is not harness-tamper')
+  write(repo, 'bad.flag', 'x\n')
+  const out = JSON.parse(stop().stdout)
+  assert.equal(out.decision, 'block')
+  assert.match(out.reason, /\[commands\][\s\S]*fast\.lint failed/)
+})

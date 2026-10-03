@@ -356,7 +356,7 @@ function hookStop(input: HookInput, sub: boolean): void {
   if (!slug && !sub && diffs.some(d => isSource(d.file, config))) slug = createAdhoc(diffs, config)
   const result = runChecks({
     point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: sub ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
-    before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null,
+    before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null, ratchet: !sub,
   })
   const configBlocks: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
   const findings = [...configBlocks, ...result.findings]
