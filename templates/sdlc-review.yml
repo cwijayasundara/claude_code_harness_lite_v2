@@ -34,7 +34,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false # the reviewer can read the checkout, so no token in .git/config
       - name: Write the PR diff for the reviewer (the model gets no shell)
-        run: git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+        # A PR may commit its own review files; remove them so only this run's model output counts.
+        run: |
+          rm -f review.md review-verdict.txt comment.md
+          git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
