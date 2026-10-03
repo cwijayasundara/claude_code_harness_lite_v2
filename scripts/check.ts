@@ -79,10 +79,16 @@ export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug:
   return findings
 }
 
-function logRuleFires(findings: Finding[]): void {
-  if (!exists(SDLC)) return
-  const rows = findings.filter(f => f.sensor === 'rules').map(f => JSON.stringify({ at: new Date().toISOString(), kind: 'event', event: 'rule-fired', rule: f.labels?.[0] }))
-  if (rows.length) fs.appendFileSync(path.join(SDLC, 'usage.jsonl'), rows.join('\n') + '\n')
+// A "fire" is one rule matching in one check run (deduplicated by rule id); only stop and ship runs count, never ci.
+function logRuleFires(findings: Finding[], point: Point): void {
+  if (point === 'ci' || !exists(SDLC)) return
+  const ids = [...new Set(findings.filter(f => f.sensor === 'rules').map(f => f.labels?.[0]))]
+  const rows = ids.map(rule => JSON.stringify({ at: new Date().toISOString(), kind: 'event', event: 'rule-fired', rule }))
+  try {
+    if (rows.length) fs.appendFileSync(path.join(SDLC, 'usage.jsonl'), rows.join('\n') + '\n')
+  } catch {
+    // telemetry must never fail a check
+  }
 }
 
 function applyWaivers(findings: Finding[], slugs: string[]): CheckResult {
@@ -264,7 +270,7 @@ export function runChecks(i: CheckInput): CheckResult {
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   const result = applyWaivers(findings, i.slugs)
-  logRuleFires(result.findings)
+  logRuleFires(result.findings, i.point)
   return result
 }
 

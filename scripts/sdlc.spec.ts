@@ -315,11 +315,41 @@ test('metrics report rule fires, prune candidates and recurring review categorie
     { id: 'no-print', pattern: 'print\\(', message: 'use the logger', why: 'stdout is the protocol', action: 'block' },
     { id: 'old-rule', pattern: 'never-matches-xyz', message: 'm', why: 'w', action: 'warn' },
   ]))
-  write('.sdlc/changes/a1/review.md', '- [severity: medium] [category: coupling] a\n- [severity: medium] [category: coupling] b\n- [severity: high] [category: coupling] c\n')
-  write('src/a.py', 'print("x")\n')
+  write('.sdlc/changes/a1/review.md', '## Findings\n- [severity: medium] [category: coupling] a\n- [severity: medium] [category: coupling] b\n- [severity: high] [category: coupling] c\n')
+  write('src/a.py', 'print("x")\nprint("y")\nprint("z")\n')
+  write('.sdlc/usage.jsonl', JSON.stringify({ at: new Date().toISOString(), kind: 'event', event: 'skill-load-failed' }) + '\n')
   run(['check', '--at', 'ship'])
   const h = JSON.parse(run(['metrics', '--json']).stdout).metrics.harness
-  assert.equal(h.rule_fires['no-print'], 1)
+  assert.equal(h.rule_fires['no-print'], 1) // 3 matching lines, one fire
   assert.match(h.rule_suggestions.join('\n'), /coupling \(3 findings\)/)
   assert.ok(Array.isArray(h.prune_candidates))
+  assert.equal(h.skill_load_failures, 1)
+})
+
+test('check --at ci logs no rule fires', () => {
+  run(['init'])
+  write('.sdlc/rules.json', JSON.stringify([{ id: 'no-print', pattern: 'print\\(', message: 'm', why: 'w', action: 'warn' }]))
+  git('add', '-A')
+  git('commit', '-qm', 'base')
+  git('checkout', '-qb', 'feat')
+  write('src/a.py', 'print("x")\n')
+  git('add', '-A')
+  git('commit', '-qm', 'add')
+  run(['check', '--at', 'ci', '--base', 'main'])
+  const log = path.join(repo, '.sdlc/usage.jsonl')
+  assert.equal(fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes('rule-fired'), false)
+})
+
+test('prune candidates are rules introduced over 90 days ago that never fired', () => {
+  run(['init'])
+  const rule = (id: string) => ({ id, pattern: `${id}-xyz`, message: 'm', why: 'w', action: 'warn' })
+  const commit = (msg: string, date: string) => execFileSync('git', ['commit', '-qm', msg], { cwd: repo, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } })
+  write('.sdlc/rules.json', JSON.stringify([rule('old-rule')]))
+  git('add', '-A')
+  commit('old', new Date(Date.now() - 200 * 86_400_000).toISOString())
+  write('.sdlc/rules.json', JSON.stringify([rule('old-rule'), rule('new-rule')]))
+  git('add', '-A')
+  commit('new', new Date().toISOString())
+  const h = JSON.parse(run(['metrics', '--json']).stdout).metrics.harness
+  assert.deepEqual(h.prune_candidates, ['old-rule'])
 })
