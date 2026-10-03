@@ -353,3 +353,25 @@ test('prune candidates are rules introduced over 90 days ago that never fired', 
   const h = JSON.parse(run(['metrics', '--json']).stdout).metrics.harness
   assert.deepEqual(h.prune_candidates, ['old-rule'])
 })
+
+test('waive is human-only, records the waiver for the active change, and status reports sensors', () => {
+  run(['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  assert.equal(run(['waive', 'size', '*', 'generated', 'file']).code, 3)
+  assert.equal(run(['waive', 'size', '*', 'generated', 'file'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+  const w = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/waivers.jsonl'), 'utf8').trim())
+  assert.deepEqual([w.slug, w.sensor, w.file, w.reason], ['xx', 'size', '*', 'generated file'])
+  const s = JSON.parse(run(['status', '--json']).stdout).sensors
+  assert.equal(s.waivers, 1)
+  assert.match(run(['sensors']).stdout, /waivers \(xx\): size \* generated file/)
+})
+
+test('impact-status holds edits to consumer files while the impact is unapproved', () => {
+  run(['new', 'rate', '--type', 'feature', '--tier', 'L'])
+  write('.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'checkout', path: '../checkout' }] }))
+  write('.sdlc/changes/rate/impact.json', JSON.stringify({ at: 'x', ids: ['discount_rate'], hits: [{ consumer: 'checkout', file: 'a', line: 1, id: 'discount_rate' }], missing: [] }))
+  write('.sdlc/changes/rate/plan.md', '## Files\n- ../checkout/**\n')
+  const consumerFile = path.join(path.dirname(repo), 'checkout', 'a.ts')
+  assert.deepEqual(JSON.parse(run(['impact-status', consumerFile, '--json']).stdout), { hold: true, slug: 'rate', consumers: ['checkout'], hits: 1 })
+  run(['approve', 'rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
+  assert.equal(JSON.parse(run(['impact-status', consumerFile, '--json']).stdout).hold, false)
+})

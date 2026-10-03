@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, optString, readJsonl, activeSlug, defaultBase,
+  ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, toPosix, optString, readJsonl, activeSlug, defaultBase,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
@@ -332,4 +332,15 @@ export function cmdCheckFile(args: Args): void {
   const findings = editFindings(rel)
   if (args.opt.json) return out(JSON.stringify(findings))
   out(formatFindings(findings) || `${rel}: ok`)
+}
+
+export function cmdImpactStatus(args: Args): void {
+  const file = args.pos[0] ?? ''
+  const slug = activeSlug()
+  const { config } = loadConfig()
+  const rel = toPosix(path.relative(ROOT, path.resolve(ROOT, file)))
+  const impact = slug ? readImpact(slug) : null
+  const touchesContract = config.consumers.some(c => rel.startsWith(toPosix(path.normalize(c.path)).replace(/\/$/, '') + '/')) || matchesAny(rel, config.contracts)
+  const hold = Boolean(slug && impact?.hits.length && touchesContract && approvalOf(slug, 'impact') !== 'approved')
+  out(JSON.stringify({ hold, slug, consumers: [...new Set((impact?.hits ?? []).map(h => h.consumer))], hits: impact?.hits.length ?? 0 }))
 }

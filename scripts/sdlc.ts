@@ -10,12 +10,12 @@ import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
+  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
-import { formatFindings, type SensorConfig } from './model.ts'
+import { formatFindings, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
-import { cmdHook } from './hooks.ts'
-import { cmdCheck, cmdCheckFile, loadConfig, runChecks } from './check.ts'
+import { cmdHook, readGate } from './hooks.ts'
+import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 
@@ -69,7 +69,7 @@ function cmdStatus(args: Args): void {
   if (lines(frontmatter(read(STATE)).body) > LIMITS.stateLines) warnings.push(`STATE.md over ${LIMITS.stateLines} lines; trim it`)
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, next: c.next, command: nextCommand(c) }))
-    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings }))
+    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus() }))
   }
   if (!changes.length) return out('no changes yet: run /sdlc:start "<what you want>"')
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
@@ -213,7 +213,7 @@ function cmdShip(args: Args): void {
   ensureGitignore()
   const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   clearState(slug)
-  const extras = ['.sdlc/approvals.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides'].filter(f => exists(path.join(ROOT, f)))
+  const extras = ['.sdlc/approvals.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides'].filter(f => exists(path.join(ROOT, f)))
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', changeDir, ...extras, ...code]) === null) fail('git add failed')
   if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')
@@ -301,6 +301,53 @@ function cmdVendor(): void {
   out(`vendored sdlc ${version} into .sdlc/bin (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }
 
+function cmdWaive(args: Args): void {
+  if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
+  const [sensor, file, ...reason] = args.pos
+  const slug = optString(args, 'slug') ?? activeSlug()
+  if (!sensor || !file || !reason.length || !slug) fail('usage: waive <sensor> <file|*> <reason...>  (needs an active change)')
+  const by = git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
+  const row: Waiver = { slug, sensor, file, reason: reason.join(' '), by, at: now() }
+  fs.appendFileSync(WAIVERS, JSON.stringify(row) + '\n')
+  out(`waived ${sensor} for ${file} in ${slug}: ${row.reason} (by ${by})`)
+}
+
+function sensorStatus(): { blocks: number; warns: number; bySensor: Record<string, number>; unresolved: number; knownRed: number; waivers: number } | null {
+  if (!exists(SDLC)) return null
+  const last = readGate().last
+  const slug = activeSlug()
+  let unresolved = 0
+  try {
+    unresolved = (JSON.parse(read(path.join(SDLC, 'unresolved.json'))) as { findings: unknown[] }).findings.length
+  } catch {
+    unresolved = 0
+  }
+  return {
+    blocks: last?.blocks ?? 0, warns: last?.warns ?? 0, bySensor: last?.bySensor ?? {}, unresolved,
+    knownRed: loadConfig().config.knownRed.length,
+    waivers: readJsonl<Waiver>(WAIVERS).filter(w => w.slug === slug).length,
+  }
+}
+
+function cmdSensors(): void {
+  const s = sensorStatus()
+  if (!s) return out('sdlc not initialised here')
+  const slug = activeSlug()
+  let unresolved: Finding[] = []
+  try {
+    unresolved = (JSON.parse(read(path.join(SDLC, 'unresolved.json'))) as { findings: Finding[] }).findings
+  } catch {
+    unresolved = []
+  }
+  const waivers = readJsonl<Waiver>(WAIVERS).filter(w => w.slug === slug)
+  out([
+    `last gate: ${s.blocks} block(s), ${s.warns} warning(s)${Object.keys(s.bySensor).length ? ' · ' + Object.entries(s.bySensor).map(([k, v]) => `${k} ${v}`).join(', ') : ''}`,
+    unresolved.length ? `unresolved:\n${formatFindings(unresolved)}` : 'unresolved: none',
+    `known red: ${loadConfig().config.knownRed.join(', ') || 'none'}`,
+    `waivers (${slug ?? 'no change'}): ${waivers.map(w => `${w.sensor} ${w.file} ${w.reason}`).join('; ') || 'none'}`,
+  ].join('\n'))
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   init: cmdInit,
   new: cmdNew,
@@ -320,6 +367,9 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   check: cmdCheck,
   'check-file': cmdCheckFile,
   vendor: () => cmdVendor(),
+  waive: cmdWaive,
+  sensors: () => cmdSensors(),
+  'impact-status': cmdImpactStatus,
 }
 
 const [command = '', ...rest] = process.argv.slice(2)
