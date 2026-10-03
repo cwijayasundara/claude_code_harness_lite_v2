@@ -294,6 +294,9 @@ test('an impact approval only downgrades the ids it covers, and re-running the p
   write(repo, 'schema/other.sql', 'CREATE TABLE o (c_col INT);\n')
   assert.equal(check('--at', 'stop').code, 1, 'b_col is not in the approved impact')
   check('--at', 'plan', '--slug', 'scoped-change')
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:build/, 'identical re-run keeps the approval')
+  write(path.resolve(repo, rel), 'src/b.ts', 'a_col again\n')
+  check('--at', 'plan', '--slug', 'scoped-change')
   assert.match(sdlc(repo, ['status']).stdout, /\/sdlc-approve scoped-change impact[\s\S]*stale/)
 })
 

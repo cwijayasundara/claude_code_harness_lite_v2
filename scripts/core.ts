@@ -198,7 +198,17 @@ export const optString = (args: Args, key: string): string | undefined => {
 export function approvalDigest(slug: string, gate: GatedStage): string {
   const dir = path.join(CHANGES, slug)
   const artifact = read(path.join(dir, APPROVAL_ARTIFACTS[gate]))
-  return sha(gate === 'impact' ? `${artifact}\n${read(path.join(dir, 'impact.json'))}` : artifact)
+  if (gate !== 'impact') return sha(artifact)
+  // The timestamp is left out so a re-run with identical results keeps the approval.
+  const raw = read(path.join(dir, 'impact.json'))
+  let content = raw
+  try {
+    const { ids, hits, missing } = JSON.parse(raw) as Impact
+    content = JSON.stringify({ ids, hits, missing })
+  } catch {
+    // unparseable: hash the raw text
+  }
+  return sha(`${artifact}\n${content}`)
 }
 
 export function approvalOf(slug: string, gate: GatedStage): ApprovalState {
