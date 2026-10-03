@@ -12,13 +12,19 @@ concurrency:
   cancel-in-progress: true
 jobs:
   review:
-    # Fork PRs get no secrets, so the review runs only for branches in this repository.
-    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    # Drafts cannot merge and are re-reviewed when marked ready. Fork PRs get no secrets: the job fails closed below,
+    # because a skipped required check counts as passing.
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Fork PRs need a maintainer review
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::sdlc-review cannot run on a fork PR (no secrets); a maintainer reviews it and overrides this check"
+          exit 1
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
