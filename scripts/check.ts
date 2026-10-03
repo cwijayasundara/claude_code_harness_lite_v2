@@ -6,7 +6,7 @@ import {
   ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, activeSlug, defaultBase,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
-import { parseConfig, parseRules, formatFindings, matchesAny, isTest, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
+import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
@@ -255,6 +255,13 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
   return findings
 }
 
+// Spec 6.2 in CI: a PR with source changes and no committed change folder is an ad-hoc change; at M or L it needs a plan.
+function unrecorded(diffs: FileDiff[], config: SensorConfig): Finding[] {
+  const tier = tierFromDiff(diffs, config)
+  if (tier === 'S') return []
+  return [{ sensor: 'adhoc', severity: 'block', message: `no sdlc change record for a tier ${tier} diff (${diffs.filter(d => isSource(d.file, config)).length} source file(s))`, fix: 'commit the change folder with the PR (git add .sdlc), or run /sdlc:start to adopt the work: it writes the plan and applies the tier\'s gates' }]
+}
+
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
   const pattern = withoutFixtures(diffs, config)
@@ -269,6 +276,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
+  if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   const result = applyWaivers(findings, i.slugs)
   logRuleFires(result.findings, i.point)

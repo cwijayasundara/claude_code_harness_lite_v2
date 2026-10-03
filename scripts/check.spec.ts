@@ -525,3 +525,18 @@ test('CI judges a PR by the base branch config, so loosening limits does not hel
   assert.match(r.stdout, /\[size\][\s\S]*limit 500/)
   assert.match(r.stdout, /\[harness-tamper\][\s\S]*diffLines raised 500 → 5000/)
 })
+
+test('I1: CI blocks a tier M PR that carries no committed change record; a tier S one passes', () => {
+  gitIn(repo, 'checkout', '-qb', 'vibe')
+  write(repo, 'src/one.js', 'export const one = 1\n')
+  gitIn(repo, 'add', 'src')
+  gitIn(repo, 'commit', '-qm', 'small')
+  const small = check('--at', 'ci', '--base', 'main', '--config-from', 'main')
+  assert.equal(small.code, 0, small.stdout)
+  for (const f of ['a', 'b', 'c', 'd']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
+  gitIn(repo, 'add', 'src')
+  gitIn(repo, 'commit', '-qm', 'vibe-coded')
+  const r = check('--at', 'ci', '--base', 'main', '--config-from', 'main')
+  assert.equal(r.code, 1, r.stdout)
+  assert.match(r.stdout, /\[adhoc\][\s\S]*no sdlc change record for a tier M diff[\s\S]*\/sdlc:start/)
+})
