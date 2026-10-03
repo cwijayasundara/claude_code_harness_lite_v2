@@ -89,8 +89,8 @@ export const SOFT_HOOK_FAILURE = 'sdlc hook error (ignored)'
 export const PATHS: Record<ChangeType, Stage[]> = {
   greenfield: ['intent', 'spec', 'plan', 'build', 'verify', 'review', 'ship'],
   feature: ['intent', 'spec', 'plan', 'build', 'verify', 'review', 'ship'],
-  bugfix: ['intent', 'diagnose', 'verify', 'review', 'ship'],
-  incident: ['intent', 'diagnose', 'verify', 'review', 'ship'],
+  bugfix: ['intent', 'plan', 'diagnose', 'verify', 'review', 'ship'],
+  incident: ['intent', 'plan', 'diagnose', 'verify', 'review', 'ship'],
   refactor: ['intent', 'plan', 'build', 'verify', 'review', 'ship'],
   migration: ['intent', 'plan', 'build', 'verify', 'review', 'ship'],
   chore: ['intent', 'build', 'verify', 'ship'],
@@ -260,6 +260,8 @@ export function loadChange(slug: string): Change {
   const review = reportFields(read(path.join(dir, 'review.md')), ['result', 'rounds', 'caught'])
   let stages = PATHS[type]
   if (tier === 'S' && type !== 'greenfield') stages = stages.filter(s => !SKIPPED_FOR_S.has(s))
+  const isBug = type === 'bugfix' || type === 'incident'
+  if (isBug && tier !== 'L') stages = stages.filter(s => s !== 'plan')
   if (type === 'feature' && tier === 'M') stages = stages.filter(s => !SKIPPED_FOR_M.has(s))
   const gates = type === 'greenfield' ? GATES.L : GATES[tier]
   const approvalState = (gate: GatedStage): ApprovalState => approvalOf(slug, gate)
@@ -312,6 +314,7 @@ export function nextCommand(change: Change): string {
   }
   if (next.stage === 'intent') return `/sdlc:start ${change.slug}`
   if (next.stage === 'notes') return `/sdlc:start ${change.slug} (spike: answer in notes.md)`
+  if (next.stage === 'plan' && (change.type === 'bugfix' || change.type === 'incident')) return `/sdlc:diagnose ${change.slug}`
   return `/sdlc:${next.stage} ${change.slug}`
 }
 // ---------- plan parsing & scope drift ----------

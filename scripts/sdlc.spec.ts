@@ -527,3 +527,15 @@ test('F5: a failing command that prints a key is recorded without the key', () =
   assert.doesNotMatch(runs, /AKIA[0-9A-Z]{16}/)
   assert.match(runs, /masked by sdlc/)
 })
+
+test('F2: a tier L bugfix stops at a plan gate after diagnosis; S and M do not', () => {
+  run(['new', 'big-bug', '--type', 'bugfix', '--tier', 'L'])
+  assert.match(run(['status']).stdout, /next: \/sdlc:diagnose big-bug/)
+  fs.writeFileSync(path.join(repo, '.sdlc/changes/big-bug/plan.md'), '# Plan\n\n## Files\n- src/a.js\n\n## Verification\n- `npm test`\n')
+  assert.match(run(['status']).stdout, /human gate: review big-bug\/plan\.md, then run \/sdlc-approve big-bug plan/)
+  run(['approve', 'big-bug', 'plan'], { env: { SDLC_HUMAN: '1' } })
+  assert.match(run(['status']).stdout, /next: \/sdlc:diagnose big-bug/)
+  run(['new', 'small-bug', '--type', 'bugfix', '--tier', 'M'])
+  const st = JSON.parse(run(['status', '--json']).stdout) as { changes: { slug: string; command: string }[] }
+  assert.equal(st.changes.find(c => c.slug === 'small-bug')?.command, '/sdlc:diagnose small-bug')
+})
