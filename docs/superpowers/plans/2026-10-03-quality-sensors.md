@@ -556,7 +556,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Produces from `runs.ts`:
-  - `type RunRow = { at: string; cmd: string; cwd?: string; exit: number; ms: number; tail: string; expectFail?: true; timedOut?: true }`
+  - `type RunRow = { at: string; cmd: string; cwd?: string; exit: number; ms: number; tail: string; expectFail?: true; timedOut?: true; source?: 'gate' | 'ship' }`. Rows tagged `source` came from the gate or the ship checks, and never count toward verification.
   - `runCommand(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): RunRow`
   - `runsFile(slug: string): string`
   - `recordRun(slug: string, row: RunRow): void`
@@ -605,6 +605,18 @@ test('run records exit codes; verify-report generates verification.md; a hand-wr
   run(['run', '--', 'node -e "process.exit(1)"'])
   assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/, 'runs appended after the report do not invalidate it')
 })
+
+test('verification judges only the plan commands, ignoring gate rows and abandoned exploratory runs', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "process.exit(0)"`\n')
+  write('.sdlc/changes/tiny/runs.jsonl', JSON.stringify({ at: 'x', cmd: 'eslint .', exit: 1, ms: 1, tail: '', source: 'gate' }) + '\n')
+  run(['run', '--', 'node -e "process.exit(4)"'])
+  run(['verify-report', 'tiny'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: fail[\s\S]*Not run/)
+  run(['run', '--', 'node -e "process.exit(0)"'])
+  run(['verify-report', 'tiny'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: pass/)
+})
 ```
 
 **Then update every existing test in `sdlc.spec.ts` (other than the one just added)** that writes `.sdlc/changes/<slug>/verification.md` by hand with `result: pass`:
@@ -644,16 +656,33 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { ROOT, CHANGES, now, read, sha, frontmatter, readJsonl } from './core.ts'
 
-export type RunRow = { at: string; cmd: string; cwd?: string; exit: number; ms: number; tail: string; expectFail?: true; timedOut?: true }
+export type RunRow = { at: string; cmd: string; cwd?: string; exit: number; ms: number; tail: string; expectFail?: true; timedOut?: true; source?: 'gate' | 'ship' }
 
 const TAIL_LINES = 30
+const TIMED_OUT = 124
+
+// spawnSync's own timeout kills only the shell, then waits for any grandchild still holding stdout
+// (npm test -> node, jest workers). This wrapper runs the command in its own process group and kills
+// the whole group on timeout (taskkill /T on Windows), so a hang can never outlive the budget.
+const WRAPPER = `
+const cp = require('node:child_process')
+const [cmd, ms] = process.argv.slice(1)
+const win = process.platform === 'win32'
+const child = cp.spawn(cmd, { shell: true, detached: !win, stdio: ['ignore', 'inherit', 'inherit'] })
+const kill = () => { try { win ? cp.spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']) : process.kill(-child.pid, 'SIGKILL') } catch {} }
+const timer = setTimeout(() => { kill(); process.exit(${TIMED_OUT}) }, Number(ms))
+child.on('exit', code => { clearTimeout(timer); process.exit(code ?? 1) })
+child.on('error', () => process.exit(127))
+`
 
 export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number } = {}): RunRow {
   const started = Date.now()
-  const r = spawnSync(cmd, { cwd: opts.cwd ?? ROOT, shell: true, encoding: 'utf8', timeout: opts.timeoutMs ?? 600_000, maxBuffer: 64 * 1024 * 1024 })
+  const timeoutMs = opts.timeoutMs ?? 600_000
+  const r = spawnSync(process.execPath, ['-e', WRAPPER, cmd, String(timeoutMs)], { cwd: opts.cwd ?? ROOT, encoding: 'utf8', timeout: timeoutMs + 5_000, maxBuffer: 64 * 1024 * 1024 })
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`.replace(/\r\n/g, '\n').trimEnd()
-  const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
-  const row: RunRow = { at: now(), cmd, exit: r.status ?? (timedOut ? 124 : 1), ms: Date.now() - started, tail: text.split('\n').slice(-TAIL_LINES).join('\n') }
+  const ms = Date.now() - started
+  const timedOut = (r.status === TIMED_OUT && ms >= timeoutMs) || (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+  const row: RunRow = { at: now(), cmd, exit: r.status ?? TIMED_OUT, ms, tail: text.split('\n').slice(-TAIL_LINES).join('\n') }
   if (opts.cwd && opts.cwd !== ROOT) row.cwd = opts.cwd
   if (timedOut) row.timedOut = true
   return row
@@ -667,12 +696,18 @@ export function recordRun(slug: string, row: RunRow): void {
   fs.appendFileSync(runsFile(slug), JSON.stringify(row) + '\n')
 }
 
-// The verdict is the latest run of each distinct command (expect-fail rows are evidence of red, not verdicts).
-export function renderVerification(rows: RunRow[], digest: string): { text: string; result: 'pass' | 'fail' } {
+const norm = (cmd: string): string => cmd.trim().replace(/\s+/g, ' ')
+
+// The verdict is the latest explicit run of each plan ## Verification command (or of every explicit command
+// when the plan lists none). Expect-fail rows are evidence of red, and gate/ship rows are the sensors' own runs:
+// neither is a verdict, so a known-red lint at Stop or an abandoned exploratory run cannot poison verification.
+export function renderVerification(rows: RunRow[], digest: string, planned: string[] = []): { text: string; result: 'pass' | 'fail' } {
   const latest = new Map<string, RunRow>()
-  for (const r of rows) if (!r.expectFail) latest.set(r.cmd, r)
-  const verdicts = [...latest.values()]
-  const result = verdicts.length > 0 && verdicts.every(r => r.exit === 0) ? 'pass' : 'fail'
+  for (const r of rows) if (!r.expectFail && !r.source) latest.set(norm(r.cmd), r)
+  const wanted = planned.map(norm)
+  const verdicts = wanted.length ? wanted.flatMap(c => latest.get(c) ?? []) : [...latest.values()]
+  const notRun = wanted.filter(c => !latest.has(c))
+  const result = verdicts.length > 0 && notRun.length === 0 && verdicts.every(r => r.exit === 0) ? 'pass' : 'fail'
   const fence = (t: string): string => '```\n' + t + '\n```'
   const red = rows.filter(r => r.expectFail)
   const text = [
@@ -681,6 +716,7 @@ export function renderVerification(rows: RunRow[], digest: string): { text: stri
     '## Commands',
     ...verdicts.flatMap(r => [`- \`${r.cmd}\` → exit ${r.exit}${r.timedOut ? ' (timed out)' : ''} in ${r.ms} ms`, fence(r.tail)]),
     ...(red.length ? ['', '## Red runs (expected to fail)', ...red.map(r => `- \`${r.cmd}\` → exit ${r.exit}`)] : []),
+    ...(notRun.length ? ['', '## Not run (listed in plan ## Verification)', ...notRun.map(c => `- \`${c}\``)] : []),
     verdicts.length ? '' : '\nNo commands were run: record them with `sdlc.ts run -- "<command>"`.',
   ].join('\n')
   return { text: text + '\n', result }
@@ -740,13 +776,22 @@ function cmdVerifyReport(args: Args): void {
   const slug = args.pos[0] ?? activeSlug()
   if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: verify-report <slug>')
   const rows = readRuns(slug)
-  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length))
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), planVerification(slug))
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }
 ```
 
-Import `runCommand`, `recordRun`, `readRuns`, `renderVerification` and `runsDigest` from `./runs.ts`. Register `run: () => cmdRun()` and `'verify-report': cmdVerifyReport`.
+Import `runCommand`, `recordRun`, `readRuns`, `renderVerification` and `runsDigest` from `./runs.ts`. Add `planVerification` to `core.ts`, next to `planFiles`, and import it:
+
+```ts
+// The plan's ## Verification commands: backticked text, or the rest of the bullet.
+export function planVerification(slug: string): string[] {
+  const body = read(path.join(CHANGES, slug, 'plan.md'))
+  const m = /^##\s+Verification\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(body)
+  return (m?.[1] ?? '').split('\n').map(row => /^\s*[-*]\s+(?:`([^`]+)`|(.+))$/.exec(row)).filter((x): x is RegExpExecArray => Boolean(x)).map(x => (x[1] ?? x[2] ?? '').trim())
+}
+``` Register `run: () => cmdRun()` and `'verify-report': cmdVerifyReport`.
 
 - [ ] **Step 6: Guard the evidence in `hooks.ts`**
 
@@ -1896,8 +1941,8 @@ test('a failing fast command blocks with its output tail; a passing one is silen
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/x/runs.jsonl'), 'utf8'), /fast|no-var|process\.exit/)
 })
 
-test('a hanging command times out inside the budget and counts as a failure', () => {
-  sensors({ fast: { test: 'node -e "setTimeout(() => {}, 20000)"' } })
+test('a hanging command, and a grandchild holding its output, time out inside the budget and count as a failure', () => {
+  sensors({ fast: { test: `node -e "require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: 'inherit' }); setTimeout(() => {}, 20000)"` } })
   hook(repo, 'prompt-submit', {})
   write(repo, 'src/app.js', 'export const a = 6\n')
   const started = Date.now()
@@ -2020,7 +2065,7 @@ export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug:
     }
     const row = runCommand(cmd, { timeoutMs: left })
     left -= row.ms
-    if (slug) recordRun(slug, row)
+    if (slug) recordRun(slug, { ...row, source: prefix === 'fast' ? 'gate' : 'ship' })
     if (row.exit === 0) {
       if (known) cleared.push(key)
       continue
@@ -2715,6 +2760,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: from `check.ts` (Task 8), `runChecks`, `loadConfig` and `editFindings`. From `diffs.ts` (Task 7), `readBaseline`, `writeBaseline`, `snapshot`, `turnDiff`, `showAt` and `diffHash`. From `model.ts`, `formatFindings`, `isSource` and `matchesAny`. From `sensors.ts`, `isProtected`.
 - Produces from `core.ts`: `createChange(slug: string, type: ChangeType, tier: Tier, title: string): void`
+- Produces from `sensors.ts`: `tierFromDiff(diffs: FileDiff[], cfg: SensorConfig): 'S' | 'M' | 'L'`, computed over source files only. Task 12 recomputes an ad-hoc change's tier with it at ship.
 - Produces from `hooks.ts`:
   - `type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number> }`
   - `readGate(): Gate`, where `type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; agents: Record<string, string[]>; guides: Record<string, string[]>; last?: GateSummary }`
@@ -2846,6 +2892,19 @@ In `sdlc.ts` `cmdNew`, replace the five lines from `if (!exists(SDLC)) cmdInit()
 
 - [ ] **Step 4: Add the gate state and the hooks to `hooks.ts`**
 
+First, append the tier rule to `sensors.ts`, so Stop and ship share it:
+
+```ts
+// Tier of work done without /sdlc:start, from what it touches: contracts or > 15 files is L, > 3 is M.
+export function tierFromDiff(diffs: FileDiff[], cfg: SensorConfig): 'S' | 'M' | 'L' {
+  const files = diffs.filter(d => isSource(d.file, cfg))
+  if (files.some(d => matchesAny(d.file, cfg.contracts)) || files.length > 15) return 'L'
+  return files.length > 3 ? 'M' : 'S'
+}
+```
+
+Then, in `hooks.ts`:
+
 ```ts
 export type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number> }
 export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; agents: Record<string, string[]>; guides: Record<string, string[]>; last?: GateSummary }
@@ -2873,8 +2932,7 @@ function summarize(findings: Finding[]): GateSummary {
 }
 
 function createAdhoc(diffs: FileDiff[], config: SensorConfig): string {
-  const contract = diffs.some(d => matchesAny(d.file, config.contracts))
-  const tier: Tier = contract || diffs.length > 15 ? 'L' : diffs.length > 3 ? 'M' : 'S'
+  const tier: Tier = tierFromDiff(diffs, config)
   const stamp = now().replace(/[-:T]/g, '').slice(0, 12)
   let slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}`
   for (let n = 2; exists(path.join(CHANGES, slug)); n++) slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}-${n}`
@@ -2980,6 +3038,7 @@ Add the new imports:
 - `readBaseline`, `turnDiff`, `showAt` and `diffHash` from `./diffs.ts`
 - `runChecks` and `editFindings` from `./check.ts`
 - `formatFindings`, `isSource`, `matchesAny`, `type FileDiff`, `type Finding` and `type SensorConfig` from `./model.ts`
+- `tierFromDiff` from `./sensors.ts`
 
 - [ ] **Step 5: Register the hooks**
 
@@ -3086,6 +3145,16 @@ test('ship: every behaviour needs a test that names it', () => {
   assert.match(r.stdout, /\[traceability\][\s\S]*B2 has no test that names it/)
 })
 
+test('an ad-hoc change that started small is re-tiered at ship as it grows', () => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/one.js', 'export const one = 1\n')
+  hook(repo, 'stop', {})
+  const slug = (sdlc(repo, ['status', '--json']).stdout.match(/adhoc-[\d-]+/) ?? [''])[0]
+  assert.match(fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/intent.md`), 'utf8'), /tier: S/)
+  for (const f of ['a', 'b', 'c', 'd']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
+  assert.match(check('--at', 'ship', '--slug', slug).stdout, /\[adhoc\][\s\S]*now tier M/)
+})
+
 test('ship refuses an ad-hoc tier M change with no plan', () => {
   hook(repo, 'prompt-submit', {})
   for (const f of ['a', 'b', 'c', 'd']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
@@ -3114,7 +3183,7 @@ export const missingBehaviours = (ids: string[], corpus: string): string[] => id
 
 - [ ] **Step 4: Implement the ship verdicts in `check.ts`**
 
-Add the imports `os` from `node:os`, `loadChange` from core, `isTest` from model, and `behaviourIds` and `missingBehaviours` from sensors. Then add:
+Add the imports `os` from `node:os`, `loadChange` from core, `isTest` from model, and `behaviourIds`, `missingBehaviours` and `tierFromDiff` from sensors. Then add:
 
 ```ts
 function testCorpus(config: SensorConfig): string {
@@ -3136,14 +3205,14 @@ function redProof(slug: string, config: SensorConfig, diffs: FileDiff[], base: s
     if (git(['worktree', 'add', '--detach', tmp, base]) === null) return block(`could not create a worktree at ${base}`, 'run `git worktree prune` and retry')
     for (const dep of DEP_DIRS) if (exists(path.join(ROOT, dep)) && !exists(path.join(tmp, dep))) fs.symlinkSync(path.join(ROOT, dep), path.join(tmp, dep), 'junction')
     const sanity = runCommand(cmd, { cwd: tmp })
-    recordRun(slug, sanity)
+    recordRun(slug, { ...sanity, source: 'ship' })
     if (sanity.exit !== 0) return block("can't establish red: the tests fail on the base even without the new tests", 'make the test command pass from a clean checkout of the base (dependencies, fixtures), or the person waives red-proof')
     for (const t of tests) {
       fs.mkdirSync(path.dirname(path.join(tmp, t)), { recursive: true })
       fs.copyFileSync(path.join(ROOT, t), path.join(tmp, t))
     }
     const red = runCommand(cmd, { cwd: tmp })
-    recordRun(slug, { ...red, expectFail: true })
+    recordRun(slug, { ...red, expectFail: true, source: 'ship' })
     return red.exit === 0 ? block('the new tests already pass on the base: they prove nothing about this change', 'write a test that fails without the change, then make it pass') : []
   } finally {
     git(['worktree', 'remove', '--force', tmp])
@@ -3156,8 +3225,12 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
   const change = loadChange(slug)
   const findings: Finding[] = []
   const hasPlan = exists(path.join(change.dir, 'plan.md'))
-  if (slug.startsWith('adhoc-') && change.tier !== 'S' && !hasPlan) {
-    findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is tier ${change.tier} with no plan`, fix: `run /sdlc:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
+  // An ad-hoc change is tiered on its first Stop; vibe coding keeps growing it, so re-tier it from the branch diff.
+  const RANK = { S: 0, M: 1, L: 2 } as const
+  const fromDiff = tierFromDiff(diffs, config)
+  const tier = slug.startsWith('adhoc-') && RANK[fromDiff] > RANK[change.tier] ? fromDiff : change.tier
+  if (slug.startsWith('adhoc-') && tier !== 'S' && !hasPlan) {
+    findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is now tier ${tier} with no plan`, fix: `run /sdlc:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
   }
   const spec = read(path.join(change.dir, 'spec.md'))
   const ids = spec ? behaviourIds(spec, 'Behaviours') : behaviourIds(read(path.join(change.dir, 'plan.md')), 'Slices')
@@ -3165,7 +3238,7 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
   for (const id of missingBehaviours(ids, corpus)) {
     findings.push({ sensor: 'traceability', severity: 'block', message: `${id} has no test that names it`, fix: `add a test whose name or comment says ${id} and proves it` })
   }
-  if (base && (change.tier !== 'S' || change.type === 'bugfix')) findings.push(...redProof(slug, config, diffs, base))
+  if (base && (tier !== 'S' || change.type === 'bugfix')) findings.push(...redProof(slug, config, diffs, base))
   return findings
 }
 ```
@@ -3306,7 +3379,7 @@ In `cmdShip`, after the ship gate (Task 12) and before `if (head === 'main' || h
   for (const c of consumers) {
     if (!c.test) continue
     const row = runCommand(c.test, { cwd: c.dir })
-    recordRun(slug, row)
+    recordRun(slug, { ...row, source: 'ship' })
     if (row.exit !== 0) fail(`not shipping: ${c.name} tests failed (exit ${row.exit}):\n${row.tail}`)
   }
   const repos = consumers.map(c => commitConsumer(c, slug, message))
@@ -3486,11 +3559,31 @@ why: a contract rename that passes locally can silently break consumers in other
 
 - [ ] **Step 4: Copy the guides on init**
 
-In `sdlc.ts` `cmdInit`, add before `out(...)`:
+In `core.ts`, add this function. The harness writing its own protected files (copying guides here, vendoring in Task 17) is not tampering, so it records them the way a tool edit would be recorded. Merging it with `readGate`'s fields is safe, because `readGate` spreads defaults:
+
+```ts
+// Files sdlc itself wrote this turn count as sanctioned edits for the Stop gate's harness-tamper rule.
+export function sanctionWrites(rels: string[]): void {
+  const file = path.join(SDLC, '.gate')
+  let gate: { tool?: string[] } = {}
+  try {
+    gate = JSON.parse(read(file)) as { tool?: string[] }
+  } catch {
+    gate = {}
+  }
+  gate.tool = [...new Set([...(gate.tool ?? []), ...rels.map(toPosix)])]
+  fs.writeFileSync(file, JSON.stringify(gate))
+}
+```
+
+Import `sanctionWrites` into `sdlc.ts`. Then, in `cmdInit`, add before `out(...)`:
 
 ```ts
   const guides = path.join(SDLC, 'guides')
-  if (!exists(guides) && exists(path.join(PLUGIN_ROOT, 'guides'))) fs.cpSync(path.join(PLUGIN_ROOT, 'guides'), guides, { recursive: true })
+  if (!exists(guides) && exists(path.join(PLUGIN_ROOT, 'guides'))) {
+    fs.cpSync(path.join(PLUGIN_ROOT, 'guides'), guides, { recursive: true })
+    sanctionWrites(fs.readdirSync(guides).map(f => `.sdlc/guides/${f}`))
+  }
 ```
 
 - [ ] **Step 5: Inject the guides in `hooks.ts`**
@@ -3936,6 +4029,13 @@ test('vendor copies a standalone checker that runs without the plugin', () => {
   assert.equal(r.status, 0, r.stdout + r.stderr)
 })
 
+test('the harness vendoring its own files does not trip the Stop gate', () => {
+  sdlc(repo, ['new', 'x', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  sdlc(repo, ['vendor'])
+  assert.equal(hook(repo, 'stop', {}).stdout, '')
+})
+
 test('CI judges a PR by the base branch config, so loosening limits does not help', () => {
   sensors({ limits: { diffLines: 500 } })
   gitIn(repo, 'add', '.')
@@ -3959,7 +4059,9 @@ Add `spawnSync` to the `node:child_process` import at the top of `check.spec.ts`
 Run: `node --disable-warning=ExperimentalWarning --test scripts/check.spec.ts`
 Expected: FAIL, because `vendor` is an unknown command.
 
-- [ ] **Step 3: Implement `cmdVendor` in `sdlc.ts`**
+- [ ] **Step 3: Implement `cmdVendor` in `sdlc.ts` (its writes are sanctioned)**
+
+`sanctionWrites` already exists in `core.ts` (added in Task 14). Import it into `sdlc.ts`. Then:
 
 ```ts
 const VENDORED = ['core', 'model', 'sensors', 'diffs', 'runs', 'check', 'hooks', 'metrics', 'sdlc']
@@ -3971,6 +4073,7 @@ function cmdVendor(): void {
   for (const name of VENDORED) fs.copyFileSync(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`), path.join(bin, `${name}.ts`))
   const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
   fs.writeFileSync(path.join(bin, 'VERSION'), `${version}\n`)
+  sanctionWrites([...VENDORED.map(n => `.sdlc/bin/${n}.ts`), '.sdlc/bin/VERSION'])
   out(`vendored sdlc ${version} into .sdlc/bin (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }
 ```
