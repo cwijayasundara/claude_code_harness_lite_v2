@@ -144,6 +144,19 @@ function proposed(file: string, t: HookInput['tool_input']): string | null {
   return replaceOnce(read(file), t.old_string, t.new_string, t.replace_all)
 }
 
+// Onboarding creates CLAUDE.md, sensors.json and rules.json. A new one that is no weaker than the defaults needs no
+// prompt; any change to an existing harness file, and any other new harness file (e.g. .claude/settings.json), asks.
+function safeCreation(file: string, rel: string, t: HookInput['tool_input']): boolean {
+  if (exists(file)) return false
+  const key = rel.toLowerCase()
+  if (key === 'claude.md') return true
+  const after = proposed(file, t)
+  if (after === null) return false
+  if (key === '.sdlc/sensors.json') return weakensConfig('{}', after).length === 0
+  if (key === '.sdlc/rules.json') return weakensRules('[]', after).length === 0
+  return false
+}
+
 function protectedEditReason(file: string, rel: string, t: HookInput['tool_input']): string {
   const after = proposed(file, t)
   const key = rel.toLowerCase()
@@ -205,7 +218,9 @@ function hookPreEdit(input: HookInput): void {
     return
   }
   const context = guidesFor(rel, input.session_id ?? 'default')
-  if (isProtected(rel, CASE_INSENSITIVE)) return decide('ask', protectedEditReason(file, rel, input.tool_input), context)
+  if (isProtected(rel, CASE_INSENSITIVE) && !safeCreation(file, rel, input.tool_input)) {
+    return decide('ask', protectedEditReason(file, rel, input.tool_input), context)
+  }
   if (rel.startsWith('.superpowers/sdd/')) return respond({ context }) // SDD's gitignored ledger, briefs and reports
   const slug = activeSlug()
   if (!slug) return respond({ context })

@@ -124,11 +124,11 @@ if [ "$MODE" = I ]; then
   (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm settings)
   (cd "$OUT/app" && claude -p "/sdlc:onboard — this is an existing codebase; answer your own questions with the recommended defaults, decline CI and settings changes, and commit the onboarding files on main." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/onboard.json") || true
   echo "onboard: $(sum "$OUT/onboard.json")"
-  node "$P/tests/trials/assert-integration.mjs" onboard "$OUT/app" "$P"; R1=$?
+  R1=0; node "$P/tests/trials/assert-integration.mjs" onboard "$OUT/app" "$P" || R1=$?
   (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
   (cd "$OUT/app" && claude -p "/sdlc:start \"$TASK_I\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/change.json") || true
   echo "change: $(sum "$OUT/change.json")"
-  node "$P/tests/trials/assert-integration.mjs" change "$OUT/app" "$P"; R2=$?
+  R2=0; node "$P/tests/trials/assert-integration.mjs" change "$OUT/app" "$P" || R2=$?
   node "$P/tests/trials/split.mjs" "$OUT/onboard.json" "$OUT/change.json" || true
   echo "artifacts in $OUT/app"
   [ "$R1" = 0 ] && [ "$R2" = 0 ] || { echo "run-trials: integration checks failed" >&2; exit 1; }

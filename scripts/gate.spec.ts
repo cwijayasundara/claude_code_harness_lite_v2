@@ -41,12 +41,28 @@ test('evidence files are human- or script-only: model edits and Bash writes are 
 const decision = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined)
 const reasonOf = (r: { stdout: string }) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason as string
 
+test('creating a missing harness file (onboarding) needs no prompt; editing an existing one still asks', () => {
+  sdlc(repo, ['init'])
+  const decision = (rel: string) => JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, rel), content: '{}' } }).stdout || '{}')
+    .hookSpecificOutput?.permissionDecision
+  assert.notEqual(decision('.sdlc/sensors.json'), 'ask')
+  assert.notEqual(decision('CLAUDE.md'), 'ask')
+  assert.equal(decision('.claude/settings.json'), 'ask', 'other new harness files still ask')
+  const weak = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json'), content: '{"ignore":["**"]}' } }).stdout)
+  assert.equal(weak.hookSpecificOutput.permissionDecision, 'ask', 'a new sensors.json weaker than the defaults asks')
+  write(repo, '.sdlc/sensors.json', '{}')
+  write(repo, 'CLAUDE.md', '# x')
+  assert.equal(decision('.sdlc/sensors.json'), 'ask')
+  assert.equal(decision('CLAUDE.md'), 'ask')
+})
+
 test('editing a protected harness file asks the person, naming what gets weaker', () => {
   sdlc(repo, ['init'])
   write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
   const r = hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json'), old_string: '500', new_string: '5000' } })
   assert.equal(decision(r), 'ask')
   assert.match(reasonOf(r), /diffLines raised 500 → 5000/)
+  write(repo, 'CLAUDE.md', '# project')
   assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'CLAUDE.md'), content: '# x' } })), 'ask')
 })
 
@@ -112,6 +128,7 @@ test('protected paths match case-insensitively off Linux; MultiEdit and $ in rep
   const file = path.join(repo, '.sdlc/sensors.json')
   const r = hook(repo, 'pre-edit', { tool_input: { file_path: file, edits: [{ old_string: '500', new_string: '$&$&' }, { old_string: '$&$&', new_string: '7000' }] } })
   assert.match(reasonOf(r), /diffLines raised 500 → 7000/)
+  write(repo, 'CLAUDE.md', '# project')
   if (process.platform !== 'linux') assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'claude.MD'), content: 'x' } })), 'ask')
 })
 
