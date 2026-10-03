@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
-  planFiles, isPlanned, approvalOf, changedFiles, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
+  planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
@@ -337,9 +337,9 @@ function hookStop(input: HookInput, sub: boolean): void {
   const hash = diffHash(diffs) + sha(read(path.join(SDLC, 'sensors.json')) + read(path.join(SDLC, 'rules.json')))
   if (gate.passed[key] === hash) return
   let slug = activeSlug()
-  // Only uncommitted work is ad hoc: a turn that committed its changes (sdlc.ts ship) has nothing left to record.
-  const pending = new Set(changedFiles(null))
-  if (!slug && !sub && diffs.some(d => isSource(d.file, config) && pending.has(d.file))) slug = createAdhoc(diffs, config)
+  // A turn that shipped (its commits add a change's ship.json) is recorded already; any other commit is still ad hoc.
+  const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.sdlc\/changes\/[^/]+\/ship\.json$/.test(f))
+  if (!slug && !sub && !shipped && diffs.some(d => isSource(d.file, config))) slug = createAdhoc(diffs, config)
   const result = runChecks({
     point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: sub ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
     before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null, ratchet: !sub,
