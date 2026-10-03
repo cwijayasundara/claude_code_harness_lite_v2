@@ -8,6 +8,7 @@ import {
 import { snapshot, writeBaseline } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules } from './sensors.ts'
 import { loadConfig } from './check.ts'
+import { readOnlyDenial, normCmd } from './shell.ts'
 
 function readStdin(): HookInput {
   try {
@@ -89,120 +90,15 @@ function siblingEditReason(rel: string, consumer: { name: string } | undefined):
   return null
 }
 
-// Read-only agents (scout, reviewer, verifier) get an allowlist, not a blacklist: a Bash command passes only if
-// every segment starts with a known read-only command. Anything else is denied, naming the first offender.
+// Read-only agents (scout, reviewer, verifier) get an allowlist, not a blacklist (scripts/shell.ts): a Bash command
+// passes only if it tokenizes cleanly and every segment is a known read-only command.
 const READ_ONLY_AGENT = /(?:^|:)(?:scout|reviewer|verifier)$/
-const OK_REDIRECT = /\d*>&\d+(?![^\s;&|])|\d*>>?\s*\/dev\/null(?![^\s;&|])/g
-
-// Follows bash quoting: outside quotes \X is a literal X; in "..." only \" \\ \` \$ escape; '...' has no escapes.
-// segs splits on newline, && || ; | and a single & (not the & of 2>&1); bare is the command with quoted text removed.
-// ok is false for an unterminated quote or a trailing lone backslash.
-function scan(cmd: string): { segs: string[]; bare: string; ok: boolean } {
-  const segs: string[] = []
-  let cur = ''
-  let bare = ''
-  let q = ''
-  let ok = true
-  for (let i = 0; i < cmd.length; i++) {
-    const ch = cmd[i] ?? ''
-    const next = cmd[i + 1] ?? ''
-    if (q === "'") { cur += ch; if (ch === "'") q = ''; continue }
-    if (q === '"') {
-      if (ch === '\\' && /["\\`$]/.test(next)) { cur += ch + next; i++; continue }
-      cur += ch
-      if (ch === '"') q = ''
-      continue
-    }
-    if (ch === '\\') {
-      if (!next) ok = false
-      cur += ch + next
-      i++
-      continue
-    }
-    if (ch === "'" || ch === '"') { q = ch; cur += ch; bare += "''"; continue }
-    if (ch === '&' && cmd[i - 1] === '>') { cur += ch; bare += ch; continue }
-    if (ch === '\n' || ch === ';' || ch === '|' || ch === '&') {
-      if ((ch === '|' || ch === '&') && next === ch) i++
-      segs.push(cur)
-      cur = ''
-      bare += ' '
-      continue
-    }
-    cur += ch
-    bare += ch
-  }
-  return { segs: [...segs, cur].filter(p => p.trim()), bare, ok: ok && !q }
-}
-
-const SIMPLE_READERS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'ls', 'pwd', 'echo', 'printf', 'cut', 'tr', 'diff', 'cmp', 'stat', 'which', 'jq'])
-const GIT_READ = new Set(['diff', 'log', 'show', 'status', 'blame', 'grep', 'ls-files', 'rev-parse', 'merge-base', 'describe', 'cat-file'])
-const FIND_WRITES = /^-(?:delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)$/
-const RECORDER_READS = new Set(['status', 'check', 'check-file', 'diff', 'skill', 'scope-drift'])
-const RECORDER_FLAGS = new Set(['--slug', '--json', '--at', '--base', '--expect-fail', '--turn'])
-const SED_PRINT = /^['"]?(?:\d+|\$|\/[^/]*\/)?(?:,(?:\d+|\$|\/[^/]*\/))?p['"]?$/
-const norm = (s: string): string => s.trim().replace(/\s+/g, ' ')
-
-function gitAllowed(args: string[]): boolean {
-  const w = args[0] === '--no-pager' ? args.slice(1) : args
-  const [sub = '', arg = ''] = w
-  if (w.some(x => /^--(?:output|open-files-in-pager|ext-diff)\b|^-O/.test(x))) return false
-  if (sub === 'branch') return w.slice(1).every(f => /^(?:--show-current|-a|-r|--list|-v|-vv)$/.test(f))
-  if (sub === 'stash') return arg === 'list'
-  if (sub === 'tag') return /^(?:-l|--list)$/.test(arg)
-  return GIT_READ.has(sub)
-}
 
 // `sdlc.ts run -- "<cmd>"` may only execute a command the plan or sensors.json declares.
-function declaredCommands(slug: string | null): Set<string> {
+function declaredCommands(slug: string | undefined): Set<string> {
   const { config } = loadConfig()
-  return new Set([...(slug ? planVerification(slug) : []), ...Object.values(config.fast), ...Object.values(config.full)].map(norm))
-}
-
-function recorderAllowed(w: string[], seg: string, agent: string): string | null {
-  const i = w.findIndex(x => /sdlc\.ts["']?$/.test(x))
-  const pre = w.slice(0, i)
-  if (i < 0 || pre.some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
-  const sub = w[i + 1] ?? ''
-  const dd = /\s--\s+([^]*)$/.exec(seg)
-  const flags = (dd ? seg.slice(0, dd.index) : seg).split(/\s+/).filter(x => x.startsWith('--') && !x.startsWith('--disable-warning'))
-  if (new Set(flags).size !== flags.length) return 'sdlc.ts options may not be repeated'
-  if (flags.some(f => !RECORDER_FLAGS.has(f))) return `sdlc.ts option ${flags.find(f => !RECORDER_FLAGS.has(f))} is not allowed`
-  if (RECORDER_READS.has(sub)) return null
-  if ((sub !== 'run' && sub !== 'verify-report') || /(?:^|:)scout$/.test(agent)) return `sdlc.ts ${sub} is not available to ${agent}`
-  if (sub === 'verify-report') return null
-  const slug = /--slug\s+(\S+)/.exec(seg)?.[1] ?? activeSlug()
-  const cmd = norm((dd?.[1] ?? '').replace(/^(["'])([^]*)\1$/, '$2'))
-  return declaredCommands(slug).has(cmd) ? null : `${agent} may only run the project's declared verification commands`
-}
-
-// Returns why a single segment is not allowed, or null when it is a known read-only command.
-function segmentDenied(seg: string, agent: string): string | null {
-  const text = seg.replace(OK_REDIRECT, '').trim()
-  const w = text.split(/\s+/)
-  const c = w[0] ?? ''
-  if (c === 'git') return gitAllowed(w.slice(1)) ? null : 'git is limited to read-only subcommands (diff, log, show, status, ...)'
-  if (c === 'node') return recorderAllowed(w.slice(1), text, agent)
-  if (c === 'find') return w.some(x => FIND_WRITES.test(x)) ? 'find may not delete or execute' : null
-  if (c === 'rg') return w.some(x => x === '--pre' || x.startsWith('--pre=')) ? 'rg --pre runs commands' : null
-  if (c === 'sort') return w.some(x => /^-[^-]*o|^--o/.test(x)) ? 'sort -o writes a file' : null
-  if (c === 'uniq') return w.slice(1).filter(x => !x.startsWith('-')).length > 1 ? 'uniq with an output file writes' : null
-  if (c === 'sed' && w.some(x => /^-[a-zA-Z]*[iefs]|^--(?:in-place|expression|file|separate)/.test(x))) return 'sed may not edit in place or run scripts from options'
-  if (c === 'awk' && w.some(x => /^-[a-zA-Z]*[iof]|^--(?:include|dump-variables|profile|file|source)/.test(x))) return 'awk may not write files or load programs'
-  if (c === 'sed') return w[1] === '-n' && w.length > 2 && SED_PRINT.test(w[2] ?? '') ? null : 'only sed -n with a print address is read-only'
-  if (c === 'awk') return /[>|]|system\s*\(|getline/.test(text) ? 'awk programs may not write or run commands' : null
-  return SIMPLE_READERS.has(c) ? null : `${c || 'this command'} is not on the read-only allowlist`
-}
-
-function readOnlyDenial(cmd: string, agent: string): string | null {
-  if (/\$\(|`|<<|[<>]\(/.test(cmd)) return 'command substitution, here-docs and process substitution are not allowed'
-  const { segs, bare, ok } = scan(cmd)
-  if (!ok) return 'unterminated quote or trailing backslash'
-  if (/>/.test(bare.replace(OK_REDIRECT, ''))) return 'output redirects are not allowed (only 2>&1 and > /dev/null)'
-  for (const seg of segs) {
-    const why = segmentDenied(seg, agent)
-    if (why) return `"${seg.trim().slice(0, 60)}": ${why}`
-  }
-  return null
+  const s = slug ?? activeSlug()
+  return new Set([...(s ? planVerification(s) : []), ...Object.values(config.fast), ...Object.values(config.full)].map(normCmd))
 }
 
 function hookPreBash(input: HookInput): void {
@@ -212,7 +108,7 @@ function hookPreBash(input: HookInput): void {
   }
   if (!exists(SDLC)) return
   const agent = input.agent_type ?? ''
-  const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent) : null
+  const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands) : null
   if (why) return decide('deny', `${agent} is read-only: ${why}. It reports and never edits; record test runs with sdlc.ts run -- "<declared command>" and leave fixes to the implementer.`)
   const sleep = /(?:^|[;&|]\s*|\s)(?:sleep|Start-Sleep(?:\s+-Seconds)?)\s+(\d+)/i.exec(cmd)
   if (sleep && Number(sleep[1]) >= 30) {

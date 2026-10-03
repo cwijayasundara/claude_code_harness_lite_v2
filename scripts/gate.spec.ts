@@ -70,13 +70,25 @@ test('read-only agents: allowlist only; chained, substituted and interpreter wri
   const denied = ['touch src/app.js sdlc.ts status', 'rm f # sdlc.ts status', 'node /x/scripts/sdlc.ts status\ntouch f', 'node /x/scripts/sdlc.ts status & touch f',
     'node /x/scripts/sdlc.ts status "$(touch f)"', "bash -c 'touch f'", 'sh -c "rm f"', 'echo "$(touch f)"', `python3 -c "import os;os.remove('f')"`, 'find . -delete',
     'git -C . checkout -- a', 'echo \\"; touch f; echo \\"', "echo \\' > src/app.js \\'", 'echo "unterminated', 'echo x\\', 'sort -uo f x', 'sort -of x', 'sort --outp=f x',
-    'cat f >&2f', "sed -n -e 'w f' x", 'sed -s -n 1p x', "awk -f prog.awk x", "awk -i inplace 1 x", 'node /x/scripts/sdlc.ts status --at a --at b', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f']
+    'cat f >&2f', "sed -n -e 'w f' x", 'sed -s -n 1p x', "awk -f prog.awk x", "awk -i inplace 1 x", 'node /x/scripts/sdlc.ts status --at a --at b', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f',
+    // fix round 4: $'...' desync, comments hiding quotes, quoted/escaped/braced options, zsh-only execution
+    "echo $'\\'' ; touch PWN1 ; echo '\\'", "echo $'\\'' ; echo hi > PWN2 ; echo '\\'", "cat x #'\ntouch PWN3\n#'",
+    "sort '-o' PWN4 x", 'sort \\-o PWN4 x', 'sort {-o,PWN4} x', "sort '--output=PWN4' x", 'sort --out=PWN4 x', "sort --compress-program=sh x",
+    "find . -name z '-delete'", 'find . -name z \\-exec touch PWN5 \\;', "find . -name z -exe'c' touch PWN5 ';'",
+    "git diff '--output=PWN6'", 'git diff --out=PWN6', "git grep '-Otouch PWN7' x", 'git grep -nOtouch x', "rg '--pre=touch' x", 'rg --pre touch x',
+    "sed '-i' s/a/b/ f", "sed -n 1p '-i' f", "sed -n '1p' f -i", "awk '-f' prog x", "awk 'BEGIN{print 1 > \"PWN8\"}'", "awk '@load \"inplace\"' x", 'awk -d x',
+    'cat =(touch PWN9)', "ls *(e:'touch PWN10':)", 'ls *(+touch)', 'cat <(touch f)', 'cat $(touch f)', 'echo ${x:=1}', 'echo $HOME', 'echo "$HOME"', 'echo $"x"',
+    '(touch f)', 'cat f; { touch f; }', 'cat <>PWN11', 'cat < f', 'echo x >| f', 'echo x >! f', 'echo x >> f', 'echo x 2>"/dev/null"x', 'echo x >/dev/nullx', 'echo x >&-',
+    'cat x\n#c', 'printf -v PATH /tmp x', 'X=1 cat f', 'node /x/scripts/sdlc.ts run -- npm test \\; touch f', 'node /x/scripts/sdlc.ts status -x']
   for (const c of denied) assert.equal(as('sdlc:reviewer', c), 'deny', c)
   const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node /x/scripts/sdlc.ts status',
     'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current',
-    'rg -n "\\bfoo\\b" src', "grep -n 'a\\|b' f", 'echo "say \\"hi\\""', 'sort -u x', 'sort -n x', 'git --no-pager diff', 'cat f >&2']
+    'rg -n "\\bfoo\\b" src', "grep -n 'a\\|b' f", 'echo "say \\"hi\\""', 'sort -u x', 'sort -n x', 'git --no-pager diff', 'cat f >&2',
+    'sort -k2 -t, f', "find . \\( -name a -o -name b \\) -print", 'cat f 2>/dev/null | head', 'cat f > /dev/null 2>&1', "sed -n '1,/x/p' f", "awk '{print $1}' f",
+    'echo a$ b', 'rg -n "foo$" src', 'echo a#b', "echo 'a(b)c' \"{x}\"", 'git log --oneline -5', 'rg --pre-glob "*.gz" x', 'cat x \\\n f']
   for (const c of allowed) assert.equal(as('sdlc:reviewer', c), undefined, c)
   assert.equal(as('sdlc:scout', 'node /x/scripts/sdlc.ts run -- "npm test"'), 'deny')
+  assert.equal(as('sdlc:reviewer', 'npm test 2>&1 | tail -5'), 'deny', 'bare npm is not allowlisted')
   assert.equal(as('sdlc:implementer', 'echo x > f'), undefined)
 })
 
