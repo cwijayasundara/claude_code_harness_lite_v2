@@ -34,6 +34,12 @@ test('an untracked file changed during the turn counts; a staged-only change cou
   assert.deepEqual(turnFiles(), ['A notes.txt', 'M src/app.js'])
 })
 
+test('an untracked .sdlc/sensors.json created during the turn appears in the turn diff', () => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, '.sdlc/sensors.json', '{"ignore":["**"]}\n')
+  assert.ok(turnFiles().includes('A .sdlc/sensors.json'))
+})
+
 test('a diff over 1 MB is parsed, not silently empty', () => {
   hook(repo, 'prompt-submit', {})
   write(repo, 'src/big.js', Array.from({ length: 80_000 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
@@ -47,7 +53,7 @@ test('the branch diff covers commits since the merge-base plus the working tree'
   write(repo, 'src/app.js', 'export const a = 4\n')
   gitIn(repo, 'commit', '-qam', 'wip')
   write(repo, 'src/later.js', 'x\n')
-  const files = JSON.parse(sdlc(repo, ['diff', '--base', 'main', '--json']).stdout).map((d: { file: string }) => d.file).sort()
+  const files = JSON.parse(sdlc(repo, ['diff', '--base', 'main', '--json']).stdout).map((d: { file: string }) => d.file).filter((f: string) => !f.startsWith('.sdlc/')).sort()
   assert.deepEqual(files, ['notes.txt', 'src/app.js', 'src/later.js'])
 })
 

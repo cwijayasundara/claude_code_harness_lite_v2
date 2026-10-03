@@ -11,8 +11,7 @@ const BASELINE = path.join(SDLC, '.baseline')
 const MAX_HASHED_BYTES = 2_000_000
 const DIFF = ['diff', '--unified=0', '--no-color', '--no-ext-diff', '-M']
 
-// The harness's own state under .sdlc/ is not the user's change.
-const untrackedFiles = (): string[] => (git(['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(f => f && !f.startsWith('.sdlc/'))
+const untrackedFiles = (): string[] => (git(['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
 
 function fingerprint(rel: string): string {
   try {
