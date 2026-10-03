@@ -59,7 +59,7 @@ function hookPreEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? input.tool_input?.notebook_path ?? '')
   if (!file) return
   if (EVIDENCE_RE.test(toPosix(file))) {
-    return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\`.`)
+    return decide('deny', `${relPosix(file)} is evidence written only by sdlc or the person's commands. Record runs with \`sdlc.ts run -- "<command>"\` and generate verification.md with \`sdlc.ts verify-report <slug>\`.`)
   }
   if (!exists(SDLC)) return
   const slug = activeSlug()

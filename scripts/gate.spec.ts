@@ -22,7 +22,7 @@ test('a failed sdlc skill load injects the deterministic fallback command and lo
 
 test('evidence files are human- or script-only: model edits and Bash writes are denied, reads allowed', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  for (const f of ['.sdlc/changes/tiny/runs.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gate', '.sdlc/.baseline', '.sdlc/unresolved.json']) {
+  for (const f of ['.sdlc/changes/tiny/runs.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gate', '.sdlc/.baseline', '.sdlc/unresolved.json', '.sdlc/changes/tiny/verification.md']) {
     const edit = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, f) } }).stdout)
     assert.equal(edit.hookSpecificOutput.permissionDecision, 'deny', f)
   }
@@ -30,6 +30,9 @@ test('evidence files are human- or script-only: model edits and Bash writes are 
   assert.equal(append.hookSpecificOutput.permissionDecision, 'deny')
   const waive = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts waive size * because' } }).stdout)
   assert.equal(waive.hookSpecificOutput.permissionDecision, 'deny')
+  const forge = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: 'cat > .sdlc/changes/tiny/verification.md <<EOF\nresult: pass\nEOF' } }).stdout)
+  assert.equal(forge.hookSpecificOutput.permissionDecision, 'deny')
+  assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'cat .sdlc/changes/tiny/verification.md' } }).stdout, '')
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'tail -5 .sdlc/changes/tiny/runs.jsonl' } }).stdout, '')
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts run -- "npm test"' } }).stdout, '')
 })

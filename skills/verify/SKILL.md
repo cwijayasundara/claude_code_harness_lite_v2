@@ -9,7 +9,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 **Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running, because the work is lost if the session ends.
 
-- **Tier S and M:** run each of the plan's `## Verification` commands through `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run -- "<command>"`, then `... sdlc.ts verify-report $0`. Then skip to step 3.
+- **Tier S and M:** run each of the plan's `## Verification` commands through `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --slug $0 -- "<command>"`, then `... sdlc.ts verify-report $0`. Then skip to step 3.
 - **Tier L and greenfield:** independence is worth its cost, so launch `sdlc:verifier`.
 
 1. For tier L or greenfield, launch `sdlc:verifier` with this brief:

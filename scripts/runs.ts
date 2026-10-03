@@ -75,6 +75,6 @@ export const runsDigest = (slug: string, count: number): string => sha(read(runs
 // verification.md counts only when sdlc generated it and the runs it summarised are unchanged.
 export function verifiedPass(dir: string): boolean {
   const { data } = frontmatter(read(path.join(dir, 'verification.md')))
-  if (data.generated !== 'sdlc' || data.result !== 'pass') return false
+  if (data.generated !== 'sdlc' || data.result !== 'pass' || Number(data.runs) < 1) return false
   return runsDigest(path.basename(dir), Number(data.runs)) === data.digest
 }

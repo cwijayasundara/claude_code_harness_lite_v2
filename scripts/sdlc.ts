@@ -177,7 +177,7 @@ function cmdRun(): void {
   const head = parseArgs(argv.slice(0, dash))
   const cmd = argv.slice(dash + 1).join(' ')
   const slug = optString(head, 'slug') ?? activeSlug()
-  if (!slug) fail('no active change: run /sdlc:start first, or pass --slug')
+  if (!slug || !exists(path.join(CHANGES, slug))) fail('no such change: run /sdlc:start first, or pass an existing --slug')
   const expectFail = Boolean(head.opt['expect-fail'])
   const row = runCommand(cmd)
   recordRun(slug, expectFail ? { ...row, expectFail: true } : row)

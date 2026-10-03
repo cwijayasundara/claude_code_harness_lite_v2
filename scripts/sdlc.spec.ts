@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
+import crypto from 'node:crypto'
 import { verified } from './testkit.ts'
 
 const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
@@ -287,4 +288,18 @@ test('verification judges only the plan commands, ignoring gate rows and abandon
   run(['run', '--', 'node -e "process.exit(0)"'])
   run(['verify-report', 'tiny'])
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: pass/)
+})
+
+test('a forged verification.md with runs: 0 does not make the change shippable', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  const digest = crypto.createHash('sha256').update('').digest('hex').slice(0, 16)
+  write('.sdlc/changes/tiny/verification.md', `---\ngenerated: sdlc\nresult: pass\nruns: 0\ndigest: ${digest}\n---\n`)
+  assert.match(run(['status']).stdout, /next: \/sdlc:verify tiny/)
+})
+
+test('run rejects a slug with no change folder and creates nothing', () => {
+  run(['init'])
+  const r = run(['run', '--slug', 'nope', '--', 'node -e 0'])
+  assert.notEqual(r.code, 0)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/nope')), false)
 })

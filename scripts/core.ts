@@ -232,7 +232,7 @@ export function loadChange(slug: string): Change {
         // Only a report sdlc generated from runs.jsonl counts (see runs.ts renderVerification).
         const v = frontmatter(read(path.join(dir, 'verification.md'))).data
         const runs = read(path.join(dir, 'runs.jsonl')).split('\n').slice(0, Number(v.runs)).join('\n')
-        return v.generated === 'sdlc' && v.result === 'pass' && sha(runs) === v.digest
+        return Number(v.runs) >= 1 && v.generated === 'sdlc' && v.result === 'pass' && sha(runs) === v.digest
       }
       case 'review':
         return review.result === 'pass' || review.result === 'accepted'
@@ -272,7 +272,7 @@ export function nextCommand(change: Change): string {
 // ---------- plan parsing & scope drift ----------
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands.
-export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)/
+export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)|\.sdlc[\\/]changes[\\/][^\\/]+[\\/]verification\.md/
 
 // The plan's ## Verification commands: backticked text, or the rest of the bullet.
 export function planVerification(slug: string): string[] {
