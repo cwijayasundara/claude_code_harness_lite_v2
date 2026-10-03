@@ -176,7 +176,11 @@ const STOP_WORDS = new Set([
   'properties', 'items', 'object', 'array', 'description', 'format', 'schema', 'paths', 'get', 'post', 'put', 'patch', 'delete',
 ])
 const TOKEN = /[A-Za-z_][A-Za-z0-9_]{2,}/g
-const tokens = (lines: { text: string }[]): Set<string> => new Set(lines.flatMap(l => l.text.match(TOKEN) ?? []))
+const PROSE_LINE = /^\s*(?:\/\/|#|--|\/\*|\*)/
+const PROSE_VALUE = /^(\s*["']?(?:description|summary|title)["']?\s*:).*$/i
+// Comment lines and the value of description/summary/title keys are prose, not identifiers.
+const code = (text: string): string => (PROSE_LINE.test(text) ? '' : text.replace(PROSE_VALUE, '$1'))
+const tokens = (lines: { text: string }[]): Set<string> => new Set(lines.flatMap(l => code(l.text).match(TOKEN) ?? []))
 const MAX_IDS = 50
 
 export function retiredIdentifiers(diffs: FileDiff[], cfg: SensorConfig, producerContractText: string): string[] {
@@ -186,8 +190,7 @@ export function retiredIdentifiers(diffs: FileDiff[], cfg: SensorConfig, produce
     const added = tokens(d.added)
     for (const t of tokens(d.removed)) if (!added.has(t) && !stillThere.has(t)) ids.add(t)
     for (const l of d.added) for (const re of RETIRE_PATTERNS) {
-      const m = re.exec(l.text)
-      if (m?.[1]) ids.add(m[1])
+      for (const m of l.text.matchAll(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'))) if (m[1]) ids.add(m[1])
     }
   }
   return [...ids].filter(t => !STOP_WORDS.has(t.toLowerCase()) && !/^\d/.test(t)).slice(0, MAX_IDS)

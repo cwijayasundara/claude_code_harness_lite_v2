@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS,
+  ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
@@ -69,7 +69,7 @@ function cmdStatus(args: Args): void {
     return out(JSON.stringify({ initialised: true, active, changes: summary, warnings }))
   }
   if (!changes.length) return out('no changes yet: run /sdlc:start "<what you want>"')
-  const label = (c: Change): string => (c.next ? c.next.stage + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
+  const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
   const rows = changes
     .sort((a, b) => (a.slug === active ? -1 : b.slug === active ? 1 : 0))
     .map(c => `${c.slug === active ? '▶' : ' '} ${c.slug.padEnd(28)} ${c.type.padEnd(10)} ${c.tier}  ${label(c)}`)
@@ -85,7 +85,8 @@ function cmdApprove(args: Args): void {
   const file = path.join(CHANGES, slug, artifact ?? '')
   if (!artifact || !exists(file)) fail(`nothing to approve: ${slug}/${artifact ?? stage} does not exist`)
   const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
-  const row: Approval = { slug, stage, by, at: now(), digest: sha(read(file)) }
+  if (stage === 'impact' && !exists(path.join(CHANGES, slug, 'impact.json'))) fail(`nothing to approve: ${slug}/impact.json does not exist (run check --at plan first)`)
+  const row: Approval = { slug, stage, by, at: now(), digest: approvalDigest(slug, stage as GatedStage) }
   fs.appendFileSync(APPROVALS, JSON.stringify(row) + '\n')
   out(`approved ${slug} ${stage} by ${by} (digest ${row.digest}). Next: ${nextCommand(loadChange(slug))}`)
 }

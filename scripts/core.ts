@@ -194,11 +194,20 @@ export const optString = (args: Args, key: string): string | undefined => {
 }
 // ---------- changes ----------
 
+// The impact approval covers plan.md and impact.json, so a re-run of the plan point with new hits makes it stale.
+export function approvalDigest(slug: string, gate: GatedStage): string {
+  const dir = path.join(CHANGES, slug)
+  const artifact = read(path.join(dir, APPROVAL_ARTIFACTS[gate]))
+  return sha(gate === 'impact' ? `${artifact}\n${read(path.join(dir, 'impact.json'))}` : artifact)
+}
+
 export function approvalOf(slug: string, gate: GatedStage): ApprovalState {
   const latest = readJsonl<Approval>(APPROVALS).filter(a => a.slug === slug && a.stage === gate).at(-1)
   if (!latest) return 'missing'
-  return latest.digest === sha(read(path.join(CHANGES, slug, APPROVAL_ARTIFACTS[gate]))) ? 'approved' : 'stale'
+  return latest.digest === approvalDigest(slug, gate) ? 'approved' : 'stale'
 }
+
+export const needsImpact = (impact: Impact | null): boolean => Boolean(impact && (impact.hits.length || impact.missing.length))
 
 export function readImpact(slug: string): Impact | null {
   try {
@@ -271,7 +280,7 @@ export function loadChange(slug: string): Change {
       next = { stage, kind: 'approve', state: approvalState(stage as GatedStage), gate: stage as GatedStage }
       break
     }
-    if (stage === 'plan' && readImpact(slug)?.hits.length && approvalState('impact') !== 'approved') {
+    if (stage === 'plan' && needsImpact(readImpact(slug)) && approvalState('impact') !== 'approved') {
       next = { stage, kind: 'approve', state: approvalState('impact'), gate: 'impact' }
       break
     }
@@ -294,7 +303,7 @@ export function nextCommand(change: Change): string {
 // ---------- plan parsing & scope drift ----------
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands.
-export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)|\.sdlc[\\/]changes[\\/][^\\/]+[\\/]verification\.md/
+export const EVIDENCE_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|\.sdlc[\\/](?:\.baseline|\.gate|unresolved\.json)|\.sdlc[\\/]changes[\\/][^\\/]+[\\/](?:verification\.md|impact\.json)/
 
 // The plan's ## Verification commands: backticked text, or the rest of the bullet.
 export function planVerification(slug: string): string[] {

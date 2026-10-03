@@ -243,3 +243,75 @@ test('a declared consumer that is not checked out warns at Stop and blocks at sh
   assert.equal(check('--at', 'stop').code, 0)
   assert.equal(check('--at', 'ship').code, 1)
 })
+
+function stopWithRename(oldCol: string, newCol: string): void {
+  write(repo, 'schema/billing.sql', `CREATE TABLE billing (${oldCol} NUMERIC);\n`)
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'schema')
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'schema/billing.sql', `CREATE TABLE billing (${newCol} NUMERIC);\n`)
+}
+
+test('a consumer directory that is not a git repo cannot be verified: blocks at ship', () => {
+  const dir = path.join(path.dirname(repo), `${path.basename(repo)}-plain`)
+  fs.mkdirSync(dir)
+  write(dir, 'a.ts', 'x\n')
+  sensors({ consumers: [{ name: 'plain', path: path.relative(repo, dir).split(path.sep).join('/') }] })
+  stopWithRename('x_col', 'y_col')
+  const r = check('--at', 'ship')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /plain is not checked out/)
+})
+
+test('untracked consumer files count, and a migration history does not hide the rename', () => {
+  const rel = consumerRepo('untr', 'README.md', 'nothing\n')
+  write(path.resolve(repo, rel), 'src/new.ts', 'use(discount_rate)\n')
+  sensors({ consumers: [{ name: 'untr', path: rel }] })
+  write(repo, 'migrations/0001_init.sql', 'CREATE TABLE billing (discount_rate NUMERIC);\n')
+  stopWithRename('discount_rate', 'promotional_discount')
+  assert.match(check('--at', 'stop').stdout, /untr: src\/new\.ts:1 still uses discount_rate/)
+})
+
+test('an impact approval only downgrades the ids it covers, and re-running the plan point makes it stale', () => {
+  const rel = consumerRepo('scoped', 'src/a.ts', 'a_col b_col\n')
+  sensors({ consumers: [{ name: 'scoped', path: rel }] })
+  sdlc(repo, ['new', 'scoped-change', '--type', 'feature', '--tier', 'M'])
+  const planPath = '.sdlc/changes/scoped-change/plan.md'
+  write(repo, planPath, '## Files\n- schema/**\n## Contracts\n- remove `a_col`\n')
+  check('--at', 'plan', '--slug', 'scoped-change')
+  write(repo, '.sdlc/changes/scoped-change/spec.md', '## Behaviours\nB1\n')
+  for (const s of ['spec', 'plan', 'impact']) sdlc(repo, ['approve', 'scoped-change', s], { env: { SDLC_HUMAN: '1' } })
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:build/)
+  stopWithRename('a_col', 'z_col')
+  write(repo, 'schema/billing.sql', 'CREATE TABLE billing (z_col NUMERIC);\n-- b_col gone\n')
+  const ok = check('--at', 'stop')
+  assert.equal(ok.code, 0)
+  write(repo, 'schema/billing.sql', 'CREATE TABLE billing (z_col NUMERIC);\n')
+  write(repo, 'schema/other.sql', 'CREATE TABLE o (b_col INT);\n')
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'other')
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'schema/other.sql', 'CREATE TABLE o (c_col INT);\n')
+  assert.equal(check('--at', 'stop').code, 1, 'b_col is not in the approved impact')
+  check('--at', 'plan', '--slug', 'scoped-change')
+  assert.match(sdlc(repo, ['status']).stdout, /\/sdlc-approve scoped-change impact[\s\S]*stale/)
+})
+
+test('a consumer that is not checked out at the plan point also needs the impact approval', () => {
+  sensors({ consumers: [{ name: 'ghost', path: '../does-not-exist' }] })
+  sdlc(repo, ['new', 'ghost-change', '--type', 'feature', '--tier', 'M'])
+  write(repo, '.sdlc/changes/ghost-change/plan.md', '## Files\n- schema/**\n## Contracts\n- remove `q_col`\n')
+  assert.match(check('--at', 'plan', '--slug', 'ghost-change').stdout, /not checked out/i)
+  write(repo, '.sdlc/changes/ghost-change/spec.md', '## Behaviours\nB1\n')
+  sdlc(repo, ['approve', 'ghost-change', 'spec'], { env: { SDLC_HUMAN: '1' } })
+  sdlc(repo, ['approve', 'ghost-change', 'plan'], { env: { SDLC_HUMAN: '1' } })
+  assert.match(sdlc(repo, ['status']).stdout, /impact \(awaiting approval\)/)
+})
+
+test('impact.json is evidence: pre-edit denies writing it; approving impact without it fails', () => {
+  sdlc(repo, ['new', 'ev', '--type', 'feature', '--tier', 'M'])
+  write(repo, '.sdlc/changes/ev/plan.md', '## Files\n- a\n')
+  const r = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/changes/ev/impact.json') } }).stdout)
+  assert.match(JSON.stringify(r), /deny/)
+  assert.notEqual(sdlc(repo, ['approve', 'ev', 'impact'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+})

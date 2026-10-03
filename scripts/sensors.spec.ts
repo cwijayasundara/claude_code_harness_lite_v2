@@ -151,3 +151,17 @@ test('contractsFromPlan reads rename and remove lines only', () => {
   assert.deepEqual(contractsFromPlan(plan), ['discount_rate', 'legacy_code'])
   assert.deepEqual(contractsFromPlan('## Contracts\nnone\n'), [])
 })
+
+test('retired identifiers: comment and description prose is not a contract change', () => {
+  const proto = fd('api/rate.proto', ['  // discount applied at checkout'], ['  // the rate of discount we apply'])
+  assert.deepEqual(retiredIdentifiers([proto], CFG, ''), [])
+  const oas = fd('api/openapi.yaml', ['    description: Amount after tax'], ['    description: Amount before tax'])
+  assert.deepEqual(retiredIdentifiers([oas], CFG, ''), [])
+})
+
+test('retired identifiers: migration history does not hide a schema rename; every drop on a line counts', () => {
+  const schema = fd('schema/billing.sql', ['  promotional_discount NUMERIC,'], ['  discount_rate NUMERIC,'])
+  assert.deepEqual(retiredIdentifiers([schema], CFG, 'CREATE TABLE billing (promotional_discount NUMERIC)'), ['discount_rate'])
+  const mig = fd('migrations/2.sql', ['ALTER TABLE t DROP COLUMN aaa_col, DROP COLUMN bbb_col;'], [], 'A')
+  assert.deepEqual(retiredIdentifiers([mig], CFG, '').sort(), ['aaa_col', 'bbb_col'])
+})
