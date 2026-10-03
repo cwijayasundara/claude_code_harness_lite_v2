@@ -11,6 +11,7 @@ const blocks = <T extends { severity: string }>(fs: T[]): T[] => fs.filter(f => 
 // Every tamper row has a positive and a negative fixture (spec §5.4).
 const FIXTURES: Record<string, [string, string]> = {
   'skip-or-only': ["it.skip('adds', () => {})", "const rest = myit.skip(2)"],
+  'jasmine-focus': ["fit('x', () => {})", '  fill(x)'],
   'x-prefixed': ["  xit('adds', () => {})", '  exit(1)'],
   'pytest-skip': ['@pytest.mark.skip(reason="slow")', '# docs mention pytest.mark.skip'],
   'unittest-skip': ['@unittest.skip("flaky")', 'unittest.skipTest_helper()'],
@@ -68,4 +69,31 @@ test('suppression comments block unless they carry a reason', () => {
   assert.equal(suppressions([fd('src/a.ts', ['// eslint-disable-next-line no-console -- the CLI prints by design'])], CFG).length, 0)
   assert.equal(suppressions([fd('src/a.py', ['x = y  # type: ignore because the stub is wrong upstream'])], CFG).length, 0)
   assert.equal(suppressions([fd('README.md', ['use // eslint-disable sparingly'])], CFG).length, 0)
+})
+
+test('assert.* calls count as assertions', () => {
+  const r = testTamper([fd('test/a.test.js', ['  assert.equal(add(1, 2), 3)'], ['  assert.equal(add(1, 2), 3)', '  assert.equal(add(0, 0), 0)'])], CFG)
+  assert.match(blocks(r)[0]?.message ?? '', /2 removed, 1 added/)
+})
+
+test('each assertion form counts exactly once', () => {
+  for (const line of ['assert.equal(a, b)', 'assert.ok(x)', 'assert_eq!(a, b)', 'assert!(x)', 'expect { x }.to raise_error', 'self.assertEqual(a, b)', 'assert x == 1', 'expect(a).toBe(1)']) {
+    const r = testTamper([fd('test/a.test.js', [], [line])], CFG)
+    assert.match(blocks(r)[0]?.message ?? '', /1 removed, 0 added/, line)
+  }
+})
+
+test('focus and skip variants block', () => {
+  assert.equal(blocks(testTamper([fd('test/a.test.js', ["it.skip.each([1])('x', () => {})"])], CFG)).length, 1)
+  assert.equal(blocks(testTamper([fd('test/a.test.js', ["describe.only.each([1])('x', () => {})"])], CFG)).length, 1)
+})
+
+test('a commented-out tamper line does not block', () => {
+  assert.equal(blocks(testTamper([fd('test/a.test.js', ["// it.skip('x')"])], CFG)).length, 0)
+})
+
+test('a lone deleted test file with assertions yields exactly one block', () => {
+  const r = blocks(testTamper([fd('test/a.test.js', [], ["test('a', () => {", '  expect(add(1, 2)).toBe(3)', '})'], 'D')], CFG))
+  assert.equal(r.length, 1)
+  assert.match(r[0]?.message ?? '', /test file deleted/)
 })

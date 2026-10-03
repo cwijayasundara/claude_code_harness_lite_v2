@@ -3,8 +3,9 @@
 import { type FileDiff, type Finding, type SensorConfig, isTest, isSource } from './model.ts'
 
 export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
-  { id: 'skip-or-only', re: /\b(?:it|describe|test|context|suite)\.(?:skip|only|todo)\s*\(/, what: 'test skipped or focused' },
+  { id: 'skip-or-only', re: /\b(?:it|describe|test|context|suite)\.(?:skip|only|todo)\s*[.(]/, what: 'test skipped or focused' },
   { id: 'x-prefixed', re: /^\s*x(?:it|describe|test|context)\s*\(/, what: 'test disabled with an x prefix' },
+  { id: 'jasmine-focus', re: /^\s*f(?:it|describe|context)\s*\(/, what: 'test focused with an f prefix' },
   { id: 'pytest-skip', re: /^\s*@pytest\.mark\.(?:skip|skipif|xfail)\b/, what: 'pytest skip/xfail marker' },
   { id: 'unittest-skip', re: /^\s*@unittest\.(?:skip|skipIf|skipUnless|expectedFailure)\b/, what: 'unittest skip decorator' },
   { id: 'junit-disabled', re: /^\s*@(?:Disabled|Ignore)\b(?!\w)/, what: 'JUnit @Disabled/@Ignore' },
@@ -19,7 +20,7 @@ export const SUPPRESSIONS: RegExp[] = [
 
 const REASONED = /(?:\s--\s*|\bbecause\b\s*)\S/i
 const COMMENT_LINE = /^\s*(?:\/\/|#|\*|\/\*|--|;)/
-const ASSERTION = /\bassert\w*\s*\(|^\s*assert\s|\bexpect\s*\(|\.should\b|\bAssert\.\w+\s*\(|\bt\.(?:Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(/g
+const ASSERTION = /\bassert(?:\.\w+\s*\(|\w*\s*[!(])|^\s*assert\s|\bexpect\s*[({]|\.should\b|\bAssert\.\w+\s*\(|\bt\.(?:Error|Fatal)f?\s*\(|\brequire\.\w+\s*\(/g
 const THRESHOLD_KEY = /coverage|threshold|fail[_-]under|minimum|\b(?:lines|branches|functions|statements)\b/i
 const CONFIG_FILE = /(?:^|\/)(?:[^/]*\.(?:json|ya?ml|toml|cfg|ini|xml|gradle|kts|properties)|\.[\w-]*rc(?:\.\w+)?|[^/]*\.config\.[cm]?[jt]s)$/
 const SNAPSHOT = /(?:^|\/)__snapshots__\/|\.snap$/
@@ -65,7 +66,7 @@ export function testTamper(diffs: FileDiff[], cfg: SensorConfig): Finding[] {
     }
   }
   for (const d of tests) {
-    for (const l of d.added) {
+    for (const l of d.added.filter(a => !COMMENT_LINE.test(a.text))) {
       const hit = TAMPER_PATTERNS.find(p => p.re.test(l.text))
       if (hit) findings.push({ sensor: 'test-tamper', severity: 'block', file: d.file, line: l.n, message: `${hit.what}: ${l.text.trim()}`, fix: KEEP_TESTS })
     }
