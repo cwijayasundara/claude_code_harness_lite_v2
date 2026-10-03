@@ -364,3 +364,11 @@ test('I3: Stop ratchets a known-red command that now passes; it then blocks when
   assert.equal(out.decision, 'block')
   assert.match(out.reason, /\[commands\][\s\S]*fast\.lint failed/)
 })
+
+test('I4: any Bash command naming SDLC_HUMAN is denied, including the variable-indirection forgery', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
+  for (const c of ['x=waive; SDLC_HUMAN=1 node /p/scripts/sdlc.ts $x red-proof "*" ok', 'export SDLC_HUMAN=1', 'env SDLC_"HUMAN"=1 node /tmp/copy/s.ts approve xx plan', "SDLC_HUM'AN'=1 node x.ts"])
+    assert.equal(as(c), 'deny', c)
+  assert.equal(as('echo hello'), undefined)
+})

@@ -296,12 +296,32 @@ export function editFindings(rel: string): Finding[] {
 
 const slugsIn = (diffs: FileDiff[]): string[] => [...new Set(diffs.map(d => /^\.sdlc\/changes\/([^/]+)\//.exec(d.file)?.[1]).filter((s): s is string => Boolean(s)))]
 
-function report(point: string, result: CheckResult, count: number, json: boolean): void {
-  if (json) return out(JSON.stringify(result))
+// Waivers and approvals are trusted, not recomputed, so CI shows each row a PR adds for a person to review.
+const HUMAN_FILES = [['.sdlc/waivers.jsonl', 'waiver'], ['.sdlc/approvals.jsonl', 'approval']] as const
+// PR-controlled text: one line, no backticks or angle brackets (it cannot close the summary fence or start a
+// `::` workflow command, since every row is printed after "  - "), and capped.
+const clean = (v: unknown): string => String(v).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/`/g, "'").replace(/[<>]/g, '_').replace(/"/g, "'").slice(0, 200)
+export function humanRowsAdded(base: string): string[] {
+  const rows: string[] = []
+  for (const [rel, kind] of HUMAN_FILES) {
+    const before = new Set((showAt(base, rel) ?? '').replace(/\r\n/g, '\n').split('\n').filter(Boolean))
+    for (const line of read(path.join(ROOT, rel)).split('\n').filter(l => l && !before.has(l))) {
+      let r: Record<string, unknown> = {}
+      try { r = JSON.parse(line) as Record<string, unknown> } catch { /* shown raw below */ }
+      const s = (k: string): string => clean(r[k] ?? '?')
+      rows.push(!Object.keys(r).length ? `${kind} (unparseable): ${clean(line)}` : kind === 'waiver' ? `waiver ${s('slug')}: ${s('sensor')} ${s('file')} "${s('reason')}" by ${s('by')}` : `approval ${s('slug')} ${s('stage')} by ${s('by')}`)
+    }
+  }
+  return rows
+}
+
+function report(point: string, result: CheckResult, count: number, json: boolean, humanRows: string[] = []): void {
+  if (json) return out(JSON.stringify({ ...result, humanRows }))
   const text = formatFindings(result.findings)
-  out(text || `sdlc check ${point}: pass (${count} file(s) checked${result.waived ? `, ${result.waived} waived` : ''})`)
+  const human = humanRows.length ? `needs human review: ${humanRows.length} waiver/approval row(s) added by this PR\n${humanRows.map(r => `  - ${r}`).join('\n')}` : ''
+  out([text || `sdlc check ${point}: pass (${count} file(s) checked${result.waived ? `, ${result.waived} waived` : ''})`, human].filter(Boolean).join('\n'))
   const summary = process.env.GITHUB_STEP_SUMMARY
-  if (summary) fs.appendFileSync(summary, `## sdlc check (${point})\n\n${text ? '```\n' + text + '\n```' : 'pass'}\n`)
+  if (summary) fs.appendFileSync(summary, `## sdlc check (${point})\n\n${text ? '```\n' + text + '\n```' : 'pass'}\n${human ? '\n```\n' + human + '\n```\n' : ''}`)
 }
 
 export function cmdCheck(args: Args): void {
@@ -330,7 +350,7 @@ export function cmdCheck(args: Args): void {
   const result = runChecks({ point: at, diffs, config, rules, slugs, commands: at === 'stop' ? 'fast' : 'full', budgetMs, before, base, ratchet: !optString(args, 'config-from') })
   const configFindings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: SENSORS_JSON, message: e, fix: 'fix the file; see the sdlc README for its format' }))
   const all = { ...result, findings: [...configFindings, ...result.findings], blocks: [...configFindings, ...result.blocks] }
-  report(at, all, diffs.length, Boolean(args.opt.json))
+  report(at, all, diffs.length, Boolean(args.opt.json), at === 'ci' && base ? humanRowsAdded(base) : [])
   process.exitCode = all.blocks.length ? 1 : 0
 }
 

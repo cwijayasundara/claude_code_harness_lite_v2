@@ -211,6 +211,10 @@ function declaredCommands(slug: string | undefined): Set<string> {
 function hookPreBash(input: HookInput): void {
   if (!exists(SDLC)) return
   const cmd = String(input.tool_input?.command ?? '')
+  // Only the person's mod commands set SDLC_HUMAN; the model never names it, however the command is spelled.
+  if (/SDLC_HUMAN/i.test(cmd) || /SDLC_HUMAN/i.test(stripQuotes(cmd)) || /SDLC_HUMAN/i.test(dequoted(cmd))) {
+    return decide('deny', 'SDLC_HUMAN is set only by the person\'s commands (/sdlc-approve, /sdlc-waive). Ask the person to run them.')
+  }
   if (HUMAN_ONLY.test(cmd) || HUMAN_ONLY.test(dequoted(cmd)) || !isSafeEvidenceCommand(cmd)) {
     return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); runs.jsonl only from `sdlc.ts run`; gate state only from the hooks. Read these files with the Read tool.')
   }

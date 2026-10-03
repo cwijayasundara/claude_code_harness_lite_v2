@@ -1,4 +1,4 @@
-// Tests for the sdlc mod (hooks/register.tsx). Run with: claude plugin test .
+// Tests for the sdlc mod (hooks/register.ts). Run with: claude plugin test .
 import { describe, expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 

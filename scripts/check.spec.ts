@@ -540,3 +540,39 @@ test('I1: CI blocks a tier M PR that carries no committed change record; a tier 
   assert.equal(r.code, 1, r.stdout)
   assert.match(r.stdout, /\[adhoc\][\s\S]*no sdlc change record for a tier M diff[\s\S]*\/sdlc:start/)
 })
+
+test('I4: CI lists every waiver and approval row the PR adds, for human review', () => {
+  gitIn(repo, 'checkout', '-qb', 'pr')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'trust me', by: 'Mallory', at: '2026-10-03T00:00:00Z' }) + '\n')
+  write(repo, '.sdlc/approvals.jsonl', JSON.stringify({ slug: 'tiny', stage: 'plan', by: 'Mallory', at: '2026-10-03T00:00:00Z', digest: 'x' }) + '\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'pr')
+  const summary = path.join(path.dirname(repo), `${path.basename(repo)}-summary.md`)
+  const r = sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main'], { env: { GITHUB_STEP_SUMMARY: summary } })
+  for (const text of [r.stdout, fs.readFileSync(summary, 'utf8')]) {
+    assert.match(text, /needs human review: 2 waiver\/approval row\(s\) added by this PR/)
+    assert.match(text, /waiver tiny: red-proof \* "trust me" by Mallory/)
+    assert.match(text, /approval tiny plan by Mallory/)
+  }
+  const json = JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main', '--json']).stdout)
+  assert.equal(json.humanRows.length, 2)
+})
+
+test('I4: PR-controlled waiver fields cannot break out of the review listing', () => {
+  gitIn(repo, 'checkout', '-qb', 'pr')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  const reason = 'ok\n```\n::warning::all clean\n<b>x</b>\u2028more'
+  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason, by: 'M\r\n::error::x' }) + '\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'pr')
+  const summary = path.join(path.dirname(repo), `${path.basename(repo)}-summary.md`)
+  const r = sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main'], { env: { GITHUB_STEP_SUMMARY: summary } })
+  for (const text of [r.stdout, fs.readFileSync(summary, 'utf8')]) {
+    const rows = text.split('\n').filter(l => l.includes('waiver tiny'))
+    assert.equal(rows.length, 1, text)
+    assert.doesNotMatch(rows[0] ?? '', /`|<|>|\u2028/)
+    assert.ok(!text.split('\n').some(l => l.startsWith('::')), 'no line starts a workflow command')
+    assert.equal((text.match(/```/g) ?? []).length % 2, 0, 'fences stay balanced')
+  }
+})

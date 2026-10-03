@@ -1,6 +1,6 @@
 {
   "description": "sdlc: session context, turn baselines, the end-of-turn quality gate, human-only approvals and waivers, evidence protection, plan ownership, harness and consumer guards, secret and plan-size checks; the mod adds usage capture, the band and zero-token commands",
-  "modules": ["./register.tsx"],
+  "modules": ["./register.ts"],
   "hooks": {
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts\" hook prompt-submit", "timeout": 15 } ] }

@@ -3,7 +3,7 @@
 //  - /sdlc-waive and /sdlc-sensors (human-only, zero tokens)
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
-//  - the impact dialog and per-edit notices (gates.tsx); the band and pane (band.tsx)
+//  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
 //  - cheap-by-default subagents: a general-purpose spawn with no model named runs on Sonnet
 // Essential gates live in hooks.json settings hooks so they also hold in `claude -p` and CI.
