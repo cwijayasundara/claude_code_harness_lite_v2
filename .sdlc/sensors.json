@@ -1,0 +1,6 @@
+{
+  "fast": { "typecheck": "npm run typecheck" },
+  "full": { "typecheck": "npm run typecheck", "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts" },
+  "tests": ["scripts/*.spec.ts", "tests/**"],
+  "limits": { "fileLines": 500, "diffLines": 1500 }
+}

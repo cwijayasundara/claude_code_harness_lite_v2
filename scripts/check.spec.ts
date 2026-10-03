@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, hook, write, gitIn, verified } from './testkit.ts'
 
 let repo: string
@@ -485,4 +486,35 @@ test('ship refuses before committing anything when sdlc/<slug> already exists in
   assert.match(r.stderr, /sdlc\/rate already exists in checkout-service/)
   assert.equal(gitIn(cdir, 'rev-parse', 'HEAD'), chead)
   assert.notEqual(gitIn(cdir, 'status', '--porcelain'), '')
+})
+
+test('vendor copies a standalone checker that runs without the plugin', () => {
+  const v = sdlc(repo, ['vendor'])
+  assert.equal(v.code, 0, v.stderr)
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/bin/VERSION')))
+  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/bin/testkit.ts')))
+  const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', '.sdlc/bin/sdlc.ts', 'check', '--at', 'ship'], { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo } })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+})
+
+test('the harness vendoring its own files does not trip the Stop gate', () => {
+  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  sdlc(repo, ['vendor'])
+  assert.equal(hook(repo, 'stop', {}).stdout, '')
+})
+
+test('CI judges a PR by the base branch config, so loosening limits does not help', () => {
+  sensors({ limits: { diffLines: 500 } })
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'pr')
+  sensors({ limits: { diffLines: 5000 } })
+  write(repo, 'src/huge.js', Array.from({ length: 700 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'big')
+  const r = check('--at', 'ci', '--base', 'main', '--config-from', 'main')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /\[size\][\s\S]*limit 500/)
+  assert.match(r.stdout, /\[harness-tamper\][\s\S]*diffLines raised 500 → 5000/)
 })

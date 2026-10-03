@@ -1,0 +1,41 @@
+# The sdlc required check. Copy to .github/workflows/ and make "sdlc-check" a required status check.
+# The checker and its config come from the BASE branch, so a PR cannot loosen the rules it is judged by.
+name: sdlc-check
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  sdlc-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - name: Load the checker and config from the base branch
+        run: |
+          base="origin/${{ github.base_ref }}"
+          mkdir -p "$RUNNER_TEMP/sdlc"
+          if git cat-file -e "$base:.sdlc/bin/sdlc.ts" 2>/dev/null; then
+            for f in $(git ls-tree --name-only "$base" .sdlc/bin/); do git show "$base:$f" > "$RUNNER_TEMP/sdlc/$(basename "$f")"; done
+            echo "SDLC_CONFIG_FROM=$base" >> "$GITHUB_ENV"
+          else
+            echo "::notice::bootstrap: no sdlc checker on $base yet; using this PR's copy. This PR needs human review."
+            cp .sdlc/bin/* "$RUNNER_TEMP/sdlc/"
+          fi
+          git show "$base:.sdlc/sensors.json" > "$RUNNER_TEMP/sensors.json" 2>/dev/null || cp .sdlc/sensors.json "$RUNNER_TEMP/sensors.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/sensors.json"
+      - name: Check out consumer repos
+        env:
+          TOKEN: ${{ secrets.SDLC_CONSUMERS_TOKEN }}
+        run: |
+          node -e 'for (const c of (JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).consumers || [])) if (c.repo) console.log(c.repo + " " + c.path)' "$RUNNER_TEMP/sensors.json" |
+          while read -r repo dir; do
+            if [ -z "$TOKEN" ]; then echo "::error::consumer $repo needs the SDLC_CONSUMERS_TOKEN secret (contents:read)"; exit 1; fi
+            git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${repo}.git" "$dir"
+          done
+      - name: sdlc check
+        env:
+          CLAUDE_PROJECT_DIR: ${{ github.workspace }}
+        run: node --disable-warning=ExperimentalWarning "$RUNNER_TEMP/sdlc/sdlc.ts" check --at ci --base "origin/${{ github.base_ref }}" ${SDLC_CONFIG_FROM:+--config-from "$SDLC_CONFIG_FROM"}

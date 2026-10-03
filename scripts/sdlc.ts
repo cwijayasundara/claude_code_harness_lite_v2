@@ -288,6 +288,19 @@ function cmdDiff(args: Args): void {
   out(diffs.map(d => `${d.status} ${d.file} (+${d.added.length} -${d.removed.length})`).join('\n') || 'no changes')
 }
 
+// Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
+const VENDORED = ['core', 'model', 'sensors', 'diffs', 'runs', 'check', 'hooks', 'metrics', 'sdlc', 'shell']
+
+function cmdVendor(): void {
+  const bin = path.join(SDLC, 'bin')
+  fs.mkdirSync(bin, { recursive: true })
+  for (const name of VENDORED) fs.copyFileSync(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`), path.join(bin, `${name}.ts`))
+  const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
+  fs.writeFileSync(path.join(bin, 'VERSION'), `${version}\n`)
+  sanctionWrites([...VENDORED.map(n => `.sdlc/bin/${n}.ts`), '.sdlc/bin/VERSION'])
+  out(`vendored sdlc ${version} into .sdlc/bin (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   init: cmdInit,
   new: cmdNew,
@@ -306,6 +319,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   diff: cmdDiff,
   check: cmdCheck,
   'check-file': cmdCheckFile,
+  vendor: () => cmdVendor(),
 }
 
 const [command = '', ...rest] = process.argv.slice(2)

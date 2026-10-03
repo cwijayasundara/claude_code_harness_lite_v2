@@ -16,3 +16,14 @@ jobs:
       - run: npm ci || npm install
       - run: npm run typecheck
       - run: node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts
+  dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - run: npm ci || npm install
+      - run: node --disable-warning=ExperimentalWarning scripts/sdlc.ts check --at ci --base "origin/${{ github.base_ref || 'main' }}"
