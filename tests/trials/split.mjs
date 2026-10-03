@@ -19,17 +19,23 @@ const usageRows = file => {
   }
   return rows
 }
+console.log('estimated split (rates from modelUsage; cache writes weighted 1.25x)')
 const totals = {}
 for (const f of process.argv.slice(2)) {
+  if (!fs.existsSync(f)) { console.error(`split: missing result file ${f}`); continue }
   const res = JSON.parse(fs.readFileSync(f, 'utf8'))
   const rate = Object.fromEntries(Object.entries(res.modelUsage ?? {}).map(([m, u]) => [family(m), u.costUSD / Math.max(1, W(u))]))
   const cost = Object.fromEntries(Object.entries(res.modelUsage ?? {}).map(([m, u]) => [family(m), u.costUSD]))
   const base = findSession(res.session_id)
+  if (!base) console.error(`split: warning: no transcript found for session ${res.session_id} (${f}); subagent split omitted`)
   const subDir = base && path.join(base, 'subagents')
   const sub = {}
   if (subDir && fs.existsSync(subDir)) {
     for (const j of fs.readdirSync(subDir).filter(n => n.endsWith('.jsonl'))) {
-      const type = JSON.parse(fs.readFileSync(path.join(subDir, j.replace(/\.jsonl$/, '.meta.json')), 'utf8')).agentType ?? 'unknown'
+      const metaFile = path.join(subDir, j.replace(/\.jsonl$/, '.meta.json'))
+      let type = 'unknown'
+      if (fs.existsSync(metaFile)) type = JSON.parse(fs.readFileSync(metaFile, 'utf8')).agentType ?? 'unknown'
+      else console.error(`split: warning: missing ${metaFile}; using type unknown`)
       for (const r of usageRows(path.join(subDir, j))) { const k = `${type} ${r.model}`; sub[k] = (sub[k] ?? 0) + r.w * (rate[r.model] ?? 0) }
     }
   }
