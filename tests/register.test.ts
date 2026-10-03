@@ -105,7 +105,7 @@ describe('sdlc mod', () => {
     await $.turn.complete({ ...turn, turnId: 't1' })
     await $.turn.complete({ ...turn, turnId: 't2' })
     expect(world.toasts.length).toBe(1)
-    expect(world.toasts[0]).toContain('/sdlc:handoff')
+    expect(world.toasts[0]).toContain('/compact')
   })
 
   test('waive runs the script as the human only when the person typed it', async ($, on) => {

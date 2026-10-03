@@ -3,3 +3,8 @@ node_modules/
 *.log
 .DS_Store
 .claude/scheduled_tasks.lock
+.sdlc/.baseline
+.sdlc/.gate
+.sdlc/usage.jsonl
+.sdlc/unresolved.json
+.superpowers/

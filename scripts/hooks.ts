@@ -75,7 +75,7 @@ function hookSessionStart(input: HookInput): void {
     'sdlc harness is active in this repo (artifacts in .sdlc/).',
     ROUTING_LINE,
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : 'No active change. Start one with /sdlc:start "<request>".',
-    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /sdlc:handoff. If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
+    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .sdlc/STATE.md). If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
     wikiMissing ? 'No code wiki yet: /sdlc:wiki builds it.' : '',
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
@@ -187,10 +187,6 @@ function hookPreBash(input: HookInput): void {
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands) : null
   if (why) return decide('deny', `${agent} is read-only: ${why}. It reports and never edits; record test runs with sdlc.ts run -- "<declared command>" and leave fixes to the implementer.`)
-  const sleep = /(?:^|[;&|]\s*|\s)(?:sleep|Start-Sleep(?:\s+-Seconds)?)\s+(\d+)/i.exec(cmd)
-  if (sleep && Number(sleep[1]) >= 30) {
-    return decide('deny', 'Do not sleep-poll: background agents and shells notify you when they finish. End the turn or do other useful work.')
-  }
 }
 
 function hookPreEdit(input: HookInput): void {
@@ -250,14 +246,21 @@ function hookPostEdit(input: HookInput): void {
 }
 
 // A stage skill that fails to load leaves the model to improvise. Hand it the exact instructions instead.
+// Skills sdlc delegates to but does not own: what to do when one fails to load.
+const EXTERNAL_FALLBACKS: Record<string, string> = {
+  'superpowers:subagent-driven-development': 'superpowers SDD is unavailable. Continue with the "Large builds: orchestrate" section of '
+    + '/sdlc:build (sdlc:implementer subagents). Say "skill fallback: native build" in your reply.',
+  'code-review': 'The built-in code-review skill is unavailable. Launch sdlc:reviewer (Opus) with the change folder and the diff base '
+    + 'instead, as /sdlc:review step 2 says. Say "skill fallback: sdlc reviewer" in your reply.',
+}
+
 function hookSkillFailed(input: HookInput): void {
   if (!exists(SDLC)) return
   const skill = String(input.tool_input?.skill ?? '')
-  if (skill === 'superpowers:subagent-driven-development') {
+  const external = EXTERNAL_FALLBACKS[skill]
+  if (external) {
     fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
-    const context = 'superpowers SDD is unavailable. Continue with the "Large builds: orchestrate" section of /sdlc:build '
-      + '(sdlc:implementer subagents). Say "skill fallback: native build" in your reply.'
-    return out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
+    return out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: external } }))
   }
   const m = /^sdlc:([a-z-]+)$/.exec(skill)
   if (!m) return

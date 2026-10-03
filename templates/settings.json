@@ -33,6 +33,7 @@
     ]
   },
   "env": {
-    "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true"
+    "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-5-5"
   }
 }

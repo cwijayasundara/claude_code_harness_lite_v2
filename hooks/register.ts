@@ -5,7 +5,6 @@
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
 //  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
-//  - cheap-by-default subagents: a general-purpose spawn with no model named runs on Sonnet
 // Essential gates live in hooks.json settings hooks so they also hold in `claude -p` and CI.
 
 import { atom, read, update } from 'claude-code'
@@ -17,7 +16,6 @@ import { PANE_ID, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 
 const NUDGE_EVERY_PROMPTS = 5
-const DEFAULT_SUBAGENT_MODEL = 'claude-sonnet-5-5'
 
 // Same plugin and key as band.tsx's atoms: the loader reads state refs only where they are declared, so each file declares its own.
 const band = atom({ plugin: 'sdlc', key: 'band' } as const, null as Band | null)
@@ -105,8 +103,7 @@ export const register: Register = on => {
   })
 
   on('agent.spawn', async ($, e, next) => {
-    const routed = !e.model && e.subagentType === 'general-purpose' && (await isInitialised($)) ? { ...e, model: DEFAULT_SUBAGENT_MODEL } : e
-    const result = await next(routed)
+    const result = await next(e)
     if (result.agentId) agentTypes.set(result.agentId, e.subagentType)
     return result
   })
@@ -139,7 +136,7 @@ export const register: Register = on => {
         lastCostUsd = costUsd
         if ((row.ctx as number) > SOFT_CONTEXT && !warnedSoft) {
           warnedSoft = true
-          $.ui.toast(`Context at ${Math.round((row.ctx as number) / 1000)}k: finish this step, then /sdlc:handoff and /clear`)
+          $.ui.toast(`Context at ${Math.round((row.ctx as number) / 1000)}k: finish this step, then /compact`)
         }
       }
       await $.process.run(sdlc($, ['log-usage', JSON.stringify(row)]))
@@ -157,7 +154,7 @@ export const register: Register = on => {
     promptsSinceNudge += 1
     if (promptsSinceNudge < NUDGE_EVERY_PROMPTS) return next(e)
     promptsSinceNudge = 0
-    const note = `sdlc: context is ${Math.round(current.contextTokens / 1000)}k tokens, past the 150k budget. Finish the current step, then run /sdlc:handoff so the person can /clear and resume cheaply.`
+    const note = `sdlc: context is ${Math.round(current.contextTokens / 1000)}k tokens, past the 150k budget. Finish the current step, then run /compact: the active change and its next step live in .sdlc/STATE.md.`
     return next({ ...e, context: [...(e.context ?? []), note] })
   })
 

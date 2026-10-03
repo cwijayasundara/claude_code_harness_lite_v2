@@ -146,7 +146,7 @@ test('scope-drift flags files outside plan ## Files and records ship.json', () =
   assert.deepEqual(ship.drift, ['src/other.js'])
 })
 
-test('pre-bash hook denies model approvals and long sleeps, allows normal commands', () => {
+test('pre-bash hook denies model approvals, allows normal commands (Claude Code itself blocks sleep-polling)', () => {
   run(['init'])
   const approve = JSON.parse(hook('pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts approve a plan' } }).stdout)
   assert.equal(approve.hookSpecificOutput.permissionDecision, 'deny')
@@ -158,9 +158,6 @@ test('pre-bash hook denies model approvals and long sleeps, allows normal comman
   assert.equal(restore.hookSpecificOutput.permissionDecision, 'deny')
   const forged = JSON.parse(hook('pre-bash', { tool_input: { command: `python3 -c "open('.sdlc/approvals.jsonl','a').write('x')"` } }).stdout)
   assert.equal(forged.hookSpecificOutput.permissionDecision, 'deny')
-  const sleep = JSON.parse(hook('pre-bash', { tool_input: { command: 'sleep 120 && cat out.log' } }).stdout)
-  assert.equal(sleep.hookSpecificOutput.permissionDecision, 'deny')
-  assert.equal(hook('pre-bash', { tool_input: { command: 'sleep 2' } }).stdout, '')
   assert.equal(hook('pre-bash', { tool_input: { command: 'npm test' } }).stdout, '')
 })
 

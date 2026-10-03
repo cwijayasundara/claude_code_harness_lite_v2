@@ -29,7 +29,7 @@ export function registerBand(on: On): void {
       <Box>
         <Text dimColor>sdlc · {current.change ?? 'no active change'}{current.stage ? ` · ${current.stage}` : ''} · </Text>
         <Text color={color} dimColor={!color}>ctx {k}k</Text>
-        <Text dimColor> · ${current.sessionUsd.toFixed(2)} session{current.contextTokens >= HARD_CONTEXT ? ' · run /sdlc:handoff' : ''}</Text>
+        <Text dimColor> · ${current.sessionUsd.toFixed(2)} session{current.contextTokens >= HARD_CONTEXT ? ' · run /compact' : ''}</Text>
         <Text color={sensorColor} dimColor={!sensorColor}>{sensorText(current.sensors)} </Text>
         <Button key="hide" label="Hide" onPress={() => update($, isHidden, () => true)} />
       </Box>

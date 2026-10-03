@@ -35,7 +35,6 @@ Requires Claude Code 2.1.287 or later for the mod parts. The skills, agents and 
 | `/sdlc-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
 | `/sdlc:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
 | `/sdlc-status` | Where every change stands. Zero tokens. |
-| `/sdlc:handoff` | Writes a STATE.md of 40 lines or fewer so you can `/clear` and resume cheaply. The band above the prompt turns red at 150k context. |
 | `/sdlc:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
 | `/sdlc:wiki` | Builds or updates the code wiki in `docs/wiki/`. |
 | `/sdlc:metrics [days]` | The playbook's 12 metrics (leading and lagging per stage) plus cost per change, stage and agent. |
@@ -68,13 +67,13 @@ For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you do
 
 | Part | Role |
 |---|---|
-| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
+| `skills/` (14) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
 | `agents/scout.md` | Haiku, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md and plan.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
 | `agents/reviewer.md` | **Opus 5.5**, high effort. One independent review per change, keeping findings at confidence 80 or above. |
 | `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
-| `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, block sleep-polling, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
+| `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
 | `scripts/*.ts` (11) | Zero-dependency Node, no build step: `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `wiki` (surface hash and stale pages), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |

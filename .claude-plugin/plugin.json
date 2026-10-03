@@ -1,6 +1,6 @@
 {
   "name": "sdlc",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Thin AI-native SDLC harness: type x tier routing, file-based artifacts, human gates, cheap-by-default model routing, context budgets and playbook + cost metrics.",
   "author": { "name": "Chaminda Wijayasundara" },
   "license": "MIT",
