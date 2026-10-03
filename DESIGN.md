@@ -331,6 +331,25 @@ Defects these runs exposed:
 4. **Ship did not stage `.sdlc/.gitignore`** in the tier L run. `cmdShip` now stages it, and that fix is what the $0.27 tier M re-ship exercised.
 5. **`/security-review` was skipped** because there was no `origin` remote. The reviewer covered security instead, as the review skill now prescribes.
 
+### Spec 1 trial (2026-10-03)
+
+Live run of `tests/trials/run-trials.sh` at commit 36089a3 on the todo-core sample, change `todo-due-dates`, tier M, models as above. The raw artifacts are kept with the Task 19 working notes.
+
+| Run | Sessions | Cost | Turns | Wall time | Acceptance |
+|---|---|---|---|---|---|
+| Harness A (start and plan) | 1 | $1.100 (Opus $0.792, Sonnet $0.273, Haiku $0.035) | 12 | 281 s | – |
+| Harness B (build, stopped at verify) | 1 | $0.457 (Sonnet only) | 23 | 127 s | 6/6 hidden, not shipped |
+| Harness total | 2 | $1.557 (Opus share 51%) | 35 | 408 s | 6/6, not shipped |
+| Plain Claude Code | 1 | $0.253 | 11 | 44 s | 6/6 |
+
+Targets:
+- **Stop blocks: 0.** `.gate` ends at `{blocks 0, warns 0}` and there is no `unresolved.json`, so the Stop gate raised no false positive. **Harness false positives: 1, so the 0-FP target is MISSED.** `verify-report` returned `result: fail` on correct, green work (41/41 tests green): `planVerification` extracted a command only when the backtick directly followed the bullet marker, and the architect wrote `Label: `cmd`` bullets, so all four plan bullets read as "Not run". The build agent correctly refused to hand-write `verification.md` or edit the approved plan, and stopped. That blocked ship. Fixed in 4cac9b1: the parser takes the first backticked span in command position, ignores prose and harness (`sdlc.ts`) bullets, and `agents/architect.md` now asks for one backticked command per bullet.
+- **Cost: +44% against the $1.08 tier M trial ($1.557), target ≤ 5% MISSED.** It is a lower bound, because review and ship never ran. The Stop gate makes no model calls and blocked nothing, so the delta is not the gate: it is stage A's Opus share (architect and advisor, $0.79; 51% of the total against 39% in the earlier trial).
+- **Median Stop-gate time: 164 ms, target ≤ 15 s met, but n = 1.** The only `runs.jsonl` row matching `.gate.last.at` is `npm test`. One sample is weak evidence.
+- Skill fallbacks: 0.
+- **Interactive checks (spec §15) not performed**: the trial was headless. The mod impact dialog (main-thread and subagent edits), the `sensors ✓/✗` band and the `/sdlc-sensors` pane are pending a human.
+- Observation: `STATE.md` in the trial repo said "No active change" while `sdlc status` showed `todo-due-dates` at verify. See §11.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
@@ -341,6 +360,11 @@ Defects these runs exposed:
   - ~~The verifier must record captured exit codes, never inferred ones.~~ `sdlc.ts run` captures them and `verify-report` generates `verification.md`.
   - ~~Ship should clear `STATE.md` and stage it.~~
   - ~~Skill-load failures in `-p` need a deterministic fallback, or should be reported as an error.~~ A PostToolUseFailure hook hands the model `sdlc.ts skill <name>`.
+- From the 2026-10-03 Spec 1 live trial (§10):
+  - Cost target missed (+44%, a lower bound): find out why stage A spends 51% on Opus, and whether the architect or the advisor is the driver.
+  - Rerun the tier M trial (paid) after the 4cac9b1 parser fix, to confirm it ships end to end and to get a full cost figure including review and ship.
+  - The interactive mod checks still need a human: the impact dialog for main-thread and subagent edits, the `sensors ✓/✗` band, and the `/sdlc-sensors` pane.
+  - `STATE.md` says "No active change" while a change is active. `createChange` and `setActive` rewrite only the `change:` frontmatter and keep the body, and `init` seeds that body with the "No active change." template. Only the model's build and handoff skills ever rewrite the body, and the build stopped at verify without doing so. `status` reads the frontmatter, so it is right; the session-start hook injects the body, so the model is told the opposite. Candidate fix (not made): `setActive` replaces a body that is still the template, and `verify` or `build` writes the slice and stage state mechanically.
 
 ## 12. Spec 1 (quality sensors, v0.2.0): deviations from the plan
 
@@ -357,6 +381,4 @@ Rulings made while building it; the code is the reference.
 - `runCommand` and the test kit strip `NODE_TEST_CONTEXT`, so a consumer's own `node --test` really runs.
 - The mod adds `/sdlc-waive` (sensor names validated against `SENSOR_NAMES`), the `/sdlc-sensors` pane, the band, the impact dialog and per-edit notices. The harness-tamper dialog is intentionally not in the mod: the PreToolUse `ask` reason carries the same detail.
 
-### Spec 1 trial: pending (Task 19b)
-
-The seeded-defect and forgery suite (`scripts/seeded.spec.ts`) is automated and passing. The live measurement (`tests/trials/run-trials.sh`: cost, turns, wall time, Stop blocks and false positives, Stop-gate time, and the manual mod checks) has not been run yet.
+The Spec 1 live trial is recorded in §10.
