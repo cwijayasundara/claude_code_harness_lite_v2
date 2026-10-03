@@ -147,7 +147,8 @@ function proposed(file: string, t: HookInput['tool_input']): string | null {
 // Onboarding creates CLAUDE.md, sensors.json and rules.json. A new one that is no weaker than the defaults needs no
 // prompt; any change to an existing harness file, and any other new harness file (e.g. .claude/settings.json), asks.
 function safeCreation(file: string, rel: string, t: HookInput['tool_input']): boolean {
-  if (exists(file)) return false
+  // First-time only: absent on disk AND in HEAD, so deleting a committed harness file cannot reopen it.
+  if (exists(file) || git(['cat-file', '-e', `HEAD:${toPosix(rel)}`]) !== null) return false
   const key = rel.toLowerCase()
   if (key === 'claude.md') return true
   const after = proposed(file, t)

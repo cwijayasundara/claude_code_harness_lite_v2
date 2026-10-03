@@ -54,6 +54,9 @@ test('creating a missing harness file (onboarding) needs no prompt; editing an e
   write(repo, 'CLAUDE.md', '# x')
   assert.equal(decision('.sdlc/sensors.json'), 'ask')
   assert.equal(decision('CLAUDE.md'), 'ask')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'onboarded')
+  fs.rmSync(path.join(repo, 'CLAUDE.md'))
+  assert.equal(decision('CLAUDE.md'), 'ask', 'a committed harness file deleted mid-session still asks on re-creation')
 })
 
 test('editing a protected harness file asks the person, naming what gets weaker', () => {
