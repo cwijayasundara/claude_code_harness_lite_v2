@@ -194,6 +194,25 @@ test('post-edit blocks secrets and code-heavy plans with exit 2', () => {
   assert.match(plan.stderr, /not implementation code/)
 })
 
+test('F1: a new change replaces the template STATE body; a written body is kept', () => {
+  run(['init'])
+  run(['new', 'first', '--type', 'chore', '--tier', 'S'])
+  const state = fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8')
+  assert.doesNotMatch(state, /No active change/)
+  assert.match(state, /Active change: first/)
+  const ctx = JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext
+  assert.doesNotMatch(ctx, /No active change/)
+  fs.writeFileSync(path.join(repo, '.sdlc/STATE.md'), '---\nchange: first\n---\n# State\n\nslice 2 of 3 done\n')
+  run(['new', 'second', '--type', 'chore', '--tier', 'S'])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /slice 2 of 3 done/)
+})
+
+test('session-start tells the model that sdlc routes work, not superpowers', () => {
+  run(['init'])
+  const ctx = JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext
+  assert.match(ctx, /use superpowers skills only when an sdlc skill names one/)
+})
+
 test('session-start injects the active change and next command', () => {
   run(['new', 'add-login', '--type', 'bugfix', '--tier', 'S'])
   const ctx = JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext

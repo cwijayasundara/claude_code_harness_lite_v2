@@ -56,6 +56,8 @@ function guidesFor(rel: string, session: string): string | undefined {
   return fresh.map(g => g.body).join('\n\n')
 }
 
+export const ROUTING_LINE = 'sdlc routes all work in this repo: start with /sdlc:start; use superpowers skills only when an sdlc skill names one.'
+
 function hookSessionStart(input: HookInput): void {
   if (!exists(SDLC)) return
   if (input.source === 'compact' || input.source === 'clear') {
@@ -69,6 +71,7 @@ function hookSessionStart(input: HookInput): void {
   const state = frontmatter(read(STATE)).body.trim().split('\n').slice(0, 15).join('\n')
   const context = [
     'sdlc harness is active in this repo (artifacts in .sdlc/).',
+    ROUTING_LINE,
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : 'No active change. Start one with /sdlc:start "<request>".',
     `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to sdlc:scout and slices to sdlc:implementer; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /sdlc:handoff. If a /sdlc:* skill fails to load, run \`node "${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts" skill <stage> <slug>\` and follow it exactly.`,
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
