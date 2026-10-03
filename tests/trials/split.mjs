@@ -42,7 +42,9 @@ for (const f of process.argv.slice(2)) {
   for (const [k, v] of Object.entries(sub)) totals[k] = (totals[k] ?? 0) + v
   for (const [m, c] of Object.entries(cost)) {
     const subs = Object.entries(sub).filter(([k]) => k.endsWith(` ${m}`)).reduce((n, [, v]) => n + v, 0)
-    const k = m === 'opus' ? 'main (advisor) opus' : `main ${m}`
+    // Main-thread Opus is the advisor only if the main transcript shows Opus calls; otherwise it is spend no transcript explains.
+    const mainOpus = base && fs.existsSync(`${base}.jsonl`) && usageRows(`${base}.jsonl`).some(r => r.model === 'opus')
+    const k = m === 'opus' ? (mainOpus ? 'main (advisor) opus' : 'unattributed opus') : `main ${m}`
     totals[k] = (totals[k] ?? 0) + Math.max(0, c - subs)
   }
 }

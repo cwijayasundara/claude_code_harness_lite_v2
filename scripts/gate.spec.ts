@@ -189,6 +189,16 @@ test('a vibe-coded turn with no active change records an ad-hoc change with a co
   assert.match(status, /▶ adhoc-\d{8}-\d{4}\s+chore\s+M/)
 })
 
+test('a turn whose source changes were all committed (a ship) records no ad-hoc change', () => {
+  sdlc(repo, ['init'])
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'init sdlc')
+  hook(repo, 'prompt-submit', {})
+  for (const f of ['a', 'b', 'c', 'd', 'e']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'shipped')
+  stop()
+  assert.doesNotMatch(sdlc(repo, ['status']).stdout, /adhoc-/)
+})
+
 test('SubagentStop judges only files that agent edited, and runs no project commands', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').writeFileSync(\'ran.txt\', \'1\')"' } }))
