@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
-  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, frontmatter, parseArgs, optString, isChangeType, isTier,
+  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
   ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, createChange, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
@@ -109,25 +109,47 @@ function cmdScopeDrift(args: Args): void {
 
 type ShippedRepo = { name: string; branch: string; commit: string }
 
-// Consumers with uncommitted work in this change: each must be planned and green before anything is committed.
-function changedConsumers(slug: string, config: SensorConfig): { name: string; dir: string; test?: string }[] {
-  const planned = planFiles(slug)
-  return config.consumers
-    .map(c => ({ name: c.name, dir: path.resolve(ROOT, c.path), test: c.test, rel: toPosix(path.normalize(c.path)).replace(/\/+$/, '') }))
-    .filter(c => exists(c.dir) && Boolean(gitIn(c.dir, ['status', '--porcelain'])))
-    .map(c => {
-      if (!planned.some(p => p.startsWith(c.rel + '/'))) fail(`${c.name} has uncommitted changes but is not in ${slug}/plan.md ## Files`)
-      return c
-    })
+type Consumer = { name: string; dir: string; test?: string; files: string[]; branch: string | null }
+
+// Changed paths (untracked included) in a checkout, relative to it.
+function dirtyPaths(dir: string): string[] {
+  const parts = (gitIn(dir, ['status', '--porcelain', '-uall', '-z']) ?? '').split('\0').filter(Boolean)
+  const files: string[] = []
+  for (let i = 0; i < parts.length; i++) {
+    const row = parts[i] ?? ''
+    files.push(row.replace(/^[ MADRCUT?!]{1,2} /, '')) // gitIn trims, so the first row may have lost a leading space
+    if (/^[RC]/.test(row)) i++ // a rename/copy row is followed by its source path
+  }
+  return files
 }
 
-function commitConsumer(c: { name: string; dir: string }, slug: string, message: string): ShippedRepo {
-  const branch = `sdlc/${slug}`
-  const head = gitIn(c.dir, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  if (head === 'main' || head === 'master') {
-    if (gitIn(c.dir, ['checkout', '-b', branch]) === null) fail(`could not create ${branch} in ${c.name}`)
+// Consumers with uncommitted work in this change: every changed file must be planned before anything runs or is committed.
+function changedConsumers(slug: string, config: SensorConfig): Consumer[] {
+  const planned = planFiles(slug)
+  const found: Consumer[] = []
+  for (const c of config.consumers) {
+    const dir = path.resolve(ROOT, c.path)
+    if (!exists(dir)) continue
+    const dirty = dirtyPaths(dir)
+    if (!dirty.length) continue
+    const rel = toPosix(path.normalize(c.path)).replace(/\/+$/, '')
+    const stray = dirty.filter(f => !isPlanned(`${rel}/${f}`, planned))
+    if (stray.length) fail(`${c.name} has changes outside ${slug}/plan.md ## Files: ${stray.join(', ')}`)
+    found.push({ name: c.name, dir, test: c.test, files: dirty, branch: gitIn(dir, ['rev-parse', '--abbrev-ref', 'HEAD']) })
   }
-  gitIn(c.dir, ['add', '-A'])
+  return found
+}
+
+const branchExists = (dir: string, branch: string): boolean => gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) !== null
+const onTrunk = (b: string | null): boolean => b === 'main' || b === 'master'
+
+function commitConsumer(c: Consumer, slug: string, message: string): ShippedRepo {
+  const branch = `sdlc/${slug}`
+  if (onTrunk(c.branch)) {
+    if (gitIn(c.dir, ['checkout', '-b', branch]) === null) fail(`could not create ${branch} in ${c.name}`)
+  } else process.stderr.write(`${c.name} is on ${c.branch}, committing there, not ${branch}\n`)
+  if (!c.test) process.stderr.write(`${c.name} has no test declared; committed unverified\n`)
+  if (gitIn(c.dir, ['add', '--', ...c.files]) === null) fail(`git add failed in ${c.name}`)
   const body = `${message}\n\nPart of ${path.basename(ROOT)}@${branch}`
   // The consumer's own identity first; a checkout with none configured gets a neutral one.
   const ok = gitIn(c.dir, ['commit', '-q', '-m', body]) !== null
@@ -159,19 +181,30 @@ function cmdShip(args: Args): void {
   }
 
   const consumers = changedConsumers(slug, config)
+  const trunk = onTrunk(head)
+  if (trunk && branchExists(ROOT, `sdlc/${slug}`)) fail(`not shipping: branch sdlc/${slug} already exists in this repo`)
+  for (const c of consumers) {
+    if (onTrunk(c.branch) && branchExists(c.dir, `sdlc/${slug}`)) fail(`not shipping: branch sdlc/${slug} already exists in ${c.name}`)
+  }
+  if (!git(['status', '--porcelain'])) fail('not shipping: nothing to commit in this repo')
   for (const c of consumers) {
     if (!c.test) continue
     const row = runCommand(c.test, { cwd: c.dir })
     recordRun(slug, { ...row, source: 'ship' })
     if (row.exit !== 0) fail(`not shipping: ${c.name} tests failed (exit ${row.exit}):\n${row.tail}`)
   }
-  const repos = consumers.map(c => commitConsumer(c, slug, message))
+  const shipFile = path.join(CHANGES, slug, 'ship.json')
+  const repos: ShippedRepo[] = []
+  const record = (): void => fs.writeFileSync(shipFile, JSON.stringify({ at: now(), base, changed: r.changed.length, drift: [], matchRatio: 1, repos }, null, 2) + '\n')
+  for (const c of consumers) {
+    repos.push(commitConsumer(c, slug, message))
+    record() // a later failure still leaves what was committed on record
+  }
 
-  if (head === 'main' || head === 'master') {
+  if (trunk) {
     if (git(['checkout', '-b', `sdlc/${slug}`]) === null) fail(`could not create branch sdlc/${slug}`)
   }
-  const shipFile = path.join(CHANGES, slug, 'ship.json')
-  fs.writeFileSync(shipFile, JSON.stringify({ at: now(), base, changed: r.changed.length, drift: [], matchRatio: 1, repos }, null, 2) + '\n')
+  record()
   ensureGitignore()
   const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   clearState(slug)

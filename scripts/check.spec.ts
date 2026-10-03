@@ -448,4 +448,41 @@ test('ship refuses and commits nothing when a changed consumer\'s tests fail', (
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /checkout-service tests failed/)
   assert.equal(gitIn(repo, 'rev-parse', 'HEAD'), head)
+  assert.equal(gitIn(path.resolve(repo, rel), 'branch', '--list', 'sdlc/rate'), '')
+  assert.notEqual(gitIn(path.resolve(repo, rel), 'status', '--porcelain'), '')
+})
+
+function shipSetup(name: string): string {
+  const rel = consumerRepo(name, 'src/cart.ts', 'x\n')
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] })
+  sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
+  write(repo, 'src/app.js', 'export const a = 12\n')
+  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
+  write(path.resolve(repo, rel), 'src/cart.ts', 'y\n')
+  verified(repo, 'rate')
+  return rel
+}
+
+test('ship refuses when a consumer has an unplanned change, and commits nothing anywhere', () => {
+  const rel = shipSetup('checkout4')
+  write(path.resolve(repo, rel), 'scratch.txt', 'tmp\n')
+  const head = gitIn(repo, 'rev-parse', 'HEAD')
+  const chead = gitIn(path.resolve(repo, rel), 'rev-parse', 'HEAD')
+  const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: x'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /checkout-service has changes outside rate\/plan\.md ## Files: scratch\.txt/)
+  assert.equal(gitIn(repo, 'rev-parse', 'HEAD'), head)
+  assert.equal(gitIn(path.resolve(repo, rel), 'rev-parse', 'HEAD'), chead)
+})
+
+test('ship refuses before committing anything when sdlc/<slug> already exists in a consumer', () => {
+  const rel = shipSetup('checkout5')
+  const cdir = path.resolve(repo, rel)
+  gitIn(cdir, 'branch', 'sdlc/rate')
+  const chead = gitIn(cdir, 'rev-parse', 'HEAD')
+  const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: x'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /sdlc\/rate already exists in checkout-service/)
+  assert.equal(gitIn(cdir, 'rev-parse', 'HEAD'), chead)
+  assert.notEqual(gitIn(cdir, 'status', '--porcelain'), '')
 })
