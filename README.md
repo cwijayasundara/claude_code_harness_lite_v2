@@ -90,5 +90,5 @@ npm run typecheck:mod                        # the mod; needs generated types, s
 claude plugin test .                         # mod tests
 npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
-tests/trials/run-trials.sh [M|L|I] [outdir]   # LIVE and PAID: M (about $1), L (three arms, about $8), I (integration, about $1)
+tests/trials/run-trials.sh [M|L|I|S] [outdir] # LIVE and PAID: M (about $1), L (three arms, about $8), I (integration, about $1), S (greenfield, bugfix and refactor scenarios, about $4)
 ```

@@ -425,6 +425,27 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 | 3 | 7/8 | 7/8 | A wiki page had no `path:line` citations (the prompt rule did not hold; `wiki stamp` now enforces it); the branch check was too strict |
 | 4 | **8/8** | **8/8** | Clean. Cost $0.74 and took 2 min 19 s (onboard $0.33/53 s; change $0.42/86 s) |
 
+### Scenario suite and tier L rerun (2026-10-03, v0.3.4)
+
+`tests/trials/run-trials.sh S` runs three scenarios in parallel. Each is driven to ship, the operator approves the person's gates, and `assert-scenarios.mjs` checks the result.
+
+| Scenario | Checks | Cost | Time | Path taken |
+|---|---|---|---|---|
+| Greenfield: empty repo, onboard scaffold, first public API (`convert`) | 12/12 | $2.16 | 432 s | spec and plan gates approved; architect wrote both |
+| Tier L bugfix: SAVE20 charges 2%, a payments bug | 11/11 | $0.93 | 177 s | diagnose wrote the failing test and the root cause, stopped at the plan gate, then fixed after approval |
+| Tier M refactor: move discount codes to `discounts.js` | 11/11 | $0.43 | 90 s | no gate; behaviour stayed green on the base |
+
+Every scenario shipped on a branch with a clean tree, an sdlc-generated passing verification and a recorded red run.
+
+Tier L rerun on todo-core, after the thinning:
+
+| Run | Cost | Time | Hidden tests | Notes |
+|---|---|---|---|---|
+| Harness (native) | $2.50 | 531 s | 5/5 | shipped |
+| Plain Claude Code | $0.31 | 65 s | 4/5 | the empty-key auth bypass, for the third run in a row |
+
+Harness cost split: main thread Sonnet $1.29, unattributed Opus $0.40, implementer $0.32, architect $0.28. The main-thread orchestration is now the largest cost on tier L.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
