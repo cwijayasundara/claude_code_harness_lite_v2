@@ -34,7 +34,7 @@ If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:st
    1. Write a minimal `plan.md` of 15 lines or fewer, holding only `## Files` and `## Verification`.
    2. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record. Implement, and run the targeted tests quietly. Stay inside `## Files`.
    3. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then generate `verification.md` with `sdlc.ts verify-report <slug>`. Never write it by hand.
-   4. The next command is then `/sdlc:ship <slug>`, which includes the review pass for tier S. Keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop.
+   4. The next command is then `/sdlc:ship <slug>`; the review runs on the PR. Keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop.
 6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates:
    - Tier S and M: no human gate; review runs on the PR (`templates/sdlc-review.yml`).
    - Tier L or greenfield: the person approves the spec and the plan.

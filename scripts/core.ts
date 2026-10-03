@@ -99,7 +99,7 @@ export const PATHS: Record<ChangeType, Stage[]> = {
 // Human gates per tier; greenfield is always gated like L.
 // Tier M has no human gate: contract, data and security changes are tier L (v0.3 trial: gates by risk, not size).
 export const GATES: Record<Tier, GatedStage[]> = { S: [], M: [], L: ['spec', 'plan'] }
-// Tier S is the fast path: no spec, and review folds into ship (one /code-review pass).
+// Tier S is the fast path: no spec, and review runs on the PR (templates/sdlc-review.yml).
 export const SKIPPED_FOR_S = new Set<Stage>(['spec', 'review'])
 // Tier M review runs on the PR (templates/sdlc-review.yml), not as an in-session stage.
 export const SKIPPED_FOR_M = new Set<Stage>(['spec', 'review'])

@@ -6,7 +6,7 @@ export type Severity = 'block' | 'warn'
 // Every sensor name a Finding can carry; /sdlc-waive accepts exactly these (a test keeps this in step with the sources).
 export const SENSOR_NAMES = [
   'test-tamper', 'suppression', 'layering', 'size', 'secrets', 'rules', 'contract-impact', 'harness-tamper',
-  'traceability', 'red-proof', 'adhoc', 'commands', 'config', 'wiki-stale',
+  'traceability', 'red-proof', 'adhoc', 'commands', 'config', 'tier', 'wiki-stale',
 ]
 
 export type Finding = { sensor: string; severity: Severity; file?: string; line?: number; message: string; fix: string; labels?: string[] }

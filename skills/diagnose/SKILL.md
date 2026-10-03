@@ -28,4 +28,4 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 
 Three failed hypotheses means consult the advisor or the person. Do not keep guessing.
 
-End with: `Next: /sdlc:review $0` if verification passed, otherwise state what failed. If it passed, then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
+End with: `Next: <command from status>` if verification passed, otherwise state what failed. If it passed, then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.

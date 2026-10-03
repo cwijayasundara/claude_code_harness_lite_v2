@@ -594,3 +594,21 @@ test('a big diff blocks in CI unless the person approved the change plan; then i
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'approved')
   assert.deepEqual(size(), ['warn'])
 })
+
+test('a tier S or M change that touches a contract or a risky path blocks at CI until it is re-tiered to L', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  gitIn(repo, 'checkout', '-qb', 'risky')
+  sdlc(repo, ['new', 'small-auth', '--type', 'feature', '--tier', 'M'])
+  write(repo, 'src/auth/keys.js', 'export const k = 1\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'work')
+  type Report = { findings: { sensor: string; severity: string; file?: string }[] }
+  const report = (): Report => JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json']).stdout) as Report
+  const tier = () => report().findings.filter(f => f.sensor === 'tier')
+  assert.deepEqual(tier().map(f => [f.severity, f.file]), [['block', 'src/auth/keys.js']])
+  const intent = path.join(repo, '.sdlc/changes/small-auth/intent.md')
+  fs.writeFileSync(intent, fs.readFileSync(intent, 'utf8').replace('tier: M', 'tier: L'))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'retier')
+  assert.deepEqual(tier(), [])
+})

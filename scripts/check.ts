@@ -263,6 +263,18 @@ function unrecorded(diffs: FileDiff[], config: SensorConfig): Finding[] {
   return [{ sensor: 'adhoc', severity: 'block', message: `no sdlc change record for a tier ${tier} diff (${diffs.filter(d => isSource(d.file, config)).length} source file(s))`, fix: 'commit the change folder with the PR (git add .sdlc), or run /sdlc:start to adopt the work: it writes the plan and applies the tier\'s gates' }]
 }
 
+// Tier S and M skip the human gates, so a diff that reaches contracts or risky paths must be tier L.
+const RISKY = ['**/auth/**', '**/auth.*', '**/security/**', '**/payments/**', '**/billing/**', '**/migrations/**']
+function tierFindings(slugs: string[], diffs: FileDiff[], config: SensorConfig): Finding[] {
+  const low = slugs.filter(s => loadChange(s).tier !== 'L')
+  const hits = diffs.filter(d => matchesAny(d.file, [...config.contracts, ...RISKY]))
+  return low.flatMap(slug => hits.map(d => ({
+    sensor: 'tier', severity: 'block' as const, file: d.file,
+    message: `${slug} is tier ${loadChange(slug).tier} but changes a contract or risky path`,
+    fix: `set tier: L in ${slug}/intent.md (spec and plan gates), or the person waives with /sdlc-waive tier <file> <reason>`,
+  })))
+}
+
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
   const pattern = withoutFixtures(diffs, config)
@@ -283,6 +295,7 @@ export function runChecks(i: CheckInput): CheckResult {
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.point === 'ship' || i.point === 'ci') findings.push(...wikiFindings())
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
+  if (i.point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   const result = applyWaivers(findings, i.slugs)
   logRuleFires(result.findings, i.point)

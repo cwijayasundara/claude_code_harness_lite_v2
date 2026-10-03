@@ -130,7 +130,10 @@ export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<str
   }
   const total = counted.reduce((n, d) => n + d.added.length + d.removed.length, 0)
   if (total > cfg.limits.diffLines && point !== 'edit') {
-    findings.push({ sensor: 'size', severity: point === 'stop' ? 'warn' : 'block', message: `diff is ${total} changed lines (limit ${cfg.limits.diffLines})`, fix: 'ship it as smaller changes, or the person records an override with /sdlc-waive size * <reason>' })
+    findings.push({
+      sensor: 'size', severity: point === 'stop' ? 'warn' : 'block', message: `diff is ${total} changed lines (limit ${cfg.limits.diffLines})`,
+      fix: 'ship it as smaller changes, or the person approves the plan (/sdlc-approve <slug> plan) or waives with /sdlc-waive size * <reason>',
+    })
   }
   if (point !== 'edit') {
     for (const d of counted) {

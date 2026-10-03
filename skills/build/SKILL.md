@@ -16,7 +16,7 @@ Tier S, and tier M with 3 or fewer slices and 8 or fewer files. Subagent start-u
 1. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"`. Implement; run targeted tests quietly. Stay inside `## Files`.
 2. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then `sdlc.ts verify-report $0`. Never write verification.md by hand.
 
-Next: tier S `/sdlc:ship $0` (includes review); tier M `/sdlc:review $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
+Next: `/sdlc:ship $0` (tier S and M review runs on the PR). Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
 
 ## Tier L and greenfield, opt-in: superpowers SDD
 Use this only when `.sdlc/sensors.json` has `"build": "sdd"` and `superpowers:subagent-driven-development` is in your available skills; otherwise use the next section. SDD costs several times the tokens of the native build, so it suits plans with many independent slices.
@@ -30,7 +30,7 @@ Use this only when `.sdlc/sensors.json` has `"build": "sdd"` and `superpowers:su
 3. Next: `/sdlc:verify $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
 
 ## Large builds: orchestrate
-Tier M with more than 3 slices or 8 files, or tier L without superpowers. You orchestrate; subagents write the code.
+Tier M with more than 3 slices or 8 files, or tier L without `"build": "sdd"`. You orchestrate; subagents write the code.
 1. Read `plan.md` (or `intent.md` for a chore). Track slices in `.sdlc/STATE.md`, never in `plan.md` (that makes its approval stale).
 2. For each remaining slice, launch one `sdlc:implementer` with a brief of 60 lines or fewer: slice goal, owned files, interface sketch, acceptance tests with B-numbers, the fast test command, relevant CLAUDE.md conventions and `.sdlc/guides/` names, and the rule that red runs go through `sdlc.ts run --expect-fail`. Never paste whole files. Parallel (at most 3, one message) only when file sets do not overlap. Never `sleep` or poll.
 3. After each report: **done**, update STATE.md; **blocked** (or the end-of-turn gate listed unfixed findings), clarify once and relaunch, or ask the person if scope changes. **Blocked twice** on one slice: consult the advisor or the person.
