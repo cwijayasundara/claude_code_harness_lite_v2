@@ -46,14 +46,14 @@ export function recordRun(slug: string, row: RunRow): void {
 
 const norm = (cmd: string): string => cmd.trim().replace(/\s+/g, ' ')
 
-// The verdict is the latest explicit run of each plan ## Verification command (or, when the plan lists none,
-// the latest explicit run: the last command you ran is the one you stand behind). Expect-fail rows are evidence of red, and gate/ship rows are the sensors' own runs:
+// The verdict is the latest explicit run of each plan ## Verification command (or of every explicit command
+// when the plan lists none). Expect-fail rows are evidence of red, and gate/ship rows are the sensors' own runs:
 // neither is a verdict, so a known-red lint at Stop or an abandoned exploratory run cannot poison verification.
 export function renderVerification(rows: RunRow[], digest: string, planned: string[] = []): { text: string; result: 'pass' | 'fail' } {
   const latest = new Map<string, RunRow>()
-  for (const r of rows) if (!r.expectFail && !r.source) { latest.delete(norm(r.cmd)); latest.set(norm(r.cmd), r) }
+  for (const r of rows) if (!r.expectFail && !r.source) latest.set(norm(r.cmd), r)
   const wanted = planned.map(norm)
-  const verdicts = wanted.length ? wanted.flatMap(c => latest.get(c) ?? []) : [...latest.values()].slice(-1)
+  const verdicts = wanted.length ? wanted.flatMap(c => latest.get(c) ?? []) : [...latest.values()]
   const notRun = wanted.filter(c => !latest.has(c))
   const result = verdicts.length > 0 && notRun.length === 0 && verdicts.every(r => r.exit === 0) ? 'pass' : 'fail'
   const fence = (t: string): string => '```\n' + t + '\n```'

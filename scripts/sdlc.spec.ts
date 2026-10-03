@@ -254,15 +254,23 @@ test('run records exit codes; verify-report generates verification.md; a hand-wr
 
   const red = run(['run', '--expect-fail', '--', 'node -e "process.exit(3)"'])
   assert.equal(red.code, 0)
-  const bad = run(['run', '--', 'node -e "process.exit(2)"'])
+  const TOGGLE = `node -e "process.exit(require('fs').existsSync('ok') ? 0 : 2)"`
+  const bad = run(['run', '--', TOGGLE])
   assert.equal(bad.code, 2)
   const rows = fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/runs.jsonl'), 'utf8').trim().split('\n').map(r => JSON.parse(r))
   assert.deepEqual(rows.map(r => [r.exit, Boolean(r.expectFail)]), [[3, true], [2, false]])
 
+  const report = () => fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8')
   run(['verify-report', 'tiny'])
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8'), /result: fail/)
+  assert.match(report(), /result: fail/)
   run(['run', '--', 'node -e "process.exit(0)"'])
   run(['verify-report', 'tiny'])
+  assert.match(report(), /result: fail/, 'a different passing command must not mask a failing one')
+
+  write('ok', '1')
+  run(['run', '--', TOGGLE])
+  run(['verify-report', 'tiny'])
+  assert.match(report(), /result: pass/)
   assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
 
   run(['run', '--', 'node -e "process.exit(1)"'])
