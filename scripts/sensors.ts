@@ -155,3 +155,48 @@ export function rulesSensor(diffs: FileDiff[], rules: { id: string; pattern: str
   }
   return findings
 }
+
+// Rename and drop statements whose old name lives only in added lines of a new migration file.
+export const RETIRE_PATTERNS: RegExp[] = [
+  /\bRENAME\s+COLUMN\s+["'`]?(\w+)["'`]?\s+TO\b/i,
+  /\bDROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/i,
+  /\bALTER\s+TABLE\s+["'`]?(\w+)["'`]?\s+RENAME\s+TO\b/i,
+  /\brename_column\s*\(?\s*:\w+\s*,\s*:(\w+)/,
+  /\bremove_column\s*\(?\s*:\w+\s*,\s*:(\w+)/,
+  /\bRenameField\s*\([^)]*old_name\s*=\s*["'](\w+)["']/,
+  /\bRemoveField\s*\([^)]*name\s*=\s*["'](\w+)["']/,
+  /\brenameColumn\s*\(\s*["'](\w+)["']/,
+  /\bdropColumn\s*\(\s*["'](\w+)["']/,
+]
+
+const STOP_WORDS = new Set([
+  'id', 'name', 'type', 'string', 'number', 'integer', 'int', 'value', 'data', 'text', 'true', 'false', 'null', 'table', 'column',
+  'create', 'alter', 'drop', 'not', 'default', 'primary', 'key', 'references', 'varchar', 'numeric', 'serial', 'boolean', 'timestamp',
+  'message', 'service', 'rpc', 'returns', 'optional', 'required', 'repeated', 'import', 'package', 'syntax', 'option', 'enum', 'oneof',
+  'properties', 'items', 'object', 'array', 'description', 'format', 'schema', 'paths', 'get', 'post', 'put', 'patch', 'delete',
+])
+const TOKEN = /[A-Za-z_][A-Za-z0-9_]{2,}/g
+const tokens = (lines: { text: string }[]): Set<string> => new Set(lines.flatMap(l => l.text.match(TOKEN) ?? []))
+const MAX_IDS = 50
+
+export function retiredIdentifiers(diffs: FileDiff[], cfg: SensorConfig, producerContractText: string): string[] {
+  const stillThere = new Set(producerContractText.match(TOKEN) ?? [])
+  const ids = new Set<string>()
+  for (const d of diffs.filter(f => matchesAny(f.file, cfg.contracts) && !f.binary)) {
+    const added = tokens(d.added)
+    for (const t of tokens(d.removed)) if (!added.has(t) && !stillThere.has(t)) ids.add(t)
+    for (const l of d.added) for (const re of RETIRE_PATTERNS) {
+      const m = re.exec(l.text)
+      if (m?.[1]) ids.add(m[1])
+    }
+  }
+  return [...ids].filter(t => !STOP_WORDS.has(t.toLowerCase()) && !/^\d/.test(t)).slice(0, MAX_IDS)
+}
+
+export function contractsFromPlan(planText: string): string[] {
+  const section = /^##\s+Contracts\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(planText)?.[1] ?? ''
+  return section
+    .split('\n')
+    .map(row => /^\s*[-*]\s*(?:rename|remove|drop|retire)\s+`([A-Za-z_]\w*)`/i.exec(row)?.[1])
+    .filter((id): id is string => Boolean(id))
+}

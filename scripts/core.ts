@@ -13,11 +13,11 @@ export { globToRegex }
 export type ChangeType = 'greenfield' | 'feature' | 'bugfix' | 'incident' | 'refactor' | 'migration' | 'chore' | 'spike'
 export type Tier = 'S' | 'M' | 'L'
 export type Stage = 'intent' | 'spec' | 'plan' | 'build' | 'diagnose' | 'verify' | 'review' | 'ship' | 'notes'
-export type GatedStage = 'intent' | 'spec' | 'plan'
+export type GatedStage = 'intent' | 'spec' | 'plan' | 'impact'
 export type ApprovalState = 'approved' | 'stale' | 'missing'
 export type Fields = Record<string, string>
 
-export type Next = { stage: Stage; kind: 'work' } | { stage: Stage; kind: 'approve'; state: ApprovalState }
+export type Next = { stage: Stage; kind: 'work' } | { stage: Stage; kind: 'approve'; state: ApprovalState; gate: GatedStage }
 
 export type Change = {
   slug: string
@@ -101,6 +101,10 @@ export const GATES: Record<Tier, GatedStage[]> = { S: [], M: ['plan'], L: ['spec
 export const SKIPPED_FOR_S = new Set<Stage>(['spec', 'review'])
 export const SKIPPED_FOR_M = new Set<Stage>(['spec'])
 export const ARTIFACTS: Partial<Record<Stage, string>> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', notes: 'notes.md' }
+
+export const APPROVAL_ARTIFACTS: Record<GatedStage, string> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', impact: 'plan.md' }
+export type ImpactHit = { consumer: string; file: string; line: number; id: string }
+export type Impact = { at: string; ids: string[]; hits: ImpactHit[]; missing: string[] }
 
 export const isChangeType = (v: string | undefined): v is ChangeType => v !== undefined && v in PATHS
 export const isTier = (v: string | undefined): v is Tier => v !== undefined && v in GATES
@@ -190,6 +194,20 @@ export const optString = (args: Args, key: string): string | undefined => {
 }
 // ---------- changes ----------
 
+export function approvalOf(slug: string, gate: GatedStage): ApprovalState {
+  const latest = readJsonl<Approval>(APPROVALS).filter(a => a.slug === slug && a.stage === gate).at(-1)
+  if (!latest) return 'missing'
+  return latest.digest === sha(read(path.join(CHANGES, slug, APPROVAL_ARTIFACTS[gate]))) ? 'approved' : 'stale'
+}
+
+export function readImpact(slug: string): Impact | null {
+  try {
+    return JSON.parse(read(path.join(CHANGES, slug, 'impact.json'))) as Impact
+  } catch {
+    return null
+  }
+}
+
 export function listChanges(): string[] {
   if (!exists(CHANGES)) return []
   return fs
@@ -221,13 +239,7 @@ export function loadChange(slug: string): Change {
   if (tier === 'S' && type !== 'greenfield') stages = stages.filter(s => !SKIPPED_FOR_S.has(s))
   if (type === 'feature' && tier === 'M') stages = stages.filter(s => !SKIPPED_FOR_M.has(s))
   const gates = type === 'greenfield' ? GATES.L : GATES[tier]
-  const approvals = readJsonl<Approval>(APPROVALS).filter(a => a.slug === slug)
-
-  const approvalState = (stage: Stage): ApprovalState => {
-    const latest = approvals.filter(a => a.stage === stage).at(-1)
-    if (!latest) return 'missing'
-    return latest.digest === sha(read(path.join(dir, ARTIFACTS[stage] ?? ''))) ? 'approved' : 'stale'
-  }
+  const approvalState = (gate: GatedStage): ApprovalState => approvalOf(slug, gate)
   const isDone = (stage: Stage): boolean => {
     switch (stage) {
       case 'build':
@@ -255,8 +267,12 @@ export function loadChange(slug: string): Change {
       next = { stage, kind: 'work' }
       break
     }
-    if ((gates as Stage[]).includes(stage) && approvalState(stage) !== 'approved') {
-      next = { stage, kind: 'approve', state: approvalState(stage) }
+    if ((gates as Stage[]).includes(stage) && approvalState(stage as GatedStage) !== 'approved') {
+      next = { stage, kind: 'approve', state: approvalState(stage as GatedStage), gate: stage as GatedStage }
+      break
+    }
+    if (stage === 'plan' && readImpact(slug)?.hits.length && approvalState('impact') !== 'approved') {
+      next = { stage, kind: 'approve', state: approvalState('impact'), gate: 'impact' }
       break
     }
   }
@@ -268,7 +284,8 @@ export function nextCommand(change: Change): string {
   if (!next) return 'done: nothing left for this change'
   if (next.kind === 'approve') {
     const why = next.state === 'stale' ? ' (approval is stale: the artifact changed after it was approved)' : ''
-    return `human gate: review ${change.slug}/${ARTIFACTS[next.stage]}, then run /sdlc-approve ${change.slug} ${next.stage}${why}`
+    const what = next.gate === 'impact' ? `the cross-repo impact in ${change.slug}/impact.json and plan.md` : `${change.slug}/${APPROVAL_ARTIFACTS[next.gate]}`
+    return `human gate: review ${what}, then run /sdlc-approve ${change.slug} ${next.gate}${why}`
   }
   if (next.stage === 'intent') return `/sdlc:start ${change.slug}`
   if (next.stage === 'notes') return `/sdlc:start ${change.slug} (spike: answer in notes.md)`

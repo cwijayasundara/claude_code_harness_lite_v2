@@ -2,11 +2,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, WAIVERS, exists, read, out, fail, git, optString, readJsonl, activeSlug, defaultBase,
-  type Args, type Waiver,
+  ROOT, SDLC, CHANGES, WAIVERS, exists, read, out, fail, git, gitIn, approvalOf, optString, readJsonl, activeSlug, defaultBase,
+  type Args, type Waiver, type ImpactHit,
 } from './core.ts'
-import { parseConfig, parseRules, formatFindings, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
-import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor } from './sensors.ts'
+import { parseConfig, parseRules, formatFindings, matchesAny, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
+import { testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 
@@ -85,6 +85,70 @@ function applyWaivers(findings: Finding[], slugs: string[]): CheckResult {
   return { findings: kept, blocks: kept.filter(f => f.severity === 'block'), warns: kept.filter(f => f.severity === 'warn'), waived: findings.length - kept.length }
 }
 
+export function consumerHits(ids: string[], cfg: SensorConfig): { hits: ImpactHit[]; missing: string[] } {
+  const hits: ImpactHit[] = []
+  const missing: string[] = []
+  for (const c of cfg.consumers) {
+    const dir = path.resolve(ROOT, c.path)
+    if (!exists(dir)) {
+      missing.push(c.name)
+      continue
+    }
+    for (const id of ids) {
+      for (const row of (gitIn(dir, ['grep', '-n', '-w', '-F', '-e', id]) ?? '').split('\n').filter(Boolean)) {
+        const m = /^(.*?):(\d+):/.exec(row)
+        if (m) hits.push({ consumer: c.name, file: m[1] ?? '', line: Number(m[2]), id })
+      }
+    }
+  }
+  return { hits, missing }
+}
+
+function producerContractText(cfg: SensorConfig): string {
+  const files = (git(['ls-files']) ?? '').split('\n').filter(f => matchesAny(f, cfg.contracts))
+  return files.map(f => read(path.join(ROOT, f))).join('\n')
+}
+
+export function contractFindings(i: CheckInput): Finding[] {
+  const ids = retiredIdentifiers(i.diffs, i.config, producerContractText(i.config))
+  if (!ids.length || !i.config.consumers.length) return []
+  const { hits, missing } = consumerHits(ids, i.config)
+  const approved = i.slugs.some(s => approvalOf(s, 'impact') === 'approved')
+  const atStop = i.point === 'stop'
+  return [
+    ...hits.map((h): Finding => ({
+      sensor: 'contract-impact',
+      severity: atStop && approved ? 'warn' : 'block',
+      message: `${h.consumer}: ${h.file}:${h.line} still uses ${h.id}`,
+      fix: approved ? `update ${h.consumer} as part of this change (it is in the approved impact)` : 'cross-repo contract change: this needs a gated change: run /sdlc:start, then plan it with ## Contracts so the person approves the impact',
+    })),
+    ...missing.map((name): Finding => ({
+      sensor: 'contract-impact',
+      severity: atStop ? 'warn' : 'block',
+      message: `consumer ${name} is not checked out, so ${ids.length} retired identifier(s) cannot be verified`,
+      fix: `check out ${name} at its declared path (CI: set the SDLC_CONSUMERS_TOKEN secret)`,
+    })),
+  ]
+}
+
+function setTierL(slug: string): void {
+  const file = path.join(CHANGES, slug, 'intent.md')
+  fs.writeFileSync(file, read(file).replace(/^tier:\s*[SM]\s*$/m, 'tier: L'))
+}
+
+export function cmdCheckPlan(args: Args): void {
+  const slug = optString(args, 'slug') ?? activeSlug()
+  if (!slug) fail('check --at plan needs an active change or --slug')
+  const { config } = loadConfig()
+  const ids = contractsFromPlan(read(path.join(CHANGES, slug, 'plan.md')))
+  const { hits, missing } = consumerHits(ids, config)
+  fs.writeFileSync(path.join(CHANGES, slug, 'impact.json'), JSON.stringify({ at: new Date().toISOString(), ids, hits, missing }, null, 2) + '\n')
+  if (!hits.length) return out(`impact: ${ids.length} contract identifier(s), no consumer references${missing.length ? `; not checked out: ${missing.join(', ')}` : ''}`)
+  setTierL(slug)
+  const rows = hits.slice(0, 20).map(h => `  ${h.consumer}: ${h.file}:${h.line} uses ${h.id}`)
+  out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /sdlc-approve ${slug} impact.`, ...rows, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
+}
+
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
   const findings: Finding[] = [
@@ -94,6 +158,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...size(diffs, config, fileLines(diffs.filter(d => d.status !== 'D').map(d => d.file)), i.point),
     ...secretsInDiff(diffs),
     ...rulesSensor(diffs, i.rules),
+    ...contractFindings(i),
   ]
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   return applyWaivers(findings, i.slugs)
@@ -120,8 +185,9 @@ function report(point: string, result: CheckResult, count: number, json: boolean
 }
 
 export function cmdCheck(args: Args): void {
+  if (optString(args, 'at') === 'plan') return cmdCheckPlan(args)
   const at = optString(args, 'at')
-  if (at !== 'stop' && at !== 'ship' && at !== 'ci') fail('usage: check --at stop|ship|ci [--base <ref>] [--config-from <ref>] [--slug <s>] [--budget-ms <n>] [--json]')
+  if (at !== 'stop' && at !== 'ship' && at !== 'ci') fail('usage: check --at stop|ship|ci|plan [--base <ref>] [--config-from <ref>] [--slug <s>] [--budget-ms <n>] [--json]')
   const { config, rules, errors } = loadConfig(optString(args, 'config-from') ?? null)
   const baseRef = optString(args, 'base')
   const base = baseRef ? git(['merge-base', 'HEAD', baseRef]) : defaultBase()

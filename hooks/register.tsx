@@ -62,7 +62,7 @@ export const register: Register = on => {
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
     try {
       await $.command.register({ name: 'sdlc-status', description: 'sdlc: where every change stands and the next command (no model call)', immediate: true })
-      await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan>' })
+      await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|impact>' })
     } catch (err) {
       $.ui.log(`could not register commands: ${String(err)}`)
     }

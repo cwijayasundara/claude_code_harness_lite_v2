@@ -7,10 +7,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, ARTIFACTS,
+  ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS,
   exists, read, lines, sha, now, toPosix, out, fail, git, frontmatter, parseArgs, optString, isChangeType, isTier,
   listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
-  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type Stage, type UsageRow,
+  ensureGitignore, clearState, planVerification, PLUGIN_ROOT, setActive, intentTemplate, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook } from './hooks.ts'
@@ -81,7 +81,7 @@ function cmdApprove(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /sdlc-approve <slug> <stage>', 3)
   const [slug, stage] = args.pos
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
-  const artifact = ARTIFACTS[stage as Stage]
+  const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
   const file = path.join(CHANGES, slug, artifact ?? '')
   if (!artifact || !exists(file)) fail(`nothing to approve: ${slug}/${artifact ?? stage} does not exist`)
   const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'

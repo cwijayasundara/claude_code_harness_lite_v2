@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
-import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor } from './sensors.ts'
+import { testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
   file, status, added: added.map((text, i) => ({ n: i + 1, text })), removed: removed.map((text, i) => ({ n: i + 1, text })),
@@ -130,4 +130,24 @@ test('rules apply to added lines within their paths, labelled with the rule id',
   const r = rulesSensor([fd('src/a.py', ['print("x")']), fd('scripts/b.py', ['print("y")'])], rules)
   assert.deepEqual(r.map(f => [f.file, f.labels?.[0], f.severity]), [['src/a.py', 'no-print', 'block']])
   assert.match(r[0]?.message ?? '', /stdout carries the protocol/)
+})
+
+test('retired identifiers: removed tokens from contract files, minus generic words and names still present', () => {
+  const schema = fd('schema/billing.sql', ['  promotional_discount NUMERIC,'], ['  discount_rate NUMERIC,', '  id SERIAL,'])
+  assert.deepEqual(retiredIdentifiers([schema], CFG, 'CREATE TABLE billing (id SERIAL, promotional_discount NUMERIC)'), ['discount_rate'])
+  assert.deepEqual(retiredIdentifiers([schema], CFG, 'discount_rate is still exported in api/v1'), [])
+  assert.deepEqual(retiredIdentifiers([fd('src/billing.ts', [], ['discount_rate'])], CFG, ''), [], 'only contract files count')
+})
+
+test('retired identifiers: migration-style renames and drops in added lines', () => {
+  const mig = fd('migrations/0042_rename.sql', ['ALTER TABLE billing RENAME COLUMN discount_rate TO promotional_discount;', 'ALTER TABLE billing DROP COLUMN legacy_code;'], [], 'A')
+  assert.deepEqual(retiredIdentifiers([mig], CFG, 'CREATE TABLE billing (discount_rate NUMERIC)').sort(), ['discount_rate', 'legacy_code'])
+  const rails = fd('migrations/20261003_rename.rb', ['    rename_column :billing, :discount_rate, :promotional_discount'], [], 'A')
+  assert.deepEqual(retiredIdentifiers([rails], CFG, ''), ['discount_rate'])
+})
+
+test('contractsFromPlan reads rename and remove lines only', () => {
+  const plan = '## Contracts\n- rename `discount_rate` → `promotional_discount`\n- remove `legacy_code`\n- add `currency`\n## Risks\n- rename `x`\n'
+  assert.deepEqual(contractsFromPlan(plan), ['discount_rate', 'legacy_code'])
+  assert.deepEqual(contractsFromPlan('## Contracts\nnone\n'), [])
 })
