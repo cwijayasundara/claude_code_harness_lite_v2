@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'quality', 'levels', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'wiki', 'sdlc', 'shell', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'quality', 'levels', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'wiki', 'pr', 'sdlc', 'shell', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
 

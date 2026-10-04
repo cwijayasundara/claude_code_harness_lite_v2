@@ -237,6 +237,13 @@ test('the pinned-script scorecard command is auto-approved during an autonomous 
   assert.notEqual(bash(`node ${SCRIPT} scorecard big; rm -rf .`), 'allow')
 })
 
+test('the pinned-script pr-checks command is auto-approved, but pr (commit and push) is not', () => {
+  approveAll()
+  assert.equal(bash(`node ${SCRIPT} pr-checks big`), 'allow')
+  assert.notEqual(bash(`node ${SCRIPT} pr-checks big; rm -rf .`), 'allow')
+  assert.notEqual(bash(`node ${SCRIPT} pr big --message x`), 'allow')
+})
+
 test('a pinned-script argument with a .. segment is never auto-approved', () => {
   approveAll()
   for (const c of ['quality ..', 'quality ../x', 'quality ../..', 'ratchet show ..', 'status a/../b']) assert.notEqual(bash(`node ${SCRIPT} ${c}`), 'allow', c)

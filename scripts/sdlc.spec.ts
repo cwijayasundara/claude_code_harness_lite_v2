@@ -112,35 +112,6 @@ test('ship is done only once the scope record is committed', () => {
   assert.match(run(['status']).stdout, /done/)
 })
 
-test('ship commits code plus artifacts on a branch', () => {
-  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  verified(repo, 'tiny')
-  ratcheted(repo, 'tiny')
-  write('src/app.js', 'x\n')
-  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
-  assert.match(run(['status']).stdout, /next: \/sdlc:pr tiny/)
-  const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
-  assert.equal(shipped.code, 0, shipped.stderr)
-  assert.match(shipped.stdout, /sdlc\/tiny/)
-  const files = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: repo, encoding: 'utf8' })
-  assert.match(files, /src\/app\.js/)
-  assert.match(files, /\.sdlc\/changes\/tiny\/verification\.md/)
-  assert.doesNotMatch(files, /usage\.jsonl/)
-  assert.match(run(['status']).stdout, /done/)
-})
-
-test('ship refuses scope drift and unfinished changes', () => {
-  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  assert.match(run(['ship', 'tiny', '--message', 'chore: x']).stderr, /not ready to ship/)
-  verified(repo, 'tiny')
-  ratcheted(repo, 'tiny')
-  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
-  write('src/other.js', 'y\n')
-  const r = run(['ship', 'tiny', '--message', 'chore: x'])
-  assert.notEqual(r.code, 0)
-  assert.match(r.stderr, /scope drift/)
-})
-
 test('scope-drift flags files outside plan ## Files and records ship.json', () => {
   run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
   write('.sdlc/changes/add-login/plan.md', PLAN)
@@ -263,57 +234,11 @@ test('metrics merge plugin and standalone agent names and ignore a negative cost
   assert.deepEqual(cost.tokens_by_agent_type, { 'sdlc:scout': 15 })
 })
 
-test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active change', () => {
-  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  verified(repo, 'tiny')
-  ratcheted(repo, 'tiny')
-  write('src/app.js', 'x\n')
-  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
-  const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
-  assert.equal(shipped.code, 0, shipped.stderr)
-  const files = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: repo, encoding: 'utf8' })
-  assert.match(files, /\.sdlc\/STATE\.md/)
-  assert.match(files, /\.sdlc\/\.gitignore/)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /No active change\. Last shipped: tiny\./)
-  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim(), '')
-  assert.doesNotMatch(run(['status']).stdout, /next: /)
-})
-
-test('a change started on another change\'s branch is warned, refused at ship, and diff --trunk lists the branch', () => {
-  run(['new', 'first', '--type', 'chore', '--tier', 'S'])
-  verified(repo, 'first')
-  ratcheted(repo, 'first')
-  write('src/a.js', 'x\n')
-  write('.sdlc/changes/first/plan.md', '## Files\n- src/a.js\n')
-  assert.equal(run(['ship', 'first', '--message', 'chore: first']).code, 0)
-  const started = run(['new', 'second', '--type', 'chore', '--tier', 'S'])
-  assert.match(started.stdout, /warning: HEAD is on sdlc\/first[\s\S]*git checkout -b sdlc\/second/)
-  assert.match(run(['diff', '--trunk']).stdout, /A src\/a\.js/)
-  verified(repo, 'second')
-  ratcheted(repo, 'second')
-  write('src/b.js', 'y\n')
-  write('.sdlc/changes/second/plan.md', '## Files\n- src/b.js\n')
-  const refused = run(['ship', 'second', '--message', 'chore: second'])
-  assert.notEqual(refused.code, 0)
-  assert.match(refused.stderr, /not shipping: HEAD is on sdlc\/first/)
-})
-
 test('status warns when there is no origin remote to open a PR on', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   assert.match(run(['status']).stdout, /warn: no origin remote/)
   git('remote', 'add', 'origin', 'https://example.com/x.git')
   assert.doesNotMatch(run(['status']).stdout, /no origin remote/)
-})
-
-test('activeSlug never falls back to a finished change', () => {
-  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  verified(repo, 'tiny')
-  ratcheted(repo, 'tiny')
-  write('src/app.js', 'x\n')
-  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
-  run(['ship', 'tiny', '--message', 'chore: tiny'])
-  fs.rmSync(path.join(repo, '.sdlc/STATE.md'))
-  assert.doesNotMatch(run(['status']).stdout, /▶ tiny/)
 })
 
 test('skill prints a stage skill with plugin root and arguments substituted', () => {
@@ -562,23 +487,6 @@ test('I5: a v0.1 change whose ship.json is committed stays done and never become
   write('src/new.js', 'export const n = 1\n')
   hook('stop', {})
   assert.match(run(['status']).stdout, /▶ adhoc-\d{8}-\d{4}/)
-})
-
-test('I3: ship ratchets a known-red full command that now passes and commits the tightened sensors.json', () => {
-  run(['init'])
-  write('.sdlc/sensors.json', JSON.stringify({ full: { t: 'node -e "process.exit(0)"' }, knownRed: ['full.t'] }, null, 2) + '\n')
-  git('add', '-A')
-  git('commit', '-qm', 'cfg')
-  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  verified(repo, 'tiny')
-  ratcheted(repo, 'tiny')
-  write('src/app.js', 'x\n')
-  write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
-  const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
-  assert.equal(shipped.code, 0, shipped.stderr)
-  const committed = execFileSync('git', ['show', 'HEAD:.sdlc/sensors.json'], { cwd: repo, encoding: 'utf8' })
-  assert.deepEqual(JSON.parse(committed).knownRed, [])
-  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim(), '')
 })
 
 test('F5: a failing command that prints a key is recorded without the key', () => {

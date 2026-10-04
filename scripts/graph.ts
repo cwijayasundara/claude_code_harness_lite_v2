@@ -7,7 +7,7 @@ import {
   APPROVAL_ARTIFACTS, type ChangeType, type Tier, type Stage, type GatedStage, type ApprovalState, type Next, type Change,
 } from './core.ts'
 import { loadConfig } from './check.ts'
-import { readRatchet, spendUsd, block } from './ratchet.ts'
+import { readRatchet, spendUsd, block, readEvents } from './ratchet.ts'
 import type { SensorConfig, RatchetNode } from './model.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
@@ -59,6 +59,7 @@ export function loadChange(slug: string): Change {
       case 'sensors': return readRatchet(slug).nodes.sensors?.status === 'done'
       case 'pr': return prRecorded(slug)
       case 'pr-review': return (review.result === 'pass' || review.result === 'accepted') && readRatchet(slug).nodes['pr-review']?.status !== 'open'
+          && (!git(['remote', 'get-url', 'origin']) || readEvents(slug).filter(e => e.kind === 'checks').at(-1)?.verdict === 'pass')
       default: return exists(path.join(dir, ARTIFACTS[stage] ?? ''))
     }
   }

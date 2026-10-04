@@ -21,6 +21,7 @@ import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from 
 import { cmdMetrics } from './metrics.ts'
 import { cmdScorecard } from './scorecard.ts'
 import { cmdVendor } from './vendor.ts'
+import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 import { cmdQuality } from './quality.ts'
@@ -68,12 +69,20 @@ function cmdNext(args: Args): void {
   const slug = args.pos[0] ?? activeSlug()
   if (!slug) return out(args.opt.json ? JSON.stringify({ slug: null, node: null, verdict: 'ready', reason: 'no active change', command: `${skillRef('start')} "<what you want>"`, round: 0 }) : 'no active change')
   const s = step(slug)
+  if (s.verdict === 'ready') clearReady(slug)
   out(args.opt.json ? JSON.stringify(s) : `${s.verdict}: ${s.verdict === 'continue' || s.verdict === 'human' ? s.command : s.reason}`)
+}
+
+// A finished change (every node done, the PR left to a person) stops being the one STATE.md names.
+function clearReady(slug: string): void {
+  if (frontmatter(read(STATE)).data.change === slug) clearState(slug)
 }
 
 function cmdStatus(args: Args): void {
   const json = Boolean(args.opt.json)
   if (!exists(SDLC)) return out(json ? JSON.stringify({ initialised: false }) : `sdlc not initialised here: run ${skillRef('start')}`)
+  const named = frontmatter(read(STATE)).data.change
+  if (named && exists(path.join(CHANGES, named)) && step(named).verdict === 'ready') clearReady(named)
   const active = activeSlug()
   const changes = listChanges().map(loadChange)
   const warnings: string[] = []
@@ -149,127 +158,6 @@ function cmdScopeDrift(args: Args): void {
   if (!r.drift.length) return out(`scope ok: ${r.changed.length} changed file(s), all in ${slug}'s plan`)
   out(`scope drift: ${r.drift.length} of ${r.changed.length} changed file(s) are not in ${slug}/plan.md ## Files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to the plan (and re-approve if gated) or revert them.`)
   process.exitCode = 1
-}
-
-type ShippedRepo = { name: string; branch: string; commit: string }
-
-type Consumer = { name: string; dir: string; test?: string; files: string[]; branch: string | null }
-
-// Changed paths (untracked included) in a checkout, relative to it.
-function dirtyPaths(dir: string): string[] {
-  const parts = (gitIn(dir, ['status', '--porcelain', '-uall', '-z']) ?? '').split('\0').filter(Boolean)
-  const files: string[] = []
-  for (let i = 0; i < parts.length; i++) {
-    const row = parts[i] ?? ''
-    files.push(row.replace(/^[ MADRCUT?!]{1,2} /, '')) // gitIn trims, so the first row may have lost a leading space
-    if (/^[RC]/.test(row)) i++ // a rename/copy row is followed by its source path
-  }
-  return files
-}
-
-// Consumers with uncommitted work in this change: every changed file must be planned before anything runs or is committed.
-function changedConsumers(slug: string, config: SensorConfig): Consumer[] {
-  const planned = planFiles(slug)
-  const found: Consumer[] = []
-  for (const c of config.consumers) {
-    const dir = path.resolve(ROOT, c.path)
-    if (!exists(dir)) continue
-    const dirty = dirtyPaths(dir)
-    if (!dirty.length) continue
-    const rel = toPosix(path.normalize(c.path)).replace(/\/+$/, '')
-    const stray = dirty.filter(f => !isPlanned(`${rel}/${f}`, planned))
-    if (stray.length) fail(`${c.name} has changes outside ${slug}/plan.md ## Files: ${stray.join(', ')}`)
-    found.push({ name: c.name, dir, test: c.test, files: dirty, branch: gitIn(dir, ['rev-parse', '--abbrev-ref', 'HEAD']) })
-  }
-  return found
-}
-
-const branchExists = (dir: string, branch: string): boolean => gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) !== null
-const onTrunk = (b: string | null): boolean => b === 'main' || b === 'master'
-
-// Another change's branch with commits of its own: a change started or shipped here would carry them into its PR.
-function otherChangeBranch(slug: string): string | null {
-  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
-  const base = defaultBase()
-  if (!head?.startsWith('sdlc/') || head === `sdlc/${slug}` || !base || git(['rev-parse', 'HEAD']) === base) return null
-  return `HEAD is on ${head}, which has commits not on the trunk; ${slug} would be stacked on them. `
-    + `Move this change onto the trunk first: git stash -u && git checkout -b sdlc/${slug} ${base.slice(0, 12)} && git stash pop`
-}
-
-function commitConsumer(c: Consumer, slug: string, message: string): ShippedRepo {
-  const branch = `sdlc/${slug}`
-  if (onTrunk(c.branch)) {
-    if (gitIn(c.dir, ['checkout', '-b', branch]) === null) fail(`could not create ${branch} in ${c.name}`)
-  } else process.stderr.write(`${c.name} is on ${c.branch}, committing there, not ${branch}\n`)
-  if (!c.test) process.stderr.write(`${c.name} has no test declared; committed unverified\n`)
-  if (gitIn(c.dir, ['add', '--', ...c.files]) === null) fail(`git add failed in ${c.name}`)
-  const body = `${message}\n\nPart of ${path.basename(ROOT)}@${branch}`
-  // The consumer's own identity first; a checkout with none configured gets a neutral one.
-  const ok = gitIn(c.dir, ['commit', '-q', '-m', body]) !== null
-    || gitIn(c.dir, ['-c', 'user.name=sdlc', '-c', 'user.email=sdlc@localhost', 'commit', '-q', '-m', body]) !== null
-  if (!ok) fail(`commit failed in ${c.name}`)
-  return { name: c.name, branch: gitIn(c.dir, ['rev-parse', '--abbrev-ref', 'HEAD']) ?? branch, commit: gitIn(c.dir, ['rev-parse', 'HEAD']) ?? '' }
-}
-
-// Ships a change deterministically: preconditions, scope gate, branch, staging and commit. The model only writes the message.
-function cmdShip(args: Args): void {
-  const slug = args.pos[0] ?? activeSlug()
-  const message = optString(args, 'message')
-  if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: ship <slug> --message "<conventional commit message>"')
-  if (!message) fail('ship needs --message "<type(scope): summary>"')
-  const change = loadChange(slug)
-  const pending = change.stages.filter(s => s !== 'pr' && !(change.next && change.stages.indexOf(s) < change.stages.indexOf(change.next.stage)))
-  if (change.next && change.next.stage !== 'pr') fail(`not ready to ship: next is ${nextCommand(change)} (pending: ${pending.join(', ')})`)
-  if (!change.next) return out(`${slug} is already shipped`)
-
-  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
-  const stacked = otherChangeBranch(slug)
-  if (stacked) fail(`not shipping: ${stacked}`)
-  const base = defaultBase() ?? (head && ['main', 'master'].includes(head) ? git(['rev-parse', 'HEAD']) : null)
-  const r = scopeDrift(slug, base)
-  if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to plan.md ## Files (and re-approve if gated) or revert them.`)
-  const { config, rules, errors } = loadConfig()
-  const sensorsBefore = read(path.join(SDLC, 'sensors.json'))
-  const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })
-  const ratcheted = read(path.join(SDLC, 'sensors.json')) !== sensorsBefore
-  if (errors.length || gate.blocks.length) {
-    const configFindings = errors.map(e => `[config] ${e}`)
-    fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /sdlc-waive <sensor> <file|*> <reason>.`)
-  }
-
-  const consumers = changedConsumers(slug, config)
-  const trunk = onTrunk(head)
-  if (trunk && branchExists(ROOT, `sdlc/${slug}`)) fail(`not shipping: branch sdlc/${slug} already exists in this repo`)
-  for (const c of consumers) {
-    if (onTrunk(c.branch) && branchExists(c.dir, `sdlc/${slug}`)) fail(`not shipping: branch sdlc/${slug} already exists in ${c.name}`)
-  }
-  if (!git(['status', '--porcelain'])) fail('not shipping: nothing to commit in this repo')
-  for (const c of consumers) {
-    if (!c.test) continue
-    const row = runCommand(c.test, { cwd: c.dir })
-    recordRun(slug, { ...row, source: 'ship' })
-    if (row.exit !== 0) fail(`not shipping: ${c.name} tests failed (exit ${row.exit}):\n${row.tail}`)
-  }
-  const shipFile = path.join(CHANGES, slug, 'ship.json')
-  const repos: ShippedRepo[] = []
-  const record = (): void => fs.writeFileSync(shipFile, JSON.stringify({ at: now(), base, changed: r.changed.length, drift: [], matchRatio: 1, repos }, null, 2) + '\n')
-  for (const c of consumers) {
-    repos.push(commitConsumer(c, slug, message))
-    record() // a later failure still leaves what was committed on record
-  }
-
-  if (trunk) {
-    if (git(['checkout', '-b', `sdlc/${slug}`]) === null) fail(`could not create branch sdlc/${slug}`)
-  }
-  record()
-  ensureGitignore()
-  const changeDir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
-  clearState(slug)
-  const extras = ['.sdlc/approvals.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides', ...(ratcheted ? ['.sdlc/sensors.json'] : [])].filter(f => exists(path.join(ROOT, f)))
-  const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
-  if (git(['add', '--', changeDir, ...extras, ...code]) === null) fail('git add failed')
-  if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')
-  out(`shipped ${slug} on ${git(['rev-parse', '--abbrev-ref', 'HEAD'])} at ${git(['rev-parse', '--short', 'HEAD'])}: ${code.length} code file(s) + artifacts. Push and open a PR only with the person's go-ahead.`)
 }
 
 function cmdSecrets(args: Args): void {
@@ -415,7 +303,9 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   next: cmdNext,
   approve: cmdApprove,
   'scope-drift': cmdScopeDrift,
-  ship: cmdShip,
+  pr: cmdPr,
+  ship: cmdPr,
+  'pr-checks': cmdPrChecks,
   skill: cmdSkill,
   run: () => cmdRun(),
   'verify-report': cmdVerifyReport,
