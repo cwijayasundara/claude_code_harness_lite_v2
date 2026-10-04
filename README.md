@@ -32,9 +32,10 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 | `/sdlc:start "add CSV export to reports"` | Classifies type and tier, writes `.sdlc/changes/<slug>/intent.md`, and prints the path and the next command. Tier S is built in the same turn. |
 | `/sdlc:next` | Runs whatever comes next for the active change, and stops only at human gates. The one command to remember. |
 | `/sdlc:spec`, `/sdlc:plan`, `/sdlc:build`, `/sdlc:diagnose`, `/sdlc:test`, `/sdlc:pr-review`, `/sdlc:pr` | One stage each (`ship` stays a CLI alias of `pr`). Every stage ends with the exact next command. |
-| `/sdlc-approve <slug> <spec\|plan>` | **Human gate.** A mod command: costs zero tokens, the model cannot invoke it, and the approval goes stale if the artifact changes afterwards. |
+| `/sdlc-approve <slug> <spec\|plan\|impact\|tier>` | **Human gate.** A mod command: costs zero tokens, the model cannot invoke it, and the approval goes stale if the artifact changes afterwards. |
 | `/sdlc-waive <sensor> <file\|*> <reason>` | **Human only.** Records a waiver for a sensor finding on the active change (the sensor name is validated). Zero tokens, and the model cannot invoke it. |
 | `/sdlc-approve <slug> budget` | **Human gate.** Raises a change's spend cap; the model cannot. |
+| `/sdlc-approve <slug> tier` | **Human gate.** Accepts a tier or type edited in `intent.md`; the recorded tier is the floor, so only a person can lower it. |
 | `/sdlc:sensors` | Runs the sensors on the active change and prints what they found. |
 | `/sdlc-run` | The driver: submits one node per turn and stops at a human gate, a block or a turn with no progress. |
 | `/sdlc-story` | A pane with the change's nodes, rounds, cost against budget and estimated value. Zero tokens. |
