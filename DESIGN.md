@@ -547,9 +547,10 @@ The Spec 1 live trial is recorded in §10.
 - **Auto-approval.** Inside an approved plan, declared commands, the pinned harness script, read-only git and edits listed in the plan's `## Files` need no prompt (details in the security model).
 - **PR node.** `/sdlc:pr` commits, pushes and opens the PR (`ship` stays a CLI alias); `/sdlc:pr-review` reads the PR and its checks, fail closed.
 - **Scorecard and metrics.** Per change and per node: tokens, cost, spend against budget, estimated value (`value` hours) and value over cost.
-- **Mod.** A band, the `/sdlc-story` and `/sdlc-metrics-pane` panes, and the `/sdlc-run` driver, which submits one node per turn and stops when a turn makes no progress.
+- **Mod.** A band, the `/sdlc-story` and `/sdlc-metrics-pane` panes, and the `/sdlc-run` driver, which submits one node per turn and stops when a turn makes no progress (same node, round and finished-slice count). A rejected submit or a timer that never fires leaves the driver stopped.
 - **Onboarding.** Per-stack starter commands, baselines and verified installs; the mod is vendored as a project plugin, and the global mod steps aside only when the project one is enabled.
-- **Budget.** `/sdlc-approve <slug> budget` is the only way to raise a cap; credits live in `ratchet.json`, not in model-writable usage rows.
+- **Budget.** `/sdlc-approve <slug> budget` is the only way to raise a cap and also clears a stall or cap block; credits live in `ratchet.json`, not in model-writable usage rows.
+- **Resume after a fix or waiver (R46).** A `gate` or `level` block does not stop `/sdlc-next`: `step()` answers `continue` at the current node with the pending block in the reason, and the node's own code (the ship gate in `pr`, `verify-report` for levels) re-derives or clears it. Cap, stall, budget and other blocks stay `blocked` until a person runs `/sdlc-approve <slug> budget`.
 
 ### Deviations from the spec
 
@@ -563,11 +564,11 @@ The Spec 1 live trial is recorded in §10.
 
 ### Security model
 
-- **Auto-approved:** commands declared in sensors.json (an exact match, never a prefix, so chained or control-character commands are refused); the pinned harness script (realpath equal to the plugin's or `.sdlc/bin/sdlc.ts`) for safe subcommands; read-only git; `git checkout -b sdlc/<slug>`; edits inside the plan's `## Files`, excluding dot-segment paths. Bash only when the cwd is the repo root. Only when `step()` says continue at an autonomous node.
+- **Auto-approved:** commands declared in sensors.json (an exact match, never a prefix, so chained or control-character commands are refused); the pinned harness script (realpath equal to the plugin's or `.sdlc/bin/sdlc.ts`) for its read-only and deterministic subcommands (`status`, `next`, `verify-report`, `diff`, `ratchet show`, `quality`, `scorecard`, `pr-checks`), `run` of a declared command, `ratchet record <slug> <node> [--slice N] --from <file>` for the active node, and `pr <slug> --message "<one line>"` (`--followup` at pr-review); `pr` is not a safe subcommand, because it commits and pushes, and it is approved only at the pr node; `gh pr view|checks|comment` for the change's own `sdlc/<slug>` branch, the comment body file pinned to `.sdlc/changes/<slug>/pr-comment.md`; read-only git; `git checkout -b sdlc/<slug>`; edits inside the plan's `## Files`, excluding dot-segment paths. Bash only when the cwd is the repo root. Only when `step()` says continue at an autonomous node.
 - **Never auto-approved:** approvals, waivers and budget raises (human only, the model cannot invoke them); edits to sensors.json, `.claude/settings.json`, `.claude-plugin/**` and other protected files; anything outside the plan; any approval gone stale because the artifact changed.
 - **Evidence files** (`ratchet.json`, `events.jsonl`, `ship.json`, `pr.md`, approvals, waivers, `runs.jsonl`, `verification.md`) are written only by sdlc. `weakensConfig` flags added or changed gate, level, quality and value entries.
 - **The guard is best effort; CI is the trust boundary.** CI runs the base branch's checker and config.
-- **Known limitation:** evidence filenames built inside interpreter strings (for example a script that assembles the path at run time) can evade the guard.
+- **Known limitations:** (a) evidence filenames built inside interpreter strings (for example a script that assembles the path at run time) can evade the guard. (b) A slice review is self-certified: the model writes the reviewer's reply file that `ratchet record --from` reads, so it can claim `done`. R45: reviewers advise and deterministic checks decide; the test levels, sensors, ship gate and CI are what a change must pass, and the per-slice review only paces the build.
 - **Recommendation:** run autonomous builds in Claude Code's sandbox with a network allowlist; declared test commands run model-written code, which can do anything the user can. Defaults leave tier S and M ungated, so auto-approval starts as soon as plan.md exists for them (R17).
 
 ### Trial results
@@ -586,6 +587,5 @@ Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog
 - Re-run the trial to confirm 0 permission prompts after plan approval.
 - Per-node graph, deferred findings and Open review, Waive and Stop buttons in the story pane (R36).
 - Usage capture in headless `-p`, so the scorecard cost matches the run totals.
-- The driver's running flag after a rejected submit.
 - Tests over 500 lines in `sdlc.spec` and `check.spec`.
 - A true auto-approved share metric.
