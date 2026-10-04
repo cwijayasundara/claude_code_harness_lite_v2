@@ -160,3 +160,59 @@ test('the model cannot write proposals.json', () => {
   const bash = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: `echo '{}' > .sdlc/learn/proposals.json` } }).stdout)
   assert.equal(bash.hookSpecificOutput.permissionDecision, 'deny')
 })
+
+const HUMAN = { env: { SDLC_HUMAN: '1' } }
+
+test('approve learn promotes a passing rule-add into rules.json as a warn rule, for a person only', () => {
+  const repo = learnRepo(3, 7)
+  sdlc(repo, ['learn'])
+  const model = sdlc(repo, ['approve', 'learned-security', 'learn'])
+  assert.equal(model.code, 3)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/rules.json')), false)
+  const r = sdlc(repo, ['approve', 'learned-security', 'learn'], HUMAN)
+  assert.equal(r.code, 0, r.stderr)
+  const rules = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/rules.json'), 'utf8'))
+  assert.equal(rules.length, 1)
+  assert.deepEqual([rules[0].id, rules[0].action, rules[0].pattern], ['learned-security', 'warn', 'eval\\('])
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8'), /\.sdlc\/rules\.json/)
+  const again = sdlc(repo, ['approve', 'learned-security', 'learn'], HUMAN)
+  assert.equal(again.code, 1)
+  assert.match(again.stderr, /no longer recurs|no proposal/)
+})
+
+test('approve learn refuses an insufficient holdout, an unknown id and an advisory sensor-tune', () => {
+  const repo = learnRepo(3, 2)
+  sdlc(repo, ['learn'])
+  assert.match(sdlc(repo, ['approve', 'learned-security', 'learn'], HUMAN).stderr, /replay is insufficient-holdout/)
+  assert.match(sdlc(repo, ['approve', 'nope-nope', 'learn'], HUMAN).stderr, /no proposal nope-nope/)
+  const tune = learnRepo(0, 0)
+  for (const s of ['a', 'b']) {
+    seedShipped(tune, `w-${s}`, { added: ['x'] })
+    fs.appendFileSync(path.join(tune, '.sdlc/waivers.jsonl'), JSON.stringify({ slug: `w-${s}`, sensor: 'size', file: 'src/big/a.js', reason: 'generated', by: 't', at: 'now' }) + '\n')
+  }
+  sdlc(tune, ['learn', '--min-changes', '2'])
+  assert.match(sdlc(tune, ['approve', 'tune-size-src-big', 'learn'], HUMAN).stderr, /advisory/)
+})
+
+test('approve learn re-runs the gate: a later clean change that trips the rule makes the proposal stale', () => {
+  const repo = learnRepo(3, 7)
+  sdlc(repo, ['learn'])
+  seedShipped(repo, 'late', { added: ['const z = eval(other)'] })
+  const r = sdlc(repo, ['approve', 'learned-security', 'learn'], HUMAN)
+  assert.equal(r.code, 1)
+  assert.match(r.stderr, /replay is fail/)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/rules.json')), false)
+})
+
+test('approve learn promotes the freshly derived rule, not a forged proposals.json', () => {
+  const repo = learnRepo(3, 7)
+  sdlc(repo, ['learn'])
+  const file = path.join(repo, '.sdlc/learn/proposals.json')
+  const forged = JSON.parse(fs.readFileSync(file, 'utf8'))
+  forged.proposals[0].edit.pattern = '.*'
+  forged.proposals[0].edit.action = 'block'
+  fs.writeFileSync(file, JSON.stringify(forged))
+  assert.equal(sdlc(repo, ['approve', 'learned-security', 'learn'], HUMAN).code, 0)
+  const rule = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/rules.json'), 'utf8'))[0]
+  assert.deepEqual([rule.pattern, rule.action], ['eval\\(', 'warn'])
+})

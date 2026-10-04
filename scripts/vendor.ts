@@ -64,7 +64,7 @@ function vendorStandalone(written: string[], version: string): void {
     const src = path.join(PLUGIN_ROOT, 'skills', name, 'SKILL.md')
     if (fs.existsSync(src)) writeFile(`.claude/skills/rig-${name}/SKILL.md`, forProject(read(src)), written)
   }
-  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact|budget|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
+  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact|budget|tier S|M|L [type]|learn>', 'Approve a gated sdlc artifact.'), written)
   writeFile('.claude/skills/rig-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'agents')).filter(f => f.endsWith('.md'))) {
     writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)

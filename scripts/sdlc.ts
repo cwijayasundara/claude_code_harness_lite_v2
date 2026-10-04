@@ -23,7 +23,7 @@ import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
-import { cmdLearn } from './learncli.ts'
+import { cmdLearn, approveLearn } from './learncli.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 import { cmdQuality } from './quality.ts'
@@ -121,6 +121,7 @@ function cmdApprove(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /rig-approve <slug> <stage>', 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
+  if (stage === 'learn') return approveLearn(slug) // the id names a proposal, not a change
   checkSlug(slug)
   if (stage === 'budget') {
     const node = readRatchet(slug).blocked?.node.replace(/#.*/, '') ?? step(slug).node ?? 'build'

@@ -1,8 +1,8 @@
 // rig learn, the I/O half: load the evidence and the diff corpus of shipped changes, write proposals.json.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, SDLC, ROOT, WAIVERS, read, exists, listChanges, isShipped, readJsonl, git, toPosix, out, fail, optString, ensureGitignore, type Args, type Waiver } from './core.ts'
-import { parseUnifiedDiff, type FileDiff } from './model.ts'
+import { CHANGES, SDLC, ROOT, WAIVERS, read, exists, listChanges, isShipped, readJsonl, git, toPosix, out, fail, optString, ensureGitignore, sanctionWrites, type Args, type Waiver } from './core.ts'
+import { parseUnifiedDiff, parseRules, type FileDiff } from './model.ts'
 import { readEvents, parseReviewFindings } from './ratchet.ts'
 import { diagnose, formatReport, LEARN, type ChangeEvidence, type LearnReport } from './learn.ts'
 
@@ -61,4 +61,19 @@ export function cmdLearn(args: Args): void {
   fs.mkdirSync(path.dirname(PROPOSALS), { recursive: true })
   fs.writeFileSync(PROPOSALS, JSON.stringify(report, null, 2) + '\n')
   out(formatReport(report))
+}
+
+// Promotion re-derives the proposal from today's evidence: the stored file only names the id, so editing it changes nothing.
+export function approveLearn(id: string): void {
+  const stored = readProposals()?.proposals.find(p => p.id === id)
+  if (!stored) fail(`no proposal ${id}: run learn first`)
+  if (stored.kind !== 'rule-add') fail(`${id} is advisory (${stored.kind}): edit .sdlc/sensors.json by hand if the evidence convinces you`)
+  const fresh = diagnose(loadEvidence(), knownRuleIds(), LEARN.minChanges).proposals.find(p => p.id === id)
+  if (!fresh || fresh.kind !== 'rule-add') fail(`not promoting ${id}: it no longer recurs, or the rule already exists`)
+  if (fresh.replay.status !== 'pass') fail(`not promoting ${id}: replay is ${fresh.replay.status}${fresh.replay.reason ? ` (${fresh.replay.reason})` : ''}`)
+  const current = parseRules(read(RULES))
+  if (current.errors.length) fail(`.sdlc/rules.json has errors, fix them first: ${current.errors.join('; ')}`)
+  fs.writeFileSync(RULES, JSON.stringify([...current.rules, fresh.edit], null, 2) + '\n')
+  sanctionWrites(['.sdlc/rules.json'])
+  out(`promoted ${id} into .sdlc/rules.json as a warn rule (pattern ${fresh.edit.pattern}). Review it, then commit it through PR review.`)
 }
