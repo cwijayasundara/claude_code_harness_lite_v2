@@ -410,7 +410,7 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 
   The harness now costs about 2x plain on small work, down from 4-7x.
 - **Still to check by a person:**
-  - a real PR through `sdlc-review` (needs an `ANTHROPIC_API_KEY` secret)
+  - ~~a real PR through `sdlc-review` (needs an `ANTHROPIC_API_KEY` secret)~~ Done 2026-10-04; see "sdlc-review end to end" below.
   - onboarding and the wiki on a real brownfield repo
   - the mod's interactive parts: band, `/sdlc-approve` and the impact dialog
 
@@ -470,6 +470,13 @@ Harness cost split: main thread Sonnet $1.29, unattributed Opus $0.40, implement
 CI was red from 38b1cce, so v0.3.4 and v0.3.5 were tagged on red builds; macOS, the only local platform, passed throughout. Both failures were in tests, not the harness:
 - **Linux:** the gate test expected `claude.md` to ask as a case variant of `CLAUDE.md`. On Linux the guard is case-sensitive by design, so `claude.md` is an ordinary file; the test now asserts that per platform. The `dogfood` job ran the same suite and failed with it.
 - **Windows:** the vendor test matched skill paths with `/` while `path.join` returned `\`; it now normalises them. The rest of that test had never run on Windows before.
+
+### sdlc-review end to end (2026-10-04, PR #2, Haiku 4.5)
+
+`templates/sdlc-review.yml` ran on a real PR with the model swapped to `claude-haiku-4-5-20251001` (about $0.07 a run).
+- **First run: it had never worked.** The model reviewed but could not write `review.md`: the two `Write(./review.md)` allow rules were denied, so the post step failed with "no review.md". A path-scoped write permission has to be an `Edit(...)` rule, which covers Write too; a local probe confirmed `Edit(./review.md)` allows that file and still blocks writes to any other. The template now uses `Edit(...)`, and `vendor.spec.ts` pins the allowlist.
+- **Clean push:** verdict PASS, "No findings." posted.
+- **Planted empty-key auth bypass:** verdict HIGH, the check failed, and the same comment was edited in place. Haiku framed it as the tests contradicting the code rather than as an auth bypass; the shipped template keeps Opus.
 
 ## 11. Open items to verify
 

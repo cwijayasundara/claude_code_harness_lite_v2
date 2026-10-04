@@ -67,3 +67,9 @@ test('read-only rules also hold for the vendored sdlc- agents', () => {
   const r = JSON.parse(vendored(repo, ['hook', 'pre-bash'], JSON.stringify({ agent_type: 'sdlc-reviewer', tool_input: { command: 'touch x.js' } })).stdout)
   assert.equal(r.hookSpecificOutput.permissionDecision, 'deny')
 })
+
+test('the PR review may write its two files through Edit rules; a Write(path) rule grants nothing', () => {
+  const yml = fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'sdlc-review.yml'), 'utf8')
+  const allowed = /--allowedTools "([^"]+)"/.exec(yml)?.[1] ?? ''
+  assert.deepEqual(allowed.split(','), ['Read(./**)', 'Grep', 'Glob', 'Edit(./review.md)', 'Edit(./review-verdict.txt)'])
+})

@@ -8,3 +8,5 @@ node_modules/
 .sdlc/usage.jsonl
 .sdlc/unresolved.json
 .superpowers/
+.env
+.env.*
