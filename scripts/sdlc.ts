@@ -19,6 +19,7 @@ import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
+import { cmdScorecard } from './scorecard.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
@@ -422,6 +423,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   'log-usage': cmdLogUsage,
   hook: cmdHook,
   metrics: cmdMetrics,
+  scorecard: cmdScorecard,
   wiki: cmdWiki,
   diff: cmdDiff,
   quality: cmdQuality,

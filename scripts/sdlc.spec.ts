@@ -623,3 +623,14 @@ test('lean S/M: tier M has no plan gate and no review stage; tier L keeps both',
   write('.sdlc/changes/big/plan.md', PLAN)
   assert.match(run(['status']).stdout, /human gate: review big\/plan\.md/)
 })
+
+test('metrics report autonomy and economics from events and usage', () => {
+  run(['new', 'aa', '--type', 'chore', '--tier', 'S'])
+  run(['log-usage', JSON.stringify({ kind: 'main', usd: 1, change: 'aa', stage: 'build' })])
+  const m = JSON.parse(run(['metrics', '--json']).stdout).metrics
+  assert.ok('auto_approved_per_change' in m.autonomy)
+  assert.ok('escalations_per_change' in m.autonomy)
+  assert.equal(m.economics.usd_by_node.build, 1)
+  assert.ok('value_over_cost' in m.economics)
+  assert.equal(m.economics.value_is_estimate, true)
+})

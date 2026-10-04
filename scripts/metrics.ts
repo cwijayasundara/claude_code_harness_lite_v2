@@ -8,7 +8,10 @@ import {
   listChanges, type Args, type Approval, type Change, type UsageRow,
 } from './core.ts'
 import { loadChange } from './graph.ts'
+import { loadConfig } from './check.ts'
 
+type Ev = { verdict: string; kind?: string; node: string; round?: number }
+const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
 type Metric = { value: number | null; n: number; note?: string; [extra: string]: unknown }
 type PullRequest = {
   number: number
@@ -141,6 +144,28 @@ export function cmdMetrics(args: Args): void {
     opus_token_share: written ? Number((opusWritten / written).toFixed(3)) : null,
   }
 
+  const evs = changes.map(c => ({ c, e: readJsonlSafe(path.join(c.dir, 'events.jsonl')) }))
+  const perChange = (f: (e: Ev[]) => number): Metric => median(evs.map(x => f(x.e)))
+  const autonomy = {
+    auto_approved_per_change: perChange(e => e.filter(x => x.kind === 'auto-approve').length),
+    escalations_per_change: perChange(e => e.filter(x => x.verdict === 'blocked').length),
+    ready_without_escalation: share(evs.filter(x => !x.e.some(y => y.verdict === 'blocked') && !x.c.next).length, evs.filter(x => !x.c.next).length),
+  }
+  const slicesFirstPass = evs.flatMap(x => x.e.filter(y => y.node.startsWith('build#') && y.verdict === 'done'))
+  const ratchetM = {
+    slices_first_pass: share(slicesFirstPass.filter(y => (y.round ?? 0) === 0).length, slicesFirstPass.length),
+    fix_rounds_per_change: perChange(e => e.filter(x => x.verdict === 'continue').length),
+  }
+  const { config } = loadConfig()
+  const totalUsd = cost.usd_total
+  const valueUsd = changes.reduce((n, c) => n + config.value.hours[c.tier] * config.value.rate, 0)
+  const economics = {
+    usd_by_node: cost.usd_by_stage,
+    usd_per_change: changes.length ? Number((totalUsd / changes.length).toFixed(2)) : null,
+    value_over_cost: totalUsd > 0 ? Number((valueUsd / totalUsd).toFixed(1)) : null,
+    value_is_estimate: true,
+  }
+
   const events = readJsonl<UsageRow>(USAGE).filter(r => r.kind === 'event')
   const fired = events.filter(e => e.event === 'rule-fired')
   const ruleIds = parseRules(read(path.join(SDLC, 'rules.json'))).rules.map(r => r.id)
@@ -167,8 +192,8 @@ export function cmdMetrics(args: Args): void {
     })(),
   }
 
-  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, harness } }, null, 2))
+  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, harness, autonomy, ratchet: ratchetM, economics } }, null, 2))
   const fmt = (v: Metric): string => (v.value === null ? `unmeasured (n=${v.n}${v.note ? ', ' + v.note : ''})` : `${Number(v.value.toFixed(2))} (n=${v.n})`)
   const rows = Object.entries(m).map(([k, v]) => `${k.padEnd(30)} ${fmt(v)}`)
-  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2)].join('\n'))
+  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2)].join('\n'))
 }
