@@ -7,7 +7,10 @@ import { spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, write } from './testkit.ts'
 
 const walk = (dir: string): string[] =>
-  fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)])) : []
+  fs.existsSync(dir)
+    ? fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walk(path.join(dir, e.name)) : [toPosix(path.join(dir, e.name))]))
+    : []
+const toPosix = (p: string): string => p.split(path.sep).join('/')
 
 // Runs the project's own copy, the way a cloud session's hooks and skills do.
 const vendored = (repo: string, args: string[], input?: string) => {

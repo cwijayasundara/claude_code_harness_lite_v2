@@ -231,9 +231,9 @@ While developing the plugin, run `claude --plugin-dir ./sdlc`, and run `claude p
   - `$.session.usage().cost` gives exact dollars that reconcile with `/usage`, including advisor and classifier calls.
 - **Known gaps in v0:**
   - Subagents spawned inside built-in skills such as `code-review` sometimes log as `unknown` agent type.
-  - L-tier bugfix and incident changes have no human gate, because their path has no spec or plan stage.
-  - The `agent.spawn` Sonnet default applies to every unpinned general-purpose spawn in a `.sdlc` repo, including those inside built-in skills, and has not been observed live yet. A `userConfig` toggle is the planned follow-up.
-  - Only the tier S path was exercised end-to-end. The M/L paths (gates, implementer fan-out, verifier and review repair rounds, band and handoff) still need an interactive trial.
+  - ~~L-tier bugfix and incident changes have no human gate, because their path has no spec or plan stage.~~ Fixed in v0.3: a plan gate after diagnosis (§13).
+  - ~~The `agent.spawn` Sonnet default applies to every unpinned general-purpose spawn in a `.sdlc` repo, including those inside built-in skills, and has not been observed live yet. A `userConfig` toggle is the planned follow-up.~~ Dropped in v0.3.0: the default subagent model is `CLAUDE_CODE_SUBAGENT_MODEL`, and `agent.spawn` only records agent types.
+  - ~~Only the tier S path was exercised end-to-end.~~ Tier M and L have since shipped end to end headless (v0.3 lean trials, scenario suite). The interactive parts (band, `/sdlc-approve`, impact dialog) are still unchecked by a person; see §11.
 
 ### Tier M trial (2026-10-02/03, todo-core sample repo, Sonnet main + Opus advisor)
 
@@ -465,6 +465,12 @@ Harness cost split: main thread Sonnet $1.29, unattributed Opus $0.40, implement
 
 **Implication: running in the cloud recovers the time lost to a sleeping laptop.** `sdlc.ts vendor --cloud` puts the harness in the repo so a cloud session can run it.
 
+### CI fix (2026-10-03, after v0.3.5)
+
+CI was red from 38b1cce, so v0.3.4 and v0.3.5 were tagged on red builds; macOS, the only local platform, passed throughout. Both failures were in tests, not the harness:
+- **Linux:** the gate test expected `claude.md` to ask as a case variant of `CLAUDE.md`. On Linux the guard is case-sensitive by design, so `claude.md` is an ordinary file; the test now asserts that per platform. The `dogfood` job ran the same suite and failed with it.
+- **Windows:** the vendor test matched skill paths with `/` while `path.join` returned `\`; it now normalises them. The rest of that test had never run on Windows before.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
@@ -476,10 +482,10 @@ Harness cost split: main thread Sonnet $1.29, unattributed Opus $0.40, implement
   - ~~Ship should clear `STATE.md` and stage it.~~
   - ~~Skill-load failures in `-p` need a deterministic fallback, or should be reported as an error.~~ A PostToolUseFailure hook hands the model `sdlc.ts skill <name>`.
 - From the 2026-10-03 Spec 1 live trial (§10):
-  - Cost target missed (+44%, a lower bound): find out why stage A spends 51% on Opus, and whether the architect or the advisor is the driver.
-  - Rerun the tier M trial (paid) after the 4cac9b1 parser fix, to confirm it ships end to end and to get a full cost figure including review and ship.
+  - ~~Cost target missed (+44%, a lower bound): find out why stage A spends 51% on Opus, and whether the architect or the advisor is the driver.~~ The advisor was the driver (v0.3 trial, §10); the settings template now turns it off.
+  - ~~Rerun the tier M trial (paid) after the 4cac9b1 parser fix, to confirm it ships end to end and to get a full cost figure including review and ship.~~ Tier M shipped end to end in the v0.3.0 install check and the scenario suite (§10).
   - The interactive mod checks still need a human: the impact dialog for main-thread and subagent edits, the `sensors ✓/✗` band, and the `/sdlc-sensors` pane.
-  - `STATE.md` says "No active change" while a change is active. `createChange` and `setActive` rewrite only the `change:` frontmatter and keep the body, and `init` seeds that body with the "No active change." template. Only the model's build and handoff skills ever rewrite the body, and the build stopped at verify without doing so. `status` reads the frontmatter, so it is right; the session-start hook injects the body, so the model is told the opposite. Candidate fix (not made): `setActive` replaces a body that is still the template, and `verify` or `build` writes the slice and stage state mechanically.
+  - ~~`STATE.md` says "No active change" while a change is active.~~ Fixed in v0.3: `setActive` replaces a body that is still generated text (`scripts/core.ts`, `GENERATED_STATE`). Original finding: `createChange` and `setActive` rewrite only the `change:` frontmatter and keep the body, and `init` seeds that body with the "No active change." template. Only the model's build and handoff skills ever rewrite the body, and the build stopped at verify without doing so. `status` reads the frontmatter, so it is right; the session-start hook injects the body, so the model is told the opposite. Candidate fix (not made): `setActive` replaces a body that is still the template, and `verify` or `build` writes the slice and stage state mechanically.
 
 ## 12. Spec 1 (quality sensors, v0.2.0): deviations from the plan
 
