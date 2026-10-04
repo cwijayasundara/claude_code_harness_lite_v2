@@ -321,3 +321,28 @@ test('a follow-up is refused until the pr node is done', () => {
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /pr node of tiny is not done/)
 })
+
+test('a local-only change that later gets an origin resumes: pr pushes, opens the PR and moves to pr-review', () => {
+  ready('tiny')
+  assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr-review')
+  const bare = withRemote()
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr')
+  const head = gitIn(repo, 'rev-parse', 'HEAD')
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: fakeGh('echo https://github.com/o/r/pull/12').env })
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(gitIn(repo, 'rev-parse', 'HEAD'), head)
+  assert.ok(gitIn(bare, 'branch', '--list', 'sdlc/tiny').includes('sdlc/tiny'))
+  assert.match(events('tiny'), /"kind":"pr","target":"https:\/\/github.com\/o\/r\/pull\/12"/)
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr-review')
+})
+
+test('gh saying the PR already exists records the existing url instead of blocking', () => {
+  ready('tiny')
+  withRemote()
+  const gh = fakeGh(`case "$1 $2" in "pr create") echo 'a pull request for branch already exists' >&2; exit 1;; "pr view") echo https://github.com/o/r/pull/5;; esac`)
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(events('tiny'), /"kind":"pr","target":"https:\/\/github.com\/o\/r\/pull\/5"/)
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr-review')
+})

@@ -31,10 +31,10 @@ export const gatesFor = (type: ChangeType, tier: Tier, config: SensorConfig): Ga
 
 const committed = (slug: string, file: string): boolean => Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug, file)))]))
 export const prRecorded = (slug: string): boolean => committed(slug, 'pr.md')
-// The pr node is done once pr.md is committed AND either the change is local-only or a real PR url was recorded
+// The pr node is done once pr.md is committed AND either the change is local-only and still has no origin, or a real PR url was recorded
 // (a pushed branch whose gh pr create failed is not done; `pr` resumes it).
 export const prDone = (slug: string): boolean =>
-  prRecorded(slug) && (/^state: local-only$/m.test(read(path.join(CHANGES, slug, 'pr.md'))) || readEvents(slug).some(e => e.kind === 'pr' && /^https?:\/\//.test(e.target ?? '')))
+  prRecorded(slug) && ((/^state: local-only$/m.test(read(path.join(CHANGES, slug, 'pr.md'))) && !git(['remote', 'get-url', 'origin'])) || readEvents(slug).some(e => e.kind === 'pr' && /^https?:\/\//.test(e.target ?? '')))
 export const isLegacyShipped = (slug: string): boolean => isShipped(slug) && !exists(path.join(CHANGES, slug, 'pr.md'))
 
 export function loadChange(slug: string): Change {

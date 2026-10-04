@@ -80,7 +80,7 @@ test('tier S chore has no gates and skips spec and plan', () => {
   assert.match(run(['status']).stdout, /next: \/sdlc:build bump-deps/)
 })
 
-test('tier S feature reviews in session only where a PR review cannot run', () => {
+test('tier S feature reviews in session only where a PR review cannot run; a local-only change that gains an origin goes back to pr (resume)', () => {
   run(['new', 'tiny', '--type', 'feature', '--tier', 'S'])
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
@@ -91,7 +91,7 @@ test('tier S feature reviews in session only where a PR review cannot run', () =
   write('.github/workflows/sdlc-review.yml', 'name: sdlc-review\n')
   assert.match(run(['status']).stdout, /next: \/sdlc:pr-review tiny/, 'a workflow without a remote still cannot review')
   git('remote', 'add', 'origin', 'https://example.com/x.git')
-  assert.match(run(['status']).stdout, /done/, 'CI reviews the PR, so the change has no pr-review node')
+  assert.match(run(['status']).stdout, /next: \/sdlc:pr tiny/, 'a local-only change that gained an origin has no PR yet: pr resumes it (and CI then reviews, so no pr-review node)')
 })
 
 test('log-usage keeps the change and stage captured at turn start', () => {
@@ -244,7 +244,7 @@ test('status warns when there is no origin remote to open a PR on', () => {
 test('skill prints a stage skill with plugin root and arguments substituted', () => {
   const r = run(['skill', 'test', 'add-login'])
   assert.equal(r.code, 0, r.stderr)
-  assert.match(r.stdout, /# Verify add-login/)
+  assert.match(r.stdout, /# Test add-login/)
   assert.doesNotMatch(r.stdout, /\$\{CLAUDE_PLUGIN_ROOT\}/)
   assert.doesNotMatch(r.stdout, /^---\nname:/)
   assert.notEqual(run(['skill', 'no-such-skill']).code, 0)

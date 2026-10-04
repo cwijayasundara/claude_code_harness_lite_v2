@@ -154,12 +154,19 @@ export function cmdPr(args: Args): void {
   out(`pr ${slug} on ${git(['rev-parse', '--abbrev-ref', 'HEAD'])} at ${git(['rev-parse', '--short', 'HEAD'])}: ${code.length} code file(s) + artifacts; ${remote ? `PR ${target}` : 'no origin remote, local only'}. The change stays active for pr-review.`)
 }
 
+const ghLast = (text: string): string => text.trim().split('\n').at(-1) ?? ''
 const URL_RE = /^https?:\/\//
 
 // gh pr create; records the pr event only for a real URL. Anything else blocks with the manual command.
 function openPr(slug: string, title: string): string {
   const file = toPosix(path.relative(ROOT, path.join(CHANGES, slug, 'pr.md')))
-  const url = (ghRun(['pr', 'create', '--title', title, '--body-file', path.join(CHANGES, slug, 'pr.md')]) ?? '').trim().split('\n').at(-1) ?? ''
+  const body = path.join(CHANGES, slug, 'pr.md')
+  let url = ''
+  try { url = ghLast(execFileSync('gh', ['pr', 'create', '--title', title, '--body-file', body], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) } catch (e) {
+    const x = e as { stdout?: unknown; stderr?: unknown }
+    // The PR already exists (a rerun, or opened by hand): record its url instead of blocking.
+    if (/already exists/i.test(`${String(x.stdout ?? '')}${String(x.stderr ?? '')}`)) url = ghLast(ghRun(['pr', 'view', `sdlc/${slug}`, '--json', 'url', '-q', '.url']) ?? '')
+  }
   if (!URL_RE.test(url)) {
     block(slug, 'pr', `the branch is pushed but gh pr create printed no PR url; run: gh pr create --title ${JSON.stringify(title)} --body-file ${file}, or rerun sdlc.ts pr ${slug} --message ...`)
     fail('the branch is pushed but gh pr create failed (blocked)')
