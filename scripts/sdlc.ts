@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, APPROVAL_ARTIFACTS, approvalDigest,
-  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, planPath, planName, isPlanned, frontmatter, parseArgs, optString,
+  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, planPath, planName, approvalFile, isPlanned, frontmatter, parseArgs, optString,
   listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems, checkSlug, SLUG_RE,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
@@ -146,8 +146,8 @@ function cmdApprove(args: Args): void {
     appendEvent(slug, { node: 'any', verdict: 'approved', kind: 'tier', reason: `tier ${was.tier} → ${r.tier}, type ${was.type} → ${r.type}; a person accepted it` })
     return out(`approved ${slug} tier: ${was.tier} → ${r.tier}, type ${was.type} → ${r.type}. Next: ${nextCommand(loadChange(slug))}`)
   }
-  const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
-  const file = path.join(CHANGES, slug, artifact ?? '')
+  const artifact = APPROVAL_ARTIFACTS[stage as GatedStage] && path.basename(approvalFile(slug, stage as GatedStage))
+  const file = artifact ? approvalFile(slug, stage as GatedStage) : ''
   if (!artifact || !exists(file)) fail(`nothing to approve: ${slug}/${artifact ?? stage} does not exist`)
   const open = stage === 'spec' || stage === 'plan' || stage === 'design' ? openQuestions(read(file)) : []
   if (open.length) {

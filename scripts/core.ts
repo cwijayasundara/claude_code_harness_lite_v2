@@ -189,7 +189,7 @@ export function approvalDigest(slug: string, gate: GatedStage): string {
   const dir = path.join(CHANGES, slug)
   // One approval covers the problem and the design, so a change to either makes it stale.
   if (gate === 'design') return sha(`${read(path.join(dir, 'intent.md'))}\n${read(path.join(dir, 'design.md'))}`)
-  const artifact = read(path.join(dir, APPROVAL_ARTIFACTS[gate]))
+  const artifact = read(approvalFile(slug, gate))
   if (gate !== 'impact') return sha(artifact)
   // The timestamp is left out so a re-run with identical results keeps the approval.
   const raw = read(path.join(dir, 'impact.json'))
@@ -203,8 +203,16 @@ export function approvalDigest(slug: string, gate: GatedStage): string {
   return sha(`${artifact}\n${content}`)
 }
 
+// The file an approval covers. The impact approval follows the plan document, so editing design.md makes it stale too.
+export const approvalFile = (slug: string, gate: GatedStage): string => (gate === 'impact' ? planPath(slug) : path.join(CHANGES, slug, APPROVAL_ARTIFACTS[gate]))
+
 // A change's plan document: design.md (feature and greenfield) when it exists, else plan.md. Every reader of the plan goes through here.
-export const planPath = (slug: string): string => path.join(CHANGES, slug, exists(path.join(CHANGES, slug, 'design.md')) ? 'design.md' : 'plan.md')
+// A plan.md the person already approved stays the plan: a design.md added later must not widen the scope unapproved.
+export const planPath = (slug: string): string => {
+  const plan = path.join(CHANGES, slug, 'plan.md')
+  const useDesign = exists(path.join(CHANGES, slug, 'design.md')) && !(exists(plan) && readJsonl<Approval>(APPROVALS).some(a => a.slug === slug && a.stage === 'plan'))
+  return useDesign ? path.join(CHANGES, slug, 'design.md') : plan
+}
 export const planName = (slug: string): string => path.basename(planPath(slug))
 
 export function approvalOf(slug: string, gate: GatedStage): ApprovalState {
