@@ -406,9 +406,11 @@ test('I3: Stop ratchets a known-red command that now passes; it then blocks when
   assert.match(out.reason, /\[commands\][\s\S]*fast\.lint failed/)
 })
 
-test('the local guard is best-effort: an unquoted glob write is not blocked here; CI lists the added row', () => {
-  // Spec §5: the trust boundary is CI (base-branch checker, CODEOWNERS, humanRowsAdded), not this guard.
-  assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/approval?.jsonl'), true)
+test('R24: a write whose argument holds a glob is denied once the command mentions .sdlc; reads stay allowed', () => {
+  assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/approval?.jsonl'), false)
+  assert.equal(isSafeEvidenceCommand('rm .sdlc/changes/x/rat*'), false)
+  assert.equal(isSafeEvidenceCommand('cd .sdlc/changes/x && rm rat*'), false)
+  assert.equal(isSafeEvidenceCommand('ls .sdlc/changes/*'), true)
   assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/approvals.jsonl'), false)
   assert.equal(isSafeEvidenceCommand('cat .sdlc/approvals.jsonl'), true)
 })

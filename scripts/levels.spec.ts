@@ -64,11 +64,20 @@ test('recording a passing review for every slice moves a v0.4 change past build'
   assert.notEqual(nextStage('two').stage, 'build')
 })
 
-test('a legacy change folder (no ratchet.json) with a passing verification.md still reads build done', () => {
+test('R24: an in-flight change without ratchet.json stays at build (fails closed), even with a passing verification.md', () => {
   sdlc(repo, ['new', 'old', '--type', 'chore', '--tier', 'S'])
-  fs.rmSync(path.join(repo, '.sdlc/changes/old/ratchet.json'))
   write(repo, '.sdlc/changes/old/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n')
   sdlc(repo, ['run', '--slug', 'old', '--', 'node -e "0"'])
   sdlc(repo, ['verify-report', 'old'])
-  assert.notEqual(nextStage('old').stage, 'build')
+  assert.match(vfront('old'), /^result: pass$/m)
+  fs.rmSync(path.join(repo, '.sdlc/changes/old/ratchet.json'))
+  assert.equal(nextStage('old').stage, 'build')
+})
+
+test('a corrupt ratchet.json also leaves build not done', () => {
+  sdlc(repo, ['new', 'old', '--type', 'chore', '--tier', 'S'])
+  sdlc(repo, ['run', '--slug', 'old', '--', 'node -e "0"'])
+  sdlc(repo, ['verify-report', 'old'])
+  write(repo, '.sdlc/changes/old/ratchet.json', '{not json')
+  assert.equal(nextStage('old').stage, 'build')
 })
