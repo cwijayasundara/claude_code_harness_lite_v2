@@ -125,7 +125,11 @@ function gitAllowed(args: string[]): boolean {
 
 // Only the harness's own script counts as sdlc.ts: the plugin's copy or the project's vendored one, by real path
 // (a file that does not exist, a look-alike named sdlc.ts, or a symlink to one is refused).
-export function isHarnessScript(token: string): boolean {
+export const atRoot = (cwd?: string): boolean => {
+  try { return !cwd || fs.realpathSync(cwd) === fs.realpathSync(ROOT) } catch { return false }
+}
+export function isHarnessScript(token: string, cwd?: string): boolean {
+  if (!atRoot(cwd)) return false
   try {
     const real = fs.realpathSync(path.resolve(ROOT, token))
     return [path.join(PLUGIN_ROOT, 'scripts', 'sdlc.ts'), path.join(ROOT, '.sdlc', 'bin', 'sdlc.ts')]
@@ -135,9 +139,9 @@ export function isHarnessScript(token: string): boolean {
 
 // `node [--disable-warning=X] <path>/sdlc.ts <sub> ...`: reads for everyone; run and verify-report for reviewer and
 // verifier, and run only for a command that exactly matches a declared one (sdlc.ts joins the words after --).
-function recorderAllowed(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>): string | null {
+function recorderAllowed(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>, cwd?: string): string | null {
   const i = w.findIndex(x => !x.startsWith('-'))
-  if (i < 0 || !isHarnessScript(w[i] ?? '') || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
+  if (i < 0 || !isHarnessScript(w[i] ?? '', cwd) || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
   const sub = w[i + 1] ?? ''
   const rest = w.slice(i + 2)
   const dd = rest.indexOf('--')
@@ -157,11 +161,11 @@ function recorderAllowed(w: string[], agent: string, declared: (slug: string | u
 }
 
 // Returns why one segment (its dequoted words) is not allowed, or null when it is a known read-only command.
-function segmentDenied(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>): string | null {
+function segmentDenied(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>, cwd?: string): string | null {
   const c = w[0] ?? ''
   const args = w.slice(1)
   if (c === 'git') return gitAllowed(args) ? null : 'git is limited to read-only subcommands (diff, log, show, status, ...)'
-  if (c === 'node') return recorderAllowed(args, agent, declared)
+  if (c === 'node') return recorderAllowed(args, agent, declared, cwd)
   if (c === 'find') return args.some(x => FIND_WRITES.test(x)) ? 'find may not delete, write or execute' : null
   if (c === 'rg') return args.some(x => longOpt(x, ['pre', 'hostname-bin'])) ? 'rg --pre and --hostname-bin run commands' : null
   if (c === 'sort') return args.some(x => /^-[^-]*o/.test(x) || longOpt(x, ['output', 'compress-program'])) ? 'sort -o writes a file' : null
@@ -179,11 +183,11 @@ function segmentDenied(w: string[], agent: string, declared: (slug: string | und
 }
 
 // Why a read-only agent may not run cmd, or null when every segment is an allowlisted read-only command.
-export function readOnlyDenial(cmd: string, agent: string, declared: (slug: string | undefined) => Set<string>): string | null {
+export function readOnlyDenial(cmd: string, agent: string, declared: (slug: string | undefined) => Set<string>, cwd?: string): string | null {
   const { segs, bad } = tokenize(cmd)
   if (bad) return bad
   for (const w of segs) {
-    const why = segmentDenied(w, agent, declared)
+    const why = segmentDenied(w, agent, declared, cwd)
     if (why) return `"${w.join(' ').slice(0, 60)}": ${why}`
   }
   return null

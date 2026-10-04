@@ -189,3 +189,38 @@ test('an ungated tier S plan cannot declare its own commands', () => {
   assert.notEqual(bash('node -e 1'), 'allow')
   assert.equal(bash('npm test'), 'allow')
 })
+
+const bashAt = (cwd: string, command: string) => {
+  const r = sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ cwd, tool_input: { command } }) })
+  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
+}
+
+test('a foreign or nested working directory never gets auto-approval', () => {
+  approveAll()
+  write(repo, '.sdlc/bin/sdlc.ts', 'x')
+  const evil = fs.mkdtempSync(path.join(os.tmpdir(), 'aa-evil-'))
+  fs.mkdirSync(path.join(evil, '.sdlc/bin'), { recursive: true }); fs.writeFileSync(path.join(evil, '.sdlc/bin/sdlc.ts'), 'x')
+  for (const c of ['node .sdlc/bin/sdlc.ts status', 'git status', 'npm test']) {
+    assert.notEqual(bashAt(evil, c), 'allow', `foreign: ${c}`)
+    assert.notEqual(bashAt(path.join(repo, 'src'), c), 'allow', `subdirectory: ${c}`)
+    assert.equal(bashAt(repo, c), 'allow', `root: ${c}`)
+  }
+  assert.equal(bash('git status'), 'allow', 'cwd omitted')
+})
+
+test('dot-directories and env files never auto-approve, in any tier', () => {
+  sdlc(repo, ['new', 'small', '--type', 'feature', '--tier', 'S'])
+  write(repo, '.sdlc/changes/small/plan.md', '## Files\n- **\n## Verification\n- `npm test`\n')
+  assert.equal(edit('src/a.js'), 'allow')
+  for (const f of ['.githooks/pre-commit', '.github/workflows/x.yml', '.env.local', '.husky/pre-push', '.vscode/tasks.json', 'src/.hidden/a.js'])
+    assert.notEqual(edit(f), 'allow', f)
+})
+
+test('read-only agents do not get the harness script from a foreign working directory', () => {
+  const ask = (cwd: string) => {
+    const r = sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ cwd, agent_type: 'sdlc:reviewer', tool_input: { command: `node ${SCRIPT} status` } }) })
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
+  }
+  assert.equal(ask(os.tmpdir()), 'deny')
+  assert.notEqual(ask(repo), 'deny')
+})

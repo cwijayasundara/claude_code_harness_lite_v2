@@ -7,14 +7,15 @@ import { step, AUTONOMOUS, activeSlug } from './graph.ts'
 import { isProtected } from './sensors.ts'
 import { loadConfig } from './check.ts'
 import { globToRegex } from './model.ts'
-import { normCmd, isHarnessScript } from './shell.ts'
+import { normCmd, isHarnessScript, atRoot } from './shell.ts'
 import { appendEvent } from './ratchet.ts'
 
 const METACHAR = /[;&|`$<>()\\\x00-\x1f\x7f]/
 const ARG = /^[\w./:=@^~,+-]+$/
 // Bash expands these before git or gh sees them, so the path check would judge a different string.
 const expands = (x: string): boolean => /[*?[\]{}]/.test(x) || x.startsWith('~') || /[=:]~/.test(x)
-const SAFE_SUBS = new Set(['status', 'next', 'verify-report', 'quality', 'scorecard', 'pr-checks', 'diff', 'ratchet show'])
+// Tasks 7-9 add their read-only subcommands (quality, scorecard, pr-checks) here.
+const SAFE_SUBS = new Set(['status', 'next', 'verify-report', 'diff', 'ratchet show'])
 const GIT_SUBS = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
 const GIT_BAD_OPT = /^(?:-C|-c|--no-index|--output(?:=.*)?|--ext-diff|-O.*|--open-files-in-pager.*|--textconv|--exec-path.*|--git-dir.*|--work-tree.*|--paginate)$/
 
@@ -35,16 +36,16 @@ function gitReadOnly(w: string[]): boolean {
 }
 
 // Returns how the command was approved, or null. 'read' means read-only git, which is not worth an audit event.
-function bashApproval(cmd: string, slug: string, node: string): 'declared' | 'read' | null {
+function bashApproval(cmd: string, slug: string, node: string, cwd?: string): 'declared' | 'read' | null {
   // Judge the raw text: normCmd folds newlines and tabs into spaces, but bash would still run the extra line.
-  if (METACHAR.test(cmd)) return null
+  if (METACHAR.test(cmd) || !atRoot(cwd)) return null
   const c = cmd.trim().replace(/ +/g, ' ')
   if (normCmd(cmd) !== c) return null
   if (declaredCommandSet(slug).has(c)) return 'declared'
   const w = c.split(' ')
   if (w[0] === 'node') {
     const i = w[1]?.startsWith('--disable-warning=ExperimentalWarning') ? 2 : 1
-    if (!w[i] || !isHarnessScript(w[i]) || w.slice(1, i).some(x => x !== '--disable-warning=ExperimentalWarning')) return null
+    if (!w[i] || !isHarnessScript(w[i], cwd) || w.slice(1, i).some(x => x !== '--disable-warning=ExperimentalWarning')) return null
     const rest = w.slice(i + 1)
     if (rest[0] === 'run') {
       const m = /^run(?: --slug ([a-z0-9-]+))?(?: --expect-fail)? -- "([^"\\$`\x00-\x1f\x7f]+)"$/.exec(rest.join(' '))
@@ -93,13 +94,13 @@ export function autoApprove(input: HookInput, tool: 'edit' | 'bash'): string | n
     const rel = insideRepo(file)
     const lexical = relPosix(path.resolve(ROOT, file))
     if (!rel || lexical.startsWith('../') || isProtected(rel, true) || isProtected(lexical, true)) return null
-    if (rel.toLowerCase().startsWith('.sdlc/') || rel.toLowerCase().startsWith('.git/') || rel.toLowerCase().startsWith('.claude/')) return null
+    if (rel.split('/').some(seg => seg.startsWith('.'))) return null // hooks, CI and env files run outside the test runner or hold secrets
     if (!planFiles(slug).some(p => globToRegex(p).test(rel))) return null
     appendEvent(slug, { node: s.node, verdict: 'allow', kind: 'auto-approve', tool: 'Edit', target: rel })
-    return `${rel} is in ${slug}/plan.md ## Files and the plan is approved (node ${s.node})`
+    return `${rel} is inside ${slug}/plan.md ## Files (node ${s.node})`
   }
   const cmd = String(input.tool_input?.command ?? '')
-  const how = cmd ? bashApproval(cmd, slug, s.node) : null
+  const how = cmd ? bashApproval(cmd, slug, s.node, input.cwd) : null
   if (!how) return null
   if (how === 'declared') appendEvent(slug, { node: s.node, verdict: 'allow', kind: 'auto-approve', tool: 'Bash', target: normCmd(cmd).slice(0, 120) })
   return `a declared, harness or read-only git command inside ${slug}'s approved plan (node ${s.node})`

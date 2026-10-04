@@ -211,7 +211,7 @@ function hookPreBash(input: HookInput): void {
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
   }
   const agent = input.agent_type ?? ''
-  const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands) : null
+  const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands, input.cwd) : null
   if (why) return decide('deny', `${agent} is read-only: ${why}. It reports and never edits; record test runs with sdlc.ts run -- "<declared command>" and leave fixes to the implementer.`)
   const allowed = autoApprove(input, 'bash')
   if (allowed) decide('allow', allowed)
