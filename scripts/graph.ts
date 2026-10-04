@@ -122,8 +122,12 @@ export function step(slug: string): Step {
   const round = node && BUDGETED.has(node) ? (ratchet.nodes[node as RatchetNode]?.rounds ?? 0) : 0
   const base = { slug, node, round, command: nextCommand(change) }
   if (!change.next) return { ...base, verdict: 'ready', reason: 'every node is done; a person merges the PR' }
-  if (ratchet.blocked) return { ...base, verdict: 'blocked', reason: `${ratchet.blocked.node}: ${ratchet.blocked.reason}` }
-  if (change.next.kind === 'approve') return { ...base, verdict: 'human', reason: base.command }
+  // R46: a gate or level block is cleared by the node's own code (pr re-runs the gate, verify-report re-derives levels) once a person
+  // fixed or waived it, so the node resumes; cap, stall, budget and other need /sdlc-approve <slug> budget.
+  const blocked = ratchet.blocked
+  const pending = blocked && (blocked.kind === 'gate' || blocked.kind === 'level') ? ` (pending block: ${blocked.node}: ${blocked.reason})` : ''
+  if (blocked && !pending) return { ...base, verdict: 'blocked', reason: `${blocked.node}: ${blocked.reason}` }
+  if (change.next.kind === 'approve') return { ...base, verdict: 'human', reason: base.command + pending }
   if (node && BUDGETED.has(node)) {
     const cap = loadConfig().config.ratchet.usd[node as RatchetNode]
     const spent = spendUsd(slug, node)
@@ -133,5 +137,5 @@ export function step(slug: string): Step {
       return { ...base, verdict: 'blocked', reason: `${node}: ${reason}` }
     }
   }
-  return { ...base, verdict: 'continue', reason: `next node: ${node}` }
+  return { ...base, verdict: 'continue', reason: `next node: ${node}${pending}` }
 }

@@ -130,3 +130,20 @@ test('log-usage refuses a non-numeric usd and an unknown kind; a malformed histo
   fs.appendFileSync(path.join(repo, '.sdlc/usage.jsonl'), JSON.stringify({ kind: 'main', usd: 1, change: 'tiny', stage: 'build' }) + '\n')
   assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'spend', 'tiny']).stdout).total, 1)
 })
+
+test('R46: gate and level blocks resume at the current node; cap, stall, budget and other stay blocked', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  const at = (kind: string) => write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: {}, slices: {}, baseline: {}, blocked: { node: 'build', reason: `why-${kind}`, at: 'now', kind } }))
+  for (const kind of ['gate', 'level']) {
+    at(kind)
+    const s = stepOf('tiny')
+    assert.equal(s.verdict, 'continue', kind)
+    assert.match(s.reason, new RegExp(`pending block.*why-${kind}`), kind)
+  }
+  for (const kind of ['cap', 'stall', 'budget', 'other']) {
+    at(kind)
+    assert.equal(stepOf('tiny').verdict, 'blocked', kind)
+  }
+  write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: {}, slices: {}, baseline: {}, blocked: { node: 'build', reason: 'no kind', at: 'now' } }))
+  assert.equal(stepOf('tiny').verdict, 'blocked', 'a legacy block without a kind is other')
+})
