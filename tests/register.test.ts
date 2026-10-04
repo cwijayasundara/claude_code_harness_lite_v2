@@ -13,6 +13,9 @@ const command = (name: string, args = '', kind: 'composer' | 'sdk' = 'composer')
   presentation: { isFullscreen: false, columns: 120 },
 })
 
+declare function setTimeout(handler: () => void, ms: number): unknown
+const settle = (): Promise<void> => new Promise(r => setTimeout(r, 20))
+
 type Run = { argv: readonly string[]; env?: Record<string, string> }
 
 function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
@@ -23,6 +26,8 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
     standalone: false,
+    prompts: [] as string[],
+    answer: 'Not yet',
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -36,6 +41,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
         step: world.step })
+      : sub === 'next' ? JSON.stringify(world.step)
       : sub === 'metrics' ? 'value/cost 9.5x'
       : sub === 'impact-status' ? JSON.stringify(world.impact)
       : sub === 'check-file' ? JSON.stringify(world.fileFindings)
@@ -53,6 +59,10 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     world.toasts.push(String(e.text ?? e))
     return { value: undefined }
   })
+  on('prompt.submit', ($, e) => {
+    world.prompts.push(e.text)
+    return { text: e.text }
+  })
   on('ui.log', () => ({ value: undefined }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.notice', ($, e) => {
@@ -66,14 +76,14 @@ describe('sdlc mod', () => {
   test('session start registers the zero-token commands', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-metrics-pane', 'sdlc-sensors', 'sdlc-status', 'sdlc-story', 'sdlc-waive'])
+    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-metrics-pane', 'sdlc-run', 'sdlc-sensors', 'sdlc-status', 'sdlc-story', 'sdlc-waive'])
   })
 
   test('in a standalone repo its own approve and waive skills win; status and sensors stay', async ($, on) => {
     const world = worldOf(on)
     world.standalone = true
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-metrics-pane', 'sdlc-sensors', 'sdlc-status', 'sdlc-story'])
+    expect(world.commands.sort()).toEqual(['sdlc-metrics-pane', 'sdlc-run', 'sdlc-sensors', 'sdlc-status', 'sdlc-story'])
   })
 
   test('approve runs the script as the human only when the person typed it', async ($, on) => {
@@ -245,5 +255,73 @@ describe('sdlc mod', () => {
     const no = await $.tool.call({ ...edit, tool_use_id: 'tu4' })
     expect(no.deny).toContain('declined')
     expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
+  })
+
+  test('/sdlc-run submits the next node as a prompt, and continues after each turn', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await settle()
+    expect(world.prompts.at(-1)).toContain('skill build add-login')
+    expect(world.prompts.at(-1)).toContain('then stop')
+    world.step = { slug: 'add-login', node: 'test', verdict: 'continue', reason: '', command: '/sdlc:test add-login', round: 0 }
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    expect(world.prompts.at(-1)).toContain('skill test add-login')
+  })
+
+  test('the driver stops when a turn makes no progress', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await settle()
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
+    expect(world.prompts.length).toBe(1)
+    expect(world.toasts.at(-1)).toContain('no progress')
+  })
+
+  test('an aborted turn pauses the driver; a non-person origin cannot start it', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    const refused = await $.command.run(command('sdlc-run', '', 'sdk'))
+    expect(refused.text).toContain('only when the person types it')
+    expect(world.prompts.length).toBe(0)
+    await $.command.run(command('sdlc-run'))
+    await settle()
+    world.step = { slug: 'add-login', node: 'test', verdict: 'continue', reason: '', command: '', round: 0 }
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, reason: 'answer', turnId: 't1' })
+    expect(world.prompts.length).toBe(1)
+    expect(world.toasts.at(-1)).toContain('paused')
+  })
+
+  test('at a human gate the driver asks; only the person\'s choice approves', async ($, on) => {
+    const world = worldOf(on)
+    world.step = { slug: 'add-login', node: 'plan', verdict: 'human', reason: 'human gate', command: 'human gate: review add-login/plan.md, then run /sdlc-approve add-login plan', round: 0 }
+    world.answer = 'Not yet'
+    on('tool.call', ($2, e) =>
+      e.tool === 'AskUserQuestion' ? { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map(q => [q.question, world.answer])) } } : { result: 'edited' },
+    )
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await settle()
+    expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
+    world.answer = 'Approve plan'
+    await $.command.run(command('sdlc-run'))
+    await settle()
+    const run = world.runs.find(r => r.argv.includes('approve'))
+    expect(run?.argv).toContain('plan')
+    expect(run?.env).toEqual({ SDLC_HUMAN: '1' })
+  })
+
+  test('blocked and ready stop the driver with a toast', async ($, on) => {
+    const world = worldOf(on)
+    world.step = { slug: 'add-login', node: 'build', verdict: 'blocked', reason: 'build: stall', command: '', round: 2 }
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await settle()
+    expect(world.prompts.length).toBe(0)
+    expect(world.toasts.at(-1)).toContain('blocked: build: stall')
   })
 })

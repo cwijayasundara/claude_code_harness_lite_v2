@@ -10,10 +10,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Band, Status } from '../types'
+import type { Band, Status, StepInfo } from '../types'
 import { sdlcArgv, parseStatus } from './shared'
 import { PANE_ID, STORY_PANE, METRICS_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
+import { promptFor, gateOf, stepKey } from './driver'
+
+// The mod runtime provides timers; the mod tsconfig carries no DOM or node lib.
+declare function setTimeout(handler: () => void, ms: number): unknown
 
 const NUDGE_EVERY_PROMPTS = 5
 
@@ -21,6 +25,9 @@ const NUDGE_EVERY_PROMPTS = 5
 const band = atom({ plugin: 'sdlc', key: 'band' } as const, null as Band | null)
 const paneText = atom({ plugin: 'sdlc', key: 'paneText' } as const, '')
 const metricsText = atom({ plugin: 'sdlc', key: 'metricsText' } as const, '')
+
+const driverRunning = atom({ plugin: 'sdlc', key: 'driverRunning' } as const, false)
+const driverLast = atom({ plugin: 'sdlc', key: 'driverLast' } as const, '')
 
 let lastCostUsd = 0
 let warnedSoft = false
@@ -50,6 +57,46 @@ async function refreshBand($: EngineInterface): Promise<void> {
   await update($, band, () => value)
 }
 
+async function stopDriver($: EngineInterface, why: string): Promise<void> {
+  await update($, driverRunning, () => false)
+  await update($, driverLast, () => '')
+  $.ui.toast(`sdlc: ${why}`)
+}
+
+// Ask the script for the next node and submit it; the rules stay in the script, this only forwards the person's choices.
+async function advance($: EngineInterface): Promise<void> {
+  if (!(await read($, driverRunning))) return
+  if (!(await isInitialised($))) return stopDriver($, 'not initialised; driver stopped')
+  let s: StepInfo
+  try {
+    s = JSON.parse((await $.process.run(sdlc($, ['next', '--json']))).stdout) as StepInfo
+  } catch {
+    return stopDriver($, 'could not read the next step; driver stopped')
+  }
+  if (s.verdict === 'blocked') return stopDriver($, `blocked: ${s.reason}`)
+  if (s.verdict === 'ready') return stopDriver($, `${s.slug} is ready: a person merges the PR`)
+  if (s.verdict === 'human') {
+    const gate = gateOf(s)
+    if (!gate) return stopDriver($, `waiting at a human gate: ${s.reason}`)
+    // An approval that leaves the same gate waiting must not loop.
+    if ((await read($, driverLast)) === `gate:${gate}`) return stopDriver($, `the ${gate} approval did not advance; driver stopped`)
+    let answer = ''
+    try {
+      answer = await $.ui.ask(s.command, { options: [`Approve ${gate}`, 'Not yet'], header: 'Gate' })
+    } catch {
+      // nobody to ask (dismissed, -p): never approve
+    }
+    if (answer !== `Approve ${gate}`) return stopDriver($, `waiting at the ${gate} gate`)
+    const r = await $.process.run(sdlc($, ['approve', s.slug, gate]), { env: { SDLC_HUMAN: '1' } })
+    if (r.exitCode !== 0) return stopDriver($, (r.stderr || r.stdout).trim() || `could not approve ${gate}`)
+    await update($, driverLast, () => `gate:${gate}`)
+    return advance($)
+  }
+  if ((await read($, driverLast)) === stepKey(s)) return stopDriver($, `no progress on ${s.node} (round ${s.round}); driver stopped`)
+  await update($, driverLast, () => stepKey(s))
+  $.prompt.submit({ text: promptFor(s, $.plugin.root) }).catch(err => $.ui.log(`driver could not submit: ${String(err)}`))
+}
+
 export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
@@ -63,6 +110,7 @@ export const register: Register = on => {
       }
       await $.command.register({ name: 'sdlc-sensors', description: 'sdlc: what the sensors found, known-red and waivers (no model call)', immediate: true })
       await $.command.register({ name: 'sdlc-story', description: 'sdlc: the active story - node, rounds, cost by node, estimated value (no model call)', immediate: true })
+      await $.command.register({ name: 'sdlc-run', description: 'sdlc: drive the active change node by node to the next gate (no model call to decide); /sdlc-run stop pauses', argumentHint: '[stop]', immediate: true })
       await $.command.register({ name: 'sdlc-metrics-pane', description: 'sdlc: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) {
       $.ui.log(`could not register commands: ${String(err)}`)
@@ -94,6 +142,20 @@ export const register: Register = on => {
     const r = await $.process.run(sdlc($, ['waive', ...parts]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim() }
+  })
+
+  on('command.run', { command: 'sdlc-run' }, async ($, e) => {
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'sdlc-run runs only when the person types it.' }
+    if (e.args.trim() === 'stop') {
+      await stopDriver($, 'driver paused')
+      return {}
+    }
+    if (!(await isInitialised($))) return { text: 'sdlc is not initialised here.' }
+    await update($, driverRunning, () => true)
+    await update($, driverLast, () => '')
+    // prompt.submit cannot be called from inside a command.run hook (it would wait on the turn the hook holds): kick off after it returns.
+    setTimeout(() => advance($).catch(err => $.ui.log(`driver stopped: ${String(err)}`)), 0)
+    return {}
   })
 
   on('command.run', { command: 'sdlc-sensors' }, async $ => {
@@ -163,6 +225,18 @@ export const register: Register = on => {
       if (!e.agentId) await refreshBand($)
     } catch (err) {
       $.ui.log(`usage capture skipped: ${String(err)}`)
+    }
+    // Only main turns drive: an aborted one (the person pressed Esc) pauses, a finished one advances.
+    if (!e.agentId) {
+      try {
+        if (e.isAborted) {
+          if (await read($, driverRunning)) await stopDriver($, 'driver paused')
+        } else {
+          await advance($)
+        }
+      } catch (err) {
+        $.ui.log(`driver stopped: ${String(err)}`)
+      }
     }
     return result
   })
