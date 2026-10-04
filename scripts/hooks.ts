@@ -11,6 +11,7 @@ import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensor
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, parseConfig, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd } from './shell.ts'
+import { autoApprove } from './autoapprove.ts'
 
 function readStdin(): HookInput {
   try {
@@ -196,7 +197,8 @@ const READ_ONLY_AGENT = /(?:^|[:-])(?:scout|reviewer|verifier)$/
 function declaredCommands(slug: string | undefined): Set<string> {
   const { config } = loadConfig()
   const s = slug ?? activeSlug()
-  return new Set([...(s ? planVerification(s) : []), ...Object.values(config.fast), ...Object.values(config.full)].map(normCmd))
+  const cmds = [...(s ? planVerification(s) : []), ...Object.values(config.fast), ...Object.values(config.full), ...Object.values(config.levels), ...Object.values(config.quality).map(q => q.cmd)]
+  return new Set(cmds.map(normCmd))
 }
 
 function hookPreBash(input: HookInput): void {
@@ -211,6 +213,14 @@ function hookPreBash(input: HookInput): void {
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands) : null
   if (why) return decide('deny', `${agent} is read-only: ${why}. It reports and never edits; record test runs with sdlc.ts run -- "<declared command>" and leave fixes to the implementer.`)
+  const allowed = autoApprove(input, 'bash')
+  if (allowed) decide('allow', allowed)
+}
+
+function allowOrContext(input: HookInput, context: string | undefined): void {
+  const allowed = autoApprove(input, 'edit')
+  if (allowed) decide('allow', allowed, context)
+  else respond({ context })
 }
 
 function hookPreEdit(input: HookInput): void {
@@ -243,12 +253,12 @@ function hookPreEdit(input: HookInput): void {
     const why = `${rel}: tier L bug fixes wait for the person to approve plan.md (root cause and fix). `
     return decide('ask', `${why}Write the failing test now; fix after /sdlc-approve ${slug} plan.`, context)
   }
-  if (stage !== 'build' && stage !== 'diagnose') return respond({ context })
+  if (stage !== 'build' && stage !== 'diagnose') return allowOrContext(input, context)
   const patterns = planFiles(slug)
   if (patterns.length && !isPlanned(file, patterns)) {
     return decide('ask', `${relPosix(file)} is not in ${slug}/plan.md ## Files. Add it to the plan if it belongs to this change, otherwise leave it alone.`, context)
   }
-  respond({ context })
+  allowOrContext(input, context)
 }
 
 function hookPostEdit(input: HookInput): void {
