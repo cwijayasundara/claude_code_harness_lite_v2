@@ -7,7 +7,7 @@ import { loadConfig } from './check.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done' }
-export type Ratchet = { nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, number> }; blocked?: { node: string; reason: string; at: string }; credits?: Partial<Record<RatchetNode, number>> }
+export type Ratchet = { version?: number; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, number> }; blocked?: { node: string; reason: string; at: string }; credits?: Partial<Record<RatchetNode, number>> }
 export type Event = { at: string; node: string; verdict: string; round?: number; reason?: string; kind?: string; tool?: string; target?: string; usd?: number }
 export type ReviewFinding = { severity: string; category: string; text: string }
 export type RoundVerdict = { verdict: 'continue' | 'done' | 'blocked'; reason: string }

@@ -4,7 +4,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn, buildDone } from './testkit.ts'
 
 let repo: string
 let consumer: string
@@ -73,6 +73,7 @@ test('seeded: a 700-line diff warns at Stop and blocks in CI', () => {
 
 test('seeded: a hand-written passing verification.md does not make a change shippable', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
+  buildDone(repo, 'xx')
   write(repo, '.sdlc/changes/xx/verification.md', '---\nresult: pass\n---\n')
   assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:test xx/)
 })

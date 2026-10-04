@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
-import { verified, ratcheted } from './testkit.ts'
+import { verified, ratcheted, buildDone } from './testkit.ts'
 
 const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
 let repo: string
@@ -327,6 +327,7 @@ test('skill prints a stage skill with plugin root and arguments substituted', ()
 
 test('run records exit codes; verify-report generates verification.md; a hand-written pass does not count', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  buildDone(repo, 'tiny')
   write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
   assert.match(run(['status']).stdout, /next: \/sdlc:test tiny/)
 
@@ -369,6 +370,7 @@ test('verification judges only the plan commands, ignoring gate rows and abandon
 
 test('a forged verification.md with runs: 0 does not make the change shippable', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  buildDone(repo, 'tiny')
   const digest = crypto.createHash('sha256').update('').digest('hex').slice(0, 16)
   write('.sdlc/changes/tiny/verification.md', `---\ngenerated: sdlc\nresult: pass\nruns: 0\ndigest: ${digest}\n---\n`)
   assert.match(run(['status']).stdout, /next: \/sdlc:test tiny/)

@@ -48,3 +48,8 @@ export function ratcheted(repo: string, slug: string): void {
   const node = { rounds: 0, hashes: [], status: 'done' }
   write(repo, `.sdlc/changes/${slug}/ratchet.json`, JSON.stringify({ nodes: { build: node, sensors: node }, slices: {}, baseline: {} }))
 }
+
+// A v0.4 change whose build node is done (every slice reviewed) and nothing later.
+export function buildDone(repo: string, slug: string): void {
+  write(repo, `.sdlc/changes/${slug}/ratchet.json`, JSON.stringify({ version: 4, nodes: { build: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {} }))
+}

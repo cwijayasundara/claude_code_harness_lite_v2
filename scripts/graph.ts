@@ -47,7 +47,7 @@ export function loadChange(slug: string): Change {
   if (tier === 'M' && type !== 'greenfield') stages = stages.filter(s => s !== 'spec')
   if ((tier === 'S' || tier === 'M') && type !== 'greenfield' && prReviewAvailable()) stages = stages.filter(s => s !== 'pr-review')
   const gates = gatesFor(type, tier, config)
-  const legacy = !exists(path.join(dir, 'ratchet.json'))
+  const legacy = readRatchet(slug).version === undefined
   const isDone = (stage: Stage): boolean => {
     switch (stage) {
       case 'build': return readRatchet(slug).nodes.build?.status === 'done' || (legacy && exists(path.join(dir, 'verification.md')))

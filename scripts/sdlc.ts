@@ -340,8 +340,6 @@ function cmdVerifyReport(args: Args): void {
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
   // A failing report is always a new finding (counter keeps the hash unique), so only the test node's cap applies.
   if (result === 'fail') {
-    // A legacy change (no ratchet.json) counts build as done once verification.md exists; keep that true when the file appears.
-    if (!exists(path.join(CHANGES, slug, 'ratchet.json'))) { const r = readRatchet(slug); r.nodes.build = { ...(r.nodes.build ?? { rounds: 0, hashes: [] }), status: 'done' }; writeRatchet(slug, r) }
     recordRound(slug, 'test', [{ severity: 'high', category: 'tests', text: `verification failed at ${now()} (${rows.length} runs, round ${readRatchet(slug).nodes.test?.hashes.length ?? 0})` }], { cap: config.ratchet.rounds.test })
   }
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)

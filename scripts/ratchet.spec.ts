@@ -74,7 +74,7 @@ test('record refuses input with no verdict and no finding line, and records noth
     const r = tryRecord('test', text)
     assert.notEqual(r.code, 0, JSON.stringify(text))
   }
-  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/big/ratchet.json')), false)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, nodes: {}, slices: {}, baseline: {} })
   assert.equal(record('test', 'verdict: pass\n').verdict, 'done')
 })
 
@@ -82,7 +82,7 @@ test('record refuses changes-needed when no critical or high finding parsed', ()
   const r = tryRecord('test', 'verdict: changes-needed\n- [severity: medium] [category: tests] t.js:1: weak\n')
   assert.notEqual(r.code, 0)
   assert.match(r.stderr + r.stdout, /changes-needed but no critical or high finding lines parsed/)
-  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/big/ratchet.json')), false)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, nodes: {}, slices: {}, baseline: {} })
 })
 
 test('a bare pr.md, verification.md or impact.json is evidence once the command mentions .sdlc', () => {

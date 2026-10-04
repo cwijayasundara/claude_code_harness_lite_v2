@@ -38,3 +38,37 @@ test('a failing verify-report counts a test round; past the cap the change is bl
   }
   assert.match(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).reason, /test: cap: 2 fix rounds/)
 })
+
+const nextStage = (slug: string) => (JSON.parse(sdlc(repo, ['status', '--json']).stdout).changes as { slug: string; next: { stage: string } | null }[]).find(c => c.slug === slug)?.next ?? { stage: 'none' }
+const feature = () => {
+  sdlc(repo, ['new', 'two', '--type', 'feature', '--tier', 'M'])
+  write(repo, '.sdlc/changes/two/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n### Task 1\nA\n### Task 2\nB\n')
+  sdlc(repo, ['run', '--slug', 'two', '--', 'node -e "0"'])
+}
+
+test('a new v0.4 change stays at build until every slice is reviewed, whatever verify-report says', () => {
+  feature()
+  sdlc(repo, ['verify-report', 'two'])
+  assert.equal(nextStage('two').stage, 'build')
+  sdlc(repo, ['run', '--slug', 'two', '--', 'node -e "process.exit(1)"'])
+  sdlc(repo, ['verify-report', 'two'])
+  assert.equal(nextStage('two').stage, 'build', 'a failing report must not complete build either')
+})
+
+test('recording a passing review for every slice moves a v0.4 change past build', () => {
+  feature()
+  sdlc(repo, ['verify-report', 'two'])
+  sdlc(repo, ['ratchet', 'record', 'two', 'build', '--slice', '1'], { input: 'verdict: pass\n' })
+  assert.equal(nextStage('two').stage, 'build')
+  sdlc(repo, ['ratchet', 'record', 'two', 'build', '--slice', '2'], { input: 'verdict: pass\n' })
+  assert.notEqual(nextStage('two').stage, 'build')
+})
+
+test('a legacy change folder (no ratchet.json) with a passing verification.md still reads build done', () => {
+  sdlc(repo, ['new', 'old', '--type', 'chore', '--tier', 'S'])
+  fs.rmSync(path.join(repo, '.sdlc/changes/old/ratchet.json'))
+  write(repo, '.sdlc/changes/old/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n')
+  sdlc(repo, ['run', '--slug', 'old', '--', 'node -e "0"'])
+  sdlc(repo, ['verify-report', 'old'])
+  assert.notEqual(nextStage('old').stage, 'build')
+})
