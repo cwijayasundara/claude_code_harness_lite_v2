@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { storyText, storyPaneText } from '../hooks/band'
-import type { Story } from '../types'
+import type { Story, StepInfo } from '../types'
 
 const SESSION = { surface: 'terminal' as const, isInteractive: true, cwd: '/work' }
 
@@ -26,6 +26,8 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
     standalone: false,
+    partial: false,
+    verdict: 'continue',
     prompts: [] as string[],
     answer: 'Not yet',
   }
@@ -39,7 +41,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     const sub = e.argv[3]
     const stdout =
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
-        story: { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
+        story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
         step: world.step })
       : sub === 'next' ? JSON.stringify(world.step)
       : sub === 'metrics' ? 'value/cost 9.5x'
@@ -199,8 +201,37 @@ describe('sdlc mod', () => {
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
     const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: bandProps, viewport: { columns: 160, rows: 30 } })
     const text = JSON.stringify(await ui.drawn())
-    for (const part of ['build', '1/2', '412k tok', '$2.16', 'value ≈ $1,200 (est.)', 'ctx']) expect(text).toContain(part)
+    for (const part of ['build', 'build ⟲1/2', '412k tok', '$2.16', 'value ≈ $1,200 (est.)', 'ctx']) expect(text).toContain(part)
     await ui.unmount()
+  })
+
+  test('a blocked step shows ⛔ on the band and its reason in the story pane', async ($, on) => {
+    const world = worldOf(on)
+    world.verdict = 'blocked'
+    world.step = { slug: 'add-login', node: 'build', verdict: 'blocked', reason: 'sensors red', command: '', round: 1 }
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-story'))
+    const band = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: bandProps, viewport: { columns: 160, rows: 30 } })
+    expect(JSON.stringify(await band.drawn())).toContain('⛔')
+    await band.unmount()
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    expect(JSON.stringify(await ui.drawn())).toContain('blocked: sensors red')
+    await ui.unmount()
+  })
+
+  test('a partial story renders without throwing; pure text covers blocked, gate and fallback', async ($, on) => {
+    const world = worldOf(on)
+    world.partial = true
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-story'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    expect(JSON.stringify(await ui.drawn())).toContain('add-login')
+    await ui.unmount()
+    const s = { slug: 'a', node: 'build', verdict: 'blocked', round: 1, cap: 2 } as Story
+    const step = (verdict: StepInfo['verdict']): StepInfo => ({ slug: 'a', node: 'build', verdict, reason: 'why', command: '/sdlc:approve a', round: 1 })
+    expect(storyText(s)).toContain('build ⟲1/2 ⛔')
+    expect(storyPaneText(s, step('blocked'))).toContain('blocked: why')
+    expect(storyPaneText(s, step('human'))).toContain('waiting at gate: /sdlc:approve a')
   })
 
   test('/sdlc-story opens the story pane with cost per node, budget and autonomy', async ($, on) => {
@@ -317,6 +348,7 @@ describe('sdlc mod', () => {
 
   test('blocked and ready stop the driver with a toast', async ($, on) => {
     const world = worldOf(on)
+    world.verdict = 'blocked'
     world.step = { slug: 'add-login', node: 'build', verdict: 'blocked', reason: 'build: stall', command: '', round: 2 }
     await $.session.start(SESSION)
     await $.command.run(command('sdlc-run'))

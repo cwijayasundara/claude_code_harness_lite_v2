@@ -53,7 +53,7 @@ async function refreshBand($: EngineInterface): Promise<void> {
   const status = await statusJson($)
   const { change, stage } = stageOf(status)
   const session = await $.session.usage()
-  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null }
+  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null }
   await update($, band, () => value)
 }
 

@@ -10,6 +10,7 @@ export type Band = {
   sessionUsd: number
   sensors: SensorBand | null
   story?: Story | null
+  step?: StepInfo | null
 }
 
 declare module 'claude-code' {
