@@ -7,6 +7,7 @@ import {
   APPROVAL_ARTIFACTS, type ChangeType, type Tier, type Stage, type GatedStage, type ApprovalState, type Next, type Change,
 } from './core.ts'
 import { loadConfig } from './check.ts'
+import { readRatchet } from './ratchet.ts'
 import type { SensorConfig } from './model.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
@@ -32,11 +33,6 @@ const committed = (slug: string, file: string): boolean => Boolean(git(['log', '
 export const prRecorded = (slug: string): boolean => committed(slug, 'pr.md')
 export const isLegacyShipped = (slug: string): boolean => isShipped(slug) && !exists(path.join(CHANGES, slug, 'pr.md'))
 
-// Replaced by an import of readRatchet in Task 3.
-const nodeStatus = (dir: string, node: string): string | undefined => {
-  try { return (JSON.parse(read(path.join(dir, 'ratchet.json'))) as { nodes?: Record<string, { status?: string }> }).nodes?.[node]?.status } catch { return undefined }
-}
-
 export function loadChange(slug: string): Change {
   const dir = path.join(CHANGES, slug)
   const intent = frontmatter(read(path.join(dir, 'intent.md'))).data
@@ -54,16 +50,16 @@ export function loadChange(slug: string): Change {
   const legacy = !exists(path.join(dir, 'ratchet.json'))
   const isDone = (stage: Stage): boolean => {
     switch (stage) {
-      case 'build': return nodeStatus(dir, 'build') === 'done' || (legacy && exists(path.join(dir, 'verification.md')))
+      case 'build': return readRatchet(slug).nodes.build?.status === 'done' || (legacy && exists(path.join(dir, 'verification.md')))
       case 'diagnose': return exists(path.join(dir, 'verification.md'))
       case 'test': {
         const v = frontmatter(read(path.join(dir, 'verification.md'))).data
         const runs = read(path.join(dir, 'runs.jsonl')).split('\n').slice(0, Number(v.runs)).join('\n')
         return Number(v.runs) >= 1 && v.generated === 'sdlc' && v.result === 'pass' && sha(runs) === v.digest
       }
-      case 'sensors': return nodeStatus(dir, 'sensors') === 'done'
+      case 'sensors': return readRatchet(slug).nodes.sensors?.status === 'done'
       case 'pr': return prRecorded(slug)
-      case 'pr-review': return (review.result === 'pass' || review.result === 'accepted') && nodeStatus(dir, 'pr-review') !== 'open'
+      case 'pr-review': return (review.result === 'pass' || review.result === 'accepted') && readRatchet(slug).nodes['pr-review']?.status !== 'open'
       default: return exists(path.join(dir, ARTIFACTS[stage] ?? ''))
     }
   }

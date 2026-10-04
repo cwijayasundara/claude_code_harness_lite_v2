@@ -20,6 +20,7 @@ import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from '
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdVendor } from './vendor.ts'
+import { cmdRatchet } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 
 // ---------- commands ----------
@@ -389,6 +390,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   check: cmdCheck,
   'check-file': cmdCheckFile,
   vendor: cmdVendor,
+  ratchet: cmdRatchet,
   waive: cmdWaive,
   sensors: () => cmdSensors(),
   'impact-status': cmdImpactStatus,
