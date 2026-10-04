@@ -17,6 +17,7 @@ test('parseReviewFindings reads the reviewer line format', () => {
 })
 
 test('a slice with no high findings is done; new high findings continue; a repeated one stalls', () => {
+  write(repo, '.sdlc/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
   assert.equal(record('build', 'verdict: pass\n## Findings\n', '1').verdict, 'done')
   assert.equal(record('build', HIGH, '2').verdict, 'continue')
   const stalled = record('build', HIGH, '2')
@@ -63,4 +64,49 @@ test('spendUsd sums a change\'s main-turn cost, per node', () => {
   sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 0.25, change: 'big', stage: 'test' })])
   const r = JSON.parse(sdlc(repo, ['ratchet', 'spend', 'big']).stdout)
   assert.deepEqual(r, { total: 0.75, byNode: { build: 0.5, test: 0.25 } })
+})
+
+const ratchetJson = (): string => fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')
+const tryRecord = (node: string, text: string, extra: string[] = []) => sdlc(repo, ['ratchet', 'record', 'big', node, ...extra], { input: text })
+
+test('record refuses input with no verdict and no finding line, and records nothing', () => {
+  for (const text of ['', '   \n', 'looks fine to me, ship it']) {
+    const r = tryRecord('test', text)
+    assert.notEqual(r.code, 0, JSON.stringify(text))
+  }
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/big/ratchet.json')), false)
+  assert.equal(record('test', 'verdict: pass\n').verdict, 'done')
+})
+
+test('record refuses changes-needed when no critical or high finding parsed', () => {
+  const r = tryRecord('test', 'verdict: changes-needed\n- [severity: medium] [category: tests] t.js:1: weak\n')
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr + r.stdout, /changes-needed but no critical or high finding lines parsed/)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/big/ratchet.json')), false)
+})
+
+test('a bare pr.md, verification.md or impact.json is evidence once the command mentions .sdlc', () => {
+  const verdict = (command: string) => JSON.parse(sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ tool_input: { command } }) }).stdout || '{}').hookSpecificOutput?.permissionDecision
+  for (const c of ['cd .sdlc/changes/big && echo x > pr.md', 'cd .sdlc/changes/big && echo x | tee pr.md', 'cd .sdlc/changes/big && cp /tmp/a verification.md', 'cd .sdlc/changes/big; echo {} > impact.json']) assert.equal(verdict(c), 'deny', c)
+  assert.notEqual(verdict('cat .sdlc/changes/big/pr.md'), 'deny')
+  assert.notEqual(verdict('echo x > docs/pr.md'), 'deny')
+})
+
+test('build needs --slice when the plan has several, and rejects unknown slices', () => {
+  write(repo, '.sdlc/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
+  const missing = tryRecord('build', 'verdict: pass\n')
+  assert.notEqual(missing.code, 0)
+  assert.match(missing.stderr + missing.stdout, /--slice is required: plan\.md has 1, 2/)
+  const bad = tryRecord('build', 'verdict: pass\n', ['--slice', '9'])
+  assert.notEqual(bad.code, 0)
+  assert.match(bad.stderr + bad.stdout, /unknown slice 9; plan\.md has 1, 2/)
+})
+
+test('build events are labelled build#<slice>, unknown nodes and changes are refused', () => {
+  tryRecord('build', 'verdict: pass\n')
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8'), /"node":"build#1"/)
+  assert.notEqual(tryRecord('constructor', 'verdict: pass\n').code, 0)
+  const ghost = sdlc(repo, ['ratchet', 'show', 'nope'])
+  assert.notEqual(ghost.code, 0)
+  assert.match(ghost.stderr + ghost.stdout, /no change named nope/)
 })

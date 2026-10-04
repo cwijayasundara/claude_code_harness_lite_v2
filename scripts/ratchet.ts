@@ -74,7 +74,7 @@ export function recordRound(slug: string, node: RatchetNode, findings: ReviewFin
   } else r.nodes[node] = state
   if (result.verdict === 'blocked') r.blocked = { node, reason: result.reason, at: now() }
   writeRatchet(slug, r)
-  appendEvent(slug, { node: o.slice ? `${node}#${o.slice}` : node, verdict: result.verdict, round: state.rounds, reason: result.reason })
+  appendEvent(slug, { node: node === 'build' ? `build#${o.slice ?? '1'}` : node, verdict: result.verdict, round: state.rounds, reason: result.reason })
   return result
 }
 
@@ -88,7 +88,8 @@ export const testCaseCount = (texts: string[]): number => texts.reduce((n, t) =>
 
 export function cmdRatchet(args: Args): void {
   const [sub, slug, node] = args.pos
-  if (!slug || !fs.existsSync(path.join(CHANGES, slug))) fail('usage: ratchet (record <slug> <node> [--slice N] | show <slug> | spend <slug>)')
+  if (!sub || !slug) fail('usage: ratchet (record <slug> <node> [--slice N] | show <slug> | spend <slug>)')
+  if (!fs.existsSync(path.join(CHANGES, slug))) fail(`no change named ${slug}`)
   if (sub === 'show') return out(JSON.stringify(readRatchet(slug), null, 2))
   if (sub === 'spend') {
     const byNode: Record<string, number> = {}
@@ -97,8 +98,19 @@ export function cmdRatchet(args: Args): void {
   }
   if (sub !== 'record' || !node) fail('usage: ratchet record <slug> <build|test|sensors|pr-review> [--slice N] < reviewer reply')
   const { config } = loadConfig()
+  if (!Object.hasOwn(config.ratchet.rounds, node)) fail(`unknown ratchet node ${node}`)
   const n = node as RatchetNode
-  if (!(n in config.ratchet.rounds)) fail(`unknown ratchet node ${node}`)
-  const slice = typeof args.opt.slice === 'string' ? args.opt.slice : undefined
-  out(JSON.stringify(recordRound(slug, n, parseReviewFindings(fs.readFileSync(0, 'utf8')), { cap: config.ratchet.rounds[n], slice })))
+  let slice = typeof args.opt.slice === 'string' ? args.opt.slice : undefined
+  if (n === 'build') {
+    const ids = slicesIn(slug)
+    slice ??= ids.length === 1 ? ids[0] : undefined
+    if (!slice) fail(`--slice is required: plan.md has ${ids.join(', ')}`)
+    if (!ids.includes(slice)) fail(`unknown slice ${slice}; plan.md has ${ids.join(', ')}`)
+  }
+  const text = process.stdin.isTTY ? '' : fs.readFileSync(0, 'utf8')
+  const findings = parseReviewFindings(text)
+  const verdictLine = /^\s*verdict:\s*(pass|changes-needed)\b/im.exec(text)?.[1]?.toLowerCase()
+  if (!verdictLine && !findings.length) fail('no reviewer verdict: expected a "verdict: pass|changes-needed" line or finding lines on stdin; nothing recorded')
+  if (verdictLine === 'changes-needed' && !findings.some(f => BLOCKING.has(f.severity))) fail('changes-needed but no critical or high finding lines parsed: restate findings in the reviewer line format; nothing recorded')
+  out(JSON.stringify(recordRound(slug, n, findings, { cap: config.ratchet.rounds[n], slice })))
 }
