@@ -9,7 +9,7 @@ import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString,
-  listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems,
+  listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems, checkSlug, SLUG_RE,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step } from './graph.ts'
@@ -45,7 +45,7 @@ function cmdInit(): void {
 
 function cmdNew(args: Args): void {
   const slug = args.pos[0]
-  if (!slug || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."]')
+  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."]')
   const type = optString(args, 'type') ?? 'feature'
   const tier = optString(args, 'tier') ?? 'M'
   if (!isChangeType(type)) fail(`unknown type "${type}"; one of ${Object.keys(PATHS).join(', ')}`)
@@ -59,14 +59,13 @@ function cmdNew(args: Args): void {
 }
 
 function cmdActivate(args: Args): void {
-  const slug = args.pos[0]
-  if (!slug || !exists(path.join(CHANGES, slug))) fail(`no change named ${slug}`)
+  const slug = checkSlug(args.pos[0] ?? '')
   setActive(slug)
   out(`active change: ${slug}`)
 }
 
 function cmdNext(args: Args): void {
-  const slug = args.pos[0] ?? activeSlug()
+  const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()
   if (!slug) return out(args.opt.json ? JSON.stringify({ slug: null, node: null, verdict: 'ready', reason: 'no active change', command: `${skillRef('start')} "<what you want>"`, round: 0 }) : 'no active change')
   const s = step(slug)
   if (s.verdict === 'ready') clearReady(slug)
@@ -118,6 +117,7 @@ function cmdApprove(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /sdlc-approve <slug> <stage>', 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
+  checkSlug(slug)
   if (stage === 'budget') {
     const node = readRatchet(slug).blocked?.node.replace(/#.*/, '') ?? step(slug).node ?? 'build'
     const r = readRatchet(slug)
@@ -143,7 +143,7 @@ function cmdApprove(args: Args): void {
 }
 
 function cmdScopeDrift(args: Args): void {
-  const slug = args.pos[0] ?? activeSlug()
+  const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()
   if (!slug) fail('no change to check')
   const base = optString(args, 'base') ?? defaultBase()
   const r = scopeDrift(slug, base)
@@ -203,7 +203,8 @@ function cmdRun(): void {
   if (dash < 0 || dash === argv.length - 1) fail('usage: run [--slug s] [--expect-fail] -- "<command>"')
   const head = parseArgs(argv.slice(0, dash))
   const cmd = argv.slice(dash + 1).join(' ')
-  const slug = optString(head, 'slug') ?? activeSlug()
+  const given = optString(head, 'slug')
+  const slug = given ? checkSlug(given) : activeSlug()
   if (!slug || !exists(path.join(CHANGES, slug))) fail('no such change: run /sdlc:start first, or pass an existing --slug')
   const expectFail = Boolean(head.opt['expect-fail'])
   const row = runCommand(cmd)
@@ -214,7 +215,7 @@ function cmdRun(): void {
 }
 
 function cmdVerifyReport(args: Args): void {
-  const slug = args.pos[0] ?? activeSlug()
+  const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()
   if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: verify-report <slug>')
   const rows = readRuns(slug)
   const plan = planVerificationBullets(slug)
@@ -254,7 +255,8 @@ function cmdDiff(args: Args): void {
 function cmdWaive(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
   const [sensor, file, ...reason] = words(args)
-  const slug = optString(args, 'slug') ?? activeSlug()
+  const given = optString(args, 'slug')
+  const slug = given ? checkSlug(given) : activeSlug()
   if (!sensor || !file || !reason.length || !slug) fail('usage: waive <sensor> <file|*> <reason...>  (needs an active change)')
   if (!SENSOR_NAMES.includes(sensor)) fail(`unknown sensor "${sensor}"; known: ${SENSOR_NAMES.join(', ')}`)
   const by = git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'

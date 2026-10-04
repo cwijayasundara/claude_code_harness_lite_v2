@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase,
+  ROOT, SDLC, CHANGES, WAIVERS, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
@@ -164,7 +164,8 @@ function setTierL(slug: string): boolean {
 }
 
 export function cmdCheckPlan(args: Args): void {
-  const slug = optString(args, 'slug') ?? activeSlug()
+  const given = optString(args, 'slug')
+  const slug = given ? checkSlug(given) : activeSlug()
   if (!slug) fail('check --at plan needs an active change or --slug')
   const { config } = loadConfig()
   const ids = contractsFromPlan(read(path.join(CHANGES, slug, 'plan.md')))
@@ -364,6 +365,7 @@ export function cmdCheck(args: Args): void {
     before = f => showAt(base ?? 'HEAD', f) ?? ''
   }
   const slugArg = optString(args, 'slug')
+  if (slugArg) checkSlug(slugArg)
   const slugs = slugArg ? [slugArg] : at === 'ci' ? slugsIn(diffs) : [activeSlug()].filter((s): s is string => Boolean(s))
   const budgetMs = Number(optString(args, 'budget-ms') ?? (at === 'stop' ? 60_000 : 1_800_000))
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) fail('--budget-ms must be a positive number')

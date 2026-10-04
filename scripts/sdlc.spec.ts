@@ -568,3 +568,30 @@ test('status --json carries the active story and step for the mod', () => {
   assert.equal(s.step.verdict, 'continue')
   assert.equal(s.step.node, 'build')
 })
+
+test('every slug-taking command refuses a path-like slug and writes nothing outside .sdlc/changes', () => {
+  run(['init'])
+  fs.mkdirSync(path.join(repo, '.sdlc/x'), { recursive: true })
+  fs.mkdirSync(path.join(repo, '.sdlc/changes/real-one'), { recursive: true })
+  write('.sdlc/changes/real-one/intent.md', '---\ntype: feature\ntier: M\n---\n# real\n')
+  const human = { SDLC_HUMAN: '1' }
+  const cases: Array<[string[], Record<string, string>?]> = [
+    [['check', '--at', 'stop', '--slug', '../../x']],
+    [['check', '--at', 'plan', '--slug', '../x']],
+    [['run', '--slug', '../x', '--', 'node -e 0']],
+    [['verify-report', '../x']],
+    [['activate', '..']],
+    [['next', '../x']],
+    [['approve', '../x', 'budget'], human],
+    [['waive', 'rules', '*', 'why', '--slug', '../x'], human],
+    [['new', '../x', '--type', 'feature', '--tier', 'M']],
+    [['scope-drift', '../x']],
+  ]
+  for (const [args, env] of cases) {
+    const r = run(args, { env })
+    assert.notEqual(r.code, 0, `${args.join(' ')} must be refused`)
+    assert.match(r.stderr, /invalid change name|no change named|usage/, args.join(' '))
+  }
+  assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc/x')), [], 'nothing written into the sibling directory')
+  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/waivers.jsonl')) || fs.readFileSync(path.join(repo, '.sdlc/waivers.jsonl'), 'utf8') === '')
+})
