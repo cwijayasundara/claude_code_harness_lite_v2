@@ -12,7 +12,7 @@ import {
   listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems, checkSlug, SLUG_RE,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
-import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step } from './graph.ts'
+import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step, tierDrift } from './graph.ts'
 import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
 import { cmdHook, readGate } from './hooks.ts'
@@ -22,7 +22,7 @@ import { cmdMetrics } from './metrics.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
-import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block } from './ratchet.ts'
+import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 import { cmdQuality } from './quality.ts'
 import { requiredLevels, levelResults } from './levels.ts'
@@ -88,6 +88,8 @@ function cmdStatus(args: Args): void {
   for (const c of changes) {
     const plan = path.join(c.dir, 'plan.md')
     if (exists(plan)) for (const p of planProblems(plan)) warnings.push(`${c.slug}: ${p}`)
+    const drift = tierDrift(c.slug)
+    if (drift) warnings.push(`${c.slug}: ${drift}`)
     if (lines(read(path.join(c.dir, 'intent.md'))) > LIMITS.intentLines + 10) warnings.push(`${c.slug}: intent.md is long; keep it under ${LIMITS.intentLines} lines`)
   }
   if (lines(frontmatter(read(STATE)).body) > LIMITS.stateLines) warnings.push(`STATE.md over ${LIMITS.stateLines} lines; trim it`)
@@ -126,6 +128,18 @@ function cmdApprove(args: Args): void {
     writeRatchet(slug, r)
     unblock(slug, 'person approved more budget')
     return out(`unblocked ${slug}: ${node} gets a fresh budget ($${spent.toFixed(2)} credited)`)
+  }
+  if (stage === 'tier') {
+    // The person accepts intent.md's tier and type (lowering them too); the graph then gates on what is recorded here.
+    if (!exists(path.join(CHANGES, slug, 'intent.md'))) fail(`nothing to approve: ${slug}/intent.md does not exist`)
+    const intent = frontmatter(read(path.join(CHANGES, slug, 'intent.md'))).data
+    const r = readRatchet(slug)
+    const was = { tier: r.tier ?? 'unrecorded', type: r.type ?? 'unrecorded' }
+    r.tier = isTier(intent.tier) ? intent.tier : 'M'
+    r.type = isChangeType(intent.type) ? intent.type : 'feature'
+    writeRatchet(slug, r)
+    appendEvent(slug, { node: 'any', verdict: 'approved', kind: 'tier', reason: `tier ${was.tier} → ${r.tier}, type ${was.type} → ${r.type}; a person accepted intent.md` })
+    return out(`approved ${slug} tier: now ${r.tier} ${r.type}. Next: ${nextCommand(loadChange(slug))}`)
   }
   const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
   const file = path.join(CHANGES, slug, artifact ?? '')

@@ -381,7 +381,8 @@ export function createChange(slug: string, type: ChangeType, tier: Tier, title: 
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'intent.md'), intentTemplate(slug, type, tier, title))
   // Evidence written by sdlc itself: a change with a versioned ratchet.json is a v0.4 change; one without is legacy.
-  fs.writeFileSync(path.join(dir, 'ratchet.json'), JSON.stringify({ version: 4, nodes: {}, slices: {}, baseline: {} }, null, 2) + '\n')
+  // The tier and type are recorded here because intent.md is model-writable: it may raise them, only a person lowers them.
+  fs.writeFileSync(path.join(dir, 'ratchet.json'), JSON.stringify({ version: 4, tier, type, nodes: {}, slices: {}, baseline: {} }, null, 2) + '\n')
   setActive(slug)
 }
 
