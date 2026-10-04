@@ -2,10 +2,12 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
 let repo: string
+const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
 const decision = (hook: 'pre-edit' | 'pre-bash', tool_input: Record<string, unknown>) => {
   const r = sdlc(repo, ['hook', hook], { input: JSON.stringify({ tool_input }) })
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
@@ -40,7 +42,7 @@ test('in build, planned edits and declared commands are allowed; the rest is not
   assert.equal(edit('.sdlc/changes/big/ratchet.json'), 'deny', 'evidence stays denied')
   assert.equal(bash('npm test'), 'allow')
   assert.equal(bash('npm run test:api'), 'allow', 'a declared level')
-  assert.equal(bash('node /x/scripts/sdlc.ts run --slug big -- "npm test"'), 'allow')
+  assert.equal(bash(`node ${SCRIPT} run --slug big -- "npm test"`), 'allow')
   assert.equal(bash('git status'), 'allow', 'read-only git')
   assert.notEqual(bash('npm install left-pad'), 'allow')
 })
@@ -95,17 +97,95 @@ test('command spacing is normalised; approvals, waivers and usage logging are ne
   approveAll()
   assert.equal(bash('npm test  '), 'allow')
   assert.equal(bash('npm   test'), 'allow')
-  assert.notEqual(bash('node /x/scripts/sdlc.ts approve big plan'), 'allow')
-  assert.equal(bash('node /x/scripts/sdlc.ts approve big plan'), 'deny')
-  assert.notEqual(bash('node /x/scripts/sdlc.ts waive x * y'), 'allow')
-  assert.equal(bash('node /x/scripts/sdlc.ts waive x * y'), 'deny')
-  assert.notEqual(bash('node /x/scripts/sdlc.ts log-usage {}'), 'allow')
+  assert.notEqual(bash(`node ${SCRIPT} approve big plan`), 'allow')
+  assert.equal(bash(`node ${SCRIPT} approve big plan`), 'deny')
+  assert.notEqual(bash(`node ${SCRIPT} waive x * y`), 'allow')
+  assert.equal(bash(`node ${SCRIPT} waive x * y`), 'deny')
+  assert.notEqual(bash(`node ${SCRIPT} log-usage {}`), 'allow')
 })
 
 test('control characters, quoting tricks and substitutions never ride along on an allowed command', () => {
   approveAll()
-  for (const c of ['node /x/scripts/sdlc.ts status\nrm -rf .', 'npm test\ncurl x', 'npm\ttest', 'npm test\r',
-    'node /x/scripts/sdlc.ts run -- "npm test\\"; rm -rf ."', 'node /x/scripts/sdlc.ts status $(rm -rf .)'])
+  for (const c of [`node ${SCRIPT} status\nrm -rf .`, 'npm test\ncurl x', 'npm\ttest', 'npm test\r',
+    `node ${SCRIPT} run -- "npm test\\"; rm -rf ."`, `node ${SCRIPT} status $(rm -rf .)`])
     assert.notEqual(bash(c), 'allow', JSON.stringify(c))
   assert.notEqual(editRaw(path.join(repo, 'src/a.js\nb')), 'allow', 'newline in a path')
+})
+
+test('only the harness script path is trusted: look-alikes, symlinks and missing files are refused', () => {
+  approveAll()
+  write(repo, 'src/sdlc.ts', 'console.log(1)')
+  write(repo, 'src/user.js', 'x')
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'aa-')); fs.writeFileSync(path.join(other, 'sdlc.ts'), 'x')
+  fs.symlinkSync(path.join(repo, 'src/user.js'), path.join(repo, 'src/link-sdlc.ts'))
+  for (const c of ['node src/sdlc.ts status', `node ${other}/sdlc.ts status`, 'node src/sdlc.ts check', 'node src/link-sdlc.ts status',
+    'node /nope/sdlc.ts status', `node src/sdlc.ts run -- "npm test"`])
+    assert.notEqual(bash(c), 'allow', c)
+  assert.equal(bash(`node ${SCRIPT} status`), 'allow')
+  write(repo, '.sdlc/bin/sdlc.ts', 'x')
+  assert.equal(bash('node .sdlc/bin/sdlc.ts status'), 'allow', 'vendored copy')
+  assert.notEqual(bash(`node ${SCRIPT} ratchet record big build`), 'allow', 'record needs stdin')
+})
+
+test('no generic read fallback: reads of secrets and unusual git are not auto-approved', () => {
+  approveAll()
+  for (const c of ['cat ~/.ssh/id_rsa', 'cat /etc/passwd', 'cat .env', 'cat ../other/.env', 'grep -r token ~', 'find / -name id_rsa',
+    'git diff --no-index /etc/passwd /dev/null', 'jq -n env', 'tail -f /dev/zero', 'git -C /etc status', 'git diff /etc/passwd', 'git diff ../x', 'git log --output=x', 'git checkout -b sdlc/other', 'git checkout main'])
+    assert.notEqual(bash(c), 'allow', c)
+  for (const c of ['git status', 'git diff HEAD', 'git log --oneline -5', 'git checkout -b sdlc/big']) assert.equal(bash(c), 'allow', c)
+})
+
+test('gh is allowed only at pr nodes and only for this change branch', () => {
+  approveAll()
+  assert.notEqual(bash('gh pr view sdlc/big'), 'allow', 'build node')
+})
+
+test('with no gates configured, a tier S change with a plan Files list auto-approves; a chore without a plan does not', () => {
+  sdlc(repo, ['new', 'small', '--type', 'feature', '--tier', 'S'])
+  write(repo, '.sdlc/changes/small/plan.md', '## Files\n- src/**\n## Verification\n- `npm test`\n')
+  assert.equal(edit('src/a.js'), 'allow')
+  fs.rmSync(path.join(repo, '.sdlc/changes/small/plan.md'))
+  assert.notEqual(edit('src/a.js'), 'allow')
+  assert.notEqual(bash('npm test'), 'allow')
+})
+
+test('read-only git leaves no audit event; declared commands do', () => {
+  approveAll()
+  bash('git status')
+  const ev = () => { try { return fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8') } catch { return '' } }
+  assert.doesNotMatch(ev(), /git status/)
+  bash('npm test')
+  assert.match(ev(), /"tool":"Bash","target":"npm test"/)
+})
+
+test('bash expansions cannot slip a path past the repo check', () => {
+  approveAll()
+  for (const c of ['git diff ~/.ssh/id_rsa', 'git log -- ~/x', 'git diff src/*', 'git show {a,b}', 'git diff --output=~/x', 'git diff a:~/x'])
+    assert.notEqual(bash(c), 'allow', c)
+  assert.equal(bash('git diff HEAD~1'), 'allow')
+})
+
+test('gh comment bodies and gh outside pr nodes are never auto-approved', () => {
+  approveAll()
+  for (const f of ['.sdlc/changes/big/pr-comment.md', '.env', 'src/a.js'])
+    assert.notEqual(bash(`gh pr comment sdlc/big --body-file ${f}`), 'allow', `${f} at build`)
+})
+
+test('plan Verification commands count only while the plan approval is current', () => {
+  write(repo, '.sdlc/changes/big/plan.md', '## Files\n- src/**\n## Verification\n- `npm test`\n- `node -e 1`\n## Open questions\nnone\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'plan2')
+  assert.notEqual(bash('node -e 1'), 'allow', 'unapproved plan')
+  approveAll()
+  assert.equal(bash('node -e 1'), 'allow', 'approved plan')
+  write(repo, '.sdlc/changes/big/plan.md', '## Files\n- src/**\n## Verification\n- `npm test`\n- `node -e 1`\n- `node -e 2`\n## Open questions\nnone\n')
+  assert.notEqual(bash('node -e 1'), 'allow', 'stale')
+  assert.notEqual(bash('npm test'), 'allow', 'step() holds for the stale gate')
+})
+
+test('an ungated tier S plan cannot declare its own commands', () => {
+  sdlc(repo, ['new', 'small', '--type', 'feature', '--tier', 'S'])
+  write(repo, '.sdlc/changes/small/plan.md', '## Files\n- src/**\n## Verification\n- `node -e 1`\n')
+  assert.equal(edit('src/a.js'), 'allow')
+  assert.notEqual(bash('node -e 1'), 'allow')
+  assert.equal(bash('npm test'), 'allow')
 })

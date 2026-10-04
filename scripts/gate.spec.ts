@@ -6,6 +6,8 @@ import path from 'node:path'
 import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
 import { isSafeEvidenceCommand } from './hooks.ts'
 
+const SDLC_TS = path.resolve(import.meta.dirname, 'sdlc.ts')
+
 let repo: string
 beforeEach(() => {
   repo = makeRepo()
@@ -29,13 +31,13 @@ test('evidence files are human- or script-only: model edits and Bash writes are 
   }
   const append = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: `echo '{"exit":0}' >> .sdlc/changes/tiny/runs.jsonl` } }).stdout)
   assert.equal(append.hookSpecificOutput.permissionDecision, 'deny')
-  const waive = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts waive size * because' } }).stdout)
+  const waive = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: 'node ' + SDLC_TS + ' waive size * because' } }).stdout)
   assert.equal(waive.hookSpecificOutput.permissionDecision, 'deny')
   const forge = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: 'cat > .sdlc/changes/tiny/verification.md <<EOF\nresult: pass\nEOF' } }).stdout)
   assert.equal(forge.hookSpecificOutput.permissionDecision, 'deny')
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'cat .sdlc/changes/tiny/verification.md' } }).stdout, '')
   assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'tail -5 .sdlc/changes/tiny/runs.jsonl' } }).stdout, '')
-  assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts run -- "npm test"' } }).stdout, '')
+  assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'node ' + SDLC_TS + ' run -- "npm test"' } }).stdout, '')
 })
 
 const decision = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined)
@@ -93,10 +95,10 @@ test('sibling repo edits are denied unless the consumer is in an approved impact
 test('read-only agents: allowlist only; chained, substituted and interpreter writes are denied', () => {
   sdlc(repo, ['init'])
   const as = (agent_type: string, command: string) => decision(hook(repo, 'pre-bash', { agent_type, tool_input: { command } }))
-  const denied = ['touch src/app.js sdlc.ts status', 'rm f # sdlc.ts status', 'node /x/scripts/sdlc.ts status\ntouch f', 'node /x/scripts/sdlc.ts status & touch f',
-    'node /x/scripts/sdlc.ts status "$(touch f)"', "bash -c 'touch f'", 'sh -c "rm f"', 'echo "$(touch f)"', `python3 -c "import os;os.remove('f')"`, 'find . -delete',
+  const denied = ['touch src/app.js sdlc.ts status', 'rm f # sdlc.ts status', 'node ' + SDLC_TS + ' status\ntouch f', 'node ' + SDLC_TS + ' status & touch f',
+    'node ' + SDLC_TS + ' status "$(touch f)"', "bash -c 'touch f'", 'sh -c "rm f"', 'echo "$(touch f)"', `python3 -c "import os;os.remove('f')"`, 'find . -delete',
     'git -C . checkout -- a', 'echo \\"; touch f; echo \\"', "echo \\' > src/app.js \\'", 'echo "unterminated', 'echo x\\', 'sort -uo f x', 'sort -of x', 'sort --outp=f x',
-    'cat f >&2f', "sed -n -e 'w f' x", 'sed -s -n 1p x', "awk -f prog.awk x", "awk -i inplace 1 x", 'node /x/scripts/sdlc.ts status --at a --at b', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f',
+    'cat f >&2f', "sed -n -e 'w f' x", 'sed -s -n 1p x', "awk -f prog.awk x", "awk -i inplace 1 x", 'node ' + SDLC_TS + ' status --at a --at b', 'cat <<EOF > f', 'echo x 1>f', 'npm run build', 'echo x &>f', "sed -i '' s/a/b/ f", 'git checkout -- f', 'git diff --output=f',
     // fix round 4: $'...' desync, comments hiding quotes, quoted/escaped/braced options, zsh-only execution
     "echo $'\\'' ; touch PWN1 ; echo '\\'", "echo $'\\'' ; echo hi > PWN2 ; echo '\\'", "cat x #'\ntouch PWN3\n#'",
     "sort '-o' PWN4 x", 'sort \\-o PWN4 x', 'sort {-o,PWN4} x', "sort '--output=PWN4' x", 'sort --out=PWN4 x', "sort --compress-program=sh x",
@@ -105,16 +107,16 @@ test('read-only agents: allowlist only; chained, substituted and interpreter wri
     "sed '-i' s/a/b/ f", "sed -n 1p '-i' f", "sed -n '1p' f -i", "awk '-f' prog x", "awk 'BEGIN{print 1 > \"PWN8\"}'", "awk '@load \"inplace\"' x", 'awk -d x',
     'cat =(touch PWN9)', "ls *(e:'touch PWN10':)", 'ls *(+touch)', 'cat <(touch f)', 'cat $(touch f)', 'echo ${x:=1}', 'echo $HOME', 'echo "$HOME"', 'echo $"x"',
     '(touch f)', 'cat f; { touch f; }', 'cat <>PWN11', 'cat < f', 'echo x >| f', 'echo x >! f', 'echo x >> f', 'echo x 2>"/dev/null"x', 'echo x >/dev/nullx', 'echo x >&-',
-    'cat x\n#c', 'printf -v PATH /tmp x', 'X=1 cat f', 'node /x/scripts/sdlc.ts run -- npm test \\; touch f', 'node /x/scripts/sdlc.ts status -x',
+    'cat x\n#c', 'printf -v PATH /tmp x', 'X=1 cat f', 'node ' + SDLC_TS + ' run -- npm test \\; touch f', 'node ' + SDLC_TS + ' status -x',
     `node '--eval=require("fs").writeFileSync("PWN12","")//sdlc.ts' status`, `node '--import=data:text/javascript,import fs from "fs";fs.writeFileSync("PWN13","")//sdlc.ts' status`, 'node /x/notsdlc.ts status']
   for (const c of denied) assert.equal(as('sdlc:reviewer', c), 'deny', c)
-  const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node /x/scripts/sdlc.ts status',
+  const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node ' + SDLC_TS + ' status',
     'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current',
     'rg -n "\\bfoo\\b" src', "grep -n 'a\\|b' f", 'echo "say \\"hi\\""', 'sort -u x', 'sort -n x', 'git --no-pager diff', 'cat f >&2',
     'sort -k2 -t, f', "find . \\( -name a -o -name b \\) -print", 'cat f 2>/dev/null | head', 'cat f > /dev/null 2>&1', "sed -n '1,/x/p' f", "awk '{print $1}' f",
     'echo a$ b', 'rg -n "foo$" src', 'echo a#b', "echo 'a(b)c' \"{x}\"", 'git log --oneline -5', 'rg --pre-glob "*.gz" x', 'cat x \\\n f']
   for (const c of allowed) assert.equal(as('sdlc:reviewer', c), undefined, c)
-  assert.equal(as('sdlc:scout', 'node /x/scripts/sdlc.ts run -- "npm test"'), 'deny')
+  assert.equal(as('sdlc:scout', 'node ' + SDLC_TS + ' run -- "npm test"'), 'deny')
   assert.equal(as('sdlc:reviewer', 'npm test 2>&1 | tail -5'), 'deny', 'bare npm is not allowlisted')
   assert.equal(as('sdlc:implementer', 'echo x > f'), undefined)
 })
@@ -124,11 +126,11 @@ test('the verifier runs only declared verification commands, and only through th
   sdlc(repo, ['new', 'rate', '--type', 'feature', '--tier', 'L'])
   write(repo, '.sdlc/changes/rate/plan.md', '## Files\n- src/**\n\n## Verification\n- `npm test`\n')
   const as = (command: string) => decision(hook(repo, 'pre-bash', { agent_type: 'sdlc:verifier', tool_input: { command } }))
-  assert.equal(as('node /x/scripts/sdlc.ts run -- "npm test"'), undefined)
-  assert.equal(as('node --disable-warning=ExperimentalWarning /x/scripts/sdlc.ts run --slug rate -- "npm  test"'), undefined)
-  assert.equal(as('node /x/scripts/sdlc.ts run -- "touch f"'), 'deny')
-  assert.equal(as('node /x/scripts/sdlc.ts run -- "npm\ntest"'), 'deny', 'a newline would run npm and then test')
-  assert.equal(as('node /x/scripts/sdlc.ts run -- "npm test && touch f"'), 'deny')
+  assert.equal(as('node ' + SDLC_TS + ' run -- "npm test"'), undefined)
+  assert.equal(as('node --disable-warning=ExperimentalWarning ' + SDLC_TS + ' run --slug rate -- "npm  test"'), undefined)
+  assert.equal(as('node ' + SDLC_TS + ' run -- "touch f"'), 'deny')
+  assert.equal(as('node ' + SDLC_TS + ' run -- "npm\ntest"'), 'deny', 'a newline would run npm and then test')
+  assert.equal(as('node ' + SDLC_TS + ' run -- "npm test && touch f"'), 'deny')
   assert.equal(as('npm test 2>&1 | tail -20'), 'deny', 'tests go through the recorder')
 })
 
@@ -166,11 +168,11 @@ test('quotes and escapes cannot hide an evidence path from the guard (non-read-o
   sdlc(repo, ['init'])
   const as = (command: string) => decision(hook(repo, 'pre-bash', { tool_input: { command } }))
   for (const c of [`echo '{}' >> .sdlc/changes/a/run"s".jsonl`, `echo '{}' >> .sdlc/changes/a/ru'ns'.jsonl`, `echo '{}' >> .sdlc/changes/a/run\\s.jsonl`,
-    'printf x > .sdlc/approvals.json"l"', `cp x .sdlc/changes/a/run's'.jsonl`, `echo '{}' | tee -a ".sdlc/waivers.jsonl"`, `node /x/scripts/sdlc.ts ap'prove' a plan`,
+    'printf x > .sdlc/approvals.json"l"', `cp x .sdlc/changes/a/run's'.jsonl`, `echo '{}' | tee -a ".sdlc/waivers.jsonl"`, `node ${SDLC_TS} ap'prove' a plan`,
     'echo x >| .sdlc/changes/a/runs.jsonl', 'echo "$(date)" >> .sdlc/approvals.json\\l'])
     assert.equal(as(c), 'deny', c)
   for (const c of ['git add src/a.js .sdlc/approvals.jsonl && git commit -m "feat: x"', 'cat .sdlc/approvals.jsonl', 'tail -5 .sdlc/changes/x/runs.jsonl',
-    'node /x/scripts/sdlc.ts run -- "npm test"', 'git commit -m "docs: update" .sdlc/changes/a/runs.jsonl', "grep -c pass '.sdlc/changes/a/runs.jsonl'"])
+    'node ' + SDLC_TS + ' run -- "npm test"', 'git commit -m "docs: update" .sdlc/changes/a/runs.jsonl', "grep -c pass '.sdlc/changes/a/runs.jsonl'"])
     assert.equal(as(c), undefined, c)
 })
 

@@ -1,6 +1,8 @@
 // Read-only Bash for scout, reviewer and verifier: a bash- and zsh-faithful word tokenizer and a command allowlist.
 // Every check runs on dequoted words, so quotes, escapes and braces cannot hide an option or a second command.
-import { parseArgs } from './core.ts'
+import fs from 'node:fs'
+import path from 'node:path'
+import { parseArgs, ROOT, PLUGIN_ROOT } from './core.ts'
 
 export type Tokens = { segs: string[][]; bad: string | null }
 
@@ -121,11 +123,21 @@ function gitAllowed(args: string[]): boolean {
   return GIT_READ.has(sub)
 }
 
+// Only the harness's own script counts as sdlc.ts: the plugin's copy or the project's vendored one, by real path
+// (a file that does not exist, a look-alike named sdlc.ts, or a symlink to one is refused).
+export function isHarnessScript(token: string): boolean {
+  try {
+    const real = fs.realpathSync(path.resolve(ROOT, token))
+    return [path.join(PLUGIN_ROOT, 'scripts', 'sdlc.ts'), path.join(ROOT, '.sdlc', 'bin', 'sdlc.ts')]
+      .some(p => { try { return fs.realpathSync(p) === real } catch { return false } })
+  } catch { return false }
+}
+
 // `node [--disable-warning=X] <path>/sdlc.ts <sub> ...`: reads for everyone; run and verify-report for reviewer and
 // verifier, and run only for a command that exactly matches a declared one (sdlc.ts joins the words after --).
 function recorderAllowed(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>): string | null {
   const i = w.findIndex(x => !x.startsWith('-'))
-  if (i < 0 || !/(?:^|\/)sdlc\.ts$/.test(w[i] ?? '') || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
+  if (i < 0 || !isHarnessScript(w[i] ?? '') || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
   const sub = w[i + 1] ?? ''
   const rest = w.slice(i + 2)
   const dd = rest.indexOf('--')
