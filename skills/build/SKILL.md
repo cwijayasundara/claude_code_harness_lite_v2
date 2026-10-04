@@ -18,7 +18,7 @@ Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sd
    2. **Review the slice.** Tier L: launch `sdlc:reviewer` with `mode: slice`, the change folder, the slice number and the diff range for that slice. Tier S and M: run the built-in `code-review` skill at `medium` on the slice's diff and restate each finding in the reviewer's line format.
    3. **Record.** Write the reviewer's reply (it must hold a `verdict:` line and any findings in the line format) to `.sdlc/changes/$0/review-slice-N.md` with the Write tool, then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record $0 build --slice N < .sdlc/changes/$0/review-slice-N.md`. `--slice` is required when plan.md has more than one slice. It refuses a reply without an explicit verdict; `changes-needed` needs at least one critical or high finding. It prints `continue`, `done` or `blocked`:
       - `done`: next slice.
-      - `continue`: send only the critical and high findings to the same implementer (or fix them yourself for small builds), then go back to step 2 for this slice.
+      - `continue`: send only the critical and high findings to the same implementer (or fix them yourself for small builds), then go back to sub-step 3.2 (Review the slice).
       - `blocked`: stop. Show the reason; the person decides (`/sdlc-approve $0 budget` lifts a budget, stall or cap block).
 4. Never edit `ratchet.json`, `events.jsonl` or `plan.md` to get past a round. Track progress in `.sdlc/STATE.md` only.
 

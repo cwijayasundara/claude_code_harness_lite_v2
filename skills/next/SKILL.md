@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
 # Next step
 
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next --json`. `verdict` decides:
-   - `continue`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill <node> <slug>` and follow it exactly, then return to step 1 in this turn.
+   - `continue`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill <node> <slug>` and follow it exactly, then, if a person is driving with `/sdlc-run`, run one node and stop; otherwise return to step 1 in this turn.
    - `human`: show `command` word for word and stop. Never approve for the person.
    - `blocked`: show `reason` and stop.
    - `ready`: say a person merges the PR, and suggest `/sdlc:start "<next task>"`.

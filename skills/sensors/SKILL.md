@@ -7,6 +7,8 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 ---
 # Sensors $0
 
+**Subagents:** run every subagent in the foreground and wait for its result.
+
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts quality $0`. It runs each declared category on the branch and on the base, the built-in sensors and the test-count invariant, and records the round.
 2. **Exit 0:** the node is done. **Exit 2:** read the findings.
    - `regressed` or a built-in block: send only those findings to one `sdlc:implementer` run (plan files only), then run step 1 again.

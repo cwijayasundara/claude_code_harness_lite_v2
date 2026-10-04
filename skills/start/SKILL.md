@@ -3,7 +3,7 @@ name: start
 description: Front door of the sdlc harness. Use for any new software task (feature, bug, refactor, migration, chore, spike, greenfield app) or to resume one. Classifies type and tier, records intent.md, and prints the shortest safe path and the next command.
 argument-hint: '"<what you want>" | <existing-slug>'
 effort: medium
-allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(gh issue view*)
+allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Read, Write, Edit, Glob, Grep, AskUserQuestion, Bash(gh issue view*), Skill
 ---
 # Start or resume a change
 
@@ -32,10 +32,9 @@ If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:st
    - **Explicit defaults.** For each optional input you did not get (non-goals, risks, rollout), ask once with AskUserQuestion if it changes the tier or the gates; otherwise record the default you took in `## Decisions`. Never leave a guess unrecorded.
 5. **Tier S fast path** (any type except spike and greenfield). The change is small, so ceremony must cost less than the change. Do the whole build here in this turn, with no subagents and no other skills:
    1. Write a minimal `plan.md` of 15 lines or fewer, holding only `## Files` and `## Verification`.
-   2. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record. Implement, and run the targeted tests quietly. Stay inside `## Files`.
+   2. Write the failing test and run it once with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record. Implement, and run the targeted tests quietly. Stay inside `## Files`.
    3. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record <slug> build --slice 1` with an empty review (`verdict: pass`) only after running the built-in `code-review` skill at `medium` on the diff and restating its findings in the reviewer line format. Write the reply to `.sdlc/changes/<slug>/review-slice-1.md` and pipe it in with `< .sdlc/changes/<slug>/review-slice-1.md`; pipe those findings instead when there are any, and fix once on `continue`.
    4. The next command is the one `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next <slug> --json` gives (the test node). Keep going: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop or is driving with `/sdlc-run`.
-6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates:
-   Gates come from .sdlc/sensors.json "gates" (default: spec and plan for tier L and greenfield, none for S and M).
+6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates come from .sdlc/sensors.json "gates" (default: spec and plan for tier L and greenfield, none for S and M).
 
 End with exactly one line: `Next: <command from status>`.
