@@ -411,6 +411,12 @@ test('R24: a write whose argument holds a glob is denied once the command mentio
   assert.equal(isSafeEvidenceCommand('rm .sdlc/changes/x/rat*'), false)
   assert.equal(isSafeEvidenceCommand('cd .sdlc/changes/x && rm rat*'), false)
   assert.equal(isSafeEvidenceCommand('ls .sdlc/changes/*'), true)
+  for (const c of ["echo '{}' > .sdlc/changes/x/ratchet.jso{n,}", 'cd .sdlc/changes/x && echo {} > {ratchet,x}.json', 'echo x > .sdlc/approvals.json{l,}',
+    'echo x > .sdlc/changes/x/verification.m{d,}', 'cd .sdlc/changes/x && mv /tmp/a {ratchet,}.json', 'echo x > .sdlc/changes/x/$(echo ratchet).json',
+    'echo x > .sdlc/changes/x/`echo ratchet`.json', 'A=ratchet; echo x > .sdlc/changes/x/$A.json', 'cd .sdlc/changes/x; echo x > $(echo r)atchet.json']) {
+    assert.equal(isSafeEvidenceCommand(c), false, c)
+  }
+  for (const c of ['cat .sdlc/changes/*/intent.md', 'grep -r x .sdlc', 'git add .sdlc/changes/x/*', 'ls .sdlc/changes/$X']) assert.equal(isSafeEvidenceCommand(c), true, c)
   assert.equal(isSafeEvidenceCommand('echo x >> .sdlc/approvals.jsonl'), false)
   assert.equal(isSafeEvidenceCommand('cat .sdlc/approvals.jsonl'), true)
 })

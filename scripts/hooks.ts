@@ -99,8 +99,8 @@ const BARE_EVIDENCE = /(?<![\w.-])(?:pr\.md|verification\.md|impact\.json)(?![\w
 function rawSafe(cmd: string, ci: boolean): boolean {
   const inSdlc = flagged(/\.sdlc/, ci).test(cmd)
   const parts = cmd.replace(/>\|/g, '>').split(/&&|\|\||;|\||\n/)
-  // A glob can name evidence without spelling it (rm rat*): once .sdlc is mentioned, a writing part may not use one.
-  if (inSdlc && parts.some(part => /[*?[]/.test(part) && WRITES.test(part))) return false
+  // A glob, brace, variable or substitution can name evidence without spelling it (rm rat*, > ratchet.jso{n,}): once .sdlc is mentioned, a writing part may not use one.
+  if (inSdlc && parts.some(part => /[*?[\]{}$`]/.test(part) && WRITES.test(part))) return false
   return parts
     .filter(part => evidencePath(part, ci, true) || (inSdlc && flagged(BARE_EVIDENCE, ci).test(part)))
     .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
