@@ -53,7 +53,7 @@ function bashApproval(cmd: string, slug: string, node: string, cwd?: string): 'd
     }
     const sub = rest[0] === 'ratchet' ? `ratchet ${rest[1] ?? ''}` : rest[0] ?? ''
     const args = rest.slice(rest[0] === 'ratchet' ? 2 : 1)
-    return SAFE_SUBS.has(sub) && args.every(x => ARG.test(x) && !expands(x)) ? 'declared' : null
+    return SAFE_SUBS.has(sub) && args.every(x => ARG.test(x) && !expands(x) && !x.split('/').includes('..')) ? 'declared' : null
   }
   if (w[0] === 'git') {
     if (w.join(' ') === `git checkout -b sdlc/${slug}`) return 'declared'

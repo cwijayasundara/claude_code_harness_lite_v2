@@ -2,17 +2,20 @@
 // Written only by sdlc.ts (ratchet.json and events.jsonl are evidence), so a model cannot reset its own counter.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
+import { CHANGES, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
 import { loadConfig } from './check.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done' }
-export type Ratchet = { version?: number; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, number> }; blocked?: { node: string; reason: string; at: string }; credits?: Partial<Record<RatchetNode, number>> }
+export type Ratchet = { version?: number; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, { cmd: string; count: string; n: number }> }; blocked?: { node: string; reason: string; at: string }; credits?: Partial<Record<RatchetNode, number>> }
 export type Event = { at: string; node: string; verdict: string; round?: number; reason?: string; kind?: string; tool?: string; target?: string; usd?: number }
 export type ReviewFinding = { severity: string; category: string; text: string }
 export type RoundVerdict = { verdict: 'continue' | 'done' | 'blocked'; reason: string }
 
-const file = (slug: string, name: string): string => path.join(CHANGES, slug, name)
+const file = (slug: string, name: string): string => {
+  if (!SLUG_RE.test(slug)) throw new Error(`invalid change name ${slug}`)
+  return path.join(CHANGES, slug, name)
+}
 const empty = (): Ratchet => ({ nodes: {}, slices: {}, baseline: {} })
 const fresh = (): NodeState => ({ rounds: 0, hashes: [], status: 'open' })
 const BLOCKING = new Set(['critical', 'high'])
@@ -96,7 +99,7 @@ export const testCaseCount = (texts: string[]): number => texts.reduce((n, t) =>
 export function cmdRatchet(args: Args): void {
   const [sub, slug, node] = args.pos
   if (!sub || !slug) fail('usage: ratchet (record <slug> <node> [--slice N] | show <slug> | spend <slug>)')
-  if (!fs.existsSync(path.join(CHANGES, slug))) fail(`no change named ${slug}`)
+  checkSlug(slug)
   if (sub === 'show') return out(JSON.stringify(readRatchet(slug), null, 2))
   if (sub === 'spend') {
     const byNode: Record<string, number> = {}

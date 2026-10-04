@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { ROOT, defaultBase, git, gitIn, read, out, fail, type Args } from './core.ts'
+import { ROOT, checkSlug, defaultBase, git, gitIn, read, out, fail, type Args } from './core.ts'
 import { runCommand } from './runs.ts'
 import { readRatchet, writeRatchet, recordRound, testCaseCount } from './ratchet.ts'
 import { loadConfig, runChecks } from './check.ts'
@@ -26,29 +26,49 @@ export function countFindings(output: string, exit: number, how: string): number
   } catch { return null }
 }
 
-function countIn(dir: string, cmd: string, how: string): { n: number | null; note?: string } {
+function countIn(dir: string, cmd: string, how: string, onBase = false): { n: number | null; note?: string } {
   const row = runCommand(cmd, { cwd: dir, timeoutMs: QUALITY_TIMEOUT_MS })
   if (row.exit === MISSING || row.timedOut) return { n: null, note: row.timedOut ? 'timed out' : 'command not found' }
+  // On the base a failing run whose output does not parse is a broken tool, not a count of its exit status.
+  if (onBase && row.exit !== 0 && how !== 'exit' && (how === 'lines' ? !row.tail.trim() : countFindings(row.tail, 0, how) === null)) return { n: null, note: 'base run failed' }
   const n = countFindings(row.tail, row.exit, how)
   return n === null ? { n: null, note: `could not count (${how})` } : { n }
 }
 
-// The base runs once per base SHA in a throwaway worktree (always removed and pruned) and is cached in ratchet.json.
+// Dependency directories the base worktree borrows from the checkout so project tools can run there.
+const DEP_DIRS = ['node_modules', '.venv', 'venv', 'vendor']
+
+// The base runs once per base SHA in a throwaway worktree (always removed and pruned). Counts are cached in ratchet.json
+// per category with the command and counting mode they were measured with; a changed command is measured again.
 function baseCounts(base: string, categories: [string, { cmd: string; count: string }][], slug: string): Record<string, number | null> {
   const r = readRatchet(slug)
-  const cached = r.baseline.base === base ? r.baseline.quality : undefined
-  if (cached && categories.every(([c]) => c in cached)) return cached
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-base-'))
+  const cached = r.baseline.base === base ? r.baseline.quality ?? {} : {}
   const counts: Record<string, number | null> = {}
-  try {
-    if (gitIn(ROOT, ['worktree', 'add', '--detach', '-q', dir, base]) === null) return Object.fromEntries(categories.map(([c]) => [c, null]))
-    for (const [c, q] of categories) counts[c] = countIn(dir, q.cmd, q.count).n
-  } finally {
-    gitIn(ROOT, ['worktree', 'remove', '--force', dir])
-    fs.rmSync(dir, { recursive: true, force: true })
-    gitIn(ROOT, ['worktree', 'prune'])
+  const todo = categories.filter(([c, q]) => {
+    const h = cached[c]
+    if (h && h.cmd === q.cmd && h.count === q.count && typeof h.n === 'number') { counts[c] = h.n; return false }
+    return true
+  })
+  if (todo.length) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-base-'))
+    try {
+      if (gitIn(ROOT, ['worktree', 'add', '--detach', '-q', dir, base]) === null) for (const [c] of todo) counts[c] = null
+      else {
+        for (const d of DEP_DIRS) {
+          const from = path.join(ROOT, d), to = path.join(dir, d)
+          if (fs.existsSync(from) && !fs.existsSync(to)) fs.symlinkSync(from, to, 'dir')
+        }
+        for (const [c, q] of todo) counts[c] = countIn(dir, q.cmd, q.count, true).n
+      }
+    } finally {
+      gitIn(ROOT, ['worktree', 'remove', '--force', dir])
+      fs.rmSync(dir, { recursive: true, force: true })
+      gitIn(ROOT, ['worktree', 'prune'])
+    }
   }
-  r.baseline = { ...r.baseline, base, quality: counts as Record<string, number> }
+  const store: NonNullable<typeof r.baseline.quality> = {}
+  for (const [c, q] of categories) { const n = counts[c]; if (typeof n === 'number') store[c] = { cmd: q.cmd, count: q.count, n } }
+  r.baseline = { ...r.baseline, base, quality: store }
   writeRatchet(slug, r)
   return counts
 }
@@ -91,8 +111,9 @@ export function runQuality(slug: string): { categories: CategoryResult[]; blocks
 }
 
 export function cmdQuality(args: Args): void {
-  const slug = args.pos[0]
-  if (!slug) fail('usage: quality <slug>')
+  const given = args.pos[0]
+  if (!given) fail('usage: quality <slug>')
+  const slug = checkSlug(given)
   const { config } = loadConfig()
   const { categories, blocks } = runQuality(slug)
   const rows = categories.map(c => `${c.category.padEnd(11)} ${c.status === 'unmeasured' ? `unmeasured${c.note === 'no base' ? ' (no base)' : ''}` : c.status === 'fail' ? `fail (${c.note})` : `base ${c.base} → branch ${c.branch}  ${c.status}`}`)

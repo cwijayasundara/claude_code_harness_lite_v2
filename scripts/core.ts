@@ -103,6 +103,14 @@ export const out = (text: string): void => {
   process.stdout.write(text.endsWith('\n') ? text : text + '\n')
 }
 
+export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
+// A slug names a directory under .sdlc/changes: it must be a plain name of an existing change, never a path.
+export function checkSlug(slug: string): string {
+  if (!SLUG_RE.test(slug)) fail(`invalid change name ${slug}`)
+  if (!fs.existsSync(path.join(CHANGES, slug))) fail(`no change named ${slug}`)
+  return slug
+}
+
 export function fail(message: string, code = 1): never {
   process.stderr.write(message + '\n')
   process.exit(code)
