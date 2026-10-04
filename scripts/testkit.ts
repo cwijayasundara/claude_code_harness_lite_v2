@@ -11,7 +11,7 @@ export function gitIn(repo: string, ...args: string[]): string {
 }
 
 export function makeRepo(): string {
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-test-'))
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-test-'))
   gitIn(repo, 'init', '-q', '-b', 'main')
   gitIn(repo, 'config', 'user.email', 't@example.com')
   gitIn(repo, 'config', 'user.name', 'Tester')

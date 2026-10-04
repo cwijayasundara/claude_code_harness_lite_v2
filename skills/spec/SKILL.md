@@ -11,8 +11,8 @@ Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` o
 
 **Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running, because the work is lost if the session ends.
 
-1. **Find the relevant code.** Launch one or two `sdlc:scout` agents to find the existing code and contracts the change touches.
-2. **Draft.** Launch `sdlc:architect`, which runs on Opus, with a brief of 40 lines or fewer:
+1. **Find the relevant code.** Launch one or two `rig:scout` agents to find the existing code and contracts the change touches.
+2. **Draft.** Launch `rig:architect`, which runs on Opus, with a brief of 40 lines or fewer:
    - the change folder `.sdlc/changes/$0/`
    - "write spec.md"
    - the scout findings, as `path:line` entries with one line each
@@ -20,6 +20,6 @@ Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` o
    Do not draft the spec yourself.
 3. **Resolve questions.** Put the architect's open questions to the person with AskUserQuestion, at most 4 and only ones that change behaviour. Fold the answers into `spec.md` with small edits. Ask with AskUserQuestion. If you get no answer (a headless run, or the person defers), take your recommended option. Either way, record each as `- Q<n>: <question> → <answer> (person|default)` under `## Decisions`, and leave `## Open questions` as `none`: approval is refused while any question is open, so a build never stalls on one.
 
-Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. For tier L and greenfield this stage is gated: ask the person to review `spec.md` and run `/sdlc-approve $0 spec`.
+Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. For tier L and greenfield this stage is gated: ask the person to review `spec.md` and run `/rig-approve $0 spec`.
 
 End with: `Next: <command from status>`.

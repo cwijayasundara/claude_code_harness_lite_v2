@@ -138,7 +138,7 @@ export function cmdMetrics(args: Args): void {
     usd_total: Number(main.reduce((s, r) => s + (r.usd ?? 0), 0).toFixed(2)),
     usd_by_change: roundAll(sumBy(main, r => r.change ?? '(none)', r => r.usd ?? 0)),
     usd_by_stage: roundAll(sumBy(main, r => r.stage ?? '(none)', r => r.usd ?? 0)),
-    tokens_by_agent_type: sumBy(agents, r => (r.agentType ?? 'unknown').replace(/^sdlc-/, 'sdlc:'), tokensOf),
+    tokens_by_agent_type: sumBy(agents, r => (r.agentType ?? 'unknown').replace(/^rig-/, 'rig:'), tokensOf),
     cache_hit_share: input ? Number((usage.reduce((s, r) => s + (r.cr ?? 0), 0) / input).toFixed(3)) : null,
     peak_context: main.reduce((p, r) => Math.max(p, r.ctx ?? 0), 0),
     turns_over_150k: main.filter(r => (r.ctx ?? 0) > 150_000).length,
@@ -186,7 +186,7 @@ export function cmdMetrics(args: Args): void {
   const harness = {
     rule_fires: sumBy(fired.filter(e => Date.parse(e.at) >= since), r => r.rule ?? 'unknown', () => 1),
     prune_candidates: ruleIds.filter(id => !recent.has(id) && (introduced(id) ?? Infinity) < ninetyDays),
-    rule_suggestions: Object.entries(byCategory).filter(([, n]) => n >= 3).map(([c, n]) => `${c} (${n} findings): consider /sdlc:rule`),
+    rule_suggestions: Object.entries(byCategory).filter(([, n]) => n >= 3).map(([c, n]) => `${c} (${n} findings): consider /rig:rule`),
     skill_load_failures: events.filter(e => e.event === 'skill-load-failed' && Date.parse(e.at) >= since).length,
     unresolved: (() => {
       try {

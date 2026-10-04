@@ -154,7 +154,7 @@ export function contractFindings(i: CheckInput): Finding[] {
       sensor: 'contract-impact',
       severity: atStop && approvedIds.has(h.id) ? 'warn' : 'block',
       message: `${h.consumer}: ${h.file}:${h.line} still uses ${h.id}`,
-      fix: approvedIds.has(h.id) ? `update ${h.consumer} as part of this change (it is in the approved impact)` : 'cross-repo contract change: this needs a gated change: run /sdlc:start, then plan it with ## Contracts so the person approves the impact',
+      fix: approvedIds.has(h.id) ? `update ${h.consumer} as part of this change (it is in the approved impact)` : 'cross-repo contract change: this needs a gated change: run /rig:start, then plan it with ## Contracts so the person approves the impact',
     })),
     ...missing.map((name): Finding => ({
       sensor: 'contract-impact',
@@ -188,7 +188,7 @@ export function cmdCheckPlan(args: Args): void {
   const tier = setTierL(slug) ? '' : `\nwarning: no "tier:" line found in ${slug}/intent.md, so the tier was not raised to L; set it by hand.`
   const rows = hits.slice(0, 20).map(h => `  ${h.consumer}: ${h.file}:${h.line} uses ${h.id}`)
   const unverified = missing.length ? [`Not checked out, so the impact cannot be verified until they are: ${missing.join(', ')}`] : []
-  out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /sdlc-approve ${slug} impact.${tier}`, ...rows, ...unverified, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
+  out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /rig-approve ${slug} impact.${tier}`, ...rows, ...unverified, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
 }
 
 // Only the tests this branch adds or changes can show a behaviour is covered: an old test naming B1 proves nothing new.
@@ -211,7 +211,7 @@ function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base
   const left = (): number => Math.max(1000, budgetMs - (Date.now() - t0))
   if (!tests.length) return mode === 'red' ? block('no test file changed, so nothing proves this change', 'write the failing test first') : []
   if (!cmd) return block('no test command declared (full.test or fast.test in .sdlc/sensors.json)', 'declare it so red can be proven')
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-red-'))
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-red-'))
   try {
     if (git(['worktree', 'add', '--detach', tmp, base]) === null) return block(`could not create a worktree at ${base}`, 'run `git worktree prune` and retry')
     try {
@@ -248,7 +248,7 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
   const fromDiff = tierFromDiff(diffs, config)
   const tier = slug.startsWith('adhoc-') && RANK[fromDiff] > RANK[change.tier] ? fromDiff : change.tier
   if (slug.startsWith('adhoc-') && tier !== 'S' && !hasPlan) {
-    findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is now tier ${tier} with no plan`, fix: `run /sdlc:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
+    findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is now tier ${tier} with no plan`, fix: `run /rig:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
   }
   const spec = read(path.join(change.dir, 'spec.md'))
   const plan = read(planPath(slug))
@@ -273,7 +273,7 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
 function unrecorded(diffs: FileDiff[], config: SensorConfig): Finding[] {
   const tier = tierFromDiff(diffs, config)
   if (tier === 'S') return []
-  return [{ sensor: 'adhoc', severity: 'block', message: `no sdlc change record for a tier ${tier} diff (${diffs.filter(d => isSource(d.file, config)).length} source file(s))`, fix: 'commit the change folder with the PR (git add .sdlc), or run /sdlc:start to adopt the work: it writes the plan and applies the tier\'s gates' }]
+  return [{ sensor: 'adhoc', severity: 'block', message: `no sdlc change record for a tier ${tier} diff (${diffs.filter(d => isSource(d.file, config)).length} source file(s))`, fix: 'commit the change folder with the PR (git add .sdlc), or run /rig:start to adopt the work: it writes the plan and applies the tier\'s gates' }]
 }
 
 // Tier S and M skip the human gates, so a diff that reaches contracts or risky paths must be tier L.
@@ -284,7 +284,7 @@ function tierFindings(slugs: string[], diffs: FileDiff[], config: SensorConfig):
   return low.flatMap(slug => hits.map(d => ({
     sensor: 'tier', severity: 'block' as const, file: d.file,
     message: `${slug} is tier ${loadChange(slug).tier} but changes a contract or risky path`,
-    fix: `set tier: L in ${slug}/intent.md (spec and plan gates), or the person waives with /sdlc-waive tier <file> <reason>`,
+    fix: `set tier: L in ${slug}/intent.md (spec and plan gates), or the person waives with /rig-waive tier <file> <reason>`,
   })))
 }
 

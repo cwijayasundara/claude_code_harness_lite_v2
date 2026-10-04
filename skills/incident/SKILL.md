@@ -21,4 +21,4 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
    Body: symptoms, impact, evidence (log lines, links).
 3. Create the change with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts new <slug> --type incident --tier <sev1-2: L, sev3: M, sev4: S> --title "<title>"` and fill `intent.md`, linking the incident file.
 
-End with: `Next: /sdlc:diagnose <slug>`.
+End with: `Next: /rig:diagnose <slug>`.

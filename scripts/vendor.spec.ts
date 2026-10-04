@@ -27,14 +27,14 @@ test('vendor --cloud writes project skills, agents and hooks with no plugin refe
   assert.equal(sdlc(repo, ['vendor', '--cloud']).code, 0)
   const skills = walk(path.join(repo, '.claude/skills')).filter(f => f.endsWith('SKILL.md'))
   const agents = walk(path.join(repo, '.claude/agents'))
-  assert.ok(skills.some(f => f.endsWith('sdlc-next/SKILL.md')) && skills.length >= 10, `${skills.length} skills`)
-  assert.ok(agents.some(f => f.endsWith('sdlc-scout.md')), 'scout agent')
+  assert.ok(skills.some(f => f.endsWith('rig-next/SKILL.md')) && skills.length >= 10, `${skills.length} skills`)
+  assert.ok(agents.some(f => f.endsWith('rig-scout.md')), 'scout agent')
   for (const f of [...skills, ...agents]) {
     const text = fs.readFileSync(f, 'utf8')
-    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/sdlc:[a-z]|\bsdlc:(?!allow-secret)[a-z]/, path.relative(repo, f))
-    assert.match(text, /^name: sdlc-/m, path.relative(repo, f))
+    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/rig:[a-z]|\brig:(?!allow-secret)[a-z]/, path.relative(repo, f))
+    assert.match(text, /^name: rig-/m, path.relative(repo, f))
   }
-  assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/sdlc-check.yml')), 'templates copied')
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/rig-check.yml')), 'templates copied')
   const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
   assert.equal(settings.model, 'claude-sonnet-5-5', 'other settings kept')
   const stop = JSON.stringify(settings.hooks.Stop)
@@ -50,26 +50,26 @@ test('the vendored copy names project skills and agents, and prints its own skil
   sdlc(repo, ['init'])
   sdlc(repo, ['vendor', '--cloud'])
   vendored(repo, ['new', 'small-thing', '--type', 'chore', '--tier', 'S'])
-  assert.match(vendored(repo, ['status']).stdout, /next: \/sdlc-build small-thing/)
+  assert.match(vendored(repo, ['status']).stdout, /next: \/rig-build small-thing/)
   const skill = vendored(repo, ['skill', 'next']).stdout
   assert.match(skill, /\.sdlc\/bin\/sdlc\.ts status --json/)
   const ctx = JSON.parse(vendored(repo, ['hook', 'session-start'], '{}').stdout).hookSpecificOutput.additionalContext as string
-  assert.match(ctx, /sdlc-scout/)
-  assert.doesNotMatch(ctx, /sdlc:scout|\/sdlc:start/)
-  const failed = JSON.parse(vendored(repo, ['hook', 'skill-failed'], JSON.stringify({ tool_input: { skill: 'sdlc-verify', args: 'small-thing' } })).stdout)
+  assert.match(ctx, /rig-scout/)
+  assert.doesNotMatch(ctx, /rig:scout|\/rig:start/)
+  const failed = JSON.parse(vendored(repo, ['hook', 'skill-failed'], JSON.stringify({ tool_input: { skill: 'rig-verify', args: 'small-thing' } })).stdout)
   assert.match(failed.hookSpecificOutput.additionalContext, /\.sdlc\/bin\/sdlc\.ts" skill verify small-thing/)
 })
 
-test('read-only rules also hold for the vendored sdlc- agents', () => {
+test('read-only rules also hold for the vendored rig- agents', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   sdlc(repo, ['vendor', '--cloud'])
-  const r = JSON.parse(vendored(repo, ['hook', 'pre-bash'], JSON.stringify({ agent_type: 'sdlc-reviewer', tool_input: { command: 'touch x.js' } })).stdout)
+  const r = JSON.parse(vendored(repo, ['hook', 'pre-bash'], JSON.stringify({ agent_type: 'rig-reviewer', tool_input: { command: 'touch x.js' } })).stdout)
   assert.equal(r.hookSpecificOutput.permissionDecision, 'deny')
 })
 
 test('the PR review may write its two files through Edit rules; a Write(path) rule grants nothing', () => {
-  const yml = fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'sdlc-review.yml'), 'utf8')
+  const yml = fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'rig-review.yml'), 'utf8')
   const allowed = /--allowedTools "([^"]+)"/.exec(yml)?.[1] ?? ''
   assert.deepEqual(allowed.split(','), ['Read(./**)', 'Grep', 'Glob', 'Edit(./review.md)', 'Edit(./review-verdict.txt)'])
 })
@@ -77,12 +77,12 @@ test('the PR review may write its two files through Edit rules; a Write(path) ru
 const humanCommand = (cmd: string): string => `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts ${cmd}`
 const bashDecision = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined)
 
-test('standalone ships human-only /sdlc-approve and /sdlc-waive skills the model cannot invoke or imitate', () => {
+test('standalone ships human-only /rig-approve and /rig-waive skills the model cannot invoke or imitate', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
   for (const cmd of ['approve', 'waive']) {
-    const skill = fs.readFileSync(path.join(repo, `.claude/skills/sdlc-${cmd}/SKILL.md`), 'utf8')
+    const skill = fs.readFileSync(path.join(repo, `.claude/skills/rig-${cmd}/SKILL.md`), 'utf8')
     assert.match(skill, /^disable-model-invocation: true$/m)
     assert.ok(skill.includes(`allowed-tools: Bash(${humanCommand(cmd)} *)`), `${cmd}: the grant covers exactly the injected command`)
     assert.ok(skill.includes(`!\`${humanCommand(cmd)} '$ARGUMENTS' 2>&1\``), `${cmd}: arguments are single-quoted, never globbed`)
@@ -91,7 +91,7 @@ test('standalone ships human-only /sdlc-approve and /sdlc-waive skills the model
   assert.equal(bashDecision(vendored(repo, ['hook', 'pre-bash'], input)), 'deny', 'the model cannot reuse the grant for another approval')
 })
 
-test('a quoted argument string is split: /sdlc-approve and /sdlc-waive work from a standalone skill', () => {
+test('a quoted argument string is split: /rig-approve and /rig-waive work from a standalone skill', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   sdlc(repo, ['vendor', '--standalone'])
@@ -132,15 +132,15 @@ test('the settings template is portable: no personal plugins, absolute paths or 
     assert.doesNotMatch(text, /"\/(Users|home)\/|ABSOLUTE\/PATH/, `${f}: no machine-specific paths`)
   }
   const settings = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'))
-  assert.equal(settings.enabledPlugins?.['sdlc@sdlc'], undefined, 'standalone repos do not make teammates install the plugin')
+  assert.equal(settings.enabledPlugins?.['rig@rig'], undefined, 'standalone repos do not make teammates install the plugin')
 })
 
 test('standalone vendoring ships the v0.4 skills and REVIEW.md template', () => {
   const repo = makeRepo()
   sdlc(repo, ['vendor', '--standalone'])
-  for (const s of ['sdlc-test', 'sdlc-sensors', 'sdlc-pr', 'sdlc-pr-review'])
+  for (const s of ['rig-test', 'rig-sensors', 'rig-pr', 'rig-pr-review'])
     assert.ok(fs.existsSync(path.join(repo, `.claude/skills/${s}/SKILL.md`)), s)
-  assert.ok(!fs.existsSync(path.join(repo, '.claude/skills/sdlc-verify/SKILL.md')), 'old names are gone')
+  assert.ok(!fs.existsSync(path.join(repo, '.claude/skills/rig-verify/SKILL.md')), 'old names are gone')
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/REVIEW.md')))
 })
 
@@ -149,9 +149,9 @@ test('standalone vendoring installs the mod as a project plugin', () => {
   sdlc(repo, ['vendor', '--standalone'])
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/mod/hooks/register.ts')))
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/mod/types/index.d.ts')))
-  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/mod/.claude-plugin/plugin.json'), 'utf8')).name, 'sdlc-mod')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/mod/.claude-plugin/plugin.json'), 'utf8')).name, 'rig-mod')
   assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin/marketplace.json'), 'utf8')).plugins[0].source, './.sdlc/mod')
   const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
-  assert.equal(settings.enabledPlugins['sdlc-mod@sdlc-local'], true)
-  assert.ok(settings.extraKnownMarketplaces['sdlc-local'])
+  assert.equal(settings.enabledPlugins['rig-mod@rig-local'], true)
+  assert.ok(settings.extraKnownMarketplaces['rig-local'])
 })

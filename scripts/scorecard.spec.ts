@@ -8,7 +8,7 @@ beforeEach(() => {
   repo = makeRepo()
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
   sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 1.5, change: 'big', stage: 'build', in: 100, out: 50, cr: 1000, cw: 10 })])
-  sdlc(repo, ['log-usage', JSON.stringify({ kind: 'agent', agentType: 'sdlc:implementer', change: 'big', stage: 'build', in: 10, out: 5 })])
+  sdlc(repo, ['log-usage', JSON.stringify({ kind: 'agent', agentType: 'rig:implementer', change: 'big', stage: 'build', in: 10, out: 5 })])
   sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 0.5, change: 'big', stage: 'test' })])
 })
 

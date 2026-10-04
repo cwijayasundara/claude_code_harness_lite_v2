@@ -17,6 +17,6 @@ export type Band = {
 
 declare module 'claude-code' {
   interface PluginState {
-    sdlc: { band: Band | null; isHidden: boolean; paneText: string; metricsText: string; driverRunning: boolean; driverLast: string }
+    rig: { band: Band | null; isHidden: boolean; paneText: string; metricsText: string; driverRunning: boolean; driverLast: string }
   }
 }

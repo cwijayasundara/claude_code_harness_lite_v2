@@ -40,12 +40,12 @@ harness_arm() { # $1 arm name, $2 superpowers true|false
   local d="$OUT/$1"; fresh "$1"; settings "$d" "$2"
   local build=native; [ "$2" = true ] && build=sdd
   (cd "$d" && $SDLC init >/dev/null && echo "{ \"fast\": { \"test\": \"npm test\" }, \"full\": { \"test\": \"npm test\" }, \"build\": \"$build\" }" > .sdlc/sensors.json && git add -A && git -c user.email=t@e -c user.name=T commit -qm onboard)
-  (cd "$d" && claude -p "/sdlc:start \"$TASK_L\" — this is tier L; continue into the spec stage and stop at the human gate." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.A.json")
+  (cd "$d" && claude -p "/rig:start \"$TASK_L\" — this is tier L; continue into the spec stage and stop at the human gate." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.A.json")
   local slug; slug="$(one_slug "$d")"
   (cd "$d" && SDLC_HUMAN=1 $SDLC approve "$slug" spec --by trial-operator >/dev/null)
-  (cd "$d" && claude -p "/sdlc:plan $slug — stop at the human gate." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.B.json")
+  (cd "$d" && claude -p "/rig:plan $slug — stop at the human gate." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.B.json")
   (cd "$d" && SDLC_HUMAN=1 $SDLC approve "$slug" plan --by trial-operator >/dev/null)
-  (cd "$d" && claude -p "/sdlc:build $slug — then continue through verify, review and ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.C.json")
+  (cd "$d" && claude -p "/rig:build $slug — then continue through verify, review and ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/$1.C.json")
 }
 acceptL() { local o; o=$(cd "$OUT/$1" && TRIAL_ROOT="$OUT/$1" node --test "$P/tests/trials/acceptance-L.test.js" 2>&1 | grep -E '^ℹ (pass|fail)' | tr '\n' ' ' || true); echo "${o:-n/a}"; }
 sum() { python3 - "$@" <<'PY'
@@ -98,11 +98,11 @@ if [ "$MODE" = L ]; then
 fi
 
 if [ "$MODE" = M ]; then
-  # Lean tier M: one harness session from /sdlc:start to ship (no gate), against plain Claude Code, in parallel.
+  # Lean tier M: one harness session from /rig:start to ship (no gate), against plain Claude Code, in parallel.
   ( fresh harness; settings "$OUT/harness" false
     cd "$OUT/harness" && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json \
       && git add -A && git -c user.email=t@e -c user.name=T commit -qm onboard \
-      && claude -p "/sdlc:start \"$TASK\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS[@]}" > "$OUT/harness.A.json" ) & P1=$!
+      && claude -p "/rig:start \"$TASK\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS[@]}" > "$OUT/harness.A.json" ) & P1=$!
   ( fresh plain; settings "$OUT/plain" false; cd "$OUT/plain" && claude -p "$TASK" "${FLAGS[@]}" > "$OUT/plain.json" ) & P2=$!
   S1=0; S2=0; wait "$P1" || S1=$?; wait "$P2" || S2=$?
   arm_flag "$S1" "$OUT/harness.A.json"
@@ -115,18 +115,18 @@ if [ "$MODE" = M ]; then
 fi
 
 if [ "$MODE" = I ]; then
-  # Integration test: /sdlc:init on a four-module app, then one internal change through ship; every artifact is
+  # Integration test: /rig:init on a four-module app, then one internal change through ship; every artifact is
   # checked deterministically by assert-integration.mjs. LIVE and PAID (about $2).
   TASK_I='Add a bestSellers(orders, n) function exported from src/orders/report.js. orders is an array of { lines: [{ sku, qty }] }. It returns an array of the n SKU strings with the highest total quantity sold, most first, ties broken by SKU ascending; [] for no orders. It is internal: no HTTP route. Include tests.'
   rm -rf "$OUT/app"; cp -R "$P/tests/trials/shop-app" "$OUT/app"
   (cd "$OUT/app" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm base)
   settings "$OUT/app" false
   (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm settings)
-  (cd "$OUT/app" && claude -p "/sdlc:init — this is an existing codebase; answer your own questions with the recommended defaults, decline CI and settings changes, and commit the onboarding files on main." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/onboard.json") || true
+  (cd "$OUT/app" && claude -p "/rig:init — this is an existing codebase; answer your own questions with the recommended defaults, decline CI and settings changes, and commit the onboarding files on main." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/onboard.json") || true
   echo "onboard: $(sum "$OUT/onboard.json")"
   R1=0; node "$P/tests/trials/assert-integration.mjs" onboard "$OUT/app" "$P" || R1=$?
   (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
-  (cd "$OUT/app" && claude -p "/sdlc:start \"$TASK_I\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/change.json") || true
+  (cd "$OUT/app" && claude -p "/rig:start \"$TASK_I\" — then continue through ship; commit on the branch, do not push." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/change.json") || true
   echo "change: $(sum "$OUT/change.json")"
   R2=0; node "$P/tests/trials/assert-integration.mjs" change "$OUT/app" "$P" || R2=$?
   node "$P/tests/trials/split.mjs" "$OUT/onboard.json" "$OUT/change.json" || true
@@ -138,7 +138,7 @@ if [ "$MODE" = S ]; then
   # Scenario suite: greenfield, tier L bugfix and tier M refactor, in parallel, each driven to ship with the person's
   # gates approved by the operator, then checked by assert-scenarios.mjs. LIVE and PAID (about $5).
   FLAGS_S=(--permission-mode acceptEdits --allowedTools "Bash(node *)" "Bash(git *)" "Bash(npm *)" "Bash(bash *)" --max-budget-usd 6 --output-format json)
-  NEXT="/sdlc:next — continue through ship; commit on the branch, do not push."
+  NEXT="/rig:next — continue through ship; commit on the branch, do not push."
   # drive <dir> <tag> <first prompt>: run, approve any human gate as the operator, continue, up to 5 sessions.
   drive() {
     local d="$1" tag="$2" n=1 cmd
@@ -149,7 +149,7 @@ d=json.load(sys.stdin); a=d.get("active"); c=[x for x in d.get("changes",[]) if 
 print(c[0]["command"] if c else "")' || true)
       case "$cmd" in
         "human gate"*)
-          set -- $(printf '%s' "$cmd" | sed -E 's|.*/sdlc-approve ([^ ]+) ([^ ]+).*|\1 \2|')
+          set -- $(printf '%s' "$cmd" | sed -E 's|.*/rig-approve ([^ ]+) ([^ ]+).*|\1 \2|')
           (cd "$d" && SDLC_HUMAN=1 $SDLC approve "$1" "$2" --by scenario-operator >/dev/null) || true
           echo "$tag: operator approved $2" ;;
         ""|done*) break ;;
@@ -161,7 +161,7 @@ print(c[0]["command"] if c else "")' || true)
   shop() { # $1 dir: the shop app with sdlc initialised (sensors set, no onboarding session)
     rm -rf "$1"; cp -R "$P/tests/trials/shop-app" "$1"; settings "$1" false
     (cd "$1" && git init -q -b main && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json \
-      && printf '# shop-app\n\nsdlc routes all work in this repo: start with /sdlc:start; use superpowers skills only when an sdlc skill names one.\n' > CLAUDE.md \
+      && printf '# shop-app\n\nsdlc routes all work in this repo: start with /rig:start; use superpowers skills only when an sdlc skill names one.\n' > CLAUDE.md \
       && git add -A && git -c user.email=t@e -c user.name=T commit -qm base)
   }
   scenario() { # $1 name: run it under an 18-minute stop, then check it
@@ -174,18 +174,18 @@ print(c[0]["command"] if c else "")' || true)
   greenfield_run() {
     local d="$OUT/greenfield"; rm -rf "$d"; mkdir -p "$d"; settings "$d" false
     (cd "$d" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm empty)
-    (cd "$d" && claude -p "/sdlc:init greenfield \"Node.js 22 ESM library, no dependencies, tests with node --test: unit conversion for lengths\" — answer your own questions with the recommended defaults, decline CI and settings changes, and commit the scaffold on main." --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/greenfield.0.json") || true
+    (cd "$d" && claude -p "/rig:init greenfield \"Node.js 22 ESM library, no dependencies, tests with node --test: unit conversion for lengths\" — answer your own questions with the recommended defaults, decline CI and settings changes, and commit the scaffold on main." --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/greenfield.0.json") || true
     (cd "$d" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
-    drive "$d" greenfield "/sdlc:start \"Add convert(value, from, to) exported from src/convert.js. Units: mm, cm, m, km, in, ft, yd, mi (1 in = 2.54 cm, 1 ft = 12 in, 1 yd = 3 ft, 1 mi = 1760 yd). It returns a number rounded to 6 decimal places and throws a RangeError for an unknown unit. This is the library's first public API. Include tests.\" — continue through ship; commit on the branch, do not push."
+    drive "$d" greenfield "/rig:start \"Add convert(value, from, to) exported from src/convert.js. Units: mm, cm, m, km, in, ft, yd, mi (1 in = 2.54 cm, 1 ft = 12 in, 1 yd = 3 ft, 1 mi = 1760 yd). It returns a number rounded to 6 decimal places and throws a RangeError for an unknown unit. This is the library's first public API. Include tests.\" — continue through ship; commit on the branch, do not push."
   }
   bugfix_run() {
     local d="$OUT/bugfix"; shop "$d"
     (cd "$d" && sed -i.bak 's/SAVE20: 0.2/SAVE20: 0.02/' src/orders/orders.js && rm src/orders/orders.js.bak && git -c user.email=t@e -c user.name=T commit -qam "pricing update")
-    drive "$d" bugfix "/sdlc:start \"Bug in payments: checkout with discount code SAVE20 takes only 2% off instead of 20%. Customers are being overcharged.\" — continue through ship; commit on the branch, do not push."
+    drive "$d" bugfix "/rig:start \"Bug in payments: checkout with discount code SAVE20 takes only 2% off instead of 20%. Customers are being overcharged.\" — continue through ship; commit on the branch, do not push."
   }
   refactor_run() {
     local d="$OUT/refactor"; shop "$d"
-    drive "$d" refactor "/sdlc:start \"Refactor: move the discount codes out of src/orders/orders.js into a new src/orders/discounts.js that exports DISCOUNTS and rateFor(code) (returns the rate, or undefined for an unknown code). Checkout behaviour must not change.\" — continue through ship; commit on the branch, do not push."
+    drive "$d" refactor "/rig:start \"Refactor: move the discount codes out of src/orders/orders.js into a new src/orders/discounts.js that exports DISCOUNTS and rateFor(code) (returns the rate, or undefined for an unknown code). Checkout behaviour must not change.\" — continue through ship; commit on the branch, do not push."
   }
   scenario greenfield & G=$!; scenario bugfix & B=$!; scenario refactor & F=$!
   wait $G; wait $B; wait $F

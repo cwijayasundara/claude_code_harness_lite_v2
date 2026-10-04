@@ -15,10 +15,10 @@ beforeEach(() => {
 
 test('a failed sdlc skill load injects the deterministic fallback command and logs the event', () => {
   sdlc(repo, ['init'])
-  const r = hook(repo, 'skill-failed', { tool_input: { skill: 'sdlc:pr-review', args: 'add-login' } })
+  const r = hook(repo, 'skill-failed', { tool_input: { skill: 'rig:pr-review', args: 'add-login' } })
   const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext
   assert.match(ctx, /sdlc\.ts" skill pr-review add-login/)
-  assert.match(ctx, /skill fallback: sdlc:pr-review/)
+  assert.match(ctx, /skill fallback: rig:pr-review/)
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /skill-load-failed/)
   assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'superpowers:brainstorming' } }).stdout, '')
 })
@@ -109,23 +109,23 @@ test('read-only agents: allowlist only; chained, substituted and interpreter wri
     '(touch f)', 'cat f; { touch f; }', 'cat <>PWN11', 'cat < f', 'echo x >| f', 'echo x >! f', 'echo x >> f', 'echo x 2>"/dev/null"x', 'echo x >/dev/nullx', 'echo x >&-',
     'cat x\n#c', 'printf -v PATH /tmp x', 'X=1 cat f', 'node ' + SDLC_TS + ' run -- npm test \\; touch f', 'node ' + SDLC_TS + ' status -x',
     `node '--eval=require("fs").writeFileSync("PWN12","")//sdlc.ts' status`, `node '--import=data:text/javascript,import fs from "fs";fs.writeFileSync("PWN13","")//sdlc.ts' status`, 'node /x/notsdlc.ts status']
-  for (const c of denied) assert.equal(as('sdlc:reviewer', c), 'deny', c)
+  for (const c of denied) assert.equal(as('rig:reviewer', c), 'deny', c)
   const allowed = ['git diff main...HEAD -- src | head', 'rg -n "=>" src', 'git log --format="%h -> %s" -5', 'cat src/a.ts | wc -l', 'git stash list', 'node ' + SDLC_TS + ' status',
     'find src -name "*.ts"', 'git diff main...HEAD 2>&1 | tail -50', 'cat f >/dev/null', 'git branch --show-current',
     'rg -n "\\bfoo\\b" src', "grep -n 'a\\|b' f", 'echo "say \\"hi\\""', 'sort -u x', 'sort -n x', 'git --no-pager diff', 'cat f >&2',
     'sort -k2 -t, f', "find . \\( -name a -o -name b \\) -print", 'cat f 2>/dev/null | head', 'cat f > /dev/null 2>&1', "sed -n '1,/x/p' f", "awk '{print $1}' f",
     'echo a$ b', 'rg -n "foo$" src', 'echo a#b', "echo 'a(b)c' \"{x}\"", 'git log --oneline -5', 'rg --pre-glob "*.gz" x', 'cat x \\\n f']
-  for (const c of allowed) assert.equal(as('sdlc:reviewer', c), undefined, c)
-  assert.equal(as('sdlc:scout', 'node ' + SDLC_TS + ' run -- "npm test"'), 'deny')
-  assert.equal(as('sdlc:reviewer', 'npm test 2>&1 | tail -5'), 'deny', 'bare npm is not allowlisted')
-  assert.equal(as('sdlc:implementer', 'echo x > f'), undefined)
+  for (const c of allowed) assert.equal(as('rig:reviewer', c), undefined, c)
+  assert.equal(as('rig:scout', 'node ' + SDLC_TS + ' run -- "npm test"'), 'deny')
+  assert.equal(as('rig:reviewer', 'npm test 2>&1 | tail -5'), 'deny', 'bare npm is not allowlisted')
+  assert.equal(as('rig:implementer', 'echo x > f'), undefined)
 })
 
 test('the verifier runs only declared verification commands, and only through the recorder', () => {
   sdlc(repo, ['init'])
   sdlc(repo, ['new', 'rate', '--type', 'feature', '--tier', 'L'])
   write(repo, '.sdlc/changes/rate/plan.md', '## Files\n- src/**\n\n## Verification\n- `npm test`\n')
-  const as = (command: string) => decision(hook(repo, 'pre-bash', { agent_type: 'sdlc:verifier', tool_input: { command } }))
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { agent_type: 'rig:verifier', tool_input: { command } }))
   assert.equal(as('node ' + SDLC_TS + ' run -- "npm test"'), undefined)
   assert.equal(as('node --disable-warning=ExperimentalWarning ' + SDLC_TS + ' run --slug rate -- "npm  test"'), undefined)
   assert.equal(as('node ' + SDLC_TS + ' run -- "touch f"'), 'deny')
@@ -240,11 +240,11 @@ test('SubagentStop judges only files that agent edited, and runs no project comm
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   hook(repo, 'prompt-submit', {})
-  hook(repo, 'subagent-start', { agent_id: 'A', agent_type: 'sdlc:implementer' })
+  hook(repo, 'subagent-start', { agent_id: 'A', agent_type: 'rig:implementer' })
   write(repo, 'src/a.js', 'export const a = 1\n')
   hook(repo, 'post-edit', { agent_id: 'A', tool_input: { file_path: path.join(repo, 'src/a.js') } })
   tamper()
-  assert.equal(hook(repo, 'subagent-stop', { agent_id: 'A', agent_type: 'sdlc:implementer' }).stdout, '')
+  assert.equal(hook(repo, 'subagent-stop', { agent_id: 'A', agent_type: 'rig:implementer' }).stdout, '')
   assert.ok(!fs.existsSync(path.join(repo, 'ran.txt')))
   assert.equal(JSON.parse(stop().stdout).decision, 'block', 'the main Stop still sees the other file')
 })
@@ -300,8 +300,8 @@ test('SubagentStop without agent_id is ignored; a clean SubagentStop leaves main
   stop()
   stop()
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/unresolved.json')))
-  hook(repo, 'subagent-start', { agent_id: 'B', agent_type: 'sdlc:implementer' })
-  assert.equal(hook(repo, 'subagent-stop', { agent_id: 'B', agent_type: 'sdlc:implementer' }).stdout, '')
+  hook(repo, 'subagent-start', { agent_id: 'B', agent_type: 'rig:implementer' })
+  assert.equal(hook(repo, 'subagent-stop', { agent_id: 'B', agent_type: 'rig:implementer' }).stdout, '')
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/unresolved.json')), 'a subagent never clears it')
 })
 
@@ -434,7 +434,7 @@ test('I4: Bash naming SDLC_HUMAN or a human-only command is denied, quoted or no
 test('a failed built-in code-review load falls back to the sdlc reviewer agent', () => {
   const repo = makeRepo(); sdlc(repo, ['init'])
   const r = JSON.parse(hook(repo, 'skill-failed', { tool_input: { skill: 'code-review' } }).stdout)
-  assert.match(r.hookSpecificOutput.additionalContext, /sdlc:reviewer/)
+  assert.match(r.hookSpecificOutput.additionalContext, /rig:reviewer/)
 })
 
 test('a failed superpowers SDD load sends the model back to native orchestration and logs it', () => {
@@ -459,7 +459,7 @@ test('tier L bugfix: source edits ask until plan.md is approved; tests do not', 
   sdlc(repo, ['new', 'fix-it', '--type', 'bugfix', '--tier', 'L'])
   const src = hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'src/app.js') } })
   assert.equal(decision(src), 'ask')
-  assert.match(reasonOf(src), /src\/app\.js: tier L bug fixes wait for the person to approve plan\.md .* \/sdlc-approve fix-it plan\./)
+  assert.match(reasonOf(src), /src\/app\.js: tier L bug fixes wait for the person to approve plan\.md .* \/rig-approve fix-it plan\./)
   assert.equal(decision(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, 'tests/app.test.js') } })), undefined)
 })
 
@@ -467,7 +467,7 @@ test('harness files untracked at turn start and committed unchanged in the turn 
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
-  write(repo, '.claude/agents/sdlc-scout.md', '# scout\n')
+  write(repo, '.claude/agents/rig-scout.md', '# scout\n')
   write(repo, 'CLAUDE.md', '# project\n')
   hook(repo, 'prompt-submit', {})
   gitIn(repo, 'add', '.')
@@ -484,7 +484,7 @@ test('a turn that only writes harness files (onboarding) opens no ad-hoc change'
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   hook(repo, 'prompt-submit', {})
-  write(repo, '.github/workflows/sdlc-check.yml', 'name: sdlc-check\n')
+  write(repo, '.github/workflows/rig-check.yml', 'name: rig-check\n')
   write(repo, '.claude/settings.json', '{}\n')
   stop()
   assert.ok(!fs.existsSync(path.join(repo, '.sdlc/changes')) || !fs.readdirSync(path.join(repo, '.sdlc/changes')).some(d => d.startsWith('adhoc-')))

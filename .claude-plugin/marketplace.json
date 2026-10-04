@@ -1,9 +1,9 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "sdlc",
-  "description": "Marketplace for the sdlc harness plugin",
+  "name": "rig",
+  "description": "Marketplace for the rig harness plugin",
   "owner": { "name": "Chaminda Wijayasundara" },
   "plugins": [
-    { "name": "sdlc", "source": "./", "description": "Thin AI-native SDLC harness for Claude Code", "version": "0.4.0" }
+    { "name": "rig", "source": "./", "description": "Thin AI-native SDLC harness for Claude Code", "version": "0.4.0" }
   ]
 }

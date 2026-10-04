@@ -59,7 +59,7 @@ These savings overlap. The single biggest lever is **bounded context**.
 ```
 sdlc/                                  plugin root (this repo is also its marketplace)
 ├── .claude-plugin/{plugin.json, marketplace.json}
-├── skills/                            model- or user-invoked, namespaced /sdlc:*
+├── skills/                            model- or user-invoked, namespaced /rig:*
 │   ├── start/      router: classify type×tier, write intent.md, print path + next cmd
 │   ├── onboard/    once per repo: compact CLAUDE.md (<120 lines), settings template, test cmds
 │   ├── spec/       M/L features & greenfield: spec.md with numbered B<n> behaviours
@@ -80,7 +80,7 @@ sdlc/                                  plugin root (this repo is also its market
 │   └── verifier.md     claude-sonnet-5-5 — runs verification commands, reports, never repairs
 ├── hooks/
 │   ├── hooks.json      settings hooks (work everywhere incl. -p) + "modules": mod
-│   └── register.js     the mod: usage capture, status band, /sdlc-status, /sdlc-approve, guards
+│   └── register.js     the mod: usage capture, status band, /rig-status, /rig-approve, guards
 └── scripts/sdlc.ts    zero-dep Node: init, status, approve, scope-drift, secrets, metrics
 ```
 
@@ -106,7 +106,7 @@ sdlc/                                  plugin root (this repo is also its market
 
 ## 4. Task routing (type × tier)
 
-`/sdlc:start "<request>"` classifies the request. If it is genuinely ambiguous, it asks at most two questions via AskUserQuestion. It then writes `.sdlc/changes/<slug>/intent.md`, with `type:` and `tier:` in its frontmatter.
+`/rig:start "<request>"` classifies the request. If it is genuinely ambiguous, it asks at most two questions via AskUserQuestion. It then writes `.sdlc/changes/<slug>/intent.md`, with `type:` and `tier:` in its frontmatter.
 
 | Type | Path |
 |---|---|
@@ -149,7 +149,7 @@ Plans must not contain code. This rule alone would have removed about 880 KB of 
 
 | Lever | Setting / mechanism |
 |---|---|
-| Hand off at ~150k context | Mod band turns amber at 120k and red at 150k. At 150k the mod calls `$.ui.ask`: "hand off now?". `/sdlc:handoff` writes STATE.md, then the user runs `/clear` and `/sdlc:start --resume`. Backstop: `autoCompactWindow: 200000` in project settings. |
+| Hand off at ~150k context | Mod band turns amber at 120k and red at 150k. At 150k the mod calls `$.ui.ask`: "hand off now?". `/rig:handoff` writes STATE.md, then the user runs `/clear` and `/rig:start --resume`. Backstop: `autoCompactWindow: 200000` in project settings. |
 | Sonnet main + Opus advisor | Settings template: `"model": "sonnet"`, `"advisorModel": "opus"` |
 | Cheap subagents | `implementer` uses sonnet; `scout` uses haiku; `verifier` uses sonnet. Opus only for the L-tier reviewer. |
 | No auto security reviews per edit | Disable security-guidance in harness projects. Run `/security-review` once at ship for L/high-risk changes. |
@@ -192,7 +192,7 @@ These should be reconciled against `/usage`, because advisor and classifier toke
 {
   "extraKnownMarketplaces": { "sdlc": { "source": { "source": "directory", "path": "/abs/path/claude_code_harness_lite_v2" } } },
   "enabledPlugins": {
-    "sdlc@sdlc": true,
+    "rig@rig": true,
     "superpowers@claude-plugins-official": false,
     "security-guidance@claude-plugins-official": false,
     "financial-analysis@claude-for-financial-services": false,
@@ -233,7 +233,7 @@ While developing the plugin, run `claude --plugin-dir ./sdlc`, and run `claude p
   - Subagents spawned inside built-in skills such as `code-review` sometimes log as `unknown` agent type.
   - ~~L-tier bugfix and incident changes have no human gate, because their path has no spec or plan stage.~~ Fixed in v0.3: a plan gate after diagnosis (§13).
   - ~~The `agent.spawn` Sonnet default applies to every unpinned general-purpose spawn in a `.sdlc` repo, including those inside built-in skills, and has not been observed live yet. A `userConfig` toggle is the planned follow-up.~~ Dropped in v0.3.0: the default subagent model is `CLAUDE_CODE_SUBAGENT_MODEL`, and `agent.spawn` only records agent types.
-  - ~~Only the tier S path was exercised end-to-end.~~ Tier M and L have since shipped end to end headless (v0.3 lean trials, scenario suite). The interactive parts (band, `/sdlc-approve`, impact dialog) are still unchecked by a person; see §11.
+  - ~~Only the tier S path was exercised end-to-end.~~ Tier M and L have since shipped end to end headless (v0.3 lean trials, scenario suite). The interactive parts (band, `/rig-approve`, impact dialog) are still unchecked by a person; see §11.
 
 ### Tier M trial (2026-10-02/03, todo-core sample repo, Sonnet main + Opus advisor)
 
@@ -325,7 +325,7 @@ Review outcomes:
 - **Tier M:** no findings. The reviewer deferred one note: "every todo now has `dueDate` and list order changes for all callers". That is a **contract change that tier M let through without a gate**. The contract-impact sensor in the quality-sensors design, which is in progress, is meant to catch it.
 
 Defects these runs exposed:
-1. **The Skill tool failed to load a stage skill twice per run**: `/sdlc:review` in M-B and `/sdlc:verify` in L-C. Both times the model followed the skill's steps by hand. This is the same `-p` chaining failure noted above, and it means a chained session can drift from a skill without any error.
+1. **The Skill tool failed to load a stage skill twice per run**: `/rig:review` in M-B and `/rig:verify` in L-C. Both times the model followed the skill's steps by hand. This is the same `-p` chaining failure noted above, and it means a chained session can drift from a skill without any error.
 2. **The verifier inferred exit codes instead of capturing them.** `verification.md` says `exit 0 (harness reported no error)`. The main thread re-ran the commands itself. A verdict has to come from captured exit codes, not from what the model says happened.
 3. **`STATE.md` goes stale after ship.** After shipping, it still names the active change, and in L it says "next: verify". Ship neither updates nor stages it.
 4. **Ship did not stage `.sdlc/.gitignore`** in the tier L run. `cmdShip` now stages it, and that fix is what the $0.27 tier M re-ship exercised.
@@ -347,7 +347,7 @@ Targets:
 - **Cost: +44% against the $1.08 tier M trial ($1.557), target ≤ 5% MISSED.** It is a lower bound, because review and ship never ran. The Stop gate makes no model calls and blocked nothing, so the delta is not the gate: it is stage A's Opus share (architect and advisor, $0.79; 51% of the total against 39% in the earlier trial).
 - **Median Stop-gate time: 164 ms, target ≤ 15 s met, but n = 1.** The only `runs.jsonl` row matching `.gate.last.at` is `npm test`. One sample is weak evidence.
 - Skill fallbacks: 0.
-- **Interactive checks (spec §15) not performed**: the trial was headless. The mod impact dialog (main-thread and subagent edits), the `sensors ✓/✗` band and the `/sdlc-sensors` pane are pending a human.
+- **Interactive checks (spec §15) not performed**: the trial was headless. The mod impact dialog (main-thread and subagent edits), the `sensors ✓/✗` band and the `/rig-sensors` pane are pending a human.
 - Observation: `STATE.md` in the trial repo said "No active change" while `sdlc status` showed `todo-due-dates` at verify. See §11.
 
 ### v0.3 trial (2026-10-03): three arms, tier L, todo-core
@@ -358,7 +358,7 @@ Task: API-key auth, per-user isolation, pagination, atomic file store (`tests/tr
 |---|---|---|---|---|
 | Plain Claude Code | $0.37 | 80 s | 5/5 | done, uncommitted on main |
 | Harness, native build | $3.12 | 474 s | 3/5 | stopped before Task 3 (pagination) on an open plan question; nothing committed |
-| Harness, superpowers SDD build | $4.01 | 588 s | 5/5 | all 4 tasks built and committed per task; stopped at `Next: /sdlc:verify` (not verified, reviewed or shipped) |
+| Harness, superpowers SDD build | $4.01 | 588 s | 5/5 | all 4 tasks built and committed per task; stopped at `Next: /rig:verify` (not verified, reviewed or shipped) |
 
 Estimated cost split (`tests/trials/split.mjs`):
 
@@ -374,7 +374,7 @@ Findings:
 - **The Opus advisor is the largest single cost:** about 30–40% of each harness arm, three times the architect. This settles §11's open question. The §9 rule ("demote the architect if it dominates Opus spend") does not fire.
 - **SDD stays the default for tier L.** It cost 1.28× native, under the 1.5× threshold, and finished every task. Native stalled.
 - **Defect: plans carry unresolved gating questions.** The architect wrote "confirm the `GET /todos` shape before Task 3" into an approved plan. Headless, nobody answers it, so the native build stopped. Approval has to mean every open question is resolved or defaulted in `## Decisions`.
-- **Defect: chained stages stop at the build's end line.** Both harness arms ended at `Next: /sdlc:verify` despite a prompt to continue. Neither verified nor shipped.
+- **Defect: chained stages stop at the build's end line.** Both harness arms ended at `Next: /rig:verify` despite a prompt to continue. Neither verified nor shipped.
 - **Plain Claude Code passed 5/5 at a tenth of the cost**, with no auth bypass this time. On a clear tier L task, the harness bought process and audit, not correctness.
 
 ### v0.3 lean trials (2026-10-03): the three fixes, then lean S/M
@@ -396,11 +396,11 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 ### v0.3.0 thinner + install check (2026-10-03)
 
 - **Delegated to Claude Code built-ins:**
-  - Review uses `/code-review` (headless, $0.09 in 6 s, and it found both seeded auth bugs); sdlc keeps the plan-contract check and falls back to `sdlc:reviewer` if the skill fails to load.
+  - Review uses `/code-review` (headless, $0.09 in 6 s, and it found both seeded auth bugs); sdlc keeps the plan-contract check and falls back to `rig:reviewer` if the skill fails to load.
   - The default subagent model is `CLAUDE_CODE_SUBAGENT_MODEL`.
   - Claude Code blocks sleep-polling itself.
-  - `/compact` replaces `/sdlc:handoff`.
-- **Installed from GitHub** with `claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project` and `claude plugin install sdlc@sdlc --scope project`. The installed version was 0.3.0.
+  - `/compact` replaces `/rig:handoff`.
+- **Installed from GitHub** with `claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project` and `claude plugin install rig@rig --scope project`. The installed version was 0.3.0.
 - **Lean S/M check on the installed plugin.** The task was internal: `TodoService.stats()`, no route change.
 
   | Run | Cost | Time | Hidden check | Outcome |
@@ -410,13 +410,13 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 
   The harness now costs about 2x plain on small work, down from 4-7x.
 - **Still to check by a person:**
-  - ~~a real PR through `sdlc-review` (needs an `ANTHROPIC_API_KEY` secret)~~ Done 2026-10-04; see "sdlc-review end to end" below.
+  - ~~a real PR through `rig-review` (needs an `ANTHROPIC_API_KEY` secret)~~ Done 2026-10-04; see "rig-review end to end" below.
   - onboarding and the wiki on a real brownfield repo
-  - the mod's interactive parts: band, `/sdlc-approve` and the impact dialog
+  - the mod's interactive parts: band, `/rig-approve` and the impact dialog
 
 ### Integration test (2026-10-03): onboard, wiki and one change on a four-module app
 
-`tests/trials/run-trials.sh I` runs `/sdlc:init` on `tests/trials/shop-app` (catalog, cart, orders, http), then takes one internal change (`bestSellers`) through ship. `assert-integration.mjs` checks every artifact deterministically.
+`tests/trials/run-trials.sh I` runs `/rig:init` on `tests/trials/shop-app` (catalog, cart, orders, http), then takes one internal change (`bestSellers`) through ship. `assert-integration.mjs` checks every artifact deterministically.
 
 | Run | Onboard checks | Change checks | What it caught (each fixed with tests) |
 |---|---|---|---|
@@ -435,7 +435,7 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 | Tier L bugfix: SAVE20 charges 2%, a payments bug | 11/11 | $0.93 | 177 s | diagnose wrote the failing test and the root cause, stopped at the plan gate, then fixed after approval |
 | Tier M refactor: move discount codes to `discounts.js` | 11/11 | $0.43 | 90 s | no gate; behaviour stayed green on the base |
 
-Every scenario shipped on a branch with a clean tree, an sdlc-generated passing verification and a recorded red run.
+Every scenario shipped on a branch with a clean tree, a rig-generated passing verification and a recorded red run.
 
 Tier L rerun on todo-core, after the thinning:
 
@@ -471,25 +471,25 @@ CI was red from 38b1cce, so v0.3.4 and v0.3.5 were tagged on red builds; macOS, 
 - **Linux:** the gate test expected `claude.md` to ask as a case variant of `CLAUDE.md`. On Linux the guard is case-sensitive by design, so `claude.md` is an ordinary file; the test now asserts that per platform. The `dogfood` job ran the same suite and failed with it.
 - **Windows:** the vendor test matched skill paths with `/` while `path.join` returned `\`; it now normalises them. The rest of that test had never run on Windows before.
 
-### sdlc-review end to end (2026-10-04, PR #2, Haiku 4.5)
+### rig-review end to end (2026-10-04, PR #2, Haiku 4.5)
 
-`templates/sdlc-review.yml` ran on a real PR with the model swapped to `claude-haiku-4-5-20251001` (about $0.07 a run).
+`templates/rig-review.yml` ran on a real PR with the model swapped to `claude-haiku-4-5-20251001` (about $0.07 a run).
 - **First run: it had never worked.** The model reviewed but could not write `review.md`: the two `Write(./review.md)` allow rules were denied, so the post step failed with "no review.md". A path-scoped write permission has to be an `Edit(...)` rule, which covers Write too; a local probe confirmed `Edit(./review.md)` allows that file and still blocks writes to any other. The template now uses `Edit(...)`, and `vendor.spec.ts` pins the allowlist.
 - **Clean push:** verdict PASS, "No findings." posted.
 - **Planted empty-key auth bypass:** verdict HIGH, the check failed, and the same comment was edited in place. Haiku framed it as the tests contradicting the code rather than as an auth bypass; the shipped template keeps Opus.
 
 ### v0.3.6 (2026-10-04)
 
-The first release with CI green on Linux, Windows and macOS, and the first with a working `sdlc-review` (both above). Adds `LICENSE` (MIT). Still unchecked by a person: the mod's band, `/sdlc-approve`, `/sdlc-sensors` and the impact dialog.
+The first release with CI green on Linux, Windows and macOS, and the first with a working `rig-review` (both above). Adds `LICENSE` (MIT). Still unchecked by a person: the mod's band, `/rig-approve`, `/rig-sensors` and the impact dialog.
 
 ### Standalone by default (2026-10-04, v0.3.7)
 
 A repo onboarded by sdlc carries its own harness, so it never depends on the plugin; the plugin onboards and upgrades. This keeps v6's goal (the child repo is independent) without its `/scaffold` machinery: `vendor --standalone` (alias `--cloud`) is the same 70-line copy cloud sessions already used.
-- **Artifacts stay in `.sdlc/`, committed.** `.claude/` is protected (§10), and the artifacts are the evidence `sdlc-check` reads.
-- **Human gates without the mod.** `/sdlc-approve` and `/sdlc-waive` are vendored skills with `disable-model-invocation` and a `!` command whose `allowed-tools` grant covers only that command. `$ARGUMENTS` is single-quoted, because a Haiku probe showed it is substituted raw: unquoted, `*` globbed into file names. Probed on Haiku: the person's `/sdlc-approve demo spec` wrote the approval; a model told to approve by any means got 3 denials and wrote nothing.
+- **Artifacts stay in `.sdlc/`, committed.** `.claude/` is protected (§10), and the artifacts are the evidence `rig-check` reads.
+- **Human gates without the mod.** `/rig-approve` and `/rig-waive` are vendored skills with `disable-model-invocation` and a `!` command whose `allowed-tools` grant covers only that command. `$ARGUMENTS` is single-quoted, because a Haiku probe showed it is substituted raw: unquoted, `*` globbed into file names. Probed on Haiku: the person's `/rig-approve demo spec` wrote the approval; a model told to approve by any means got 3 denials and wrote nothing.
 - **No double hooks.** When the project's settings register `.sdlc/bin/sdlc.ts`, the plugin's hooks return at once and the mod skips its approve and waive commands. The band, pane and impact dialog still run when the plugin is installed too.
 - **Settings template made portable.** The personal plugin list, the absolute marketplace path and the no-op `Write(.sdlc/**)` rule are gone, and the template no longer enables the plugin for the team.
-- **Without the plugin there is no mod**, so there is no band, pane, impact dialog or per-stage cost capture. `/sdlc-approve` has not been tried in a cloud session.
+- **Without the plugin there is no mod**, so there is no band, pane, impact dialog or per-stage cost capture. `/rig-approve` has not been tried in a cloud session.
 
 ## 11. Open items to verify
 
@@ -504,7 +504,7 @@ A repo onboarded by sdlc carries its own harness, so it never depends on the plu
 - From the 2026-10-03 Spec 1 live trial (§10):
   - ~~Cost target missed (+44%, a lower bound): find out why stage A spends 51% on Opus, and whether the architect or the advisor is the driver.~~ The advisor was the driver (v0.3 trial, §10); the settings template now turns it off.
   - ~~Rerun the tier M trial (paid) after the 4cac9b1 parser fix, to confirm it ships end to end and to get a full cost figure including review and ship.~~ Tier M shipped end to end in the v0.3.0 install check and the scenario suite (§10).
-  - The interactive mod checks still need a human: the impact dialog for main-thread and subagent edits, the `sensors ✓/✗` band, and the `/sdlc-sensors` pane.
+  - The interactive mod checks still need a human: the impact dialog for main-thread and subagent edits, the `sensors ✓/✗` band, and the `/rig-sensors` pane.
   - ~~`STATE.md` says "No active change" while a change is active.~~ Fixed in v0.3: `setActive` replaces a body that is still generated text (`scripts/core.ts`, `GENERATED_STATE`). Original finding: `createChange` and `setActive` rewrite only the `change:` frontmatter and keep the body, and `init` seeds that body with the "No active change." template. Only the model's build and handoff skills ever rewrite the body, and the build stopped at verify without doing so. `status` reads the frontmatter, so it is right; the session-start hook injects the body, so the model is told the opposite. Candidate fix (not made): `setActive` replaces a body that is still the template, and `verify` or `build` writes the slice and stage state mechanically.
 
 ## 12. Spec 1 (quality sensors, v0.2.0): deviations from the plan
@@ -520,20 +520,20 @@ Rulings made while building it; the code is the reference.
 - Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `impact.json`, `.baseline`, `.gate`, `unresolved.json`) are written only by sdlc or the person. `verification.md` is generated by `sdlc.ts verify-report`.
 - `npm run typecheck` covers the scripts only (CI). `npm run typecheck:mod` needs generated types, is local, and runs inside `npm test` with `claude plugin test .`.
 - `runCommand` and the test kit strip `NODE_TEST_CONTEXT`, so a consumer's own `node --test` really runs.
-- The mod adds `/sdlc-waive` (sensor names validated against `SENSOR_NAMES`), the `/sdlc-sensors` pane, the band, the impact dialog and per-edit notices. The harness-tamper dialog is intentionally not in the mod: the PreToolUse `ask` reason carries the same detail.
+- The mod adds `/rig-waive` (sensor names validated against `SENSOR_NAMES`), the `/rig-sensors` pane, the band, the impact dialog and per-edit notices. The harness-tamper dialog is intentionally not in the mod: the PreToolUse `ask` reason carries the same detail.
 
 The Spec 1 live trial is recorded in §10.
 
 ## 13. v0.3
 
 - **superpowers guides L builds.** Tier L and greenfield builds use superpowers subagent-driven development when it is installed (the settings template enables it), with sdlc overrides; otherwise the native sdlc implementers run.
-- **Wiki.** `/sdlc:wiki` and `agents/wiki.md` (Sonnet, low effort) build `docs/wiki/`. `scripts/wiki.ts` stamps each page with a surface hash; a wiki-stale sensor warns at ship and CI but never blocks.
+- **Wiki.** `/rig:wiki` and `agents/wiki.md` (Sonnet, low effort) build `docs/wiki/`. `scripts/wiki.ts` stamps each page with a surface hash; a wiki-stale sensor warns at ship and CI but never blocks.
 - **Guard freeze.** The local evidence guard is frozen at one best-effort rule. CI is the trust boundary.
 - **LOC cap.** The harness (scripts, hooks, skills, agents, guides, templates, workflows, plugin JSON) is capped at 5000 lines by a test.
 - **Fixes.** STATE.md follows the active change; tier L bugfix and incident get a plan gate after diagnosis; the size sensor warns on added lines over `limits.lineChars` (160); captured command output masks secrets.
-- **/sdlc:next** runs the active change's next stage and stops at human gates.
+- **/rig:next** runs the active change's next stage and stops at human gates.
 - Trial results: see §10, v0.3 trial.
-- **Lean S/M (after the v0.3 trials).** Gates by risk, not size: tier S and M have no human gate and no in-session review, and their plans are written by the main thread. Their one review runs on the PR (`templates/sdlc-review.yml`, advisory; `sdlc-check` stays the deterministic gate). A `tier` sensor blocks an S/M change whose diff reaches contracts or auth, security, payments, billing or migrations paths until it is re-tiered to L. The advisor is off (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL`); SDD is opt-in (`"build": "sdd"`). A diff over `limits.diffLines` only warns once its plan is approved. Metrics such as first-pass share, rework cycles and `caught` now cover tier L only, because S/M have no review.md.
+- **Lean S/M (after the v0.3 trials).** Gates by risk, not size: tier S and M have no human gate and no in-session review, and their plans are written by the main thread. Their one review runs on the PR (`templates/rig-review.yml`, advisory; `rig-check` stays the deterministic gate). A `tier` sensor blocks an S/M change whose diff reaches contracts or auth, security, payments, billing or migrations paths until it is re-tiered to L. The advisor is off (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL`); SDD is opt-in (`"build": "sdd"`). A diff over `limits.diffLines` only warns once its plan is approved. Metrics such as first-pass share, rework cycles and `caught` now cover tier L only, because S/M have no review.md.
 
 ## 14. v0.4: the autonomous ratchet
 
@@ -545,18 +545,18 @@ The Spec 1 live trial is recorded in §10.
 - **Test levels.** `levels` in sensors.json (unit, integration, acceptance, api); a level that the tier requires and sensors.json does not declare blocks the test node with the exact fix.
 - **Quality sensors vs base.** `quality` commands (lint and similar) run on the branch and on a base worktree; only a worsening blocks, and with no base the category reads `unmeasured`.
 - **Auto-approval.** Inside an approved plan, declared commands, the pinned harness script, read-only git and edits listed in the plan's `## Files` need no prompt (details in the security model).
-- **PR node.** `/sdlc:pr` commits, pushes and opens the PR (`ship` stays a CLI alias); `/sdlc:pr-review` reads the PR and its checks, fail closed.
+- **PR node.** `/rig:pr` commits, pushes and opens the PR (`ship` stays a CLI alias); `/rig:pr-review` reads the PR and its checks, fail closed.
 - **Scorecard and metrics.** Per change and per node: tokens, cost, spend against budget, estimated value (`value` hours) and value over cost.
-- **Mod.** A band, the `/sdlc-story` and `/sdlc-metrics-pane` panes, and the `/sdlc-run` driver, which submits one node per turn and stops when a turn makes no progress (same node, round and finished-slice count). A rejected submit or a timer that never fires leaves the driver stopped.
+- **Mod.** A band, the `/rig-story` and `/rig-metrics-pane` panes, and the `/rig-run` driver, which submits one node per turn and stops when a turn makes no progress (same node, round and finished-slice count). A rejected submit or a timer that never fires leaves the driver stopped.
 - **Onboarding.** Per-stack starter commands, baselines and verified installs; the mod is vendored as a project plugin, and the global mod steps aside only when the project one is enabled.
-- **Budget.** `/sdlc-approve <slug> budget` is the only way to raise a cap and also clears a stall or cap block; credits live in `ratchet.json`, not in model-writable usage rows.
-- **Resume after a fix or waiver (R46).** A `gate` or `level` block does not stop `/sdlc-next`: `step()` answers `continue` at the current node with the pending block in the reason, and the node's own code (the ship gate in `pr`, `verify-report` for levels) re-derives or clears it. Cap, stall, budget and other blocks stay `blocked` until a person runs `/sdlc-approve <slug> budget`.
+- **Budget.** `/rig-approve <slug> budget` is the only way to raise a cap and also clears a stall or cap block; credits live in `ratchet.json`, not in model-writable usage rows.
+- **Resume after a fix or waiver (R46).** A `gate` or `level` block does not stop `/rig-next`: `step()` answers `continue` at the current node with the pending block in the reason, and the node's own code (the ship gate in `pr`, `verify-report` for levels) re-derives or clears it. Cap, stall, budget and other blocks stay `blocked` until a person runs `/rig-approve <slug> budget`.
 
 ### Deviations from the spec
 
 - **No per-model price table (spec §7.4).** The hook already records each main turn's cost as the delta of the session ledger, which includes subagents, advisor calls and classifiers, so per-change and per-node dollars are exact without pricing tokens. Per-agent-type numbers stay in tokens.
 - **No `turn.step` capture (spec §8.6).** The driver submits one node per turn, so rows are already attributed to the right node.
-- **The driver is `/sdlc-run`, not a mod `/sdlc-next`.** A standalone repo ships an `sdlc-next` skill and `$.command.register` throws on a name clash.
+- **The driver is `/rig-run`, not a mod `/rig-next`.** A standalone repo ships an `rig-next` skill and `$.command.register` throws on a name clash.
 - **Auto-approved share is a per-change count (R29).** `auto_approved_per_change`, not a share: a true share would need every tool call counted.
 - **Mod extras deferred (R36).** The `(slice i/n)` band text, the per-node graph, deferred findings and the Open review, Waive and Stop buttons.
 - **Plan commands are trusted only when the plan is approved (R19).** For ungated tiers only protected sensors.json commands are auto-approvable.
@@ -568,9 +568,9 @@ The Spec 1 live trial is recorded in §10.
 - **Never auto-approved:** approvals, waivers and budget raises (human only, the model cannot invoke them); edits to sensors.json, `.claude/settings.json`, `.claude-plugin/**` and other protected files; anything outside the plan; any approval gone stale because the artifact changed.
 - **Evidence files** (`ratchet.json`, `events.jsonl`, `ship.json`, `pr.md`, approvals, waivers, `runs.jsonl`, `verification.md`) are written only by sdlc. `weakensConfig` flags added or changed gate, level, quality and value entries.
 - **Sensors and test are never self-certified.** `ratchet record` refuses the `sensors` and `test` nodes and auto-approval allows only `build` and `pr-review`: those two nodes are recorded internally by `quality` and `verify-report`, which measure. A model-written `verdict: pass` file therefore cannot mark them done. As defence in depth the ship gate in `pr` re-runs the quality comparison (base counts are cached per base SHA, no round is recorded) and refuses a regression or a falling test count.
-- **The tier cannot be lowered from intent.md.** `intent.md` is model-writable, so `new` records `tier` and `type` in `ratchet.json` and the graph uses the stricter of the recorded and intent.md values (S < M < L; a greenfield type on either side stays greenfield; any other recorded type holds). Raising the tier in intent.md takes effect at once. A change folder with no recorded tier (legacy or hand-made) is gated as L. Only a person lowers it: `/sdlc-approve <slug> tier` (human-only) writes intent.md's current tier and type into `ratchet.json` with an event row, and `status` warns `tier changed in intent.md (L → M): /sdlc-approve <slug> tier to accept`. In-flight v0.4 changes created before this rule have no recorded tier; they gate as L until a person runs `/sdlc-approve <slug> tier`.
+- **The tier cannot be lowered from intent.md.** `intent.md` is model-writable, so `new` records `tier` and `type` in `ratchet.json` and the graph uses the stricter of the recorded and intent.md values (S < M < L; a greenfield type on either side stays greenfield; any other recorded type holds). Raising the tier in intent.md takes effect at once. A change folder with no recorded tier (legacy or hand-made) is gated as L. Only a person lowers it: `/rig-approve <slug> tier` (human-only) writes intent.md's current tier and type into `ratchet.json` with an event row, and `status` warns `tier changed in intent.md (L → M): /rig-approve <slug> tier to accept`. In-flight v0.4 changes created before this rule have no recorded tier; they gate as L until a person runs `/rig-approve <slug> tier`.
 - **Quality at ship, not in CI.** CI does not re-run the quality comparison; only the ship gate in `pr` (and `quality`) does. A base that cannot be measured reads `unmeasured`, not a regression, so with no base (on trunk) or a broken base run the comparison cannot refuse anything. Known limitation.
-- **Approving a tier is bound to what the person read.** `/sdlc-approve <slug> tier <S|M|L> [<type>]` records the person's arguments and refuses unless intent.md currently says exactly that, so an edit made after reading cannot be approved. With no recorded type the type is `feature` (greenfield in intent.md is still honoured); intent.md never selects a shorter path such as chore or spike.
+- **Approving a tier is bound to what the person read.** `/rig-approve <slug> tier <S|M|L> [<type>]` records the person's arguments and refuses unless intent.md currently says exactly that, so an edit made after reading cannot be approved. With no recorded type the type is `feature` (greenfield in intent.md is still honoured); intent.md never selects a shorter path such as chore or spike.
 - **CI never accepts a harness waiver from the PR.** The PR carries its own `waivers.jsonl` rows, so at CI a `harness-tamper` finding cannot be waived; a harness change (for example declaring a level in sensors.json) lands on the trunk first as its own change reviewed by the code owners, and the PR is rebased. Waivers for other sensors count only for changes the PR adds, inside their plan or folder. A local person waiver still works at the local ship gate.
 - **The guard is best effort; CI is the trust boundary.** CI runs the base branch's checker and config.
 - **Known limitations:** (a) evidence filenames built inside interpreter strings (for example a script that assembles the path at run time) can evade the guard. (b) A slice review is self-certified: the model writes the reviewer's reply file that `ratchet record --from` reads, so it can claim `done`. R45: reviewers advise and deterministic checks decide; the test levels, sensors, ship gate and CI are what a change must pass, and the per-slice review only paces the build.

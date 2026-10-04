@@ -1,4 +1,4 @@
-// The band above the prompt and the /sdlc-sensors pane: what the sensors saw, at zero tokens.
+// The band above the prompt and the /rig-sensors pane: what the sensors saw, at zero tokens.
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 import type { Band, SensorBand, Story, StepInfo, FlowStep } from '../types'
@@ -6,13 +6,13 @@ import { mod } from './shared'
 
 export const SOFT_CONTEXT = 120_000
 export const HARD_CONTEXT = 150_000
-export const PANE_ID = 'sdlc-sensors'
-export const STORY_PANE = 'sdlc-story'
-export const METRICS_PANE = 'sdlc-metrics'
-export const band = atom({ plugin: 'sdlc', key: 'band' } as const, null as Band | null)
-export const paneText = atom({ plugin: 'sdlc', key: 'paneText' } as const, '')
-export const metricsText = atom({ plugin: 'sdlc', key: 'metricsText' } as const, '')
-const isHidden = atom({ plugin: 'sdlc', key: 'isHidden' } as const, false)
+export const PANE_ID = 'rig-sensors'
+export const STORY_PANE = 'rig-story'
+export const METRICS_PANE = 'rig-metrics'
+export const band = atom({ plugin: 'rig', key: 'band' } as const, null as Band | null)
+export const paneText = atom({ plugin: 'rig', key: 'paneText' } as const, '')
+export const metricsText = atom({ plugin: 'rig', key: 'metricsText' } as const, '')
+const isHidden = atom({ plugin: 'rig', key: 'isHidden' } as const, false)
 
 export function sensorText(s: SensorBand | null): string {
   if (!s) return ''

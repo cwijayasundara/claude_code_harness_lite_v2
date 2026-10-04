@@ -30,7 +30,7 @@ test('allowed read-only commands write nothing when the real shell runs them', {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ro-'))
     fs.writeFileSync(path.join(dir, 'f'), 'a b\n')
     for (const c of cmds) {
-      assert.equal(readOnlyDenial(c, 'sdlc:reviewer', () => new Set()), null, c)
+      assert.equal(readOnlyDenial(c, 'rig:reviewer', () => new Set()), null, c)
       spawnSync(sh, ['-c', c], { cwd: dir })
     }
     assert.deepEqual(fs.readdirSync(dir), ['f'], sh)

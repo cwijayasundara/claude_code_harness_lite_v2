@@ -16,13 +16,13 @@ const ready = (slug: string) => {
   ratcheted(repo, slug)
 }
 const withRemote = () => {
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-remote-'))
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-remote-'))
   gitIn(bare, 'init', '-q', '--bare')
   gitIn(repo, 'remote', 'add', 'origin', bare)
   return bare
 }
 const fakeGh = (script: string) => {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-gh-'))
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-gh-'))
   fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" > "$0.args"\n${script}\n`, { mode: 0o755 })
   return { bin, env: { PATH: `${bin}:${process.env.PATH}` } }
 }
@@ -172,7 +172,7 @@ test('ship commits code plus artifacts on a branch', () => {
   ratcheted(repo, 'tiny')
   write(repo, 'src/app.js', 'x\n')
   write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
-  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:pr tiny/)
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:pr tiny/)
   const shipped = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
   assert.match(shipped.stdout, /sdlc\/tiny/)
@@ -210,7 +210,7 @@ test('pr stages STATE.md and .sdlc/.gitignore and keeps the change active; STATE
   assert.match(files, /\.sdlc\/\.gitignore/)
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /^change: tiny$/m) // the change stays active for pr-review
   assert.equal(gitIn(repo, 'status', '--porcelain').trim(), '')
-  assert.match(sdlc(repo, ['status']).stdout, /▶ tiny[\s\S]*next: \/sdlc:pr-review/)
+  assert.match(sdlc(repo, ['status']).stdout, /▶ tiny[\s\S]*next: \/rig:pr-review/)
   write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /next: /) // ready: STATE.md is cleared now
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /No active change\. Last shipped: tiny\./)
@@ -367,7 +367,7 @@ test('a refused ship gate blocks the change and names the exact next action', ()
   assert.equal(r.code, 1)
   const n = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
   assert.equal(n.verdict, 'continue', 'R46: a gate block resumes at the pr node')
-  assert.match(n.reason, /pending block[\s\S]*\/sdlc-waive harness-tamper \.sdlc\/sensors\.json <reason>/)
+  assert.match(n.reason, /pending block[\s\S]*\/rig-waive harness-tamper \.sdlc\/sensors\.json <reason>/)
 })
 
 test('a passing ship gate clears only a gate-kind block on pr', () => {

@@ -24,7 +24,7 @@ const ASSERTION = /\bassert(?:\.\w+\s*\(|\w*\s*[!(])|^\s*assert\s|\bexpect\s*[({
 const THRESHOLD_KEY = /coverage|threshold|fail[_-]under|minimum|\b(?:lines|branches|functions|statements)\b/i
 const CONFIG_FILE = /(?:^|\/)(?:[^/]*\.(?:json|ya?ml|toml|cfg|ini|xml|gradle|kts|properties)|\.[\w-]*rc(?:\.\w+)?|[^/]*\.config\.[cm]?[jt]s)$/
 const SNAPSHOT = /(?:^|\/)__snapshots__\/|\.snap$/
-const KEEP_TESTS = "keep the test and make the code pass it; removing a test needs the person's /sdlc-waive"
+const KEEP_TESTS = "keep the test and make the code pass it; removing a test needs the person's /rig-waive"
 
 const countAssertions = (texts: string[]): number =>
   texts.filter(t => !COMMENT_LINE.test(t)).reduce((n, t) => n + (t.match(ASSERTION)?.length ?? 0), 0)
@@ -132,7 +132,7 @@ export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<str
   if (total > cfg.limits.diffLines && point !== 'edit') {
     findings.push({
       sensor: 'size', severity: point === 'stop' ? 'warn' : 'block', message: `diff is ${total} changed lines (limit ${cfg.limits.diffLines})`,
-      fix: 'ship it as smaller changes, or the person approves the plan (/sdlc-approve <slug> plan) or waives with /sdlc-waive size * <reason>',
+      fix: 'ship it as smaller changes, or the person approves the plan (/rig-approve <slug> plan) or waives with /rig-waive size * <reason>',
     })
   }
   if (point !== 'edit') {
@@ -153,9 +153,9 @@ export function secretsInDiff(diffs: FileDiff[]): Finding[] {
   const findings: Finding[] = []
   for (const d of diffs.filter(f => !f.binary)) {
     for (const l of d.added) {
-      if (/sdlc:allow-secret/.test(l.text)) continue
+      if (/rig:allow-secret/.test(l.text)) continue
       const hit = SECRET_PATTERNS.find(([, re]) => re.test(l.text))
-      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; for a test fixture add "sdlc:allow-secret <why>" on the line' })
+      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; for a test fixture add "rig:allow-secret <why>" on the line' })
     }
   }
   return findings
@@ -222,7 +222,7 @@ export function contractsFromPlan(planText: string): string[] {
     .filter((id): id is string => Boolean(id))
 }
 
-export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
+export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
 // ci: compare case-insensitively (macOS and Windows file systems treat CLAUDE.MD and CLAUDE.md as one file).
 export const isProtected = (file: string, ci = false): boolean => (ci ? matchesAny(file.toLowerCase(), PROTECTED.map(p => p.toLowerCase())) : matchesAny(file, PROTECTED))
 const SENSORS = '.sdlc/sensors.json'
@@ -310,7 +310,7 @@ export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | '
   return findings
 }
 
-// Tier of work done without /sdlc:start (spec 6.2): S is 3 or fewer source files and no contract; M is up to 15; else L.
+// Tier of work done without /rig:start (spec 6.2): S is 3 or fewer source files and no contract; M is up to 15; else L.
 export function tierFromDiff(diffs: FileDiff[], cfg: SensorConfig): 'S' | 'M' | 'L' {
   const files = diffs.filter(d => isSource(d.file, cfg))
   if (files.length > 15) return 'L'

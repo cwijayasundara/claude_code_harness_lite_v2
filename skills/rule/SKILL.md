@@ -17,6 +17,6 @@ A rule is a regular expression over **added lines** that blocks or warns, with a
 3. **Check** with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts check --at ship --json` on a branch that contains a known occurrence: the rule must fire exactly there.
 4. **Hand over.** `.sdlc/rules.json` is a protected harness file, so show the person the entry and ask them to add it (the edit prompts them). It goes through PR review like any harness change.
 
-Rules that never fire for 90 days show up in `/sdlc:metrics` as prune candidates. Fire counts come from this machine's usage.jsonl, so treat prune candidates as suggestions to confirm. Remove them in the same way.
+Rules that never fire for 90 days show up in `/rig:metrics` as prune candidates. Fire counts come from this machine's usage.jsonl, so treat prune candidates as suggestions to confirm. Remove them in the same way.
 
-End with: `Next: add the rule (you), then /sdlc:start for the next change`.
+End with: `Next: add the rule (you), then /rig:start for the next change`.

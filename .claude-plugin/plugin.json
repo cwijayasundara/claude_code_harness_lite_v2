@@ -1,9 +1,9 @@
 {
-  "name": "sdlc",
+  "name": "rig",
   "version": "0.4.0",
   "description": "Thin AI-native SDLC harness: type x tier routing, file-based artifacts, human gates, cheap-by-default model routing, context budgets and playbook + cost metrics.",
   "author": { "name": "Chaminda Wijayasundara" },
   "license": "MIT",
-  "keywords": ["sdlc", "harness", "metrics", "workflow"],
+  "keywords": ["rig", "harness", "metrics", "workflow"],
   "types": "./types/index.d.ts"
 }

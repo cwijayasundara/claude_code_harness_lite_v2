@@ -1,6 +1,6 @@
 ---
 name: wiki
-description: Writes or updates one page of the code wiki in docs/wiki/ from scout facts or a list of changed files. Use only from /sdlc:wiki.
+description: Writes or updates one page of the code wiki in docs/wiki/ from scout facts or a list of changed files. Use only from /rig:wiki.
 tools: Read, Grep, Glob, LSP, Write, Edit
 model: claude-sonnet-5-5
 effort: low

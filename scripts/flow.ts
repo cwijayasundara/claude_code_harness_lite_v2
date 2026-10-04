@@ -1,4 +1,4 @@
-// The map of the sdlc: every step a change walks, in order, with the one the person is at. Pure over a loaded change.
+// The map of the rig: every step a change walks, in order, with the one the person is at. Pure over a loaded change.
 import { skillRef, type Change, type Stage } from './core.ts'
 
 export type FlowState = 'done' | 'current' | 'gate' | 'todo'
@@ -20,7 +20,7 @@ const WHY: Record<string, string> = {
 }
 const COMMAND: Partial<Record<Stage, string>> = { intent: 'start' }
 
-// The change's stages from /sdlc:init to the PR; `change` is null when none is active. Intent shows as start.
+// The change's stages from /rig:init to the PR; `change` is null when none is active. Intent shows as start.
 export function flowOf(initialised: boolean, change: Change | null): FlowStep[] {
   const mk = (stage: string, state: FlowState): FlowStep => {
     const name = COMMAND[stage as Stage] ?? stage

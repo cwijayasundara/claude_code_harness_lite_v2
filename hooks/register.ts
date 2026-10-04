@@ -1,6 +1,6 @@
 // The sdlc mod: what settings hooks cannot do.
-//  - /sdlc-status and /sdlc-approve: zero-token commands; approve runs only from the person's own prompt
-//  - /sdlc-waive and /sdlc-sensors (human-only, zero tokens)
+//  - /rig-status and /rig-approve: zero-token commands; approve runs only from the person's own prompt
+//  - /rig-waive and /rig-sensors (human-only, zero tokens)
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
 //  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
@@ -19,12 +19,12 @@ import { promptFor, gateOf, stepKey } from './driver'
 const NUDGE_EVERY_PROMPTS = 5
 
 // Same plugin and key as band.tsx's atoms: the loader reads state refs only where they are declared, so each file declares its own.
-const band = atom({ plugin: 'sdlc', key: 'band' } as const, null as Band | null)
-const paneText = atom({ plugin: 'sdlc', key: 'paneText' } as const, '')
-const metricsText = atom({ plugin: 'sdlc', key: 'metricsText' } as const, '')
+const band = atom({ plugin: 'rig', key: 'band' } as const, null as Band | null)
+const paneText = atom({ plugin: 'rig', key: 'paneText' } as const, '')
+const metricsText = atom({ plugin: 'rig', key: 'metricsText' } as const, '')
 
-const driverRunning = atom({ plugin: 'sdlc', key: 'driverRunning' } as const, false)
-const driverLast = atom({ plugin: 'sdlc', key: 'driverLast' } as const, '')
+const driverRunning = atom({ plugin: 'rig', key: 'driverRunning' } as const, false)
+const driverLast = atom({ plugin: 'rig', key: 'driverLast' } as const, '')
 
 let lastCostUsd = 0
 let warnedSoft = false
@@ -57,7 +57,7 @@ async function refreshBand($: EngineInterface): Promise<void> {
 async function stopDriver($: EngineInterface, why: string): Promise<void> {
   await update($, driverRunning, () => false)
   await update($, driverLast, () => '')
-  $.ui.toast(`sdlc: ${why}`)
+  $.ui.toast(`rig: ${why}`)
 }
 
 // Ask the script for the next node and submit it; the rules stay in the script, this only forwards the person's choices.
@@ -114,12 +114,12 @@ async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
   if (isVendoredRoot($.plugin.root) || !(await $.fs.exists('.sdlc/mod/hooks/register.ts'))) return false
   try {
     const settings = JSON.parse(await $.fs.read('.claude/settings.json')) as { enabledPlugins?: Record<string, unknown> }
-    if (settings.enabledPlugins?.['sdlc-mod@sdlc-local'] === true) {
-      $.ui.log("sdlc: using the project's vendored sdlc mod (.sdlc/mod)")
+    if (settings.enabledPlugins?.['rig-mod@rig-local'] === true) {
+      $.ui.log("rig: using the project's vendored sdlc mod (.sdlc/mod)")
       return true
     }
   } catch { /* unreadable or unparseable settings: stay active */ }
-  $.ui.log('sdlc: the vendored mod (.sdlc/mod) is present but not enabled in .claude/settings.json; using the plugin copy')
+  $.ui.log('rig: the vendored mod (.sdlc/mod) is present but not enabled in .claude/settings.json; using the plugin copy')
   return false
 }
 
@@ -131,49 +131,49 @@ export const register: Register = on => {
     await update($, driverLast, () => '')
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
     try {
-      await $.command.register({ name: 'sdlc-status', description: 'sdlc: where every change stands and the next command (no model call)', immediate: true })
-      // A standalone repo ships its own human-only /sdlc-approve and /sdlc-waive skills; registering ours too would clash.
-      if (!(await $.fs.exists('.claude/skills/sdlc-approve/SKILL.md'))) {
-        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' })
-        await $.command.register({ name: 'sdlc-waive', description: 'sdlc: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
+      await $.command.register({ name: 'rig-status', description: 'rig: where every change stands and the next command (no model call)', immediate: true })
+      // A standalone repo ships its own human-only /rig-approve and /rig-waive skills; registering ours too would clash.
+      if (!(await $.fs.exists('.claude/skills/rig-approve/SKILL.md'))) {
+        await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' })
+        await $.command.register({ name: 'rig-waive', description: 'rig: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
-      await $.command.register({ name: 'sdlc-sensors', description: 'sdlc: what the sensors found, known-red and waivers (no model call)', immediate: true })
-      await $.command.register({ name: 'sdlc-story', description: 'sdlc: the active story - node, rounds, cost by node (no model call)', immediate: true })
-      await $.command.register({ name: 'sdlc-run', description: 'sdlc: drive the active change node by node to the next gate (no model call to decide); /sdlc-run stop pauses', argumentHint: '[stop]', immediate: true })
-      await $.command.register({ name: 'sdlc-metrics-pane', description: 'sdlc: leading and lagging indicators in a pane (no model call)', immediate: true })
+      await $.command.register({ name: 'rig-sensors', description: 'rig: what the sensors found, known-red and waivers (no model call)', immediate: true })
+      await $.command.register({ name: 'rig-story', description: 'rig: the active story - node, rounds, cost by node (no model call)', immediate: true })
+      await $.command.register({ name: 'rig-run', description: 'rig: drive the active change node by node to the next gate (no model call to decide); /rig-run stop pauses', argumentHint: '[stop]', immediate: true })
+      await $.command.register({ name: 'rig-metrics-pane', description: 'rig: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) { $.ui.log(`could not register commands: ${String(err)}`) }
     return next(e)
   })
 
-  on('command.run', { command: 'sdlc-status' }, async $ => {
+  on('command.run', { command: 'rig-status' }, async $ => {
     const r = await $.process.run(sdlc($, ['status']))
     return { text: (r.stdout || r.stderr).trim() }
   })
 
-  on('command.run', { command: 'sdlc-approve' }, async ($, e) => {
+  on('command.run', { command: 'rig-approve' }, async ($, e) => {
     // Approval is the person's act: refuse anything that did not come from their own prompt.
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') {
-      return { text: 'sdlc-approve runs only when the person types it.' }
+      return { text: 'rig-approve runs only when the person types it.' }
     }
     const [slug, stage, ...more] = e.args.trim().split(/\s+/)
     const rest = stage === 'tier' ? more.slice(0, 2) : []
-    if (!slug || !stage) return { text: 'usage: /sdlc-approve <slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' }
+    if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' }
     const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
   })
 
-  on('command.run', { command: 'sdlc-waive' }, async ($, e) => {
-    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'sdlc-waive runs only when the person types it.' }
+  on('command.run', { command: 'rig-waive' }, async ($, e) => {
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig-waive runs only when the person types it.' }
     const parts = e.args.trim().split(/\s+/)
-    if (parts.length < 3) return { text: 'usage: /sdlc-waive <sensor> <file|*> <reason>' }
+    if (parts.length < 3) return { text: 'usage: /rig-waive <sensor> <file|*> <reason>' }
     const r = await $.process.run(sdlc($, ['waive', ...parts]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim() }
   })
 
-  on('command.run', { command: 'sdlc-run' }, async ($, e) => {
-    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'sdlc-run runs only when the person types it.' }
+  on('command.run', { command: 'rig-run' }, async ($, e) => {
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig-run runs only when the person types it.' }
     if (e.args.trim() === 'stop') {
       await stopDriver($, 'driver paused')
       return {}
@@ -193,20 +193,20 @@ export const register: Register = on => {
     return {}
   })
 
-  on('command.run', { command: 'sdlc-sensors' }, async $ => {
+  on('command.run', { command: 'rig-sensors' }, async $ => {
     const r = await $.process.run(sdlc($, ['sensors']))
     await update($, paneText, () => (r.stdout || r.stderr).trim())
     await $.ui.open({ id: PANE_ID, title: 'sdlc sensors' })
     return { text: (r.stdout || r.stderr).trim() }
   })
 
-  on('command.run', { command: 'sdlc-story' }, async $ => {
+  on('command.run', { command: 'rig-story' }, async $ => {
     await refreshBand($)
     await $.ui.open({ id: STORY_PANE, title: 'sdlc story' })
     return {}
   })
 
-  on('command.run', { command: 'sdlc-metrics-pane' }, async $ => {
+  on('command.run', { command: 'rig-metrics-pane' }, async $ => {
     const r = await $.process.run(sdlc($, ['metrics']))
     await update($, metricsText, () => (r.stdout || r.stderr).trim())
     await $.ui.open({ id: METRICS_PANE, title: 'sdlc metrics' })
@@ -287,7 +287,7 @@ export const register: Register = on => {
     promptsSinceNudge += 1
     if (promptsSinceNudge < NUDGE_EVERY_PROMPTS) return next(e)
     promptsSinceNudge = 0
-    const note = `sdlc: context is ${Math.round(current.contextTokens / 1000)}k tokens, past the 150k budget. Finish the current step, then run /compact: the active change and its next step live in .sdlc/STATE.md.`
+    const note = `rig: context is ${Math.round(current.contextTokens / 1000)}k tokens, past the 150k budget. Finish the current step, then run /compact: the active change and its next step live in .sdlc/STATE.md.`
     return next({ ...e, context: [...(e.context ?? []), note] })
   })
 

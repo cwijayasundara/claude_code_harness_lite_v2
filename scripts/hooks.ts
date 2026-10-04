@@ -197,7 +197,7 @@ function protectedEditReason(file: string, rel: string, t: HookInput['tool_input
 function siblingEditReason(rel: string, consumer: { name: string } | undefined): string | null {
   if (!consumer) return `${rel} is outside this repo and not a declared consumer. Edit only this repo.`
   const slug = activeSlug()
-  if (!slug || approvalOf(slug, 'impact') !== 'approved') return `${consumer.name} is a consumer repo: edit it only in a change whose cross-repo impact the person approved (/sdlc-approve <slug> impact).`
+  if (!slug || approvalOf(slug, 'impact') !== 'approved') return `${consumer.name} is a consumer repo: edit it only in a change whose cross-repo impact the person approved (/rig-approve <slug> impact).`
   if (!isPlanned(rel, planFiles(slug))) return `${rel} is not in ${slug}/${planName(slug)} ## Files. Add it to the plan first.`
   return null
 }
@@ -222,7 +222,7 @@ function hookPreBash(input: HookInput): void {
   // Only the person's mod commands set SDLC_HUMAN; the model never names it, however the command is spelled.
   const plain = stripQuotes(cmd)
   if (/SDLC_HUMAN/i.test(plain) || HUMAN_ONLY.test(plain) || !isSafeEvidenceCommand(cmd)) {
-    return decide('deny', 'Evidence is human- or sdlc-only: approvals and waivers come from the person (/sdlc-approve, /sdlc-waive); '
+    return decide('deny', 'Evidence is human- or rig-only: approvals and waivers come from the person (/rig-approve, /rig-waive); '
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
   }
   const agent = input.agent_type ?? ''
@@ -266,7 +266,7 @@ function hookPreEdit(input: HookInput): void {
   if ((change.type === 'bugfix' || change.type === 'incident') && change.tier === 'L' && (stage === 'plan' || !planApproved(slug))
     && isSource(rel, config) && !isTest(rel, config)) {
     const why = `${rel}: tier L bug fixes wait for the person to approve plan.md (root cause and fix). `
-    return decide('ask', `${why}Write the failing test now; fix after /sdlc-approve ${slug} plan.`, context)
+    return decide('ask', `${why}Write the failing test now; fix after /rig-approve ${slug} plan.`, context)
   }
   if (stage !== 'build' && stage !== 'diagnose') return allowOrContext(input, context)
   const patterns = planFiles(slug)
@@ -300,9 +300,9 @@ function hookPostEdit(input: HookInput): void {
 // Skills sdlc delegates to but does not own: what to do when one fails to load.
 const EXTERNAL_FALLBACKS: Record<string, string> = {
   'superpowers:subagent-driven-development': 'superpowers SDD is unavailable. Continue with the "Large builds: orchestrate" section of '
-    + '/sdlc:build (sdlc:implementer subagents). Say "skill fallback: native build" in your reply.',
-  'code-review': 'The built-in code-review skill is unavailable. Launch sdlc:reviewer (Opus) with the change folder and the diff base '
-    + 'instead, as /sdlc:pr-review step 2 says. Say "skill fallback: sdlc reviewer" in your reply.',
+    + '/rig:build (rig:implementer subagents). Say "skill fallback: native build" in your reply.',
+  'code-review': 'The built-in code-review skill is unavailable. Launch rig:reviewer (Opus) with the change folder and the diff base '
+    + 'instead, as /rig:pr-review step 2 says. Say "skill fallback: rig reviewer" in your reply.',
 }
 
 function hookSkillFailed(input: HookInput): void {
@@ -313,7 +313,7 @@ function hookSkillFailed(input: HookInput): void {
     fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
     return out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: external } }))
   }
-  const m = /^sdlc[:-]([a-z-]+)$/.exec(skill)
+  const m = /^rig[:-]([a-z-]+)$/.exec(skill)
   if (!m) return
   fs.appendFileSync(USAGE, JSON.stringify({ at: now(), kind: 'event', event: 'skill-load-failed', skill }) + '\n')
   const cmd = `node --disable-warning=ExperimentalWarning "${SCRIPT()}" skill ${m[1]} ${input.tool_input?.args ?? ''}`.trim()
@@ -358,7 +358,7 @@ function createAdhoc(diffs: FileDiff[], config: SensorConfig): string {
   const stamp = now().replace(/[-:T]/g, '').slice(0, 12)
   let slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}`
   for (let n = 2; exists(path.join(CHANGES, slug)); n++) slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}-${n}`
-  createChange(slug, 'chore', tier, 'Ad-hoc change made without /sdlc:start')
+  createChange(slug, 'chore', tier, 'Ad-hoc change made without /rig:start')
   return slug
 }
 

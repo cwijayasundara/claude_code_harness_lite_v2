@@ -33,7 +33,7 @@ test('the next command names the renamed skills', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
   write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: { build: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {} }))
-  assert.match(status().changes[0]?.command ?? '', /\/sdlc:sensors tiny/)
+  assert.match(status().changes[0]?.command ?? '', /\/rig:sensors tiny/)
 })
 
 test('a v0.3 shipped change stays done', () => {
@@ -78,7 +78,7 @@ test('step: continue at a work node, human at a gate, ready when done', () => {
   const s = stepOf('tiny')
   assert.equal(s.verdict, 'continue')
   assert.equal(s.node, 'build')
-  assert.match(s.command, /\/sdlc:build tiny/)
+  assert.match(s.command, /\/rig:build tiny/)
 })
 
 test('step: blocked when ratchet.json records a block, with the reason', () => {
@@ -106,7 +106,7 @@ test('step: ready when the graph has no next node', () => {
   assert.equal(stepOf('old').verdict, 'ready')
 })
 
-test('only the person can unblock a change, with /sdlc-approve <slug> budget', () => {
+test('only the person can unblock a change, with /rig-approve <slug> budget', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 7, change: 'tiny', stage: 'build' })])
   assert.equal(stepOf('tiny').verdict, 'blocked')

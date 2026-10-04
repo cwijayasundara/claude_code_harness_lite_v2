@@ -120,7 +120,7 @@ test('ratchet record --from reads the reply from a file inside the change folder
   const ok = sdlc(repo, ['ratchet', 'record', 'chg', 'build', '--slice', '1', '--from', '.sdlc/changes/chg/review.md'])
   assert.equal(ok.code, 0, ok.stderr)
   assert.match(ok.stdout, /"done"/)
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-from-'))
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-from-'))
   fs.writeFileSync(path.join(outside, 'r.md'), 'verdict: pass\n')
   fs.symlinkSync(outside, path.join(repo, '.sdlc/changes/chg/link'))
   write(repo, '.sdlc/changes/chg/runs.jsonl', '')

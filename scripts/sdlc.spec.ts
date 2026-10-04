@@ -36,7 +36,7 @@ Small.
 `
 
 beforeEach(() => {
-  repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-test-'))
+  repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-test-'))
   git('init', '-q', '-b', 'main')
   git('config', 'user.email', 't@example.com')
   git('config', 'user.name', 'Tester')
@@ -50,7 +50,7 @@ test('new creates intent and makes the change active; status prints next command
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/changes/add-login/intent.md')))
   const status = run(['status']).stdout
   assert.match(status, /▶ add-login/)
-  assert.match(status, /next: \/sdlc:design add-login/)
+  assert.match(status, /next: \/rig:design add-login/)
 })
 
 test('tier L plan needs approval; approval is human-only and goes stale on edit', () => {
@@ -63,7 +63,7 @@ test('tier L plan needs approval; approval is human-only and goes stale on edit'
   assert.match(byModel.stderr, /human-only/)
 
   assert.equal(run(['approve', 'add-login', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0)
-  assert.match(run(['status']).stdout, /next: \/sdlc:build add-login/)
+  assert.match(run(['status']).stdout, /next: \/rig:build add-login/)
 
   write('.sdlc/changes/add-login/plan.md', PLAN + '\n- extra\n')
   assert.match(run(['status']).stdout, /stale/)
@@ -77,7 +77,7 @@ test('new writes .sdlc/.gitignore even when .sdlc already exists', () => {
 
 test('tier S chore has no gates and skips spec and plan', () => {
   run(['new', 'bump-deps', '--type', 'chore', '--tier', 'S'])
-  assert.match(run(['status']).stdout, /next: \/sdlc:build bump-deps/)
+  assert.match(run(['status']).stdout, /next: \/rig:build bump-deps/)
 })
 
 test('tier S feature reviews in session only where a PR review cannot run; a local-only change that gains an origin goes back to pr (resume)', () => {
@@ -87,11 +87,11 @@ test('tier S feature reviews in session only where a PR review cannot run; a loc
   write('.sdlc/changes/tiny/plan.md', PLAN)
   write('.sdlc/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
   git('add', '-A'); git('commit', '-qm', 'pr')
-  assert.match(run(['status']).stdout, /next: \/sdlc:pr-review tiny/, 'no PR review workflow and no remote: review in session')
-  write('.github/workflows/sdlc-review.yml', 'name: sdlc-review\n')
-  assert.match(run(['status']).stdout, /next: \/sdlc:pr-review tiny/, 'a workflow without a remote still cannot review')
+  assert.match(run(['status']).stdout, /next: \/rig:pr-review tiny/, 'no PR review workflow and no remote: review in session')
+  write('.github/workflows/rig-review.yml', 'name: rig-review\n')
+  assert.match(run(['status']).stdout, /next: \/rig:pr-review tiny/, 'a workflow without a remote still cannot review')
   git('remote', 'add', 'origin', 'https://example.com/x.git')
-  assert.match(run(['status']).stdout, /next: \/sdlc:pr tiny/, 'a local-only change that gained an origin has no PR yet: pr resumes it (and CI then reviews, so no pr-review node)')
+  assert.match(run(['status']).stdout, /next: \/rig:pr tiny/, 'a local-only change that gained an origin has no PR yet: pr resumes it (and CI then reviews, so no pr-review node)')
 })
 
 test('log-usage keeps the change and stage captured at turn start', () => {
@@ -106,7 +106,7 @@ test('ship is done only once the scope record is committed', () => {
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   run(['scope-drift', 'tiny', '--record'])
-  assert.match(run(['status']).stdout, /next: \/sdlc:pr tiny/)
+  assert.match(run(['status']).stdout, /next: \/rig:pr tiny/)
   git('add', '-A')
   git('commit', '-qm', 'chore: tiny')
   assert.match(run(['status']).stdout, /done/)
@@ -197,7 +197,7 @@ test('session start nudges once toward the wiki when source exists and docs/wiki
   fs.writeFileSync(path.join(repo, 'app.js'), 'export const a = 1\n')
   git('add', '.'); git('commit', '-qm', 'src')
   const ctx = () => JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext as string
-  assert.match(ctx(), /No code wiki yet: \/sdlc:wiki builds it\./)
+  assert.match(ctx(), /No code wiki yet: \/rig:wiki builds it\./)
   fs.mkdirSync(path.join(repo, 'docs/wiki'), { recursive: true })
   assert.doesNotMatch(ctx(), /No code wiki yet/)
 })
@@ -206,7 +206,7 @@ test('session-start injects the active change and next command', () => {
   run(['new', 'add-login', '--type', 'bugfix', '--tier', 'S'])
   const ctx = JSON.parse(hook('session-start', {}).stdout).hookSpecificOutput.additionalContext
   assert.match(ctx, /add-login/)
-  assert.match(ctx, /\/sdlc:diagnose add-login/)
+  assert.match(ctx, /\/rig:diagnose add-login/)
 })
 
 test('log-usage tags rows with the active change; metrics report cost and unmeasured samples', () => {
@@ -226,12 +226,12 @@ test('metrics merge plugin and standalone agent names and ignore a negative cost
   run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
   run(['log-usage', JSON.stringify({ kind: 'main', usd: 0.5 })])
   run(['log-usage', JSON.stringify({ kind: 'main', usd: -2.27 })])
-  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'sdlc:scout', in: 10 })])
-  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'sdlc-scout', in: 5 })])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'rig:scout', in: 10 })])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'rig-scout', in: 5 })])
   const cost = JSON.parse(run(['metrics', '--json']).stdout).metrics.cost
   assert.equal(cost.usd_total, 0.5)
   assert.deepEqual(cost.usd_by_change, { 'add-login': 0.5 })
-  assert.deepEqual(cost.tokens_by_agent_type, { 'sdlc:scout': 15 })
+  assert.deepEqual(cost.tokens_by_agent_type, { 'rig:scout': 15 })
 })
 
 test('status warns when there is no origin remote to open a PR on', () => {
@@ -254,7 +254,7 @@ test('run records exit codes; verify-report generates verification.md; a hand-wr
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   buildDone(repo, 'tiny')
   write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
-  assert.match(run(['status']).stdout, /next: \/sdlc:test tiny/)
+  assert.match(run(['status']).stdout, /next: \/rig:test tiny/)
 
   const red = run(['run', '--expect-fail', '--', 'node -e "process.exit(3)"'])
   assert.equal(red.code, 0)
@@ -275,10 +275,10 @@ test('run records exit codes; verify-report generates verification.md; a hand-wr
   run(['run', '--', TOGGLE])
   run(['verify-report', 'tiny'])
   assert.match(report(), /result: pass/)
-  assert.match(run(['status']).stdout, /next: \/sdlc:sensors tiny/)
+  assert.match(run(['status']).stdout, /next: \/rig:sensors tiny/)
 
   run(['run', '--', 'node -e "process.exit(1)"'])
-  assert.match(run(['status']).stdout, /next: \/sdlc:sensors tiny/, 'runs appended after the report do not invalidate it')
+  assert.match(run(['status']).stdout, /next: \/rig:sensors tiny/, 'runs appended after the report do not invalidate it')
 })
 
 test('verification judges only the plan commands, ignoring gate rows and abandoned exploratory runs', () => {
@@ -298,7 +298,7 @@ test('a forged verification.md with runs: 0 does not make the change shippable',
   buildDone(repo, 'tiny')
   const digest = crypto.createHash('sha256').update('').digest('hex').slice(0, 16)
   write('.sdlc/changes/tiny/verification.md', `---\ngenerated: sdlc\nresult: pass\nruns: 0\ndigest: ${digest}\n---\n`)
-  assert.match(run(['status']).stdout, /next: \/sdlc:test tiny/)
+  assert.match(run(['status']).stdout, /next: \/rig:test tiny/)
 })
 
 test('run rejects a slug with no change folder and creates nothing', () => {
@@ -499,14 +499,14 @@ test('F5: a failing command that prints a key is recorded without the key', () =
 
 test('F2: a tier L bugfix stops at a plan gate after diagnosis; S and M do not', () => {
   run(['new', 'big-bug', '--type', 'bugfix', '--tier', 'L'])
-  assert.match(run(['status']).stdout, /next: \/sdlc:diagnose big-bug/)
+  assert.match(run(['status']).stdout, /next: \/rig:diagnose big-bug/)
   fs.writeFileSync(path.join(repo, '.sdlc/changes/big-bug/plan.md'), '# Plan\n\n## Files\n- src/a.js\n\n## Verification\n- `npm test`\n')
-  assert.match(run(['status']).stdout, /human gate: review big-bug\/plan\.md, then run \/sdlc-approve big-bug plan/)
+  assert.match(run(['status']).stdout, /human gate: review big-bug\/plan\.md, then run \/rig-approve big-bug plan/)
   run(['approve', 'big-bug', 'plan'], { env: { SDLC_HUMAN: '1' } })
-  assert.match(run(['status']).stdout, /next: \/sdlc:diagnose big-bug/)
+  assert.match(run(['status']).stdout, /next: \/rig:diagnose big-bug/)
   run(['new', 'small-bug', '--type', 'bugfix', '--tier', 'M'])
   const st = JSON.parse(run(['status', '--json']).stdout) as { changes: { slug: string; command: string }[] }
-  assert.equal(st.changes.find(c => c.slug === 'small-bug')?.command, '/sdlc:diagnose small-bug')
+  assert.equal(st.changes.find(c => c.slug === 'small-bug')?.command, '/rig:diagnose small-bug')
 })
 
 test('a spec or plan with unresolved open questions cannot be approved; resolved or defaulted ones can', () => {
@@ -527,7 +527,7 @@ test('lean S/M: a feature has one design gate and no review stage; a tier L refa
   assert.match(run(['status']).stdout, /human gate: review mid\/plan\.md/, 'a feature has one gate at design (plan.md for older changes)')
   write('.sdlc/changes/mid/design.md', PLAN)
   run(['approve', 'mid', 'design'], { env: { SDLC_HUMAN: '1' } })
-  assert.match(run(['status']).stdout, /next: \/sdlc:build mid/)
+  assert.match(run(['status']).stdout, /next: \/rig:build mid/)
   const st = JSON.parse(run(['status', '--json']).stdout) as { changes: { slug: string }[] }
   assert.ok(st.changes.some(c => c.slug === 'mid'))
   run(['new', 'big', '--type', 'refactor', '--tier', 'L'])

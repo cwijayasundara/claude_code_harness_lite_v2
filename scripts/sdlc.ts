@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// sdlc: the deterministic core of the sdlc plugin. Zero dependencies.
+// rig: the deterministic core of the sdlc plugin. Zero dependencies.
 // Runs directly with Node >= 22.18 (built-in TypeScript type stripping) on macOS, Linux and Windows:
 //   node --disable-warning=ExperimentalWarning scripts/sdlc.ts <command>
 // Everything the model must not judge for itself lives in these scripts: change state, approvals,
@@ -113,11 +113,11 @@ function cmdStatus(args: Args): void {
   out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
 }
 
-// A standalone repo's /sdlc-approve and /sdlc-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
+// A standalone repo's /rig-approve and /rig-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
 const words = (args: Args): string[] => (args.pos.length === 1 ? (args.pos[0] ?? '').trim().split(/\s+/) : args.pos)
 
 function cmdApprove(args: Args): void {
-  if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /sdlc-approve <slug> <stage>', 3)
+  if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /rig-approve <slug> <stage>', 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
   checkSlug(slug)
@@ -137,7 +137,7 @@ function cmdApprove(args: Args): void {
     if (!isTier(tier) || (type !== undefined && !isChangeType(type))) fail('usage: approve <slug> tier <S|M|L> [<type>]')
     const intent = frontmatter(read(path.join(CHANGES, slug, 'intent.md'))).data
     const says = { tier: isTier(intent.tier) ? intent.tier : 'M', type: isChangeType(intent.type) ? intent.type : 'feature' }
-    if (says.tier !== tier || (type !== undefined && says.type !== type)) fail(`not approving: ${slug}/intent.md now says tier ${says.tier}, type ${says.type}; you approved ${tier}${type ? ` ${type}` : ''}. Read it again and run /sdlc-approve ${slug} tier <tier> [<type>]`)
+    if (says.tier !== tier || (type !== undefined && says.type !== type)) fail(`not approving: ${slug}/intent.md now says tier ${says.tier}, type ${says.type}; you approved ${tier}${type ? ` ${type}` : ''}. Read it again and run /rig-approve ${slug} tier <tier> [<type>]`)
     const r = readRatchet(slug)
     const was = { tier: r.tier ?? 'unrecorded', type: r.type ?? 'unrecorded' }
     r.tier = tier
@@ -190,12 +190,12 @@ function cmdLogUsage(args: Args): void {
   if (!exists(SDLC)) return
   ensureGitignore()
   // The mod passes the change and stage it saw when the turn started. A turn that started with no
-  // change and created one (/sdlc:start) is that change's intent stage.
+  // change and created one (/rig:start) is that change's intent stage.
   const row = JSON.parse(args.pos[0] ?? '{}') as Partial<UsageRow>
   // Money only goes up: a malformed or negative usd, an unknown kind or a budget-raised event would let the model grant itself budget.
   const badUsd = row.usd !== undefined && (typeof row.usd !== 'number' || !Number.isFinite(row.usd) || row.usd < 0)
   const badKind = !(['main', 'agent', 'event'] as unknown[]).includes(row.kind)
-  if (badUsd || badKind || (row.kind === 'event' && row.event === 'budget-raised')) fail('log-usage refuses a bad usd or kind and budget-raised rows: only /sdlc-approve <slug> budget raises a budget', 3)
+  if (badUsd || badKind || (row.kind === 'event' && row.event === 'budget-raised')) fail('log-usage refuses a bad usd or kind and budget-raised rows: only /rig-approve <slug> budget raises a budget', 3)
   const current = frontmatter(read(STATE)).data.change || null
   const change = row.change ?? current
   const stage = row.change ? row.stage ?? null : current ? 'intent' : null
@@ -209,7 +209,7 @@ function cmdLogUsage(args: Args): void {
 function cmdSkill(args: Args): void {
   const [name, ...rest] = args.pos
   const skills = IS_VENDORED ? path.join(ROOT, '.claude', 'skills') : path.join(PLUGIN_ROOT, 'skills')
-  const file = path.join(skills, IS_VENDORED ? `sdlc-${name ?? ''}` : name ?? '', 'SKILL.md')
+  const file = path.join(skills, IS_VENDORED ? `rig-${name ?? ''}` : name ?? '', 'SKILL.md')
   if (!name || !exists(file)) fail(`no skill named ${name ?? ''}; one of ${exists(skills) ? fs.readdirSync(skills).join(', ') : '(none here)'}`)
   const body = frontmatter(read(file)).body
   out(body.replaceAll('${CLAUDE_PLUGIN_ROOT}', toPosix(PLUGIN_ROOT)).replaceAll('$ARGUMENTS', rest.join(' ')).replace(/\$0\b/g, rest[0] ?? ''))
@@ -224,7 +224,7 @@ function cmdRun(): void {
   const cmd = argv.slice(dash + 1).join(' ')
   const given = optString(head, 'slug')
   const slug = given ? checkSlug(given) : activeSlug()
-  if (!slug || !exists(path.join(CHANGES, slug))) fail('no such change: run /sdlc:start first, or pass an existing --slug')
+  if (!slug || !exists(path.join(CHANGES, slug))) fail('no such change: run /rig:start first, or pass an existing --slug')
   const expectFail = Boolean(head.opt['expect-fail'])
   const row = runCommand(cmd)
   recordRun(slug, expectFail ? { ...row, expectFail: true } : row)
@@ -273,7 +273,7 @@ function cmdDiff(args: Args): void {
 
 // Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
 function cmdWaive(args: Args): void {
-  if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
+  if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /rig-waive <sensor> <file|*> <reason>', 3)
   const [sensor, file, ...reason] = words(args)
   const given = optString(args, 'slug')
   const slug = given ? checkSlug(given) : activeSlug()

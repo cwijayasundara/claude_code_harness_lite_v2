@@ -41,7 +41,7 @@ test('editing intent.md from tier L to M does not remove the plan gate or enable
 
 test('status warns when intent.md differs from the recorded tier', () => {
   setIntent('big', 'tier: L', 'tier: M')
-  assert.match(sdlc(repo, ['status']).stdout, /warn: big: tier changed in intent\.md \(L → M\): \/sdlc-approve big tier M feature to accept/)
+  assert.match(sdlc(repo, ['status']).stdout, /warn: big: tier changed in intent\.md \(L → M\): \/rig-approve big tier M feature to accept/)
 })
 
 test('a change folder with no recorded tier is gated as L, whatever intent.md says', () => {

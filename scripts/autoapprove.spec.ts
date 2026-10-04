@@ -220,7 +220,7 @@ test('dot-directories and env files never auto-approve, in any tier', () => {
 
 test('read-only agents do not get the harness script from a foreign working directory', () => {
   const ask = (cwd: string) => {
-    const r = sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ cwd, agent_type: 'sdlc:reviewer', tool_input: { command: `node ${SCRIPT} status` } }) })
+    const r = sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ cwd, agent_type: 'rig:reviewer', tool_input: { command: `node ${SCRIPT} status` } }) })
     return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
   }
   assert.equal(ask(os.tmpdir()), 'deny')
@@ -277,7 +277,7 @@ test('ratchet record is auto-approved only in the --from form, inside the change
     `${NODE} ratchet record other build --slice 1 --from .sdlc/changes/tiny/review-slice-1.md`,
     `${NODE} ratchet record tiny sensors --from .sdlc/changes/tiny/review-slice-1.md`,
   ]) assert.notEqual(bash(c), 'allow', c)
-  const out = path.join(os.tmpdir(), 'sdlc-out-' + process.pid)
+  const out = path.join(os.tmpdir(), 'rig-out-' + process.pid)
   fs.mkdirSync(out, { recursive: true })
   fs.writeFileSync(path.join(out, 'r.md'), 'verdict: pass\n')
   fs.symlinkSync(out, path.join(repo, '.sdlc/changes/tiny/link'))

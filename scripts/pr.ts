@@ -111,11 +111,11 @@ export function cmdPr(args: Args): void {
   if (errors.length || gate.blocks.length) {
     const configFindings = errors.map(e => `[config] ${e}`)
     const q = (f: string): string => (/\s/.test(f) ? JSON.stringify(f) : f)
-    const waives = [...new Set(gate.blocks.filter(f => SENSOR_NAMES.includes(f.sensor)).map(f => `/sdlc-waive ${f.sensor} ${q(f.file ?? '*')} <reason>`))]
+    const waives = [...new Set(gate.blocks.filter(f => SENSOR_NAMES.includes(f.sensor)).map(f => `/rig-waive ${f.sensor} ${q(f.file ?? '*')} <reason>`))]
     const summary = [...configFindings, ...gate.blocks.map(f => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message}`)].join('; ').replace(/\s+/g, ' ').slice(0, 400)
-    const resume = 'then /sdlc-next resumes'
+    const resume = 'then /rig-next resumes'
     block(slug, 'pr', waives.length && !errors.length ? `the ship gate refused; a person waives with ${waives.join(' ; ')}, or fix: ${summary}; ${resume}` : `fix: ${summary}; ${resume}`, 'gate')
-    fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /sdlc-waive <sensor> <file|*> <reason>.`)
+    fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /rig-waive <sensor> <file|*> <reason>.`)
   }
 
   if (readRatchet(slug).blocked?.node === 'pr') unblock(slug, 'ship gate passed', 'gate')

@@ -329,7 +329,7 @@ export function scanSecrets(file: string): string[] {
   const hits: string[] = []
   text.split('\n').forEach((row, i) => {
     for (const [name, re] of SECRET_PATTERNS) {
-      if (re.test(row) && !/sdlc:allow-secret/.test(row)) hits.push(`${file}:${i + 1}: possible ${name}`)
+      if (re.test(row) && !/rig:allow-secret/.test(row)) hits.push(`${file}:${i + 1}: possible ${name}`)
     }
   })
   return hits
@@ -349,10 +349,10 @@ export function planProblems(file: string): string[] {
 }
 
 export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
-// A standalone repo runs its own copy from .sdlc/bin, where skills are /sdlc-<name> and agents sdlc-<name>.
+// A standalone repo runs its own copy from .sdlc/bin, where skills are /rig-<name> and agents rig-<name>.
 export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
-export const skillRef = (name: string): string => `/sdlc${IS_VENDORED ? '-' : ':'}${name}`
-export const agentRef = (name: string): string => `sdlc${IS_VENDORED ? '-' : ':'}${name}`
+export const skillRef = (name: string): string => `/rig${IS_VENDORED ? '-' : ':'}${name}`
+export const agentRef = (name: string): string => `rig${IS_VENDORED ? '-' : ':'}${name}`
 const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json']
 
 export function ensureGitignore(): void {
@@ -405,10 +405,10 @@ export function createChange(slug: string, type: ChangeType, tier: Tier, title: 
 
 // A body sdlc itself wrote (init, clearState, or this function) is replaced; anything else was written by
 // the model or the person and is kept.
-const GENERATED_STATE = /^\s*(?:# State\s*)?(?:(?:No active change\.|Active change: [a-z0-9-]+\. Next: see \/sdlc-status\.)[^\n]*)?\s*$/
+const GENERATED_STATE = /^\s*(?:# State\s*)?(?:(?:No active change\.|Active change: [a-z0-9-]+\. Next: see \/rig-status\.)[^\n]*)?\s*$/
 export function setActive(slug: string): void {
   const { body } = frontmatter(read(STATE))
-  const kept = body && !GENERATED_STATE.test(body) ? body : `# State\n\nActive change: ${slug}. Next: see /sdlc-status.\n`
+  const kept = body && !GENERATED_STATE.test(body) ? body : `# State\n\nActive change: ${slug}. Next: see /rig-status.\n`
   fs.mkdirSync(SDLC, { recursive: true })
   fs.writeFileSync(STATE, `---\nchange: ${slug}\nupdated: ${now()}\n---\n${kept}`)
 }

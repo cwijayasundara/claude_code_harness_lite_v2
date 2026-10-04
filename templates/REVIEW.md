@@ -1,6 +1,6 @@
 # REVIEW.md: how changes are reviewed here
 
-Read by sdlc's pr-review node and by the sdlc-review workflow. Edit it to match your team.
+Read by rig's pr-review node and by the rig-review workflow. Edit it to match your team.
 
 ## Review passes
 1. **Correctness:** behaviour matches the spec's B-numbers; edge cases the intent names are handled.
@@ -16,4 +16,4 @@ Read by sdlc's pr-review node and by the sdlc-review workflow. Edit it to match 
 - Naming, comments, small duplication, style a linter does not catch.
 
 ## Exclusions
-- Generated files, lockfiles, vendored `.sdlc/bin/**`, and anything CI's sdlc-check already enforces.
+- Generated files, lockfiles, vendored `.sdlc/bin/**`, and anything CI's rig-check already enforces.

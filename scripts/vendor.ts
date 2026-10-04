@@ -8,15 +8,15 @@ export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', '
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
 
-// Plugin references rewritten for a project copy: script paths, /sdlc:x skills, sdlc:x agents and the skill's name.
+// Plugin references rewritten for a project copy: script paths, /rig:x skills, rig:x agents and the skill's name.
 export function forProject(text: string): string {
   return text
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('<plugin>/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.sdlc/templates/')
-    .replace(/\/sdlc:([a-z][a-z-]*)/g, '/sdlc-$1')
-    .replace(/\bsdlc:(?!allow-secret)([a-z][a-z-]*)/g, 'sdlc-$1')
-    .replace(/^name: (?!sdlc-)(\S+)$/m, 'name: sdlc-$1')
+    .replace(/\/rig:([a-z][a-z-]*)/g, '/rig-$1')
+    .replace(/\brig:(?!allow-secret)([a-z][a-z-]*)/g, 'rig-$1')
+    .replace(/^name: (?!rig-)(\S+)$/m, 'name: rig-$1')
 }
 
 function writeFile(rel: string, text: string, written: string[]): void {
@@ -42,8 +42,8 @@ function mergeHooks(written: string[]): void {
   }
   const merged = {
     ...settings, hooks,
-    extraKnownMarketplaces: { ...settings.extraKnownMarketplaces, 'sdlc-local': { source: { source: 'directory', path: '.' } } },
-    enabledPlugins: { ...settings.enabledPlugins, 'sdlc-mod@sdlc-local': true },
+    extraKnownMarketplaces: { ...settings.extraKnownMarketplaces, 'rig-local': { source: { source: 'directory', path: '.' } } },
+    enabledPlugins: { ...settings.enabledPlugins, 'rig-mod@rig-local': true },
   }
   writeFile('.claude/settings.json', JSON.stringify(merged, null, 2) + '\n', written)
 }
@@ -53,7 +53,7 @@ function mergeHooks(written: string[]): void {
 function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): string {
   const run = `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${SDLC_HOOK} ${cmd}`
   return [
-    '---', `name: sdlc-${cmd}`, `description: Human only. ${what} The model cannot run this.`, `argument-hint: ${hint}`,
+    '---', `name: rig-${cmd}`, `description: Human only. ${what} The model cannot run this.`, `argument-hint: ${hint}`,
     'disable-model-invocation: true', `allowed-tools: Bash(${run} *)`, '---',
     `!\`${run} '$ARGUMENTS' 2>&1\``, '', 'Tell the person the result above in one line. Do nothing else.', '',
   ].join('\n')
@@ -62,21 +62,21 @@ function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): strin
 function vendorStandalone(written: string[], version: string): void {
   for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'skills'))) {
     const src = path.join(PLUGIN_ROOT, 'skills', name, 'SKILL.md')
-    if (fs.existsSync(src)) writeFile(`.claude/skills/sdlc-${name}/SKILL.md`, forProject(read(src)), written)
+    if (fs.existsSync(src)) writeFile(`.claude/skills/rig-${name}/SKILL.md`, forProject(read(src)), written)
   }
-  writeFile('.claude/skills/sdlc-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact|budget|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
-  writeFile('.claude/skills/sdlc-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
+  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact|budget|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
+  writeFile('.claude/skills/rig-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'agents')).filter(f => f.endsWith('.md'))) {
-    writeFile(`.claude/agents/sdlc-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)
+    writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)
   }
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'templates'))) {
     writeFile(`.sdlc/templates/${file}`, read(path.join(PLUGIN_ROOT, 'templates', file)), written)
   }
   for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, 'hooks')).filter(f => /\.(?:ts|tsx)$/.test(f))) writeFile(`.sdlc/mod/hooks/${f}`, read(path.join(PLUGIN_ROOT, 'hooks', f)), written)
   writeFile('.sdlc/mod/hooks/hooks.json', JSON.stringify({ modules: ['./register.ts'] }, null, 2) + '\n', written)
-  writeFile('.sdlc/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'sdlc-mod', version }, null, 2) + '\n', written)
+  writeFile('.sdlc/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'rig-mod', version }, null, 2) + '\n', written)
   writeFile('.sdlc/mod/types/index.d.ts', read(path.join(PLUGIN_ROOT, 'types', 'index.d.ts')), written)
-  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'sdlc-local', owner: { name: 'sdlc' }, plugins: [{ name: 'sdlc-mod', source: './.sdlc/mod' }] }, null, 2) + '\n', written)
+  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'rig-local', owner: { name: 'sdlc' }, plugins: [{ name: 'rig-mod', source: './.sdlc/mod' }] }, null, 2) + '\n', written)
   mergeHooks(written)
 }
 
@@ -90,6 +90,6 @@ export function cmdVendor(args: Args): void {
   if (standalone) vendorStandalone(written, version)
   sanctionWrites(written)
   out(standalone
-    ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/sdlc-*, .claude/agents/sdlc-*, the mod in .sdlc/mod, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
+    ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/rig-*, .claude/agents/rig-*, the mod in .sdlc/mod, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
     : `vendored sdlc ${version} into ${path.relative(ROOT, path.join(SDLC, 'bin'))} (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }

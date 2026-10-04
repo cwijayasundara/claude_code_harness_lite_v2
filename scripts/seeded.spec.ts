@@ -75,7 +75,7 @@ test('seeded: a hand-written passing verification.md does not make a change ship
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   buildDone(repo, 'xx')
   write(repo, '.sdlc/changes/xx/verification.md', '---\nresult: pass\n---\n')
-  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:test xx/)
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:test xx/)
 })
 
 test('seeded: a B-number with no test blocks at ship', () => {
@@ -102,13 +102,13 @@ test('forgery: appending to runs.jsonl, bumping the gate and model approvals or 
 test('forgery: quoting and $-quoting cannot hide an evidence path', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   for (const f of ['run"s".jsonl', "run$'s'.jsonl"]) {
-    assert.equal(bash(`echo '{"exit":0}' >> .sdlc/changes/xx/${f}`, { agent_type: 'sdlc:implementer' }), 'deny', f)
+    assert.equal(bash(`echo '{"exit":0}' >> .sdlc/changes/xx/${f}`, { agent_type: 'rig:implementer' }), 'deny', f)
   }
 })
 
 test('forgery: a read-only agent cannot smuggle a write past the Bash allowlist', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   for (const c of ['echo \\"; touch f; echo \\"', "sort '-o' f x"]) {
-    assert.equal(bash(c, { agent_type: 'sdlc:reviewer' }), 'deny', c)
+    assert.equal(bash(c, { agent_type: 'rig:reviewer' }), 'deny', c)
   }
 })

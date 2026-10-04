@@ -59,7 +59,7 @@ test('the branch diff covers commits since the merge-base plus the working tree'
 })
 
 test('no commits yet: prompt-submit is silent and writes no baseline', () => {
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-bare-'))
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-bare-'))
   gitIn(bare, 'init', '-q')
   sdlc(bare, ['init'])
   const r = hook(bare, 'prompt-submit', {})
@@ -221,7 +221,7 @@ test('Stop blocks a contract rename that a consumer still uses, naming file:line
   const r = check('--at', 'stop')
   assert.equal(r.code, 1)
   assert.match(r.stdout, /\[contract-impact\][\s\S]*checkout-service: src\/cart\.ts:1 still uses discount_rate/)
-  assert.match(r.stdout, /run \/sdlc:start/)
+  assert.match(r.stdout, /run \/rig:start/)
 })
 
 test('the plan point records impact, escalates to tier L and requires the impact approval', () => {
@@ -237,9 +237,9 @@ test('the plan point records impact, escalates to tier L and requires the impact
   write(repo, '.sdlc/changes/rename-rate/spec.md', '## Behaviours\nB1 rename\n')
   sdlc(repo, ['approve', 'rename-rate', 'spec'], { env: { SDLC_HUMAN: '1' } })
   sdlc(repo, ['approve', 'rename-rate', 'plan'], { env: { SDLC_HUMAN: '1' } })
-  assert.match(sdlc(repo, ['status']).stdout, /\/sdlc-approve rename-rate impact/)
+  assert.match(sdlc(repo, ['status']).stdout, /\/rig-approve rename-rate impact/)
   sdlc(repo, ['approve', 'rename-rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
-  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:build rename-rate/)
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:build rename-rate/)
 })
 
 test('a declared consumer that is not checked out warns at Stop and blocks at ship and CI', () => {
@@ -290,7 +290,7 @@ test('an impact approval only downgrades the ids it covers, and re-running the p
   check('--at', 'plan', '--slug', 'scoped-change')
   write(repo, '.sdlc/changes/scoped-change/spec.md', '## Behaviours\nB1\n')
   for (const s of ['spec', 'plan', 'impact']) sdlc(repo, ['approve', 'scoped-change', s], { env: { SDLC_HUMAN: '1' } })
-  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:build/)
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:build/)
   stopWithRename('a_col', 'z_col')
   write(repo, 'schema/billing.sql', 'CREATE TABLE billing (z_col NUMERIC);\n-- b_col gone\n')
   const ok = check('--at', 'stop')
@@ -303,10 +303,10 @@ test('an impact approval only downgrades the ids it covers, and re-running the p
   write(repo, 'schema/other.sql', 'CREATE TABLE o (c_col INT);\n')
   assert.equal(check('--at', 'stop').code, 1, 'b_col is not in the approved impact')
   check('--at', 'plan', '--slug', 'scoped-change')
-  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:build/, 'identical re-run keeps the approval')
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:build/, 'identical re-run keeps the approval')
   write(path.resolve(repo, rel), 'src/b.ts', 'a_col again\n')
   check('--at', 'plan', '--slug', 'scoped-change')
-  assert.match(sdlc(repo, ['status']).stdout, /\/sdlc-approve scoped-change impact[\s\S]*stale/)
+  assert.match(sdlc(repo, ['status']).stdout, /\/rig-approve scoped-change impact[\s\S]*stale/)
 })
 
 test('a consumer that is not checked out at the plan point also needs the impact approval', () => {
@@ -401,7 +401,7 @@ test('ship refuses an ad-hoc tier M change with no plan', () => {
   hook(repo, 'stop', {})
   const slug = (sdlc(repo, ['status', '--json']).stdout.match(/adhoc-[\d-]+/) ?? [''])[0]
   const r = check('--at', 'ship', '--slug', slug)
-  assert.match(r.stdout, /\[adhoc\][\s\S]*run \/sdlc:start adhoc-/)
+  assert.match(r.stdout, /\[adhoc\][\s\S]*run \/rig:start adhoc-/)
 })
 
 test('sdlc run does not inherit NODE_TEST_CONTEXT: a failing node --test records a non-zero exit', () => {
@@ -545,7 +545,7 @@ test('I1: CI blocks a tier M PR that carries no committed change record; a tier 
   gitIn(repo, 'commit', '-qm', 'vibe-coded')
   const r = check('--at', 'ci', '--base', 'main', '--config-from', 'main')
   assert.equal(r.code, 1, r.stdout)
-  assert.match(r.stdout, /\[adhoc\][\s\S]*no sdlc change record for a tier M diff[\s\S]*\/sdlc:start/)
+  assert.match(r.stdout, /\[adhoc\][\s\S]*no sdlc change record for a tier M diff[\s\S]*\/rig:start/)
 })
 
 test('I4: CI lists every waiver and approval row the PR adds, for human review', () => {

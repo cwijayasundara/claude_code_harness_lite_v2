@@ -52,7 +52,7 @@ export function wikiStatus(): { stale: string[]; missing: string[]; uncovered: s
 export function wikiFindings(): Finding[] {
   const s = wikiStatus()
   if (!s) return []
-  const fix = 'run /sdlc:wiki update (it rewrites only these pages)'
+  const fix = 'run /rig:wiki update (it rewrites only these pages)'
   const warn = (file: string, message: string): Finding => ({ sensor: 'wiki-stale', severity: 'warn', file, message, fix })
   return [
     ...s.stale.map(p => warn(`${WIKI_DIR}/${p}`, 'the module\'s public surface changed since this page was written')),
@@ -66,7 +66,7 @@ export function cmdWiki(args: Args): void {
   if (sub === 'status') {
     const s = wikiStatus()
     if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], none: true }))
-    if (!s) return out('no code wiki here: /sdlc:wiki builds it')
+    if (!s) return out('no code wiki here: /rig:wiki builds it')
     const rows = [...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`)]
     return out(rows.length ? rows.join('\n') : 'wiki up to date')
   }

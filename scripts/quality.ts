@@ -50,7 +50,7 @@ function baseCounts(base: string, categories: [string, { cmd: string; count: str
     return true
   })
   if (todo.length) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-base-'))
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-base-'))
     try {
       if (gitIn(ROOT, ['worktree', 'add', '--detach', '-q', dir, base]) === null) for (const [c] of todo) counts[c] = null
       else {

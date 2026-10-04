@@ -100,7 +100,7 @@ export function rawSpendUsd(slug: string, node?: string): number {
   return readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug && (!node || u.stage === node)).reduce((s, u) => s + (typeof u.usd === 'number' && Number.isFinite(u.usd) ? Math.max(0, u.usd) : 0), 0)
 }
 
-// Spend net of the credits a person granted with /sdlc-approve <slug> budget (kept in ratchet.json, never in usage.jsonl).
+// Spend net of the credits a person granted with /rig-approve <slug> budget (kept in ratchet.json, never in usage.jsonl).
 export function spendUsd(slug: string, node?: string): number {
   const credits = readRatchet(slug).credits ?? {}
   const credit = node ? credits[node as RatchetNode] ?? 0 : Object.values(credits).reduce((s, c) => s + c, 0)

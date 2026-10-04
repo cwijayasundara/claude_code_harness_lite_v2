@@ -3,7 +3,7 @@ export type Line = { n: number; text: string }
 export type FileStatus = 'A' | 'M' | 'D' | 'R'
 export type FileDiff = { file: string; from?: string; status: FileStatus; added: Line[]; removed: Line[]; binary?: true }
 export type Severity = 'block' | 'warn'
-// Every sensor name a Finding can carry; /sdlc-waive accepts exactly these (a test keeps this in step with the sources).
+// Every sensor name a Finding can carry; /rig-waive accepts exactly these (a test keeps this in step with the sources).
 export const SENSOR_NAMES = [
   'test-tamper', 'suppression', 'layering', 'size', 'secrets', 'rules', 'contract-impact', 'harness-tamper',
   'traceability', 'red-proof', 'adhoc', 'commands', 'config', 'tier', 'wiki-stale',
