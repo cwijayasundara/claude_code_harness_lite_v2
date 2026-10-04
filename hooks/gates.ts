@@ -1,7 +1,7 @@
 // Human-facing gates at zero tokens: the cross-repo impact dialog and per-edit sensor notices.
 // Enforcement stays in the settings hooks and CI; with no one to ask (-p) the call falls through to them.
 import type { EngineInterface, On } from 'claude-code'
-import { sdlcArgv } from './shared'
+import { sdlcArgv, mod } from './shared'
 
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 const sdlc = ($: EngineInterface, args: string[]): string[] => sdlcArgv($.plugin.root, ...args)
@@ -26,7 +26,7 @@ async function notice($: EngineInterface, toolUseId: string, file: string): Prom
 
 export function registerGates(on: On): void {
   on('tool.call', async ($, e, next) => {
-    if (!EDIT_TOOLS.has(e.tool) || !(await isInitialised($))) return next(e)
+    if (mod.aside || !EDIT_TOOLS.has(e.tool) || !(await isInitialised($))) return next(e)
     const file = String((e as { file_path?: unknown }).file_path ?? '')
     const impact = file ? await json<Impact>($, ['impact-status', file, '--json']) : null
     if (impact?.hold && impact.slug) {

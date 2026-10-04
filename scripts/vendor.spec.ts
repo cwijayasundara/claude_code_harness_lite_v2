@@ -143,3 +143,15 @@ test('standalone vendoring ships the v0.4 skills and REVIEW.md template', () => 
   assert.ok(!fs.existsSync(path.join(repo, '.claude/skills/sdlc-verify/SKILL.md')), 'old names are gone')
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/REVIEW.md')))
 })
+
+test('standalone vendoring installs the mod as a project plugin', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['vendor', '--standalone'])
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/mod/hooks/register.ts')))
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/mod/types/index.d.ts')))
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/mod/.claude-plugin/plugin.json'), 'utf8')).name, 'sdlc-mod')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin/marketplace.json'), 'utf8')).plugins[0].source, './.sdlc/mod')
+  const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
+  assert.equal(settings.enabledPlugins['sdlc-mod@sdlc-local'], true)
+  assert.ok(settings.extraKnownMarketplaces['sdlc-local'])
+})

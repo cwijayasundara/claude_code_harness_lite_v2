@@ -11,7 +11,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Band, Status, StepInfo } from '../types'
-import { sdlcArgv, parseStatus, SLUG_RE, NODES } from './shared'
+import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod } from './shared'
 import { PANE_ID, STORY_PANE, METRICS_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 import { promptFor, gateOf, stepKey } from './driver'
@@ -95,9 +95,26 @@ async function advance($: EngineInterface): Promise<void> {
   $.prompt.submit({ text: promptFor(s, $.plugin.root) }).catch(err => $.ui.log(`driver could not submit: ${String(err)}`))
 }
 
+// The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
+const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root)
+
+// Step aside only when the vendored copy is really configured: its files exist AND the protected settings enable it.
+// Anything unreadable keeps this copy active (fail closed).
+async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
+  if (isVendoredRoot($.plugin.root) || !(await $.fs.exists('.sdlc/mod/hooks/register.ts'))) return false
+  try {
+    const settings = JSON.parse((await $.process.run(['cat', '.claude/settings.json'])).stdout) as { enabledPlugins?: Record<string, unknown> }
+    if (settings.enabledPlugins?.['sdlc-mod@sdlc-local'] === true) return true
+  } catch { /* unreadable or unparseable settings: stay active */ }
+  $.ui.log('sdlc: the vendored mod (.sdlc/mod) is present but not enabled in .claude/settings.json; using the plugin copy')
+  return false
+}
+
 export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
+    mod.aside = await vendoredCopyActive($)
+    if (mod.aside) return next(e)
     await update($, driverRunning, () => false)
     await update($, driverLast, () => '')
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
@@ -182,17 +199,20 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
+    if (mod.aside) return next(e)
     if (await isInitialised($)) ({ change: turnChange, stage: turnStage } = await activeStage($))
     return next(e)
   })
 
   on('agent.spawn', async ($, e, next) => {
+    if (mod.aside) return next(e)
     const result = await next(e)
     if (result.agentId) agentTypes.set(result.agentId, e.subagentType)
     return result
   })
 
   on('turn.complete', async ($, e, next) => {
+    if (mod.aside) return next(e)
     const result = await next(e)
     try {
       if (!(await isInitialised($))) return result
@@ -246,6 +266,7 @@ export const register: Register = on => {
 
   // Past the hard limit, remind Claude (appended context keeps the prompt cache intact).
   on('prompt.submit', async ($, e, next) => {
+    if (mod.aside) return next(e)
     const current = await read($, band)
     if (!current || current.contextTokens < HARD_CONTEXT) return next(e)
     promptsSinceNudge += 1

@@ -30,7 +30,7 @@ function writeFile(rel: string, text: string, written: string[]): void {
 function mergeHooks(written: string[]): void {
   const plugin = JSON.parse(read(path.join(PLUGIN_ROOT, 'hooks', 'hooks.json'))) as { hooks: Record<string, HookGroup[]> }
   const file = path.join(ROOT, '.claude', 'settings.json')
-  const settings = (read(file) ? JSON.parse(read(file)) : {}) as { hooks?: Record<string, HookGroup[]> }
+  const settings = (read(file) ? JSON.parse(read(file)) : {}) as { hooks?: Record<string, HookGroup[]>; extraKnownMarketplaces?: object; enabledPlugins?: Record<string, boolean> }
   const hooks = settings.hooks ?? {}
   const ours = (g: HookGroup): boolean => g.hooks.some(h => h.command.includes(SDLC_HOOK))
   for (const [event, groups] of Object.entries(plugin.hooks)) {
@@ -40,7 +40,12 @@ function mergeHooks(written: string[]): void {
     }))
     hooks[event] = [...(hooks[event] ?? []).filter(g => !ours(g)), ...copied]
   }
-  writeFile('.claude/settings.json', JSON.stringify({ ...settings, hooks }, null, 2) + '\n', written)
+  const merged = {
+    ...settings, hooks,
+    extraKnownMarketplaces: { ...settings.extraKnownMarketplaces, 'sdlc-local': { source: { source: 'directory', path: '.' } } },
+    enabledPlugins: { ...settings.enabledPlugins, 'sdlc-mod@sdlc-local': true },
+  }
+  writeFile('.claude/settings.json', JSON.stringify(merged, null, 2) + '\n', written)
 }
 
 // Human-only gates without the mod: the person invokes these, the model cannot (disable-model-invocation), and the
@@ -54,7 +59,7 @@ function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): strin
   ].join('\n')
 }
 
-function vendorStandalone(written: string[]): void {
+function vendorStandalone(written: string[], version: string): void {
   for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'skills'))) {
     const src = path.join(PLUGIN_ROOT, 'skills', name, 'SKILL.md')
     if (fs.existsSync(src)) writeFile(`.claude/skills/sdlc-${name}/SKILL.md`, forProject(read(src)), written)
@@ -67,6 +72,11 @@ function vendorStandalone(written: string[]): void {
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'templates'))) {
     writeFile(`.sdlc/templates/${file}`, read(path.join(PLUGIN_ROOT, 'templates', file)), written)
   }
+  for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, 'hooks')).filter(f => /\.(?:ts|tsx)$/.test(f))) writeFile(`.sdlc/mod/hooks/${f}`, read(path.join(PLUGIN_ROOT, 'hooks', f)), written)
+  writeFile('.sdlc/mod/hooks/hooks.json', JSON.stringify({ modules: ['./register.ts'] }, null, 2) + '\n', written)
+  writeFile('.sdlc/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'sdlc-mod', version }, null, 2) + '\n', written)
+  writeFile('.sdlc/mod/types/index.d.ts', read(path.join(PLUGIN_ROOT, 'types', 'index.d.ts')), written)
+  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'sdlc-local', owner: { name: 'sdlc' }, plugins: [{ name: 'sdlc-mod', source: './.sdlc/mod' }] }, null, 2) + '\n', written)
   mergeHooks(written)
 }
 
@@ -77,9 +87,9 @@ export function cmdVendor(args: Args): void {
   const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
   writeFile('.sdlc/bin/VERSION', `${version}\n`, written)
   const standalone = Boolean(args.opt.standalone || args.opt.cloud)
-  if (standalone) vendorStandalone(written)
+  if (standalone) vendorStandalone(written, version)
   sanctionWrites(written)
   out(standalone
-    ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/sdlc-*, .claude/agents/sdlc-*, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
+    ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/sdlc-*, .claude/agents/sdlc-*, the mod in .sdlc/mod, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
     : `vendored sdlc ${version} into ${path.relative(ROOT, path.join(SDLC, 'bin'))} (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }

@@ -1,0 +1,39 @@
+{
+  "node": {
+    "levels": { "unit": "npm test" },
+    "quality": {
+      "lint": { "cmd": "npx --no-install eslint . -f unix", "count": "lines" },
+      "types": { "cmd": "npx --no-install tsc --noEmit --pretty false", "count": "lines" },
+      "deps": { "cmd": "npm audit --json", "count": "json:metadata.vulnerabilities.total" },
+      "coupling": { "cmd": "npx --no-install madge --circular --json src", "count": "lines" },
+      "security": { "cmd": "semgrep scan --config auto --quiet --emacs", "count": "lines" }
+    }
+  },
+  "python": {
+    "levels": { "unit": "pytest -q" },
+    "quality": {
+      "lint": { "cmd": "ruff check . --output-format concise", "count": "lines" },
+      "types": { "cmd": "mypy . --no-error-summary", "count": "lines" },
+      "deps": { "cmd": "pip-audit -f json", "count": "lines" },
+      "complexity": { "cmd": "radon cc -n C -s .", "count": "lines" },
+      "security": { "cmd": "bandit -r . -q -f custom", "count": "lines" }
+    }
+  },
+  "go": {
+    "levels": { "unit": "go test ./..." },
+    "quality": {
+      "lint": { "cmd": "golangci-lint run --out-format line-number", "count": "lines" },
+      "types": { "cmd": "go vet ./...", "count": "lines" },
+      "deps": { "cmd": "govulncheck ./...", "count": "exit" },
+      "security": { "cmd": "gosec -quiet -fmt text ./...", "count": "lines" }
+    }
+  },
+  "java-maven": {
+    "levels": { "unit": "mvn -q test", "integration": "mvn -q verify" },
+    "quality": {
+      "lint": { "cmd": "mvn -q checkstyle:check", "count": "exit" },
+      "deps": { "cmd": "mvn -q org.owasp:dependency-check-maven:check", "count": "exit" },
+      "security": { "cmd": "semgrep scan --config auto --quiet --emacs", "count": "lines" }
+    }
+  }
+}

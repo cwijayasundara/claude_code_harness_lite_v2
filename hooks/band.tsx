@@ -2,6 +2,7 @@
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 import type { Band, SensorBand, Story, StepInfo } from '../types'
+import { mod } from './shared'
 
 export const SOFT_CONTEXT = 120_000
 export const HARD_CONTEXT = 150_000
@@ -49,7 +50,7 @@ export function storyPaneText(s: Story | null, step: StepInfo | null = null): st
 export function registerBand(on: On): void {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const current = await read($, band)
-    if (e.props.hasSurvey || current === null || (await read($, isHidden))) return next(e)
+    if (mod.aside || e.props.hasSurvey || current === null || (await read($, isHidden))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const k = Math.round(current.contextTokens / 1000)
     const color = current.contextTokens >= HARD_CONTEXT ? 'red' : current.contextTokens >= SOFT_CONTEXT ? 'yellow' : undefined

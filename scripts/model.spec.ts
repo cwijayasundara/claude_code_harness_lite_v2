@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import { parseUnifiedDiff, globToRegex, matchesAny, parseConfig, parseRules, formatFindings, DEFAULT_CONFIG, type Finding } from './model.ts'
 
 test('parses a modified file with added and removed line numbers', () => {
@@ -171,4 +173,10 @@ test('v0.4 keys ignore prototype names and reject blank quality commands', () =>
   assert.equal(({} as Record<string, unknown>).toString !== undefined, true)
   assert.match(errs('{"quality":{"lint":{"cmd":"  ","count":"exit"}}}'), /quality\.lint must be \{ cmd, count \}/)
   assert.match(errs('{"quality":{"lint":{"cmd":"","count":"exit"}}}'), /quality\.lint must be \{ cmd, count \}/)
+})
+
+test('every starter stack in templates/stacks.json is a valid sensors.json fragment', () => {
+  const stacks = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../templates/stacks.json'), 'utf8')) as Record<string, unknown>
+  assert.ok(Object.keys(stacks).length >= 4)
+  for (const [name, frag] of Object.entries(stacks)) assert.deepEqual(parseConfig(JSON.stringify(frag)).errors, [], name)
 })

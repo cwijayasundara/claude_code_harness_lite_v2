@@ -23,6 +23,8 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
     standalone: false,
+    vendoredMod: false,
+    settings: '{"enabledPlugins":{"sdlc-mod@sdlc-local":true}}',
     partial: false,
     verdict: 'continue',
     prompts: [] as string[],
@@ -36,6 +38,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   on('process.run', ($, e) => {
     world.runs.push({ argv: e.argv, env: (e as { init?: { env?: Record<string, string> } }).init?.env })
     const sub = e.argv[3]
+    if (e.argv[0] === 'cat') return { value: { exitCode: 0, stdout: world.settings, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     const stdout =
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
@@ -52,7 +55,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     value: { startedAt: 0, context: { tokens: world.contextTokens, window: 1_000_000, percent: 5 }, rateLimits: [], cost: { usd: world.costUsd } },
   }))
   // .sdlc exists; the vendored approve skill exists only in a standalone repo.
-  on('fs.exists', ($, e) => ({ value: !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
+  on('fs.exists', ($, e) => ({ value: JSON.stringify(e).includes('.sdlc/mod/') ? world.vendoredMod : !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
   on('agent.list', () => ({ value: [{ id: 'a1', description: 'slice 1', type: 'sdlc:implementer', status: 'running' }] }))
   on('ui.toast', ($, e) => {
     world.toasts.push(String(e.text ?? e))
@@ -76,6 +79,30 @@ describe('sdlc mod', () => {
     const world = worldOf(on)
     await $.session.start(SESSION)
     expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-metrics-pane', 'sdlc-run', 'sdlc-sensors', 'sdlc-status', 'sdlc-story', 'sdlc-waive'])
+  })
+
+  test('the global plugin steps aside only when the vendored mod is present and enabled', async ($, on) => {
+    const world = worldOf(on)
+    world.vendoredMod = true
+    await $.session.start(SESSION)
+    expect(world.commands).toEqual([])
+    expect(world.runs.every(r => r.argv[0] === 'cat')).toBe(true)
+  })
+
+  test('present but not enabled: the plugin copy stays active', async ($, on) => {
+    const world = worldOf(on)
+    world.vendoredMod = true
+    world.settings = '{"enabledPlugins":{}}'
+    await $.session.start(SESSION)
+    expect(world.commands.length).toBeGreaterThan(0)
+  })
+
+  test('unparseable settings: the plugin copy stays active', async ($, on) => {
+    const world = worldOf(on)
+    world.vendoredMod = true
+    world.settings = '{not json'
+    await $.session.start(SESSION)
+    expect(world.commands.length).toBeGreaterThan(0)
   })
 
   test('in a standalone repo its own approve and waive skills win; status and sensors stay', async ($, on) => {
