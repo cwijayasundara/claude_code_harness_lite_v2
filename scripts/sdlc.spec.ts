@@ -542,3 +542,21 @@ test('metrics report autonomy and economics from events and usage', () => {
   assert.ok('value_over_cost' in m.economics)
   assert.equal(m.economics.value_is_estimate, true)
 })
+
+test('economics: ratios need a sample, are windowed to the same changes, and honour the value override', () => {
+  run(['new', 'ch-0', '--type', 'chore', '--tier', 'S'])
+  run(['log-usage', JSON.stringify({ kind: 'main', usd: 1, change: 'ch-0', stage: 'build', in: 3 })])
+  const few = JSON.parse(run(['metrics', '--json']).stdout).metrics.economics
+  assert.equal(few.usd_per_change, null)
+  assert.equal(few.value_over_cost, null)
+  for (let i = 1; i < 5; i++) {
+    run(['new', `ch-${i}`, '--type', 'chore', '--tier', 'S'])
+    run(['log-usage', JSON.stringify({ kind: 'main', usd: 1, change: `ch-${i}`, stage: 'build', in: 3 })])
+  }
+  run(['log-usage', JSON.stringify({ kind: 'main', usd: 100, change: 'gone', stage: 'build' })])
+  write('.sdlc/changes/ch-0/plan.md', 'value_hours: 10 because it is big\n')
+  const e = JSON.parse(run(['metrics', '--json']).stdout).metrics.economics
+  assert.equal(e.usd_per_change, 1)
+  assert.equal(e.value_over_cost, 360)
+  assert.equal(e.tokens_by_node.build, 15 + 0)
+})

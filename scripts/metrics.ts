@@ -9,6 +9,7 @@ import {
 } from './core.ts'
 import { loadChange } from './graph.ts'
 import { loadConfig } from './check.ts'
+import { valueHoursFor } from './scorecard.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -157,12 +158,16 @@ export function cmdMetrics(args: Args): void {
     fix_rounds_per_change: perChange(e => e.filter(x => x.verdict === 'continue').length),
   }
   const { config } = loadConfig()
-  const totalUsd = cost.usd_total
-  const valueUsd = changes.reduce((n, c) => n + config.value.hours[c.tier] * config.value.rate, 0)
+  const slugs = new Set(changes.map(c => c.slug))
+  const windowUsd = main.filter(r => slugs.has(r.change ?? '')).reduce((n, r) => n + (r.usd ?? 0), 0)
+  const valueUsd = changes.reduce((n, c) => n + valueHoursFor(c.slug, c.tier, config.value.hours) * config.value.rate, 0)
+  const enough = changes.length >= MIN_SAMPLE
   const economics = {
     usd_by_node: cost.usd_by_stage,
-    usd_per_change: changes.length ? Number((totalUsd / changes.length).toFixed(2)) : null,
-    value_over_cost: totalUsd > 0 ? Number((valueUsd / totalUsd).toFixed(1)) : null,
+    tokens_by_node: sumBy(usage, r => r.stage ?? '(none)', tokensOf),
+    usd_per_change: enough ? Number((windowUsd / changes.length).toFixed(2)) : null,
+    value_over_cost: enough && windowUsd > 0 ? Number((valueUsd / windowUsd).toFixed(1)) : null,
+    n: changes.length,
     value_is_estimate: true,
   }
 

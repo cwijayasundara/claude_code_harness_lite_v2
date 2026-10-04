@@ -45,3 +45,22 @@ test('the scorecard rejects a path-like or unknown slug', () => {
   assert.notEqual(sdlc(repo, ['scorecard', '../x']).code, 0)
   assert.notEqual(sdlc(repo, ['scorecard', 'nope']).code, 0)
 })
+
+test('a row with no stage is its own bucket and the buckets sum to the total', () => {
+  sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 0.25, change: 'big' })])
+  const s = JSON.parse(sdlc(repo, ['scorecard', 'big', '--json']).stdout)
+  assert.deepEqual(s.usdByNode, { build: 1.5, test: 0.5, '(none)': 0.25 })
+  assert.equal(s.usd, 2.25)
+})
+
+test('tokens and spend against budget per node', () => {
+  const s = JSON.parse(sdlc(repo, ['scorecard', 'big', '--json']).stdout)
+  assert.equal(s.tokensByNode.build, 1175)
+  assert.deepEqual(s.budgetByNode, { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } })
+  assert.match(sdlc(repo, ['scorecard', 'big']).stdout, /Budget \| build \$1\.50\/\$6, test \$0\.50\/\$2/)
+})
+
+test('a value override whose reason is on the next line is ignored', () => {
+  write(repo, '.sdlc/changes/big/plan.md', 'value_hours: 6\nbecause x\n')
+  assert.equal(JSON.parse(sdlc(repo, ['scorecard', 'big', '--json']).stdout).valueHours, 24)
+})
