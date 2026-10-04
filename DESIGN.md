@@ -478,6 +478,10 @@ CI was red from 38b1cce, so v0.3.4 and v0.3.5 were tagged on red builds; macOS, 
 - **Clean push:** verdict PASS, "No findings." posted.
 - **Planted empty-key auth bypass:** verdict HIGH, the check failed, and the same comment was edited in place. Haiku framed it as the tests contradicting the code rather than as an auth bypass; the shipped template keeps Opus.
 
+### v0.3.6 (2026-10-04)
+
+The first release with CI green on Linux, Windows and macOS, and the first with a working `sdlc-review` (both above). Adds `LICENSE` (MIT). Still unchecked by a person: the mod's band, `/sdlc-approve`, `/sdlc-sensors` and the impact dialog.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.
