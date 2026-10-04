@@ -7,7 +7,7 @@ import { loadConfig } from './check.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done' }
-export type Ratchet = { nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, number> }; blocked?: { node: string; reason: string; at: string } }
+export type Ratchet = { nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, number> }; blocked?: { node: string; reason: string; at: string }; credits?: Partial<Record<RatchetNode, number>> }
 export type Event = { at: string; node: string; verdict: string; round?: number; reason?: string; kind?: string; tool?: string; target?: string; usd?: number }
 export type ReviewFinding = { severity: string; category: string; text: string }
 export type RoundVerdict = { verdict: 'continue' | 'done' | 'blocked'; reason: string }
@@ -41,12 +41,12 @@ export function block(slug: string, node: string, reason: string): void {
   appendEvent(slug, { node, verdict: 'blocked', reason })
 }
 
-export function unblock(slug: string): void {
+export function unblock(slug: string, reason?: string): void {
   const r = readRatchet(slug)
   if (!r.blocked) return
   delete r.blocked
   writeRatchet(slug, r)
-  appendEvent(slug, { node: 'any', verdict: 'unblocked' })
+  appendEvent(slug, { node: 'any', verdict: 'unblocked', ...(reason ? { reason } : {}) })
 }
 
 // One loop round. Only critical/high findings keep a loop going; their hashes detect a stall (one came back).
@@ -78,9 +78,16 @@ export function recordRound(slug: string, node: RatchetNode, findings: ReviewFin
   return result
 }
 
+// Raw main-row spend. Money is read from 'main' rows only; no other row kind can raise or lower it.
+export function rawSpendUsd(slug: string, node?: string): number {
+  return readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug && (!node || u.stage === node)).reduce((s, u) => s + Math.max(0, u.usd ?? 0), 0)
+}
+
+// Spend net of the credits a person granted with /sdlc-approve <slug> budget (kept in ratchet.json, never in usage.jsonl).
 export function spendUsd(slug: string, node?: string): number {
-  const rows = readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug && (!node || u.stage === node))
-  return Number(rows.reduce((s, u) => s + Math.max(0, u.usd ?? 0), 0).toFixed(4))
+  const credits = readRatchet(slug).credits ?? {}
+  const credit = node ? credits[node as RatchetNode] ?? 0 : Object.values(credits).reduce((s, c) => s + c, 0)
+  return Number(Math.max(0, rawSpendUsd(slug, node) - credit).toFixed(4))
 }
 
 const TEST_CASE = /(?:^|[^\w.])(?:it|test)(?:\.each\([^)]*\))?\s*\(|^\s*def test_\w+|^\s*func Test\w+|^\s*@Test\b/gm

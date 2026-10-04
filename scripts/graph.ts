@@ -7,8 +7,8 @@ import {
   APPROVAL_ARTIFACTS, type ChangeType, type Tier, type Stage, type GatedStage, type ApprovalState, type Next, type Change,
 } from './core.ts'
 import { loadConfig } from './check.ts'
-import { readRatchet } from './ratchet.ts'
-import type { SensorConfig } from './model.ts'
+import { readRatchet, spendUsd, block } from './ratchet.ts'
+import type { SensorConfig, RatchetNode } from './model.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
   greenfield: ['intent', 'spec', 'plan', 'build', 'test', 'sensors', 'pr', 'pr-review'],
@@ -103,4 +103,31 @@ export function activeSlug(): string | null {
     .map(slug => ({ slug, t: fs.statSync(path.join(CHANGES, slug)).mtimeMs }))
     .sort((a, b) => b.t - a.t)
   return byMtime[0]?.slug ?? null
+}
+
+export type Verdict = 'continue' | 'human' | 'blocked' | 'ready'
+export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number }
+export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
+const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
+
+// The transition function: never asks a model. /sdlc-next (skill and mod), status and auto-approval all read it.
+export function step(slug: string): Step {
+  const change = loadChange(slug)
+  const node = change.next?.stage ?? null
+  const ratchet = readRatchet(slug)
+  const round = node && BUDGETED.has(node) ? (ratchet.nodes[node as RatchetNode]?.rounds ?? 0) : 0
+  const base = { slug, node, round, command: nextCommand(change) }
+  if (!change.next) return { ...base, verdict: 'ready', reason: 'every node is done; a person merges the PR' }
+  if (ratchet.blocked) return { ...base, verdict: 'blocked', reason: `${ratchet.blocked.node}: ${ratchet.blocked.reason}` }
+  if (change.next.kind === 'approve') return { ...base, verdict: 'human', reason: base.command }
+  if (node && BUDGETED.has(node)) {
+    const cap = loadConfig().config.ratchet.usd[node as RatchetNode]
+    const spent = spendUsd(slug, node)
+    if (spent > cap) {
+      const reason = `budget: ${node} spent $${spent.toFixed(2)} of $${cap}`
+      block(slug, node, reason)
+      return { ...base, verdict: 'blocked', reason: `${node}: ${reason}` }
+    }
+  }
+  return { ...base, verdict: 'continue', reason: `next node: ${node}` }
 }

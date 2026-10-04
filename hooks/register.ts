@@ -57,7 +57,7 @@ export const register: Register = on => {
       await $.command.register({ name: 'sdlc-status', description: 'sdlc: where every change stands and the next command (no model call)', immediate: true })
       // A standalone repo ships its own human-only /sdlc-approve and /sdlc-waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/sdlc-approve/SKILL.md'))) {
-        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|impact>' })
+        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|impact|budget>' })
         await $.command.register({ name: 'sdlc-waive', description: 'sdlc: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
       await $.command.register({ name: 'sdlc-sensors', description: 'sdlc: what the sensors found, known-red and waivers (no model call)', immediate: true })

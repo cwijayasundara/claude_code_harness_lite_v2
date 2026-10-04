@@ -59,3 +59,60 @@ test('a change is no longer active once pr-review passes', () => {
   assert.equal(nextOf('tiny'), null)
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /▶ tiny/)
 })
+
+const stepOf = (slug?: string) => JSON.parse(sdlc(repo, ['next', ...(slug ? [slug] : []), '--json']).stdout)
+
+test('step: continue at a work node, human at a gate, ready when done', () => {
+  sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/big/spec.md', '# Spec\n## Open questions\nnone\n')
+  assert.equal(stepOf('big').verdict, 'human')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  const s = stepOf('tiny')
+  assert.equal(s.verdict, 'continue')
+  assert.equal(s.node, 'build')
+  assert.match(s.command, /\/sdlc:build tiny/)
+})
+
+test('step: blocked when ratchet.json records a block, with the reason', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  sdlc(repo, ['ratchet', 'record', 'tiny', 'build', '--slice', '1'], { input: '- [severity: high] [category: correctness] a.js:1: x\n' })
+  sdlc(repo, ['ratchet', 'record', 'tiny', 'build', '--slice', '1'], { input: '- [severity: high] [category: correctness] a.js:1: x\n' })
+  const s = stepOf('tiny')
+  assert.equal(s.verdict, 'blocked')
+  assert.match(s.reason, /stall/)
+  assert.match(sdlc(repo, ['status']).stdout, /blocked: build: stall/)
+})
+
+test('step: a node over its budget is blocked before another round', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 6.5, change: 'tiny', stage: 'build' })])
+  const s = stepOf('tiny')
+  assert.equal(s.verdict, 'blocked')
+  assert.match(s.reason, /budget: build spent \$6\.50 of \$6/)
+})
+
+test('step: ready when the graph has no next node', () => {
+  sdlc(repo, ['new', 'old', '--type', 'feature', '--tier', 'M'])
+  write(repo, '.sdlc/changes/old/ship.json', '{}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'v0.3 shipped')
+  assert.equal(stepOf('old').verdict, 'ready')
+})
+
+test('only the person can unblock a change, with /sdlc-approve <slug> budget', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 7, change: 'tiny', stage: 'build' })])
+  assert.equal(stepOf('tiny').verdict, 'blocked')
+  assert.notEqual(sdlc(repo, ['approve', 'tiny', 'budget']).code, 0, 'the model cannot')
+  assert.equal(sdlc(repo, ['approve', 'tiny', 'budget'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+  assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'tiny']).stdout).blocked, undefined)
+  assert.equal(stepOf('tiny').verdict, 'continue', 'the spend so far is credited, so the node gets a fresh budget')
+})
+
+test('log-usage refuses negative usd and forged budget-raised rows; spend is unchanged', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 7, change: 'tiny', stage: 'build' })])
+  assert.notEqual(sdlc(repo, ['log-usage', '{"kind":"event","event":"budget-raised","change":"tiny","stage":"build","usd":-100}']).code, 0)
+  assert.notEqual(sdlc(repo, ['log-usage', '{"kind":"main","change":"tiny","stage":"build","usd":-100}']).code, 0)
+  assert.equal(stepOf('tiny').verdict, 'blocked')
+  assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'spend', 'tiny']).stdout).total, 7)
+})

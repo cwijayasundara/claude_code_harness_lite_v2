@@ -12,7 +12,7 @@ import {
   listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
-import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand } from './graph.ts'
+import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step } from './graph.ts'
 import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
 import { cmdHook, readGate } from './hooks.ts'
@@ -20,7 +20,7 @@ import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from '
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdVendor } from './vendor.ts'
-import { cmdRatchet } from './ratchet.ts'
+import { cmdRatchet, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 
 // ---------- commands ----------
@@ -60,6 +60,13 @@ function cmdActivate(args: Args): void {
   out(`active change: ${slug}`)
 }
 
+function cmdNext(args: Args): void {
+  const slug = args.pos[0] ?? activeSlug()
+  if (!slug) return out(args.opt.json ? JSON.stringify({ slug: null, node: null, verdict: 'ready', reason: 'no active change', command: `${skillRef('start')} "<what you want>"`, round: 0 }) : 'no active change')
+  const s = step(slug)
+  out(args.opt.json ? JSON.stringify(s) : `${s.verdict}: ${s.verdict === 'continue' || s.verdict === 'human' ? s.command : s.reason}`)
+}
+
 function cmdStatus(args: Args): void {
   const json = Boolean(args.opt.json)
   if (!exists(SDLC)) return out(json ? JSON.stringify({ initialised: false }) : `sdlc not initialised here: run ${skillRef('start')}`)
@@ -87,7 +94,8 @@ function cmdStatus(args: Args): void {
     .sort((a, b) => (a.slug === active ? -1 : b.slug === active ? 1 : 0))
     .map(c => `${c.slug === active ? '▶' : ' '} ${c.slug.padEnd(28)} ${c.type.padEnd(10)} ${c.tier}  ${label(c)}`)
   const act = active ? loadChange(active) : null
-  out([...rows, '', act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
+  const st = active ? step(active) : null
+  out([...rows, '', st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
 }
 
 // A standalone repo's /sdlc-approve and /sdlc-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
@@ -97,6 +105,15 @@ function cmdApprove(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /sdlc-approve <slug> <stage>', 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
+  if (stage === 'budget') {
+    const node = readRatchet(slug).blocked?.node.replace(/#.*/, '') ?? step(slug).node ?? 'build'
+    const r = readRatchet(slug)
+    const spent = rawSpendUsd(slug, node)
+    r.credits = { ...r.credits, [node]: spent }
+    writeRatchet(slug, r)
+    unblock(slug, 'person approved more budget')
+    return out(`unblocked ${slug}: ${node} gets a fresh budget ($${spent.toFixed(2)} credited)`)
+  }
   const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
   const file = path.join(CHANGES, slug, artifact ?? '')
   if (!artifact || !exists(file)) fail(`nothing to approve: ${slug}/${artifact ?? stage} does not exist`)
@@ -264,6 +281,8 @@ function cmdLogUsage(args: Args): void {
   // The mod passes the change and stage it saw when the turn started. A turn that started with no
   // change and created one (/sdlc:start) is that change's intent stage.
   const row = JSON.parse(args.pos[0] ?? '{}') as Partial<UsageRow>
+  // Money only goes up: a negative usd or a budget-raised event would let the model grant itself budget.
+  if ((row.usd ?? 0) < 0 || row.event === 'budget-raised') fail('log-usage refuses negative usd and budget-raised rows: only /sdlc-approve <slug> budget raises a budget', 3)
   const current = frontmatter(read(STATE)).data.change || null
   const change = row.change ?? current
   const stage = row.change ? row.stage ?? null : current ? 'intent' : null
@@ -375,6 +394,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   new: cmdNew,
   activate: cmdActivate,
   status: cmdStatus,
+  next: cmdNext,
   approve: cmdApprove,
   'scope-drift': cmdScopeDrift,
   ship: cmdShip,
