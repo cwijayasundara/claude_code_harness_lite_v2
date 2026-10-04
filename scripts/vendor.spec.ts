@@ -116,6 +116,12 @@ test('the plugin hooks step aside only in a standalone repo, so no hook runs twi
   const r = sdlc(standalone, ['hook', 'pre-bash'], { input })
   assert.equal(r.code, 0)
   assert.equal(r.stdout, '', 'the plugin copy is silent; the project copy decides')
+  const settings = path.join(standalone, '.claude/settings.json')
+  const full = JSON.parse(fs.readFileSync(settings, 'utf8'))
+  fs.writeFileSync(settings, JSON.stringify({ $comment: 'see .sdlc/bin/sdlc.ts', hooks: { Stop: full.hooks.Stop } }))
+  assert.equal(bashDecision(sdlc(standalone, ['hook', 'pre-bash'], { input })), 'deny', 'a mention or another hook does not silence pre-bash')
+  fs.writeFileSync(settings, '{ not json')
+  assert.equal(bashDecision(sdlc(standalone, ['hook', 'pre-bash'], { input })), 'deny', 'unreadable settings keep the plugin hooks')
 })
 
 test('the settings template is portable: no personal plugins, absolute paths or no-op Write(path) rules', () => {

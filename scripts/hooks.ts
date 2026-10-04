@@ -402,12 +402,23 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
   'subagent-stop': i => hookStop(i, true),
 }
 
-// A standalone repo registers its own copy's hooks in .claude/settings.json; the plugin's then step aside, so none runs twice.
-export const runsOwnHooks = (): boolean => !IS_VENDORED && read(path.join(ROOT, '.claude', 'settings.json')).includes('.sdlc/bin/sdlc.ts')
+// A standalone repo registers its own copy's hooks in .claude/settings.json. The plugin's copy of a hook steps aside only
+// when the project registers that same hook, so none runs twice and none is lost; unreadable settings keep the plugin's.
+type SettingsHooks = { hooks?: Record<string, { hooks?: { command?: unknown }[] }[]> }
+export function runsOwnHook(name: string): boolean {
+  if (IS_VENDORED) return false
+  try {
+    const { hooks = {} } = JSON.parse(read(path.join(ROOT, '.claude', 'settings.json')) || '{}') as SettingsHooks
+    const own = new RegExp(`\\.sdlc/bin/sdlc\\.ts"? hook ${name}$`)
+    return Object.values(hooks).flat().some(g => g.hooks?.some(h => typeof h.command === 'string' && own.test(h.command.trim())))
+  } catch {
+    return false
+  }
+}
 
 export function cmdHook(args: Args): void {
   const handler = HOOKS[args.pos[0] ?? '']
   if (!handler) fail(`unknown hook ${args.pos[0]}`)
-  if (runsOwnHooks()) return
+  if (runsOwnHook(args.pos[0] ?? '')) return
   handler(readStdin())
 }
