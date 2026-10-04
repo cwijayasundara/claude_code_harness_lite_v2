@@ -281,8 +281,10 @@ function cmdLogUsage(args: Args): void {
   // The mod passes the change and stage it saw when the turn started. A turn that started with no
   // change and created one (/sdlc:start) is that change's intent stage.
   const row = JSON.parse(args.pos[0] ?? '{}') as Partial<UsageRow>
-  // Money only goes up: a negative usd or a budget-raised event would let the model grant itself budget.
-  if ((row.usd ?? 0) < 0 || row.event === 'budget-raised') fail('log-usage refuses negative usd and budget-raised rows: only /sdlc-approve <slug> budget raises a budget', 3)
+  // Money only goes up: a malformed or negative usd, an unknown kind or a budget-raised event would let the model grant itself budget.
+  const badUsd = row.usd !== undefined && (typeof row.usd !== 'number' || !Number.isFinite(row.usd) || row.usd < 0)
+  const badKind = !(['main', 'agent', 'event'] as unknown[]).includes(row.kind)
+  if (badUsd || badKind || (row.kind === 'event' && row.event === 'budget-raised')) fail('log-usage refuses a bad usd or kind and budget-raised rows: only /sdlc-approve <slug> budget raises a budget', 3)
   const current = frontmatter(read(STATE)).data.change || null
   const change = row.change ?? current
   const stage = row.change ? row.stage ?? null : current ? 'intent' : null

@@ -1,6 +1,7 @@
 // The stage graph: paths per type and tier, gates from config, legacy v0.3 changes.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn, verified, ratcheted } from './testkit.ts'
 
@@ -115,4 +116,15 @@ test('log-usage refuses negative usd and forged budget-raised rows; spend is unc
   assert.notEqual(sdlc(repo, ['log-usage', '{"kind":"main","change":"tiny","stage":"build","usd":-100}']).code, 0)
   assert.equal(stepOf('tiny').verdict, 'blocked')
   assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'spend', 'tiny']).stdout).total, 7)
+})
+
+test('log-usage refuses a non-numeric usd and an unknown kind; a malformed historical row is ignored', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  for (const bad of [
+    { kind: 'main', usd: '-5' }, { kind: 'main', usd: 'abc' }, { kind: 'main', usd: null }, { kind: 'bogus', usd: 1 },
+  ]) assert.notEqual(sdlc(repo, ['log-usage', JSON.stringify({ ...bad, change: 'tiny', stage: 'build' })]).code, 0, JSON.stringify(bad))
+  assert.notEqual(sdlc(repo, ['log-usage', '{"kind":"main","usd":1e999,"change":"tiny","stage":"build"}']).code, 0, 'Infinity')
+  fs.appendFileSync(path.join(repo, '.sdlc/usage.jsonl'), JSON.stringify({ kind: 'main', usd: 'x', change: 'tiny', stage: 'build' }) + '\n')
+  fs.appendFileSync(path.join(repo, '.sdlc/usage.jsonl'), JSON.stringify({ kind: 'main', usd: 1, change: 'tiny', stage: 'build' }) + '\n')
+  assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'spend', 'tiny']).stdout).total, 1)
 })

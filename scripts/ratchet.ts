@@ -80,7 +80,7 @@ export function recordRound(slug: string, node: RatchetNode, findings: ReviewFin
 
 // Raw main-row spend. Money is read from 'main' rows only; no other row kind can raise or lower it.
 export function rawSpendUsd(slug: string, node?: string): number {
-  return readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug && (!node || u.stage === node)).reduce((s, u) => s + Math.max(0, u.usd ?? 0), 0)
+  return readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug && (!node || u.stage === node)).reduce((s, u) => s + (typeof u.usd === 'number' && Number.isFinite(u.usd) ? Math.max(0, u.usd) : 0), 0)
 }
 
 // Spend net of the credits a person granted with /sdlc-approve <slug> budget (kept in ratchet.json, never in usage.jsonl).
@@ -100,7 +100,7 @@ export function cmdRatchet(args: Args): void {
   if (sub === 'show') return out(JSON.stringify(readRatchet(slug), null, 2))
   if (sub === 'spend') {
     const byNode: Record<string, number> = {}
-    for (const u of readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug)) byNode[u.stage ?? '(none)'] = Number(((byNode[u.stage ?? '(none)'] ?? 0) + Math.max(0, u.usd ?? 0)).toFixed(4))
+    for (const u of readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug)) byNode[u.stage ?? '(none)'] = Number(((byNode[u.stage ?? '(none)'] ?? 0) + (typeof u.usd === 'number' && Number.isFinite(u.usd) ? Math.max(0, u.usd) : 0)).toFixed(4))
     return out(JSON.stringify({ total: spendUsd(slug), byNode }))
   }
   if (sub !== 'record' || !node) fail('usage: ratchet record <slug> <build|test|sensors|pr-review> [--slice N] < reviewer reply')
