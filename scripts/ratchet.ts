@@ -136,6 +136,8 @@ export function cmdRatchet(args: Args): void {
   const { config } = loadConfig()
   if (!Object.hasOwn(config.ratchet.rounds, node)) fail(`unknown ratchet node ${node}`)
   const n = node as RatchetNode
+  // sensors and test are recorded internally by `quality` and `verify-report`; a model-written verdict must not certify them.
+  if (n === 'sensors' || n === 'test') fail(`the ${n} node is recorded only by sdlc.ts quality / verify-report`)
   let slice = typeof args.opt.slice === 'string' ? args.opt.slice : undefined
   if (n === 'build') {
     const ids = slicesIn(slug)

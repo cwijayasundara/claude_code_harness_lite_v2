@@ -72,15 +72,15 @@ const tryRecord = (node: string, text: string, extra: string[] = []) => sdlc(rep
 
 test('record refuses input with no verdict and no finding line, and records nothing', () => {
   for (const text of ['', '   \n', 'looks fine to me, ship it']) {
-    const r = tryRecord('test', text)
+    const r = tryRecord('pr-review', text)
     assert.notEqual(r.code, 0, JSON.stringify(text))
   }
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, nodes: {}, slices: {}, baseline: {} })
-  assert.equal(record('test', 'verdict: pass\n').verdict, 'done')
+  assert.equal(record('pr-review', 'verdict: pass\n').verdict, 'done')
 })
 
 test('record refuses changes-needed when no critical or high finding parsed', () => {
-  const r = tryRecord('test', 'verdict: changes-needed\n- [severity: medium] [category: tests] t.js:1: weak\n')
+  const r = tryRecord('pr-review', 'verdict: changes-needed\n- [severity: medium] [category: tests] t.js:1: weak\n')
   assert.notEqual(r.code, 0)
   assert.match(r.stderr + r.stdout, /changes-needed but no critical or high finding lines parsed/)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, nodes: {}, slices: {}, baseline: {} })
@@ -129,4 +129,17 @@ test('ratchet record --from reads the reply from a file inside the change folder
     assert.equal(r.code, 1, f)
     assert.match(r.stderr, /--from/, f)
   }
+})
+
+test('sensors and test cannot be self-certified with ratchet record', () => {
+  const before = ratchetJson()
+  write(repo, '.sdlc/changes/big/ok.md', 'verdict: pass\n')
+  for (const node of ['sensors', 'test']) {
+    for (const extra of [['--from', '.sdlc/changes/big/ok.md'], []]) {
+      const r = tryRecord(node, 'verdict: pass\n', extra)
+      assert.notEqual(r.code, 0, node)
+      assert.match(r.stderr + r.stdout, /recorded only by sdlc\.ts quality \/ verify-report/)
+    }
+  }
+  assert.equal(ratchetJson(), before)
 })

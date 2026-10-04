@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { makeRepo, sdlc, write, gitIn, verified, ratcheted } from './testkit.ts'
+import { makeRepo, sdlc, write, gitIn, verified, ratcheted, buildDone } from './testkit.ts'
 
 let repo: string
 const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
@@ -282,6 +282,14 @@ test('ratchet record is auto-approved only in the --from form, inside the change
   fs.writeFileSync(path.join(out, 'r.md'), 'verdict: pass\n')
   fs.symlinkSync(out, path.join(repo, '.sdlc/changes/tiny/link'))
   assert.notEqual(bash(`${NODE} ratchet record tiny build --slice 1 --from .sdlc/changes/tiny/link/r.md`), 'allow', 'symlink out')
+})
+
+test('ratchet record for sensors and test is never auto-approved, even at that node', () => {
+  atNode('build')
+  verified(repo, 'tiny'); buildDone(repo, 'tiny')
+  assert.equal(JSON.parse(sdlc(repo, ['status', '--json']).stdout).step.node, 'sensors')
+  write(repo, '.sdlc/changes/tiny/ok.md', 'verdict: pass\n')
+  for (const n of ['sensors', 'test']) assert.notEqual(bash(`${NODE} ratchet record tiny ${n} --from .sdlc/changes/tiny/ok.md`), 'allow', n)
 })
 
 test('pr is auto-approved at the pr node with one quoted message, and --followup at pr-review', () => {

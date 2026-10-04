@@ -59,7 +59,7 @@ function prApproval(cmd: string, slug: string, node: string, cwd?: string): bool
 // ratchet record <slug> <node> [--slice N] --from <file>: only the file form (no stdin redirect), the active slug and the current node.
 function ratchetFrom(a: string[], slug: string, node: string): boolean {
   const [s, n, ...rest] = a
-  if (s !== slug || n !== node || !['build', 'test', 'sensors', 'pr-review'].includes(node)) return false
+  if (s !== slug || n !== node || !['build', 'pr-review'].includes(node)) return false
   const slice = rest[0] === '--slice' ? rest.splice(0, 2)[1] : undefined
   if (rest[0] === '--slice' || (slice !== undefined && !/^\d+$/.test(slice))) return false
   if (rest.length !== 2 || rest[0] !== '--from') return false
