@@ -211,7 +211,8 @@ function consumerRepo(name: string, file: string, text: string): string {
 
 test('Stop blocks a contract rename that a consumer still uses, naming file:line', () => {
   const rel = consumerRepo('checkout', 'src/cart.ts', 'const r = order.discount_rate\n')
-  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] })
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] , levels: { integration: 'node -e "process.exit(0)"' } })
+  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   write(repo, 'schema/billing.sql', 'CREATE TABLE billing (discount_rate NUMERIC);\n')
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'schema')
@@ -430,7 +431,8 @@ test('ship: a fixture added in the branch travels with the tests, so an already-
 
 test('ship commits a changed consumer on the same branch after its tests pass, and records it', () => {
   const rel = consumerRepo('checkout2', 'src/cart.ts', 'const r = order.discount_rate\n')
-  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] })
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] , levels: { integration: 'node -e "process.exit(0)"' } })
+  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
   write(repo, 'src/app.js', 'export const a = 10\n')
   write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
@@ -446,7 +448,8 @@ test('ship commits a changed consumer on the same branch after its tests pass, a
 
 test('ship refuses and commits nothing when a changed consumer\'s tests fail', () => {
   const rel = consumerRepo('checkout3', 'src/cart.ts', 'x\n')
-  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(1)"' }] })
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(1)"' }] , levels: { integration: 'node -e "process.exit(0)"' } })
+  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
   write(repo, 'src/app.js', 'export const a = 11\n')
   write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
@@ -464,7 +467,8 @@ test('ship refuses and commits nothing when a changed consumer\'s tests fail', (
 
 function shipSetup(name: string): string {
   const rel = consumerRepo(name, 'src/cart.ts', 'x\n')
-  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] })
+  sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }] , levels: { integration: 'node -e "process.exit(0)"' } })
+  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
   write(repo, 'src/app.js', 'export const a = 12\n')
   write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)

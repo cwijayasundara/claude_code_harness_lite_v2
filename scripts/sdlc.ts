@@ -20,8 +20,10 @@ import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from '
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdVendor } from './vendor.ts'
-import { cmdRatchet, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
+import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
+import { requiredLevels, levelResults } from './levels.ts'
+import { normCmd } from './shell.ts'
 
 // ---------- commands ----------
 
@@ -326,8 +328,22 @@ function cmdVerifyReport(args: Args): void {
   if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: verify-report <slug>')
   const rows = readRuns(slug)
   const plan = planVerificationBullets(slug)
-  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored)
+  const change = loadChange(slug)
+  const { config } = loadConfig()
+  const required = change.type === 'spike' ? [] : requiredLevels(change, read(path.join(CHANGES, slug, 'plan.md')), config)
+  const latest = new Map(rows.filter(r => !r.expectFail && !r.source).map(r => [normCmd(r.cmd), r.exit]))
+  // Plan commands stand in for an undeclared unit level; with no plan list, any explicit green run does (the no-plan fallback).
+  const planned = plan.commands.map(normCmd)
+  const planPassed = planned.length ? planned.every(c => latest.get(c) === 0) : latest.size > 0 && [...latest.values()].every(e => e === 0)
+  const levels = levelResults(slug, required, config, planPassed)
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels)
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
+  // A failing report is always a new finding (counter keeps the hash unique), so only the test node's cap applies.
+  if (result === 'fail') {
+    // A legacy change (no ratchet.json) counts build as done once verification.md exists; keep that true when the file appears.
+    if (!exists(path.join(CHANGES, slug, 'ratchet.json'))) { const r = readRatchet(slug); r.nodes.build = { ...(r.nodes.build ?? { rounds: 0, hashes: [] }), status: 'done' }; writeRatchet(slug, r) }
+    recordRound(slug, 'test', [{ severity: 'high', category: 'tests', text: `verification failed at ${now()} (${rows.length} runs, round ${readRatchet(slug).nodes.test?.hashes.length ?? 0})` }], { cap: config.ratchet.rounds.test })
+  }
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }
 

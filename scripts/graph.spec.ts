@@ -42,6 +42,7 @@ test('a v0.3 shipped change stays done', () => {
 
 test('a change stays active after its PR until pr-review is done', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'L'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "process.exit(0)"' } }))
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   write(repo, '.sdlc/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
@@ -52,6 +53,7 @@ test('a change stays active after its PR until pr-review is done', () => {
 
 test('a change is no longer active once pr-review passes', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'L'])
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "process.exit(0)"' } }))
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   write(repo, '.sdlc/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
