@@ -7,11 +7,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
-  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
-  listChanges, activeSlug, loadChange, nextCommand, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems,
+  ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, APPROVAL_ARTIFACTS, approvalDigest,
+  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString,
+  listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
+import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand } from './graph.ts'
 import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
 import { cmdHook, readGate } from './hooks.ts'
@@ -195,8 +196,8 @@ function cmdShip(args: Args): void {
   if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: ship <slug> --message "<conventional commit message>"')
   if (!message) fail('ship needs --message "<type(scope): summary>"')
   const change = loadChange(slug)
-  const pending = change.stages.filter(s => s !== 'ship' && !(change.next && change.stages.indexOf(s) < change.stages.indexOf(change.next.stage)))
-  if (change.next && change.next.stage !== 'ship') fail(`not ready to ship: next is ${nextCommand(change)} (pending: ${pending.join(', ')})`)
+  const pending = change.stages.filter(s => s !== 'pr' && !(change.next && change.stages.indexOf(s) < change.stages.indexOf(change.next.stage)))
+  if (change.next && change.next.stage !== 'pr') fail(`not ready to ship: next is ${nextCommand(change)} (pending: ${pending.join(', ')})`)
   if (!change.next) return out(`${slug} is already shipped`)
 
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])

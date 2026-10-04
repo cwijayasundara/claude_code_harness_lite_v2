@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { makeRepo, sdlc, hook, write, gitIn, verified } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn, verified, ratcheted } from './testkit.ts'
 
 let repo: string
 beforeEach(() => {
@@ -436,6 +436,7 @@ test('ship commits a changed consumer on the same branch after its tests pass, a
   write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
   write(path.resolve(repo, rel), 'src/cart.ts', 'const r = order.promotional_discount\n')
   verified(repo, 'rate')
+  ratcheted(repo, 'rate')
   const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: rename rate'])
   assert.equal(r.code, 0, r.stderr)
   const shipped = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/rate/ship.json'), 'utf8'))
@@ -451,6 +452,7 @@ test('ship refuses and commits nothing when a changed consumer\'s tests fail', (
   write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
   write(path.resolve(repo, rel), 'src/cart.ts', 'y\n')
   verified(repo, 'rate')
+  ratcheted(repo, 'rate')
   const head = gitIn(repo, 'rev-parse', 'HEAD')
   const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: x'])
   assert.notEqual(r.code, 0)
@@ -468,6 +470,7 @@ function shipSetup(name: string): string {
   write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
   write(path.resolve(repo, rel), 'src/cart.ts', 'y\n')
   verified(repo, 'rate')
+  ratcheted(repo, 'rate')
   return rel
 }
 

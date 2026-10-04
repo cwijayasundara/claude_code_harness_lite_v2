@@ -1,5 +1,5 @@
 ---
-name: review
+name: pr-review
 description: One review pass per change (tier L always; tier S and M when no PR review can run) - Claude Code's built-in /code-review plus a spec and contract check (and /security-review for risky changes) - recorded in review.md, at most one fix round.
 argument-hint: <slug>
 effort: medium

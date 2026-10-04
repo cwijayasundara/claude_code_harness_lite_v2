@@ -3,13 +3,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, loadChange, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, activeSlug, defaultBase,
+  ROOT, SDLC, CHANGES, WAIVERS, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
+import { loadChange, activeSlug } from './graph.ts'
 import { wikiFindings } from './wiki.ts'
 
 export type Point = 'stop' | 'ship' | 'ci'

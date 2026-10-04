@@ -12,7 +12,7 @@ export { globToRegex }
 
 export type ChangeType = 'greenfield' | 'feature' | 'bugfix' | 'incident' | 'refactor' | 'migration' | 'chore' | 'spike'
 export type Tier = 'S' | 'M' | 'L'
-export type Stage = 'intent' | 'spec' | 'plan' | 'build' | 'diagnose' | 'verify' | 'review' | 'ship' | 'notes'
+export type Stage = 'intent' | 'spec' | 'plan' | 'build' | 'diagnose' | 'test' | 'sensors' | 'pr' | 'pr-review' | 'notes'
 export type GatedStage = 'intent' | 'spec' | 'plan' | 'impact'
 export type ApprovalState = 'approved' | 'stale' | 'missing'
 export type Fields = Record<string, string>
@@ -85,32 +85,10 @@ export const LIMITS = { intentLines: 40, specLines: 150, planLines: 120, planCod
 export const MIN_SAMPLE = 5
 export const SOFT_HOOK_FAILURE = 'sdlc hook error (ignored)'
 
-// Stage paths per change type. A stage is done when its artifact exists (see isDone).
-export const PATHS: Record<ChangeType, Stage[]> = {
-  greenfield: ['intent', 'spec', 'plan', 'build', 'verify', 'review', 'ship'],
-  feature: ['intent', 'spec', 'plan', 'build', 'verify', 'review', 'ship'],
-  bugfix: ['intent', 'plan', 'diagnose', 'verify', 'review', 'ship'],
-  incident: ['intent', 'plan', 'diagnose', 'verify', 'review', 'ship'],
-  refactor: ['intent', 'plan', 'build', 'verify', 'review', 'ship'],
-  migration: ['intent', 'plan', 'build', 'verify', 'review', 'ship'],
-  chore: ['intent', 'build', 'verify', 'ship'],
-  spike: ['intent', 'notes'],
-}
-// Human gates per tier; greenfield is always gated like L.
-// Tier M has no human gate: contract, data and security changes are tier L (v0.3 trial: gates by risk, not size).
-export const GATES: Record<Tier, GatedStage[]> = { S: [], M: [], L: ['spec', 'plan'] }
-// Tier S is the fast path: no spec, and review runs on the PR (templates/sdlc-review.yml).
-// Tier S and M review runs on the PR (templates/sdlc-review.yml) only where one can: workflow installed, origin remote set.
-export const SKIPPED_FOR_S = new Set<Stage>(['spec', 'review']), SKIPPED_FOR_M = SKIPPED_FOR_S
-export const prReviewAvailable = (): boolean => exists(path.join(ROOT, '.github/workflows/sdlc-review.yml')) && git(['remote', 'get-url', 'origin']) !== null
-export const ARTIFACTS: Partial<Record<Stage, string>> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', notes: 'notes.md' }
-
 export const APPROVAL_ARTIFACTS: Record<GatedStage, string> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', impact: 'plan.md' }
 export type ImpactHit = { consumer: string; file: string; line: number; id: string }
 export type Impact = { at: string; ids: string[]; hits: ImpactHit[]; missing: string[] }
 
-export const isChangeType = (v: string | undefined): v is ChangeType => v !== undefined && v in PATHS
-export const isTier = (v: string | undefined): v is Tier => v !== undefined && v in GATES
 // ---------- small helpers ----------
 
 export const exists = (p: string): boolean => fs.existsSync(p)
@@ -238,89 +216,9 @@ export function listChanges(): string[] {
     .map(d => d.name)
 }
 
-// STATE.md decides when it names a change, even an empty one (after ship). Only a missing STATE.md
-// falls back to the most recently touched change that is still unfinished.
-export function activeSlug(): string | null {
-  const { data } = frontmatter(read(STATE))
-  if ('change' in data) return data.change && exists(path.join(CHANGES, data.change)) && !isShipped(data.change) ? data.change : null
-  const byMtime = listChanges()
-    .filter(slug => loadChange(slug).next !== null)
-    .map(slug => ({ slug, t: fs.statSync(path.join(CHANGES, slug)).mtimeMs }))
-    .sort((a, b) => b.t - a.t)
-  return byMtime[0]?.slug ?? null
-}
-
 // Shipped means the scope record was committed with the change, which git can prove. v0.1 changes count too.
 export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug, 'ship.json')))]))
 
-export function loadChange(slug: string): Change {
-  const dir = path.join(CHANGES, slug)
-  const intent = frontmatter(read(path.join(dir, 'intent.md'))).data
-  const type: ChangeType = isChangeType(intent.type) ? intent.type : 'feature'
-  const tier: Tier = isTier(intent.tier) ? intent.tier : 'M'
-  const verification = reportFields(read(path.join(dir, 'verification.md')), ['result'])
-  const review = reportFields(read(path.join(dir, 'review.md')), ['result', 'rounds', 'caught'])
-  let stages = PATHS[type]
-  const keepReview = (tier === 'S' || tier === 'M') && !prReviewAvailable()
-  const skip = (set: Set<Stage>) => (s: Stage): boolean => !set.has(s) || (s === 'review' && keepReview)
-  if (tier === 'S' && type !== 'greenfield') stages = stages.filter(skip(SKIPPED_FOR_S))
-  const isBug = type === 'bugfix' || type === 'incident'
-  if (isBug && tier !== 'L') stages = stages.filter(s => s !== 'plan')
-  if (tier === 'M' && type !== 'greenfield') stages = stages.filter(skip(SKIPPED_FOR_M))
-  const gates = type === 'greenfield' ? GATES.L : GATES[tier]
-  const approvalState = (gate: GatedStage): ApprovalState => approvalOf(slug, gate)
-  const isDone = (stage: Stage): boolean => {
-    switch (stage) {
-      case 'build':
-      case 'diagnose':
-        return exists(path.join(dir, 'verification.md'))
-      case 'verify': {
-        // Only a report sdlc generated from runs.jsonl counts (see runs.ts renderVerification).
-        const v = frontmatter(read(path.join(dir, 'verification.md'))).data
-        const runs = read(path.join(dir, 'runs.jsonl')).split('\n').slice(0, Number(v.runs)).join('\n')
-        return Number(v.runs) >= 1 && v.generated === 'sdlc' && v.result === 'pass' && sha(runs) === v.digest
-      }
-      case 'review':
-        return review.result === 'pass' || review.result === 'accepted'
-      case 'ship':
-        return isShipped(slug)
-      default:
-        return exists(path.join(dir, ARTIFACTS[stage] ?? ''))
-    }
-  }
-
-  let next: Next | null = null
-  // A committed ship record ends the change, whatever older stages say (a v0.1 hand-written verification.md).
-  for (const stage of stages.includes('ship') && isShipped(slug) ? [] : stages) {
-    if (!isDone(stage)) {
-      next = { stage, kind: 'work' }
-      break
-    }
-    if ((gates as Stage[]).includes(stage) && approvalState(stage as GatedStage) !== 'approved') {
-      next = { stage, kind: 'approve', state: approvalState(stage as GatedStage), gate: stage as GatedStage }
-      break
-    }
-    if (stage === 'plan' && needsImpact(readImpact(slug)) && approvalState('impact') !== 'approved') {
-      next = { stage, kind: 'approve', state: approvalState('impact'), gate: 'impact' }
-      break
-    }
-  }
-  return { slug, dir, type, tier, stages, gates, next, intent, verification, review }
-}
-
-export function nextCommand(change: Change): string {
-  const next = change.next
-  if (!next) return 'done: nothing left for this change'
-  if (next.kind === 'approve') {
-    const why = next.state === 'stale' ? ' (approval is stale: the artifact changed after it was approved)' : ''
-    const what = next.gate === 'impact' ? `the cross-repo impact in ${change.slug}/impact.json and plan.md` : `${change.slug}/${APPROVAL_ARTIFACTS[next.gate]}`
-    return `human gate: review ${what}, then run /sdlc-approve ${change.slug} ${next.gate}${why}`
-  }
-  if (next.stage === 'intent') return `${skillRef('start')} ${change.slug}`
-  if (next.stage === 'notes') return `${skillRef('start')} ${change.slug} (spike: answer in notes.md)`
-  if (next.stage === 'plan' && (change.type === 'bugfix' || change.type === 'incident')) return `${skillRef('diagnose')} ${change.slug}`
-  return `${skillRef(next.stage)} ${change.slug}`
-}
 // ---------- plan parsing & scope drift ----------
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands. Only paths under .sdlc/ count,

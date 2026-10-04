@@ -13,10 +13,10 @@ beforeEach(() => {
 
 test('a failed sdlc skill load injects the deterministic fallback command and logs the event', () => {
   sdlc(repo, ['init'])
-  const r = hook(repo, 'skill-failed', { tool_input: { skill: 'sdlc:review', args: 'add-login' } })
+  const r = hook(repo, 'skill-failed', { tool_input: { skill: 'sdlc:pr-review', args: 'add-login' } })
   const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext
-  assert.match(ctx, /sdlc\.ts" skill review add-login/)
-  assert.match(ctx, /skill fallback: sdlc:review/)
+  assert.match(ctx, /sdlc\.ts" skill pr-review add-login/)
+  assert.match(ctx, /skill fallback: sdlc:pr-review/)
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /skill-load-failed/)
   assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'superpowers:brainstorming' } }).stdout, '')
 })

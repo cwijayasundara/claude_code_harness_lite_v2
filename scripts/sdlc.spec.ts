@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
-import { verified } from './testkit.ts'
+import { verified, ratcheted } from './testkit.ts'
 
 const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
 let repo: string
@@ -80,15 +80,18 @@ test('tier S chore has no gates and skips spec and plan', () => {
   assert.match(run(['status']).stdout, /next: \/sdlc:build bump-deps/)
 })
 
-test('tier S feature skips the in-session review only where a PR review can run', () => {
+test('tier S feature reviews in session only where a PR review cannot run', () => {
   run(['new', 'tiny', '--type', 'feature', '--tier', 'S'])
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write('.sdlc/changes/tiny/plan.md', PLAN)
-  assert.match(run(['status']).stdout, /next: \/sdlc:review tiny/, 'no PR review workflow and no remote: review in session')
+  write('.sdlc/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
+  git('add', '-A'); git('commit', '-qm', 'pr')
+  assert.match(run(['status']).stdout, /next: \/sdlc:pr-review tiny/, 'no PR review workflow and no remote: review in session')
   write('.github/workflows/sdlc-review.yml', 'name: sdlc-review\n')
-  assert.match(run(['status']).stdout, /next: \/sdlc:review tiny/, 'a workflow without a remote still cannot review')
+  assert.match(run(['status']).stdout, /next: \/sdlc:pr-review tiny/, 'a workflow without a remote still cannot review')
   git('remote', 'add', 'origin', 'https://example.com/x.git')
-  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+  assert.match(run(['status']).stdout, /done/, 'CI reviews the PR, so the change has no pr-review node')
 })
 
 test('log-usage keeps the change and stage captured at turn start', () => {
@@ -101,8 +104,9 @@ test('log-usage keeps the change and stage captured at turn start', () => {
 test('ship is done only once the scope record is committed', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   run(['scope-drift', 'tiny', '--record'])
-  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+  assert.match(run(['status']).stdout, /next: \/sdlc:pr tiny/)
   git('add', '-A')
   git('commit', '-qm', 'chore: tiny')
   assert.match(run(['status']).stdout, /done/)
@@ -111,9 +115,10 @@ test('ship is done only once the scope record is committed', () => {
 test('ship commits code plus artifacts on a branch', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
-  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+  assert.match(run(['status']).stdout, /next: \/sdlc:pr tiny/)
   const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
   assert.match(shipped.stdout, /sdlc\/tiny/)
@@ -128,6 +133,7 @@ test('ship refuses scope drift and unfinished changes', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   assert.match(run(['ship', 'tiny', '--message', 'chore: x']).stderr, /not ready to ship/)
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   write('src/other.js', 'y\n')
   const r = run(['ship', 'tiny', '--message', 'chore: x'])
@@ -259,6 +265,7 @@ test('metrics merge plugin and standalone agent names and ignore a negative cost
 test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active change', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
   const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])
@@ -274,6 +281,7 @@ test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active
 test('a change started on another change\'s branch is warned, refused at ship, and diff --trunk lists the branch', () => {
   run(['new', 'first', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'first')
+  ratcheted(repo, 'first')
   write('src/a.js', 'x\n')
   write('.sdlc/changes/first/plan.md', '## Files\n- src/a.js\n')
   assert.equal(run(['ship', 'first', '--message', 'chore: first']).code, 0)
@@ -281,6 +289,7 @@ test('a change started on another change\'s branch is warned, refused at ship, a
   assert.match(started.stdout, /warning: HEAD is on sdlc\/first[\s\S]*git checkout -b sdlc\/second/)
   assert.match(run(['diff', '--trunk']).stdout, /A src\/a\.js/)
   verified(repo, 'second')
+  ratcheted(repo, 'second')
   write('src/b.js', 'y\n')
   write('.sdlc/changes/second/plan.md', '## Files\n- src/b.js\n')
   const refused = run(['ship', 'second', '--message', 'chore: second'])
@@ -298,6 +307,7 @@ test('status warns when there is no origin remote to open a PR on', () => {
 test('activeSlug never falls back to a finished change', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   run(['ship', 'tiny', '--message', 'chore: tiny'])
@@ -306,7 +316,7 @@ test('activeSlug never falls back to a finished change', () => {
 })
 
 test('skill prints a stage skill with plugin root and arguments substituted', () => {
-  const r = run(['skill', 'verify', 'add-login'])
+  const r = run(['skill', 'test', 'add-login'])
   assert.equal(r.code, 0, r.stderr)
   assert.match(r.stdout, /# Verify add-login/)
   assert.doesNotMatch(r.stdout, /\$\{CLAUDE_PLUGIN_ROOT\}/)
@@ -317,7 +327,7 @@ test('skill prints a stage skill with plugin root and arguments substituted', ()
 test('run records exit codes; verify-report generates verification.md; a hand-written pass does not count', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   write('.sdlc/changes/tiny/verification.md', '---\nresult: pass\n---\n')
-  assert.match(run(['status']).stdout, /next: \/sdlc:verify tiny/)
+  assert.match(run(['status']).stdout, /next: \/sdlc:test tiny/)
 
   const red = run(['run', '--expect-fail', '--', 'node -e "process.exit(3)"'])
   assert.equal(red.code, 0)
@@ -338,10 +348,10 @@ test('run records exit codes; verify-report generates verification.md; a hand-wr
   run(['run', '--', TOGGLE])
   run(['verify-report', 'tiny'])
   assert.match(report(), /result: pass/)
-  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
+  assert.match(run(['status']).stdout, /next: \/sdlc:sensors tiny/)
 
   run(['run', '--', 'node -e "process.exit(1)"'])
-  assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/, 'runs appended after the report do not invalidate it')
+  assert.match(run(['status']).stdout, /next: \/sdlc:sensors tiny/, 'runs appended after the report do not invalidate it')
 })
 
 test('verification judges only the plan commands, ignoring gate rows and abandoned exploratory runs', () => {
@@ -360,7 +370,7 @@ test('a forged verification.md with runs: 0 does not make the change shippable',
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   const digest = crypto.createHash('sha256').update('').digest('hex').slice(0, 16)
   write('.sdlc/changes/tiny/verification.md', `---\ngenerated: sdlc\nresult: pass\nruns: 0\ndigest: ${digest}\n---\n`)
-  assert.match(run(['status']).stdout, /next: \/sdlc:verify tiny/)
+  assert.match(run(['status']).stdout, /next: \/sdlc:test tiny/)
 })
 
 test('run rejects a slug with no change folder and creates nothing', () => {
@@ -558,6 +568,7 @@ test('I3: ship ratchets a known-red full command that now passes and commits the
   git('commit', '-qm', 'cfg')
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write('src/app.js', 'x\n')
   write('.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   const shipped = run(['ship', 'tiny', '--message', 'chore: tiny'])

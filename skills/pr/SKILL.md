@@ -1,5 +1,5 @@
 ---
-name: ship
+name: pr
 description: Ship a verified, reviewed change - scope-drift gate against the plan, commit on a branch, and open a PR that links the change's artifacts. Merging stays with humans and branch protection.
 argument-hint: <slug>
 effort: low

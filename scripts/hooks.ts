@@ -2,9 +2,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix, activeSlug, loadChange, nextCommand,
+  ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
   planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
+import { activeSlug, loadChange, nextCommand } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'

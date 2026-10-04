@@ -5,8 +5,9 @@ import { execFileSync } from 'node:child_process'
 import { parseRules } from './model.ts'
 import {
   ROOT, SDLC, APPROVALS, USAGE, MIN_SAMPLE, exists, read, frontmatter, readJsonl, git, fail, out, optString, toPosix,
-  listChanges, loadChange, type Args, type Approval, type Change, type UsageRow,
+  listChanges, type Args, type Approval, type Change, type UsageRow,
 } from './core.ts'
+import { loadChange } from './graph.ts'
 
 type Metric = { value: number | null; n: number; note?: string; [extra: string]: unknown }
 type PullRequest = {

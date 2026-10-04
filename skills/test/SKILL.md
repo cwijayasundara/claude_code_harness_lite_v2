@@ -1,5 +1,5 @@
 ---
-name: verify
+name: test
 description: Independent verification of a change by the sdlc:verifier agent - runs the plan's verification commands and writes verification.md with real output. One repair round at most.
 argument-hint: <slug>
 effort: low

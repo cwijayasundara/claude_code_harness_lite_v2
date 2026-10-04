@@ -74,7 +74,7 @@ test('seeded: a 700-line diff warns at Stop and blocks in CI', () => {
 test('seeded: a hand-written passing verification.md does not make a change shippable', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   write(repo, '.sdlc/changes/xx/verification.md', '---\nresult: pass\n---\n')
-  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:verify xx/)
+  assert.match(sdlc(repo, ['status']).stdout, /next: \/sdlc:test xx/)
 })
 
 test('seeded: a B-number with no test blocks at ship', () => {
