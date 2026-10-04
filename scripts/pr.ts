@@ -13,6 +13,7 @@ import { branchDiff, showAt } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { formatFindings, SENSOR_NAMES, type SensorConfig } from './model.ts'
 import { appendEvent, block, unblock, readRatchet } from './ratchet.ts'
+import { runQuality } from './quality.ts'
 import { renderScorecard } from './scorecard.ts'
 
 type ShippedRepo = { name: string; branch: string; commit: string }
@@ -100,6 +101,13 @@ export function cmdPr(args: Args): void {
   const sensorsBefore = read(path.join(SDLC, 'sensors.json'))
   const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })
   const ratcheted = read(path.join(SDLC, 'sensors.json')) !== sensorsBefore
+  // Defence in depth: re-run the quality comparison (the base counts are cached per base SHA) so a sensors round
+  // that was not really measured cannot let a lint or quality regression ship. No round is recorded.
+  if (Object.values(config.quality).some(Boolean)) {
+    const q = runQuality(slug).blocks.filter(b => b.sensor.startsWith('quality.') || b.sensor === 'invariant')
+    gate.blocks.push(...q)
+    gate.findings.push(...q)
+  }
   if (errors.length || gate.blocks.length) {
     const configFindings = errors.map(e => `[config] ${e}`)
     const q = (f: string): string => (/\s/.test(f) ? JSON.stringify(f) : f)
