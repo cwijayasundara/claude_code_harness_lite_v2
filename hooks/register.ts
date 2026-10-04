@@ -126,7 +126,7 @@ export const register: Register = on => {
       await $.command.register({ name: 'sdlc-status', description: 'sdlc: where every change stands and the next command (no model call)', immediate: true })
       // A standalone repo ships its own human-only /sdlc-approve and /sdlc-waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/sdlc-approve/SKILL.md'))) {
-        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|impact|budget|tier>' })
+        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|impact|budget|tier S|M|L [type]>' })
         await $.command.register({ name: 'sdlc-waive', description: 'sdlc: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
       await $.command.register({ name: 'sdlc-sensors', description: 'sdlc: what the sensors found, known-red and waivers (no model call)', immediate: true })
@@ -149,11 +149,12 @@ export const register: Register = on => {
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') {
       return { text: 'sdlc-approve runs only when the person types it.' }
     }
-    const [slug, stage] = e.args.trim().split(/\s+/)
-    if (!slug || !stage) return { text: 'usage: /sdlc-approve <slug> <intent|spec|plan|impact|budget|tier>' }
-    const r = await $.process.run(sdlc($, ['approve', slug, stage]), { env: { SDLC_HUMAN: '1' } })
+    const [slug, stage, ...more] = e.args.trim().split(/\s+/)
+    const rest = stage === 'tier' ? more.slice(0, 2) : []
+    if (!slug || !stage) return { text: 'usage: /sdlc-approve <slug> <intent|spec|plan|impact|budget|tier S|M|L [type]>' }
+    const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
-    return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${stage}.`] : undefined }
+    return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
   })
 
   on('command.run', { command: 'sdlc-waive' }, async ($, e) => {

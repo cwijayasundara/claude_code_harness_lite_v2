@@ -43,7 +43,7 @@ test('editing intent.md from tier L to M does not remove the plan gate or enable
 
 test('status warns when intent.md differs from the recorded tier', () => {
   setIntent('big', 'tier: L', 'tier: M')
-  assert.match(sdlc(repo, ['status']).stdout, /warn: big: tier changed in intent\.md \(L → M\): \/sdlc-approve big tier to accept/)
+  assert.match(sdlc(repo, ['status']).stdout, /warn: big: tier changed in intent\.md \(L → M\): \/sdlc-approve big tier M feature to accept/)
 })
 
 test('a change folder with no recorded tier is gated as L, whatever intent.md says', () => {
@@ -58,15 +58,16 @@ test('a change folder with no recorded tier is gated as L, whatever intent.md sa
 
 test('approve tier is human-only', () => {
   setIntent('big', 'tier: L', 'tier: M')
-  const r = sdlc(repo, ['approve', 'big', 'tier'])
+  const r = sdlc(repo, ['approve', 'big', 'tier', 'M'])
   assert.equal(r.code, 3)
   assert.equal(ratchetJson('big').tier, 'L')
 })
 
 test('a person approving tier records the lowered tier and gating follows it', () => {
   setIntent('big', 'tier: L', 'tier: M')
-  const r = sdlc(repo, ['approve', 'big', 'tier'], { env: { SDLC_HUMAN: '1' } })
+  const r = sdlc(repo, ['approve', 'big', 'tier', 'M'], { env: { SDLC_HUMAN: '1' } })
   assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /L → M/)
   assert.equal(ratchetJson('big').tier, 'M')
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8'), /"kind":"tier".*L → M/)
   assert.equal(status().changes[0]?.tier, 'M')
@@ -87,4 +88,26 @@ test('type greenfield recorded cannot be dropped by editing intent.md', () => {
   sdlc(repo, ['new', 'gf', '--type', 'greenfield', '--tier', 'S'])
   setIntent('gf', 'type: greenfield', 'type: chore')
   assert.match(sdlc(repo, ['status']).stdout, /gf\s+greenfield/)
+})
+
+test('approve tier refuses unless intent.md currently says exactly the stated tier and type, and records the stated values', () => {
+  const human = { env: { SDLC_HUMAN: '1' } }
+  setIntent('big', 'tier: L', 'tier: M')
+  for (const args of [['S'], ['L'], ['M', 'chore'], ['X'], []]) {
+    assert.notEqual(sdlc(repo, ['approve', 'big', 'tier', ...args], human).code, 0, args.join(' '))
+    assert.equal(ratchetJson('big').tier, 'L')
+  }
+  assert.equal(sdlc(repo, ['approve', 'big', 'tier', 'M', 'feature'], human).code, 0)
+  assert.deepEqual([ratchetJson('big').tier, ratchetJson('big').type], ['M', 'feature'])
+})
+
+test('with no recorded type, intent.md cannot pick a shorter path: the type is feature', () => {
+  const r = ratchetJson('big')
+  delete r.type
+  fs.writeFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), JSON.stringify(r))
+  setIntent('big', 'type: feature', 'type: chore')
+  assert.equal(status().step.verdict, 'human')
+  assert.equal(status().step.node, 'plan')
+  assert.notEqual(preEdit('src/a.js'), 'allow')
+  assert.match(sdlc(repo, ['status']).stdout, /type changed in intent\.md \(feature → chore\)/)
 })

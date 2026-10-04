@@ -130,16 +130,20 @@ function cmdApprove(args: Args): void {
     return out(`unblocked ${slug}: ${node} gets a fresh budget ($${spent.toFixed(2)} credited)`)
   }
   if (stage === 'tier') {
-    // The person accepts intent.md's tier and type (lowering them too); the graph then gates on what is recorded here.
-    if (!exists(path.join(CHANGES, slug, 'intent.md'))) fail(`nothing to approve: ${slug}/intent.md does not exist`)
+    // The person states the target; it is recorded only if intent.md says exactly that right now, so an edit made after
+    // the person read it cannot be approved by accident. The recorded values are the person's arguments, never re-read.
+    const [tier, type] = words(args).slice(2)
+    if (!isTier(tier) || (type !== undefined && !isChangeType(type))) fail('usage: approve <slug> tier <S|M|L> [<type>]')
     const intent = frontmatter(read(path.join(CHANGES, slug, 'intent.md'))).data
+    const says = { tier: isTier(intent.tier) ? intent.tier : 'M', type: isChangeType(intent.type) ? intent.type : 'feature' }
+    if (says.tier !== tier || (type !== undefined && says.type !== type)) fail(`not approving: ${slug}/intent.md now says tier ${says.tier}, type ${says.type}; you approved ${tier}${type ? ` ${type}` : ''}. Read it again and run /sdlc-approve ${slug} tier <tier> [<type>]`)
     const r = readRatchet(slug)
     const was = { tier: r.tier ?? 'unrecorded', type: r.type ?? 'unrecorded' }
-    r.tier = isTier(intent.tier) ? intent.tier : 'M'
-    r.type = isChangeType(intent.type) ? intent.type : 'feature'
+    r.tier = tier
+    r.type = type ?? (isChangeType(r.type) ? r.type : 'feature')
     writeRatchet(slug, r)
-    appendEvent(slug, { node: 'any', verdict: 'approved', kind: 'tier', reason: `tier ${was.tier} → ${r.tier}, type ${was.type} → ${r.type}; a person accepted intent.md` })
-    return out(`approved ${slug} tier: now ${r.tier} ${r.type}. Next: ${nextCommand(loadChange(slug))}`)
+    appendEvent(slug, { node: 'any', verdict: 'approved', kind: 'tier', reason: `tier ${was.tier} → ${r.tier}, type ${was.type} → ${r.type}; a person accepted it` })
+    return out(`approved ${slug} tier: ${was.tier} → ${r.tier}, type ${was.type} → ${r.type}. Next: ${nextCommand(loadChange(slug))}`)
   }
   const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
   const file = path.join(CHANGES, slug, artifact ?? '')

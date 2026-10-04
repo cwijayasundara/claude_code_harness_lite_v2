@@ -139,6 +139,11 @@ describe('sdlc mod', () => {
     expect(approved.text).toContain('approved add-login plan')
     const run = world.runs.find(r => r.argv.includes('approve'))
     expect(run?.env).toEqual({ SDLC_HUMAN: '1' })
+
+    await $.command.run(command('sdlc-approve', 'add-login tier M feature'))
+    const tier = world.runs.filter(r => r.argv.includes('approve')).at(-1)
+    expect(tier?.argv.slice(-4)).toEqual(['add-login', 'tier', 'M', 'feature'])
+    expect(tier?.env).toEqual({ SDLC_HUMAN: '1' })
   })
 
   test('a main turn logs its token usage and the cost delta from the session ledger', async ($, on) => {

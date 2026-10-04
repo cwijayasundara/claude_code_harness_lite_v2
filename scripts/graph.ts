@@ -41,28 +41,30 @@ const RANK: Record<Tier, number> = { S: 0, M: 1, L: 2 }
 
 // intent.md is model-writable, so the recorded tier and type (ratchet.json, written by sdlc) bound it from below: the stricter wins.
 // No recorded tier (a legacy or hand-made change folder) fails closed to L. Greenfield, once either side says it, stays greenfield;
-// any other recorded type holds, so intent.md cannot swap a gated type for a shorter path.
+// any other recorded type holds, and with none recorded the type is feature, so intent.md never picks a shorter path.
 export function effective(slug: string, intent: Record<string, string>): { type: ChangeType; tier: Tier } {
   const r = readRatchet(slug)
   const iType: ChangeType = isChangeType(intent.type) ? intent.type : 'feature'
   const iTier: Tier = isTier(intent.tier) ? intent.tier : 'M'
   const rTier: Tier = isTier(r.tier) ? r.tier : 'L'
-  const type: ChangeType = iType === 'greenfield' ? iType : isChangeType(r.type) ? r.type : iType
+  const type: ChangeType = iType === 'greenfield' ? iType : isChangeType(r.type) ? r.type : 'feature'
   return { type, tier: RANK[iTier] > RANK[rTier] ? iTier : rTier }
 }
 
-// Warns when intent.md names another tier or type than the one recorded; /sdlc-approve <slug> tier accepts it.
+// Warns when intent.md names another tier or type than the one in force; the message carries the exact command that accepts it.
 export function tierDrift(slug: string): string | null {
   if (isLegacyShipped(slug)) return null
   const r = readRatchet(slug)
   const intent = frontmatter(read(path.join(CHANGES, slug, 'intent.md'))).data
-  const iType = isChangeType(intent.type) ? intent.type : 'feature'
-  const iTier = isTier(intent.tier) ? intent.tier : 'M'
-  if (!isTier(r.tier)) return `no recorded tier, so gated as L: /sdlc-approve ${slug} tier to record intent.md's (${iTier})`
+  const iType: ChangeType = isChangeType(intent.type) ? intent.type : 'feature'
+  const iTier: Tier = isTier(intent.tier) ? intent.tier : 'M'
+  const now = effective(slug, intent)
+  const accept = `/sdlc-approve ${slug} tier ${iTier} ${iType} to accept`
+  if (!isTier(r.tier)) return `no recorded tier, so gated as L: ${accept}`
   const changed: [string, string][] = []
   if (iTier !== r.tier) changed.push(['tier', `${r.tier} → ${iTier}`])
-  if (isChangeType(r.type) && iType !== r.type) changed.push(['type', `${r.type} → ${iType}`])
-  return changed.length ? `${changed.map(c => c[0]).join(' and ')} changed in intent.md (${changed.map(c => c[1]).join(', ')}): /sdlc-approve ${slug} tier to accept` : null
+  if (iType !== now.type) changed.push(['type', `${now.type} → ${iType}`])
+  return changed.length ? `${changed.map(c => c[0]).join(' and ')} changed in intent.md (${changed.map(c => c[1]).join(', ')}): ${accept}` : null
 }
 
 export function loadChange(slug: string): Change {

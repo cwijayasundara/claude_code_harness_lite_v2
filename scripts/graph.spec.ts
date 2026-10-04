@@ -28,7 +28,7 @@ test('gates come from sensors.json: tier M gated on plan when configured', () =>
 test('the next command names the renamed skills', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
-  write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: { build: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {} }))
+  write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: { build: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {} }))
   assert.match(status().changes[0]?.command ?? '', /\/sdlc:sensors tiny/)
 })
 
@@ -152,6 +152,6 @@ test('step reports how many build slices are done, so the driver sees partial pr
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   assert.equal(stepOf('tiny').progress, 0)
   const done = { rounds: 0, hashes: [], status: 'done' }
-  write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: {}, slices: { 1: done, 2: { ...done, status: 'open' }, 3: done }, baseline: {} }))
+  write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: {}, slices: { 1: done, 2: { ...done, status: 'open' }, 3: done }, baseline: {} }))
   assert.equal(stepOf('tiny').progress, 2)
 })
