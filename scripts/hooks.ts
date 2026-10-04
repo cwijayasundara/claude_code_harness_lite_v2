@@ -94,6 +94,17 @@ const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
+// git can write a file (--output and its abbreviations, -o) or run a program (--ext-diff, --textconv) without a shell redirect.
+const abbreviates = (tok: string, full: string, min: number): boolean => tok.length >= min && full.startsWith(tok)
+function gitWrites(part: string): boolean {
+  if (!/^\s*git\b/.test(part)) return false
+  return part.trim().split(/\s+/).some(tok => {
+    const name = tok.split('=')[0] ?? ''
+    if (/^-[^-]*o/.test(tok)) return true
+    return name.startsWith('--') && (abbreviates(name, '--output', 3) || abbreviates(name, '--ext-diff', 4) || abbreviates(name, '--textconv', 4))
+  })
+}
+
 // Once a command mentions .sdlc anywhere (a cd into it), a bare pr.md, verification.md or impact.json names evidence too.
 const BARE_EVIDENCE = /(?<![\w.-])(?:pr\.md|verification\.md|impact\.json)(?![\w.-])/
 function rawSafe(cmd: string, ci: boolean): boolean {
@@ -103,7 +114,10 @@ function rawSafe(cmd: string, ci: boolean): boolean {
   if (inSdlc && parts.some(part => /[*?[\]{}$`]/.test(part) && WRITES.test(part))) return false
   return parts
     .filter(part => evidencePath(part, ci, true) || (inSdlc && flagged(BARE_EVIDENCE, ci).test(part)))
-    .every(part => SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')))
+    .every(part => {
+      const bare = part.replace(/^\s*git\s+commit\b[^]*?-m\s+(["']).*?\1/, '')
+      return SAFE_EVIDENCE_COMMAND.test(part) && !WRITES.test(bare) && !gitWrites(bare)
+    })
 }
 
 // Best-effort (spec v0.3 §5): CI is the trust boundary. A command naming evidence may only stage, inspect or view it.

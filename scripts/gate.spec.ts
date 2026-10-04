@@ -492,3 +492,18 @@ test('a turn that only writes harness files (onboarding) opens no ad-hoc change'
   stop()
   assert.ok(fs.readdirSync(path.join(repo, '.sdlc/changes')).some(d => d.startsWith('adhoc-')), 'real source work still opens one')
 })
+
+test('git --output (any abbreviation), -o, --ext-diff and --textconv count as writes to evidence', () => {
+  for (const c of [
+    'git log --output=.sdlc/changes/x/ratchet.json',
+    "git log -1 '--format=tformat:%x7b%x7d' --output=.sdlc/changes/x/ratchet.json",
+    'git diff --outp=.sdlc/approvals.jsonl',
+    'git diff --o .sdlc/approvals.jsonl',
+    'git diff --ou=.sdlc/approvals.jsonl',
+    'git show HEAD -o .sdlc/changes/x/runs.jsonl',
+    'git show HEAD --ext-diff .sdlc/approvals.jsonl',
+    'git diff --textconv .sdlc/approvals.jsonl',
+  ]) assert.equal(isSafeEvidenceCommand(c), false, c)
+  for (const c of ['git log --oneline -- .sdlc', 'git diff --no-ext-diff -- .sdlc/approvals.jsonl', 'git show HEAD:.sdlc/approvals.jsonl', 'git add .sdlc/approvals.jsonl'])
+    assert.equal(isSafeEvidenceCommand(c), true, c)
+})
