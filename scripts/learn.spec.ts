@@ -2,6 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { diagnose, formatReport, LEARN, type ChangeEvidence } from './learn.ts'
 import type { FileDiff } from './model.ts'
+import fs from 'node:fs'
+import path from 'node:path'
+import { makeRepo, write, gitIn, sdlc, hook } from './testkit.ts'
 
 const fd = (file: string, lines: string[]): FileDiff => ({ file, status: 'M', added: lines.map((text, i) => ({ n: i + 1, text })), removed: [] })
 const finding = (text: string, category = 'security') => ({ severity: 'high', category, text })
@@ -78,4 +81,82 @@ test('formatReport names each proposal with its replay status and the promote co
   assert.match(text, /learned-security \[rule-add, risk low\] replay pass/)
   assert.match(text, /\/rig-approve <id> learn/)
   assert.match(formatReport(diagnose([], [])), /0 shipped change\(s\)/)
+})
+
+// A shipped change: one commit with the code, then one that adds ship.json (whose `base` is the commit before the code).
+function seedShipped(repo: string, slug: string, o: { added: string[]; review?: string; ship?: unknown; events?: string }): void {
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  write(repo, `src/${slug}.js`, o.added.join('\n') + '\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', `feat ${slug}`)
+  write(repo, `.sdlc/changes/${slug}/ship.json`, JSON.stringify(o.ship ?? { base }))
+  if (o.review) write(repo, `.sdlc/changes/${slug}/review.md`, o.review)
+  if (o.events) write(repo, `.sdlc/changes/${slug}/events.jsonl`, o.events)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', `ship ${slug}`)
+}
+const EVAL_REVIEW = '- [severity: high] [category: security] avoid `eval(` on user input\n'
+const learnRepo = (evalChanges: number, cleanChanges: number): string => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  for (let i = 1; i <= evalChanges; i++) seedShipped(repo, `bad-${i}`, { added: ['const x = eval(input)'], review: EVAL_REVIEW })
+  for (let i = 1; i <= cleanChanges; i++) seedShipped(repo, `ok-${i}`, { added: ['const x = 1'] })
+  return repo
+}
+
+test('learn finds a recurring review token, proves it on the stored diffs and writes proposals.json', () => {
+  const repo = learnRepo(3, 7)
+  const r = sdlc(repo, ['learn'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /10 shipped change\(s\), 10 with a rebuilt diff/)
+  assert.match(r.stdout, /learned-security \[rule-add, risk low\] replay pass/)
+  const file = path.join(repo, '.sdlc/learn/proposals.json')
+  const first = fs.readFileSync(file, 'utf8')
+  assert.equal(JSON.parse(first).proposals[0].edit.pattern, 'eval\\(')
+  sdlc(repo, ['learn'])
+  assert.equal(fs.readFileSync(file, 'utf8'), first)
+  assert.equal(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/learn'), '')
+  assert.match(sdlc(repo, ['learn', 'show']).stdout, /learned-security/)
+})
+
+test('with fewer than ten shipped changes the proposal is listed but not promotable', () => {
+  const repo = learnRepo(3, 2)
+  assert.match(sdlc(repo, ['learn']).stdout, /replay insufficient-holdout/)
+  assert.match(sdlc(repo, ['learn', '--min-changes', '5']).stdout, /replay pass/)
+})
+
+test('a repo with no shipped change says so and exits 0', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const r = sdlc(repo, ['learn'])
+  assert.equal(r.code, 0)
+  assert.match(r.stdout, /0 shipped change\(s\)/)
+})
+
+test('a change with no usable base, a gone commit, or malformed evidence is skipped, never a crash', () => {
+  const repo = learnRepo(0, 0)
+  seedShipped(repo, 'no-base', { added: ['x'], ship: {} })
+  seedShipped(repo, 'gone-base', { added: ['x'], ship: { base: '0000000000000000000000000000000000000000' } })
+  seedShipped(repo, 'garbled', { added: ['x'], review: '- [severity: high [category: oops\n\0', events: '{not json\n' })
+  const r = sdlc(repo, ['learn'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /skipped: gone-base, no-base/)
+  assert.doesNotMatch(r.stdout, /garbled/)
+})
+
+test('a regex-metacharacter token is escaped into a valid pattern', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  for (const s of ['a', 'b']) seedShipped(repo, `m-${s}`, { added: ['run(a+b)[0]'], review: '- [severity: high] [category: style] never write `run(a+b)[0]`\n' })
+  const p = JSON.parse((sdlc(repo, ['learn', '--min-changes', '2']), fs.readFileSync(path.join(repo, '.sdlc/learn/proposals.json'), 'utf8'))).proposals[0]
+  assert.equal(p.edit.pattern, 'run\\(a\\+b\\)\\[0\\]')
+  assert.equal(p.replay.status, 'pass')
+})
+
+test('the model cannot write proposals.json', () => {
+  const repo = learnRepo(0, 0)
+  const edit = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/learn/proposals.json') } }).stdout)
+  assert.equal(edit.hookSpecificOutput.permissionDecision, 'deny')
+  const bash = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: `echo '{}' > .sdlc/learn/proposals.json` } }).stdout)
+  assert.equal(bash.hookSpecificOutput.permissionDecision, 'deny')
 })

@@ -127,7 +127,7 @@ export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boole
 
 // Edit/Write: the target's real path (symlinked parents resolved) must not be evidence inside the real .sdlc.
 // A project's own data/approvals.jsonl is fine.
-const EVIDENCE_IN_SDLC = /^(?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|changes\/[^/]+\/(?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))$/
+const EVIDENCE_IN_SDLC = /^(?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|learn\/proposals\.json|changes\/[^/]+\/(?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))$/
 function realPath(p: string): string {
   let dir = p
   const rest: string[] = []

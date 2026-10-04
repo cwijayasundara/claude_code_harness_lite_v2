@@ -23,6 +23,7 @@ import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
+import { cmdLearn } from './learncli.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 import { cmdQuality } from './quality.ts'
@@ -349,6 +350,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   ratchet: cmdRatchet,
   waive: cmdWaive,
   sensors: () => cmdSensors(),
+  learn: cmdLearn,
   'impact-status': cmdImpactStatus,
 }
 

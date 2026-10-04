@@ -249,8 +249,8 @@ export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '-
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands. Only paths under .sdlc/ count,
 // so a project's own results/runs.jsonl is not evidence; EVIDENCE_NAME_RE catches bare names once a command names .sdlc.
-export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
-export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|ratchet\.json|events\.jsonl|ship\.json/
+export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|learn[\\/]proposals\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
+export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|ratchet\.json|events\.jsonl|ship\.json|proposals\.json/
 
 // The plan's ## Verification bullets, split into required commands and ignored bullets (never dropped silently).
 // A command is the first backticked span in command position: right at the bullet start, or right after the
@@ -353,7 +353,7 @@ export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
 export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
 export const skillRef = (name: string): string => `/rig${IS_VENDORED ? '-' : ':'}${name}`
 export const agentRef = (name: string): string => `rig${IS_VENDORED ? '-' : ':'}${name}`
-const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json']
+const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json', 'learn/']
 
 export function ensureGitignore(): void {
   if (!exists(SDLC)) return
