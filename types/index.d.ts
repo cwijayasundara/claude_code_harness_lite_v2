@@ -9,10 +9,11 @@ export type Band = {
   contextTokens: number
   sessionUsd: number
   sensors: SensorBand | null
+  story?: Story | null
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    sdlc: { band: Band | null; isHidden: boolean; paneText: string }
+    sdlc: { band: Band | null; isHidden: boolean; paneText: string; metricsText: string }
   }
 }

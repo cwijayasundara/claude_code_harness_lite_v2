@@ -1,6 +1,8 @@
 // Tests for the sdlc mod (hooks/register.ts). Run with: claude plugin test .
 import { describe, expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { storyText, storyPaneText } from '../hooks/band'
+import type { Story } from '../types'
 
 const SESSION = { surface: 'terminal' as const, isInteractive: true, cwd: '/work' }
 
@@ -17,6 +19,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   const world = {
     commands: [] as string[], runs: [] as Run[], toasts: [] as string[], notices: [] as string[], costUsd, contextTokens,
     sensors: null as unknown,
+    step: { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '/sdlc:build add-login', round: 1 } as unknown,
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
     standalone: false,
@@ -30,7 +33,10 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     world.runs.push({ argv: e.argv, env: (e as { init?: { env?: Record<string, string> } }).init?.env })
     const sub = e.argv[3]
     const stdout =
-      sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors })
+      sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
+        story: { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
+        step: world.step })
+      : sub === 'metrics' ? 'value/cost 9.5x'
       : sub === 'impact-status' ? JSON.stringify(world.impact)
       : sub === 'check-file' ? JSON.stringify(world.fileFindings)
       : sub === 'sensors' ? 'last gate: 0 block(s)'
@@ -60,14 +66,14 @@ describe('sdlc mod', () => {
   test('session start registers the zero-token commands', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-sensors', 'sdlc-status', 'sdlc-waive'])
+    expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-metrics-pane', 'sdlc-sensors', 'sdlc-status', 'sdlc-story', 'sdlc-waive'])
   })
 
   test('in a standalone repo its own approve and waive skills win; status and sensors stay', async ($, on) => {
     const world = worldOf(on)
     world.standalone = true
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['sdlc-sensors', 'sdlc-status'])
+    expect(world.commands.sort()).toEqual(['sdlc-metrics-pane', 'sdlc-sensors', 'sdlc-status', 'sdlc-story'])
   })
 
   test('approve runs the script as the human only when the person typed it', async ($, on) => {
@@ -171,6 +177,55 @@ describe('sdlc mod', () => {
     const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-sensors', props: { title: 'sdlc sensors', isFocused: false, bodyColumns: 120, placement: 'inline', scroll: { offset: 0, bodyRows: 10 }, view: {} }, viewport: { columns: 120, rows: 30 } })
     expect(JSON.stringify(await ui.drawn())).toContain('last gate: 0 block(s)')
     await ui.unmount()
+  })
+
+  const bandProps = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 160, scroll: { offset: 0, bodyRows: 5 }, view: {} }
+  const paneProps = { title: 'x', isFocused: false, bodyColumns: 120, placement: 'inline' as const, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+
+  test('the band shows the story: node, round, tokens, cost and estimated value', async ($, on) => {
+    worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: bandProps, viewport: { columns: 160, rows: 30 } })
+    const text = JSON.stringify(await ui.drawn())
+    for (const part of ['build', '1/2', '412k tok', '$2.16', 'value ≈ $1,200 (est.)', 'ctx']) expect(text).toContain(part)
+    await ui.unmount()
+  })
+
+  test('/sdlc-story opens the story pane with cost per node, budget and autonomy', async ($, on) => {
+    const world = worldOf(on)
+    await $.session.start(SESSION)
+    expect(world.commands).toContain('sdlc-story')
+    await $.command.run(command('sdlc-story'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-story', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    const text = JSON.stringify(await ui.drawn())
+    expect(text).toContain('build  ')
+    expect(text).toContain('auto-approved 14')
+    expect(text).toContain('budget build $1.50/$6')
+    await ui.unmount()
+  })
+
+  test('/sdlc-metrics-pane shows the metrics report', async ($, on) => {
+    const world = worldOf(on)
+    await $.session.start(SESSION)
+    expect(world.commands).toContain('sdlc-metrics-pane')
+    await $.command.run(command('sdlc-metrics-pane'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'sdlc-metrics', props: paneProps, viewport: { columns: 120, rows: 30 } })
+    expect(JSON.stringify(await ui.drawn())).toContain('value/cost 9.5x')
+    await ui.unmount()
+  })
+
+  test('storyText and storyPaneText are pure and label value as an estimate', () => {
+    const s: Story = { slug: 'a', node: 'test', verdict: 'human', round: 2, cap: 3, tokens: 900, tokensByNode: {}, budgetByNode: { test: { spent: 0.5, cap: 2 } }, usd: 0.5, usdByNode: { test: 0.5 }, valueUsd: 0, valueHours: 0, autoApproved: 0, escalations: 1, levels: 'unit', sensors: 'ok' }
+    expect(storyText(null)).toBe('')
+    expect(storyText(s)).toBe(' · test ⟲2/3 ⏸ gate · 900 tok · $0.50 · value ≈ $0.00 (est.)')
+    expect(storyText({ ...s, node: null, cap: 0, verdict: 'ready' })).toContain('done ✓ ready')
+    expect(storyPaneText(null)).toBe('no active story')
+    const pane = storyPaneText(s)
+    expect(pane).toContain('estimate')
+    expect(pane).toContain('budget test $0.50/$2')
+    expect(pane).toContain('escalations 1')
   })
 
   test('an impact hold: Approve impact runs approve as the human, Cancel denies', async ($, on) => {

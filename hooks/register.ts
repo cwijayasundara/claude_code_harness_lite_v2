@@ -12,7 +12,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Band, Status } from '../types'
 import { sdlcArgv, parseStatus } from './shared'
-import { PANE_ID, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
+import { PANE_ID, STORY_PANE, METRICS_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 
 const NUDGE_EVERY_PROMPTS = 5
@@ -20,6 +20,7 @@ const NUDGE_EVERY_PROMPTS = 5
 // Same plugin and key as band.tsx's atoms: the loader reads state refs only where they are declared, so each file declares its own.
 const band = atom({ plugin: 'sdlc', key: 'band' } as const, null as Band | null)
 const paneText = atom({ plugin: 'sdlc', key: 'paneText' } as const, '')
+const metricsText = atom({ plugin: 'sdlc', key: 'metricsText' } as const, '')
 
 let lastCostUsd = 0
 let warnedSoft = false
@@ -45,7 +46,7 @@ async function refreshBand($: EngineInterface): Promise<void> {
   const status = await statusJson($)
   const { change, stage } = stageOf(status)
   const session = await $.session.usage()
-  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null }
+  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null }
   await update($, band, () => value)
 }
 
@@ -61,6 +62,8 @@ export const register: Register = on => {
         await $.command.register({ name: 'sdlc-waive', description: 'sdlc: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
       await $.command.register({ name: 'sdlc-sensors', description: 'sdlc: what the sensors found, known-red and waivers (no model call)', immediate: true })
+      await $.command.register({ name: 'sdlc-story', description: 'sdlc: the active story - node, rounds, cost by node, estimated value (no model call)', immediate: true })
+      await $.command.register({ name: 'sdlc-metrics-pane', description: 'sdlc: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) {
       $.ui.log(`could not register commands: ${String(err)}`)
     }
@@ -98,6 +101,19 @@ export const register: Register = on => {
     await update($, paneText, () => (r.stdout || r.stderr).trim())
     await $.ui.open({ id: PANE_ID, title: 'sdlc sensors' })
     return { text: (r.stdout || r.stderr).trim() }
+  })
+
+  on('command.run', { command: 'sdlc-story' }, async $ => {
+    await refreshBand($)
+    await $.ui.open({ id: STORY_PANE, title: 'sdlc story' })
+    return {}
+  })
+
+  on('command.run', { command: 'sdlc-metrics-pane' }, async $ => {
+    const r = await $.process.run(sdlc($, ['metrics']))
+    await update($, metricsText, () => (r.stdout || r.stderr).trim())
+    await $.ui.open({ id: METRICS_PANE, title: 'sdlc metrics' })
+    return {}
   })
 
   on('turn.start', async ($, e, next) => {
