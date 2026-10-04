@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
+  ROOT, SDLC, CHANGES, WAIVERS, planFiles, isPlanned, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
@@ -93,9 +93,19 @@ function logRuleFires(findings: Finding[], point: Point): void {
   }
 }
 
-function applyWaivers(findings: Finding[], slugs: string[]): CheckResult {
-  const waivers = readJsonl<Waiver>(WAIVERS).filter(w => slugs.includes(w.slug))
-  const waived = (f: Finding): boolean => waivers.some(w => w.sensor === f.sensor && (w.file === '*' || w.file === f.file))
+// At CI only a change the PR adds (its folder is absent in the base) can waive, and only inside its plan's files or its own folder:
+// an older change's wildcard waiver must not cover what a later PR does.
+function ciScope(slug: string, base: string | null | undefined): ((file: string | undefined) => boolean) | null {
+  if (!base || showAt(base, `.sdlc/changes/${slug}/intent.md`) !== null) return null
+  const patterns = exists(path.join(CHANGES, slug, 'plan.md')) ? planFiles(slug) : []
+  const folder = `.sdlc/changes/${slug}/`
+  return file => Boolean(file) && (String(file).startsWith(folder) || patterns.some(p => isPlanned(String(file), [p]) && !String(file).startsWith('.sdlc/')))
+}
+
+function applyWaivers(findings: Finding[], slugs: string[], ci?: { base: string | null | undefined }): CheckResult {
+  const scopes = new Map(slugs.map(s => [s, ci ? ciScope(s, ci.base) : () => true] as const))
+  const waivers = readJsonl<Waiver>(WAIVERS).filter(w => slugs.includes(w.slug) && scopes.get(w.slug) !== null)
+  const waived = (f: Finding): boolean => waivers.some(w => w.sensor === f.sensor && (w.file === '*' || w.file === f.file) && (scopes.get(w.slug) as (file: string | undefined) => boolean)(f.file))
   const kept = findings.filter(f => !waived(f))
   return { findings: kept, blocks: kept.filter(f => f.severity === 'block'), warns: kept.filter(f => f.severity === 'warn'), waived: findings.length - kept.length }
 }
@@ -299,7 +309,7 @@ export function runChecks(i: CheckInput): CheckResult {
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
   if (i.point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
-  const result = applyWaivers(findings, i.slugs)
+  const result = applyWaivers(findings, i.slugs, i.point === 'ci' ? { base: i.base } : undefined)
   logRuleFires(result.findings, i.point)
   return result
 }
