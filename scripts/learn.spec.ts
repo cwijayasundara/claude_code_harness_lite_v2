@@ -84,7 +84,7 @@ test('formatReport names each proposal with its replay status and the promote co
 })
 
 // A shipped change: one commit with the code, then one that adds ship.json (whose `base` is the commit before the code).
-function seedShipped(repo: string, slug: string, o: { added: string[]; review?: string; ship?: unknown; events?: string }): void {
+function seedShipped(repo: string, slug: string, o: { added: string[]; review?: string; ship?: unknown; events?: string; files?: Record<string, string> }): void {
   const base = gitIn(repo, 'rev-parse', 'HEAD')
   write(repo, `src/${slug}.js`, o.added.join('\n') + '\n')
   gitIn(repo, 'add', '-A')
@@ -92,6 +92,7 @@ function seedShipped(repo: string, slug: string, o: { added: string[]; review?: 
   write(repo, `.sdlc/changes/${slug}/ship.json`, JSON.stringify(o.ship ?? { base }))
   if (o.review) write(repo, `.sdlc/changes/${slug}/review.md`, o.review)
   if (o.events) write(repo, `.sdlc/changes/${slug}/events.jsonl`, o.events)
+  for (const [name, text] of Object.entries(o.files ?? {})) write(repo, `.sdlc/changes/${slug}/${name}`, text)
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', `ship ${slug}`)
 }
@@ -117,6 +118,17 @@ test('learn finds a recurring review token, proves it on the stored diffs and wr
   assert.equal(fs.readFileSync(file, 'utf8'), first)
   assert.equal(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/learn'), '')
   assert.match(sdlc(repo, ['learn', 'show']).stdout, /learned-security/)
+})
+
+test('findings in review-slice-N.md and review-pr.md count when review.md is missing, de-duplicated per change', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  for (let i = 1; i <= 3; i++) seedShipped(repo, `bad-${i}`, { added: ['const x = eval(input)'], files: { 'review-slice-1.md': `verdict: changes-needed\n${EVAL_REVIEW}`, 'review-pr.md': `verdict: pass\n${EVAL_REVIEW}` } })
+  for (let i = 1; i <= 7; i++) seedShipped(repo, `ok-${i}`, { added: ['const x = 1'] })
+  const r = sdlc(repo, ['learn'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stdout, /learned-security \[rule-add, risk low\] replay pass/)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/learn/proposals.json'), 'utf8')).proposals[0].evidence, ['bad-1', 'bad-2', 'bad-3'])
 })
 
 test('with fewer than ten shipped changes the proposal is listed but not promotable', () => {

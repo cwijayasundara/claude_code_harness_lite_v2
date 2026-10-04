@@ -20,7 +20,9 @@ const TOKEN = /`([^`\n]{2,40})`/g
 export const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const slugify = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
 const ruleId = (category: string): string => `learned-${slugify(category) || 'finding'}`
-const byId = (a: Proposal, b: Proposal): number => b.evidence.length - a.evidence.length || a.id.localeCompare(b.id)
+// Plain code-unit order: localeCompare depends on the machine's locale and would make proposals.json differ between machines.
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+const byId = (a: Proposal, b: Proposal): number => b.evidence.length - a.evidence.length || cmp(a.id, b.id)
 
 // A category recurs when one backticked token shows up in its findings in at least minClusterChanges changes.
 // Exact-token matching only; the person can edit the pattern before promoting it.
@@ -39,8 +41,8 @@ function ruleCandidates(corpus: ChangeEvidence[], known: Set<string>): { categor
     }
   }
   const found: { category: string; token: string; slugs: string[] }[] = []
-  for (const [category, byToken] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
-    const best = [...byToken].filter(([, s]) => s.size >= LEARN.minClusterChanges).sort(([ta, sa], [tb, sb]) => sb.size - sa.size || ta.localeCompare(tb))[0]
+  for (const [category, byToken] of [...seen].sort(([a], [b]) => cmp(a, b))) {
+    const best = [...byToken].filter(([, s]) => s.size >= LEARN.minClusterChanges).sort(([ta, sa], [tb, sb]) => sb.size - sa.size || cmp(ta, tb))[0]
     if (best && !known.has(ruleId(category))) found.push({ category, token: best[0], slugs: [...best[1]].sort() })
   }
   return found
@@ -91,7 +93,7 @@ function tuneProposals(corpus: ChangeEvidence[]): Proposal[] {
 }
 
 export function diagnose(input: ChangeEvidence[], knownRuleIds: string[], minChanges = LEARN.minChanges): LearnReport {
-  const corpus = [...input].sort((a, b) => a.slug.localeCompare(b.slug))
+  const corpus = [...input].sort((a, b) => cmp(a.slug, b.slug))
   const rules = ruleCandidates(corpus, new Set(knownRuleIds)).map(({ category, token, slugs }): Proposal => {
     const rule: Rule = { id: ruleId(category), pattern: escapeRegExp(token), message: `${category}: do not use ${token}`, why: `recurring ${category} review finding in ${slugs.join(', ')}`, action: 'warn' }
     return { id: rule.id, kind: 'rule-add', surface: '.sdlc/rules.json', edit: rule, evidence: slugs, expectedEffect: `stops ${token} coming back as a ${category} review finding`, risk: 'low', replay: replayRule(rule, category, corpus, minChanges) }

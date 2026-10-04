@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { CHANGES, SDLC, ROOT, WAIVERS, read, exists, listChanges, isShipped, readJsonl, git, toPosix, out, fail, optString, ensureGitignore, sanctionWrites, type Args, type Waiver } from './core.ts'
 import { parseUnifiedDiff, parseRules, type FileDiff } from './model.ts'
-import { readEvents, parseReviewFindings } from './ratchet.ts'
+import { readEvents, parseReviewFindings, type ReviewFinding } from './ratchet.ts'
 import { diagnose, formatReport, LEARN, type ChangeEvidence, type LearnReport } from './learn.ts'
 
 export const RULES = path.join(SDLC, 'rules.json')
@@ -21,12 +21,25 @@ function rebuildDiff(slug: string): FileDiff[] | null {
   return raw === null ? null : parseUnifiedDiff(raw)
 }
 
+// review.md is written after the ship commit in the CI-reviewed tiers, so the reviewer's own per-slice and PR files (committed with the change) count too.
+function reviewFindings(slug: string): ReviewFinding[] {
+  const dir = path.join(CHANGES, slug)
+  let names: string[] = []
+  try { names = fs.readdirSync(dir) } catch { /* no change folder: no findings */ }
+  const files = ['review.md', ...names.filter(n => /^review-slice-[\w-]+\.md$/.test(n)).sort(), 'review-pr.md']
+  const seen = new Set<string>()
+  return files.flatMap(f => parseReviewFindings(read(path.join(dir, f)))).filter(f => {
+    const key = `${f.category}\0${f.text}`
+    return seen.has(key) ? false : (seen.add(key), true)
+  })
+}
+
 function loadChange(slug: string, waivers: Waiver[]): ChangeEvidence {
   const diffs = rebuildDiff(slug)
   const events = (() => { try { return readEvents(slug) } catch { return [] } })()
   return {
     slug,
-    findings: parseReviewFindings(read(path.join(CHANGES, slug, 'review.md'))),
+    findings: reviewFindings(slug),
     waivers: waivers.filter(w => w.slug === slug).map(w => ({ sensor: w.sensor, file: w.file, reason: w.reason })),
     blockedReasons: events.filter(e => e.verdict === 'blocked' && e.reason).map(e => e.reason as string),
     diffs: diffs ?? [],
