@@ -274,3 +274,7 @@ test('weakensConfig flags changed and added declared level and quality commands'
   assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, levels: { unit: 'npm test', api: 'x' } }))), ['levels.api added'])
   assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, quality: { ...base.quality, deps: { cmd: 'x', count: 'exit' } } }))), ['quality.deps added'])
 })
+
+test('the repo-root plugin marketplace and the vendored mod are protected, case-insensitively', () => {
+  for (const f of ['.claude-plugin/marketplace.json', '.sdlc/mod/hooks/register.ts']) assert.ok(isProtected(f) && isProtected(f.toUpperCase(), true), f)
+})

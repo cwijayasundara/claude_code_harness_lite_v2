@@ -14,7 +14,7 @@
     "quality": {
       "lint": { "cmd": "ruff check . --output-format concise", "count": "lines" },
       "types": { "cmd": "mypy . --no-error-summary", "count": "lines" },
-      "deps": { "cmd": "pip-audit -f json", "count": "lines" },
+      "deps": { "cmd": "pip-audit --progress-spinner off", "count": "exit" },
       "complexity": { "cmd": "radon cc -n C -s .", "count": "lines" },
       "security": { "cmd": "bandit -r . -q -f custom", "count": "lines" }
     }

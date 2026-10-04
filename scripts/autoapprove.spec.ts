@@ -39,6 +39,8 @@ test('in build, planned edits and declared commands are allowed; the rest is not
   assert.equal(edit('test/a.test.js'), 'allow')
   assert.notEqual(edit('docs/x.md'), 'allow', 'outside ## Files')
   assert.notEqual(edit('.sdlc/sensors.json'), 'allow', 'harness file')
+  assert.notEqual(edit('.claude-plugin/marketplace.json'), 'allow', 'marketplace points at the mod')
+  assert.notEqual(edit('.sdlc/mod/hooks/register.ts'), 'allow', 'vendored mod')
   assert.equal(edit('.sdlc/changes/big/ratchet.json'), 'deny', 'evidence stays denied')
   assert.equal(bash('npm test'), 'allow')
   assert.equal(bash('npm run test:api'), 'allow', 'a declared level')

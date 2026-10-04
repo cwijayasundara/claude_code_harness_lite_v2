@@ -103,8 +103,11 @@ const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root)
 async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
   if (isVendoredRoot($.plugin.root) || !(await $.fs.exists('.sdlc/mod/hooks/register.ts'))) return false
   try {
-    const settings = JSON.parse((await $.process.run(['cat', '.claude/settings.json'])).stdout) as { enabledPlugins?: Record<string, unknown> }
-    if (settings.enabledPlugins?.['sdlc-mod@sdlc-local'] === true) return true
+    const settings = JSON.parse(await $.fs.read('.claude/settings.json')) as { enabledPlugins?: Record<string, unknown> }
+    if (settings.enabledPlugins?.['sdlc-mod@sdlc-local'] === true) {
+      $.ui.log("sdlc: using the project's vendored sdlc mod (.sdlc/mod)")
+      return true
+    }
   } catch { /* unreadable or unparseable settings: stay active */ }
   $.ui.log('sdlc: the vendored mod (.sdlc/mod) is present but not enabled in .claude/settings.json; using the plugin copy')
   return false

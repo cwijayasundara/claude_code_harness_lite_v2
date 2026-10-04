@@ -24,6 +24,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     fileFindings: [] as unknown[],
     standalone: false,
     vendoredMod: false,
+    logs: [] as string[],
     settings: '{"enabledPlugins":{"sdlc-mod@sdlc-local":true}}',
     partial: false,
     verdict: 'continue',
@@ -38,7 +39,6 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   on('process.run', ($, e) => {
     world.runs.push({ argv: e.argv, env: (e as { init?: { env?: Record<string, string> } }).init?.env })
     const sub = e.argv[3]
-    if (e.argv[0] === 'cat') return { value: { exitCode: 0, stdout: world.settings, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     const stdout =
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
@@ -65,7 +65,11 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     world.prompts.push(e.text)
     return { text: e.text }
   })
-  on('ui.log', () => ({ value: undefined }))
+  on('fs.read', () => ({ value: world.settings }))
+  on('ui.log', ($, e) => {
+    world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
+    return { value: undefined }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.notice', ($, e) => {
     world.notices.push(String((e as { text?: string }).text))
@@ -84,9 +88,18 @@ describe('sdlc mod', () => {
   test('the global plugin steps aside only when the vendored mod is present and enabled', async ($, on) => {
     const world = worldOf(on)
     world.vendoredMod = true
+    on('tool.call', () => ({ result: 'edited' }))
     await $.session.start(SESSION)
     expect(world.commands).toEqual([])
-    expect(world.runs.every(r => r.argv[0] === 'cat')).toBe(true)
+    expect(world.runs.length).toBe(0)
+    expect(world.logs.join('\n')).toContain("using the project's vendored sdlc mod")
+    // The flag is honoured across files: the band renders nothing and the edit gate passes straight through.
+    // Passing through means the band never answers: the event reaches the base, which has no ui.render implementation here.
+    const mounted = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 160, scroll: { offset: 0, bodyRows: 5 }, view: {} }, viewport: { columns: 160, rows: 30 } }).then(() => 'drawn', (err: Error) => String(err))
+    expect(mounted).toContain('no implementation for ui.render')
+    const result = await $.tool.call({ tool: 'Edit', tool_use_id: 'tu9', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
+    expect(JSON.stringify(result)).toContain('edited')
+    expect(world.runs.length).toBe(0)
   })
 
   test('present but not enabled: the plugin copy stays active', async ($, on) => {
