@@ -190,7 +190,7 @@ These should be reconciled against `/usage`, because advisor and classifier toke
 ```jsonc
 // <project>/.claude/settings.json
 {
-  "extraKnownMarketplaces": { "sdlc": { "source": { "source": "directory", "path": "/abs/path/claude_code_harness_lite_v2" } } },
+  "extraKnownMarketplaces": { "rig": { "source": { "source": "directory", "path": "/abs/path/claude_code_harness_lite_v2" } } },
   "enabledPlugins": {
     "rig@rig": true,
     "superpowers@claude-plugins-official": false,
@@ -597,9 +597,9 @@ Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog
 
 ## 15. v0.5: rig learn
 
-`rig learn` improves the harness from evidence the harness already stores, with the model frozen and zero tokens. Spec: [docs/superpowers/specs/2026-10-04-rig-learn-design.md](docs/superpowers/specs/2026-10-04-rig-learn-design.md).
+`rig learn` improves the harness from evidence the harness already stores, with the model frozen and zero tokens (`learn` runs and writes the proposals, `learn show` reprints them, `--min-changes N` overrides the 10-change minimum). Spec: [docs/superpowers/specs/2026-10-04-rig-learn-design.md](docs/superpowers/specs/2026-10-04-rig-learn-design.md).
 
-- **Signals.** Every change folder with a `ship.json`: `review.md` findings, `events.jsonl` blocks, `waivers.jsonl`, and the diff rebuilt from `ship.json` plus git. Malformed evidence skips that change and is listed, never fails the run.
+- **Signals.** Every change folder with a `ship.json`: `review.md`, `review-slice-*.md` and `review-pr.md` findings, `events.jsonl` blocks, `waivers.jsonl`, and the diff rebuilt from `ship.json` plus git. Malformed evidence skips that change and is listed, never fails the run.
 - **Clusters.** A pattern needs at least 2 distinct changes. A recurring review category with a recurring backticked token yields a `rule-add` proposal (a `warn` rule, exact token). Repeated waivers of one sensor on similar paths yield an advisory `sensor-tune`. Repeated `cap:` or `stall:` blocks are notes only.
 - **Replay gate.** A rule is promotable only if it fires on the stored diff of a change it came from and on no shipped change without that finding, and at least `minChanges` (10) changes shipped. Below that the status is `insufficient-holdout`. The replay runs again at promotion.
 - **Human-only promotion.** `/rig-approve <id> learn` appends the rule to `.sdlc/rules.json`; the model cannot run it. `sensor-tune` is never applied by a command. The edit then ships through PR review like any harness change.

@@ -50,16 +50,16 @@ Read only. The set of changes is every folder in `.sdlc/changes/` that has a `sh
 
 | Source | What it gives |
 |---|---|
-| `review.md` per change | review findings `- [severity: X] [category: Y] text` (the plain text; `ratchet.json` keeps only hashes) |
+| `review.md`, `review-slice-*.md` and `review-pr.md` per change | review findings `- [severity: X] [category: Y] text`, concatenated and de-duplicated per change on (category, text). The reviewer writes the slice and PR files and they are committed with the change; `review.md` is written after the ship commit and may be missing. `ratchet.json` keeps only hashes. |
 | `events.jsonl` | blocked events with `reason`, used for stall and cap notes |
 | `waivers.jsonl` | which sensor findings a person waived, on which files, with the reason |
 | `ship.json` | the diff `base`; the head is the commit that added `ship.json` (found with `git log`), so past diffs can be rebuilt for replay |
 
-`tests/trials/live-*/notes.md` is free text. `learn` lists those files for the person to read; it does not parse them.
+The trial-notes listing (`tests/trials/live-*/notes.md`) is not implemented in v1; see Later.
 
 ### 4.3 Diagnosis (cluster)
 
-Findings are keyed by `(node, sensor or rule id, path glob)`. A cluster needs at least 2 distinct changes to count. One change repeating itself is a bug, not a pattern.
+A cluster needs at least 2 distinct changes to count. One change repeating itself is a bug, not a pattern. In v1, review findings cluster by category and token, and waivers by sensor and path. Clustering sensor findings from usage is not in v1.
 
 - **Recurring finding.** The same sensor or review category appears in at least 2 changes. Produces a rule proposal.
 - **Waiver churn.** The same sensor is waived at least 2 times on a similar path. Produces a sensor-tuning proposal (narrow the paths, or lower severity).
@@ -75,13 +75,13 @@ Dead-rule pruning is not repeated here: `/rig:metrics` already reports prune can
 { id, kind: "rule-add" | "sensor-tune",
   surface: ".sdlc/rules.json" | ".sdlc/sensors.json",
   edit: <the exact JSON entry or patch>,
-  evidence: [ { change, file, line?, event } ... ],
+  evidence: [ <change slug> ... ],   // v1: a list of change slugs, not objects
   expectedEffect: "<what should stop recurring>",
   risk: "low" | "medium" | "high",
   replay: { status, firedOn[], falsePositives[], reason? } }
 ```
 
-A `rule-add` proposal needs a review category that recurs in at least 2 shipped changes *and* a backticked token (for example `` `eval(` ``) that appears in findings of that category in at least 2 of them. The candidate pattern is that token, regex-escaped (exact-token matching only; a person can edit it before promoting). Every rule in v1 starts as `warn`. A `sensor-tune` proposal comes from waiver churn and is advisory: a person edits `sensors.json` by hand.
+A `rule-add` proposal needs a review category that recurs in at least 2 shipped changes *and* a backticked token (for example `` `eval(` ``) that appears in findings of that category in at least 2 of them. The candidate pattern is that token, regex-escaped (exact-token matching only). Every rule in v1 starts as `warn`. A `sensor-tune` proposal comes from waiver churn and is advisory: a person edits `sensors.json` by hand.
 
 ### 4.5 Replay gate (evaluate and gate)
 
@@ -91,15 +91,16 @@ A proposal is **promotable** only when all of these hold:
 
 1. **Fires on its evidence.** The proposed rule fires on the stored diff of at least one change whose findings it was built from.
 2. **No false positives.** It does not fire on the stored diff of any shipped change that has no finding in that category.
-3. **Dominance.** A sensor-tune that loosens (lower severity or wider waiver) must not turn any past blocked case into a pass without being labelled `risk: high`. A tightening must not block a past change that shipped clean.
-4. **Budget parity.** It adds no model calls or extra tokens.
-5. **Enough data.** At least `learn.minChanges` shipped changes. Fewer than that, proposals are listed with `replay.status: "insufficient-holdout"` and cannot be promoted.
+3. **Budget parity.** It adds no model calls or extra tokens.
+4. **Enough data.** At least `learn.minChanges` shipped changes. Fewer than that, proposals are listed with `replay.status: "insufficient-holdout"` and cannot be promoted.
+
+Dominance and `risk: high` for loosening edits are not needed in v1: `sensor-tune` is advisory and never applied, and the only applied edit adds a `warn` rule.
 
 The replay runs again at promotion time, so a proposal made against old data cannot be promoted after the corpus has moved on.
 
 ### 4.6 Promotion (human only)
 
-`/rig-approve <id> learn` appends a promotable `rule-add` entry to `.sdlc/rules.json` (a human-only script action, like approvals). `rules.json` stays a protected file for the model, and the edit ships through PR review like any harness change. `sensor-tune` proposals are never applied by a command. The model cannot invoke the command or set `SDLC_HUMAN`.
+`/rig-approve <id> learn` appends a promotable `rule-add` entry to `.sdlc/rules.json` (a human-only script action, like approvals). After promotion the person edits the pattern in `.sdlc/rules.json` if it needs generalising; there is no pre-promotion edit step. `rules.json` stays a protected file for the model, and the edit ships through PR review like any harness change. `sensor-tune` proposals are never applied by a command. The model cannot invoke the command or set `SDLC_HUMAN`.
 
 ### 4.7 The verifier is not writable by the improver
 
@@ -117,11 +118,11 @@ changes/*/{events,runs,ratchet,ship}.jsonl, approvals, waivers, usage
 
 ## 6. Error handling
 
-- Missing or malformed evidence files: skip that change, count it in a `skipped` list, and never fail the run.
+- Malformed evidence is tolerated: that change contributes nothing from the bad file and the run never fails.
 - Fewer than `minChanges`: print the proposals marked unpromotable, exit 0.
 - A pattern that fails to compile: drop the proposal with a reason.
-- A diff that cannot be rebuilt (commit gone): that change leaves the corpus and is reported.
-- `learn` never writes outside `.sdlc/learn/`.
+- A diff that cannot be rebuilt (commit gone): that change is skipped and listed.
+- `learn` writes `.sdlc/learn/` and, via `ensureGitignore`, `.sdlc/.gitignore`. It writes nowhere else.
 
 ## 7. Testing
 
@@ -130,8 +131,8 @@ Seeded fixtures in `scripts/learn.spec.ts`:
 - Three changes with the same finding yield exactly one `rule-add` proposal that fires on all three.
 - A candidate rule that also fires on a clean past change fails the replay and is not promotable.
 - Fewer than `minChanges` shipped changes marks every proposal `insufficient-holdout`.
-- Two waivers of the same sensor and path yield a `sensor-tune`; a loosening that would un-block a past blocked case is `risk: high`.
-- A change with a malformed `events.jsonl` is skipped and listed; the run still succeeds.
+- Two waivers of the same sensor and path yield a `sensor-tune`.
+- A change with a malformed `events.jsonl` or review file contributes nothing from it, and a change whose diff cannot be rebuilt is skipped and listed; the run still succeeds.
 - A model-style Bash write to `.sdlc/learn/proposals.json` is denied (evidence protection).
 - `/rig-approve <id> learn` refuses a model call and refuses a proposal whose replay is stale.
 - Idempotence: running `learn` twice on the same evidence gives byte-identical `proposals.json`.
@@ -144,4 +145,13 @@ Seeded fixtures in `scripts/learn.spec.ts`:
 
 ## 9. Later
 
+Listing `tests/trials/live-*/notes.md` for the person to read (free text, not parsed).
+
 Level-1 expansion to skill text and templates with a model proposer behind the same gate, and a nightly zero-token replay loop. Level 2 (improving `learn` itself) only after a metaproductivity metric exists and with explicit human approval.
+
+## 10. Known limitations (v1)
+
+- **Squash and rebase merges.** The replay diff is `base..head-of-ship-commit`. A squash or rebase merge can pull other changes into it and cause a false `fail`. Restricting the diff to the files the ship commit touches is a follow-up.
+- **Rule ids.** Ids are `learned-<slug of category>`. Categories that slugify alike collide, and once a learned rule exists for a category no other is proposed for it.
+- **Not a defence against a hostile model.** The false-positive check matches the finding category, not the token, and review files are working-tree files a model could edit. The gate is bounded by warn-only rules, the 10-change minimum, human-only promotion and PR review.
+- **Surface.** `learn show` reprints the last report, and `--min-changes N` overrides the minimum.
