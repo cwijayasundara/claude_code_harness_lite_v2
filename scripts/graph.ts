@@ -110,7 +110,7 @@ export function activeSlug(): string | null {
 }
 
 export type Verdict = 'continue' | 'human' | 'blocked' | 'ready'
-export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number }
+export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number }
 export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
 const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
 
@@ -120,7 +120,9 @@ export function step(slug: string): Step {
   const node = change.next?.stage ?? null
   const ratchet = readRatchet(slug)
   const round = node && BUDGETED.has(node) ? (ratchet.nodes[node as RatchetNode]?.rounds ?? 0) : 0
-  const base = { slug, node, round, command: nextCommand(change) }
+  // Finished build slices: partial progress inside a node that has not changed round.
+  const progress = node === 'build' ? Object.values(ratchet.slices).filter(sl => sl.status === 'done').length : 0
+  const base = { slug, node, round, progress, command: nextCommand(change) }
   if (!change.next) return { ...base, verdict: 'ready', reason: 'every node is done; a person merges the PR' }
   // R46: a gate or level block is cleared by the node's own code (pr re-runs the gate, verify-report re-derives levels) once a person
   // fixed or waived it, so the node resumes; cap, stall, budget and other need /sdlc-approve <slug> budget.

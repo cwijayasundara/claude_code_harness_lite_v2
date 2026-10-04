@@ -147,3 +147,11 @@ test('R46: gate and level blocks resume at the current node; cap, stall, budget 
   write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: {}, slices: {}, baseline: {}, blocked: { node: 'build', reason: 'no kind', at: 'now' } }))
   assert.equal(stepOf('tiny').verdict, 'blocked', 'a legacy block without a kind is other')
 })
+
+test('step reports how many build slices are done, so the driver sees partial progress', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  assert.equal(stepOf('tiny').progress, 0)
+  const done = { rounds: 0, hashes: [], status: 'done' }
+  write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: {}, slices: { 1: done, 2: { ...done, status: 'open' }, 3: done }, baseline: {} }))
+  assert.equal(stepOf('tiny').progress, 2)
+})

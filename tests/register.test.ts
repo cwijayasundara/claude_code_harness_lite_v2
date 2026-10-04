@@ -439,4 +439,30 @@ describe('sdlc mod', () => {
     expect(world.prompts.length).toBe(0)
     expect(world.toasts.at(-1)).toContain('not accepted')
   })
+
+  test('a failing clock leaves the driver stopped, so a later turn does not drive', async ($, on) => {
+    const world = worldOf(on)
+    on('clock.after', () => { throw new Error('no timer') })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
+    expect(world.prompts.length).toBe(0)
+  })
+
+  test('partial build progress is progress: a finished slice changes the stall key', async ($, on) => {
+    const world = worldOf(on)
+    const clock = mock.clock(on)
+    on('turn.complete', () => ({ text: '' }))
+    world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 0, progress: 0 }
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await clock.advance(1)
+    world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 0, progress: 1 }
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
+    expect(world.prompts.length).toBe(2)
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't2' })
+    expect(world.prompts.length).toBe(2)
+    expect(world.toasts.at(-1)).toContain('no progress')
+  })
 })

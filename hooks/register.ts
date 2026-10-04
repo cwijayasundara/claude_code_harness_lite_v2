@@ -172,13 +172,17 @@ export const register: Register = on => {
       return {}
     }
     if (!(await isInitialised($))) return { text: 'sdlc is not initialised here.' }
-    await update($, driverRunning, () => true)
     await update($, driverLast, () => '')
     // prompt.submit cannot run inside a command.run hook (it would wait on the turn the hook holds): start once the command has returned.
-    // Any failure on the first step resets the driver, so a later turn never starts driving unannounced.
-    $.clock.after(0, () => {
-      advance($).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined))
-    })
+    // The driver is marked running only when the timer really fires (a refused timer never calls back and does not throw),
+    // and any failure on the first step resets it, so a later turn never starts driving unannounced.
+    try {
+      $.clock.after(0, () => {
+        update($, driverRunning, () => true).then(() => advance($)).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined))
+      })
+    } catch (err) {
+      await stopDriver($, `driver stopped: ${String(err)}`)
+    }
     return {}
   })
 

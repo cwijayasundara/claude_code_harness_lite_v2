@@ -8,5 +8,5 @@ export const promptFor = (s: StepInfo, root: string): string =>
 // The gate a human step waits at, from its command text ("... then run /sdlc-approve <slug> <gate>").
 export const gateOf = (s: StepInfo): string | undefined => /\/sdlc-approve \S+ (\w+)/.exec(s.command)?.[1]
 
-// Same node and round after a turn means the turn moved nothing.
-export const stepKey = (s: StepInfo): string => `${s.node}:${s.round}`
+// Same node, round and finished-slice count after a turn means the turn moved nothing (a build slice done is progress).
+export const stepKey = (s: StepInfo): string => `${s.node}:${s.round}:${s.progress ?? 0}`
