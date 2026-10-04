@@ -134,3 +134,12 @@ test('the settings template is portable: no personal plugins, absolute paths or 
   const settings = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'))
   assert.equal(settings.enabledPlugins?.['sdlc@sdlc'], undefined, 'standalone repos do not make teammates install the plugin')
 })
+
+test('standalone vendoring ships the v0.4 skills and REVIEW.md template', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['vendor', '--standalone'])
+  for (const s of ['sdlc-test', 'sdlc-sensors', 'sdlc-pr', 'sdlc-pr-review'])
+    assert.ok(fs.existsSync(path.join(repo, `.claude/skills/${s}/SKILL.md`)), s)
+  assert.ok(!fs.existsSync(path.join(repo, '.claude/skills/sdlc-verify/SKILL.md')), 'old names are gone')
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/REVIEW.md')))
+})

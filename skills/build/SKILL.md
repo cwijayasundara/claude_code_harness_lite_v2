@@ -1,41 +1,25 @@
 ---
 name: build
-description: Execute an approved plan, then hand off to verification. Small builds run inline; tier L and greenfield run through superpowers subagent-driven development when it is installed, otherwise through sdlc:implementer subagents.
+description: Build an approved plan slice by slice. Each slice loops implementer → sensors → reviewer until no critical or high finding remains, within the ratchet's cap; the script counts rounds and decides.
 argument-hint: <slug>
 effort: medium
-allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Bash(git checkout*), Bash(git status*), Bash(git diff*), Bash(git log*), Bash(git rev-parse*), Bash(bash *subagent-driven-development/scripts/*), Read, Write, Edit, Glob, Grep, Agent, Skill
+allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Bash(git checkout*), Bash(git status*), Bash(git diff*), Bash(git log*), Bash(git rev-parse*), Read, Write, Edit, Glob, Grep, Agent, Skill
 ---
 # Build $0
 
 **Subagents:** run every subagent in the foreground and wait for its result. Never end your turn while one is still running.
 
-Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` first. If the plan needs approval, stop and say so.
+Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json`. Continue only if `verdict` is `continue` and `node` is `build`; otherwise show the reason and stop.
 
-## Small builds: do it here
-Tier S, and tier M with 3 or fewer slices and 8 or fewer files. Subagent start-up costs more than it saves at this size.
-1. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"`. Implement; run targeted tests quietly. Stay inside `## Files`.
-2. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then `sdlc.ts verify-report $0`. Never write verification.md by hand.
+1. If on the trunk: `git checkout -b sdlc/$0`. If `status` warns that HEAD is on another change's branch, run the command it prints first.
+2. Read `plan.md`. Slices are its `### Task N:` headings; a plan without them is one slice, `1`. `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet show $0` lists the slices already done; skip those.
+3. **For each remaining slice, in order** (parallel, at most 3, only when their `Files:` do not overlap):
+   1. **Implement.** Tier S, and tier M with ≤ 3 slices and ≤ 8 files: do it yourself. Otherwise launch one `sdlc:implementer` with a brief of ≤ 60 lines: slice goal, owned files, interface sketch, acceptance tests with B-numbers, the fast test command, the guides that apply, and "red runs go through `sdlc.ts run --expect-fail`".
+   2. **Review the slice.** Tier L: launch `sdlc:reviewer` with `mode: slice`, the change folder, the slice number and the diff range for that slice. Tier S and M: run the built-in `code-review` skill at `medium` on the slice's diff and restate each finding in the reviewer's line format.
+   3. **Record.** Write the reviewer's reply (it must hold a `verdict:` line and any findings in the line format) to `.sdlc/changes/$0/review-slice-N.md` with the Write tool, then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record $0 build --slice N < .sdlc/changes/$0/review-slice-N.md`. `--slice` is required when plan.md has more than one slice. It refuses a reply without an explicit verdict; `changes-needed` needs at least one critical or high finding. It prints `continue`, `done` or `blocked`:
+      - `done`: next slice.
+      - `continue`: send only the critical and high findings to the same implementer (or fix them yourself for small builds), then go back to step 2 for this slice.
+      - `blocked`: stop. Show the reason; the person decides (`/sdlc-approve $0 budget` lifts a budget, stall or cap block).
+4. Never edit `ratchet.json`, `events.jsonl` or `plan.md` to get past a round. Track progress in `.sdlc/STATE.md` only.
 
-Next: the command `sdlc.ts status` prints (`/sdlc:review $0`, or `/sdlc:ship $0` where the review runs on the PR). Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
-
-## Tier L and greenfield, opt-in: superpowers SDD
-Use this only when `.sdlc/sensors.json` has `"build": "sdd"` and `superpowers:subagent-driven-development` is in your available skills; otherwise use the next section. SDD costs several times the tokens of the native build, so it suits plans with many independent slices.
-1. If on the trunk: `git checkout -b sdlc/$0`. If on another change's `sdlc/` branch, run the command `sdlc.ts new` warned about first, so this change is not stacked on it.
-2. Invoke `superpowers:subagent-driven-development` on `.sdlc/changes/$0/plan.md` (spec: `.sdlc/changes/$0/spec.md`). These caller instructions override the skill:
-   - Work in this tree on `sdlc/$0`. Do not use `using-git-worktrees`.
-   - Dispatch implementers and task reviewers with `model: sonnet`. Never escalate to rounds 4–5.
-   - **At most one fix round per task.** Record still-open findings in the ledger and move on; sdlc's review sees them.
-   - Tell each implementer: red runs go through `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --expect-fail -- "<cmd>"`, and only the task's files may change.
-   - **Skip** the final whole-branch review and `finishing-a-development-branch`. When every task is complete, stop the skill and continue here.
-3. Next: `/sdlc:verify $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
-
-## Large builds: orchestrate
-Tier M with more than 3 slices or 8 files, or tier L without `"build": "sdd"`. You orchestrate; subagents write the code.
-1. Read `plan.md` (or `intent.md` for a chore). Track slices in `.sdlc/STATE.md`, never in `plan.md` (that makes its approval stale).
-2. For each remaining slice, launch one `sdlc:implementer` with a brief of 60 lines or fewer: slice goal, owned files, interface sketch, acceptance tests with B-numbers, the fast test command, relevant CLAUDE.md conventions and `.sdlc/guides/` names, and the rule that red runs go through `sdlc.ts run --expect-fail`. Never paste whole files. Parallel (at most 3, one message) only when file sets do not overlap. Never `sleep` or poll.
-3. After each report: **done**, update STATE.md; **blocked** (or the end-of-turn gate listed unfixed findings), clarify once and relaunch, or ask the person if scope changes. **Blocked twice** on one slice: consult the advisor or the person.
-4. Compare `git diff --stat` with `## Files`. Out-of-plan files are added to the plan with the person's agreement, or reverted.
-
-For a long unattended run, suggest: `/goal every slice of .sdlc/changes/$0/plan.md is done and $0/verification.md says result: pass, or stop after 40 turns`
-
-End with: `Next: /sdlc:verify $0`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
+End with: `Next: <command from node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json>`. If a person is driving with `/sdlc-run`, stop here. Otherwise keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it.

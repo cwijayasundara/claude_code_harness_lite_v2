@@ -1,22 +1,18 @@
 ---
 name: test
-description: Independent verification of a change by the sdlc:verifier agent - runs the plan's verification commands and writes verification.md with real output. One repair round at most.
+description: The test node - run every required test level (unit, integration, acceptance, api) and the plan's verification through the recorder; fix failing items within the ratchet's cap.
 argument-hint: <slug>
 effort: low
 allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Read, Agent
 ---
-# Verify $0
+# Test $0
 
-**Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running, because the work is lost if the session ends.
+**Subagents:** run every subagent in the foreground and wait for its result.
 
-- **Tier S and M:** run each of the plan's `## Verification` commands through `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --slug $0 -- "<command>"`, then `... sdlc.ts verify-report $0`. Then skip to step 3.
-- **Tier L and greenfield:** independence is worth its cost, so launch `sdlc:verifier`.
+1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json`. Continue only if `node` is `test` and `verdict` is `continue`.
+2. **Tier S and M:** run each `## Verification` command and each declared level command from `.sdlc/sensors.json` `levels` through `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --slug $0 -- "<command>"`, then `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts verify-report $0`.
+   **Tier L and greenfield:** launch `sdlc:verifier` with the change folder; it does the same and reports.
+3. Read `verification.md`'s `## Test levels`. A level marked `undeclared` cannot be fixed by code: stop and tell the person to declare it in `sensors.json` `levels` (or to change the plan).
+4. **If `result: fail`:** send only the failing items to one `sdlc:implementer` run (plan files only), then repeat step 2. `verify-report` counts the round; when `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` says `blocked`, stop and show the reason (`/sdlc-approve $0 budget` is the person's way past a cap). Never edit tests to pass.
 
-1. For tier L or greenfield, launch `sdlc:verifier` with this brief:
-   - the change folder `.sdlc/changes/$0/`
-   - which tells it to use `plan.md` `## Verification` and the B-numbers in `spec.md`, if any
-   - the report path `.sdlc/changes/$0/verification.md`
-2. **If `result: fail`:** send only the failing items to **one** `sdlc:implementer` repair run (files from the plan), then verify again once.
-3. **If it still fails:** stop, show the failing items, and ask the person. Never edit tests to pass, and never mark a criterion passed without output that proves it.
-
-Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. End with: `Next: <command from status>`. Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
+End with: `Next: <command from node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json>`. If a person is driving with `/sdlc-run`, stop here; otherwise run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it.

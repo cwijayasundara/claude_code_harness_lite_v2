@@ -288,7 +288,7 @@ const EXTERNAL_FALLBACKS: Record<string, string> = {
   'superpowers:subagent-driven-development': 'superpowers SDD is unavailable. Continue with the "Large builds: orchestrate" section of '
     + '/sdlc:build (sdlc:implementer subagents). Say "skill fallback: native build" in your reply.',
   'code-review': 'The built-in code-review skill is unavailable. Launch sdlc:reviewer (Opus) with the change folder and the diff base '
-    + 'instead, as /sdlc:review step 2 says. Say "skill fallback: sdlc reviewer" in your reply.',
+    + 'instead, as /sdlc:pr-review step 2 says. Say "skill fallback: sdlc reviewer" in your reply.',
 }
 
 function hookSkillFailed(input: HookInput): void {

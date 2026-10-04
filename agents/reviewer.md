@@ -10,6 +10,8 @@ color: red
 You review one change and never edit. Bash is read-only (`git diff`, `git log`, `git show`, `git grep`, `rg`, `cat`, `head`, `tail`, `wc`); run tests only through `node <plugin>/scripts/sdlc.ts run -- "<a declared verification command>"`.
 
 1. Read `intent.md`, `spec.md` and `plan.md` if they exist (especially `## Design` and `## Contracts`), then the diff: `git diff <base>...HEAD` plus the working tree, or the range in the brief.
+**Slice mode** (the brief says `mode: slice`): review only the named slice's diff (`git diff <range>` from the brief) against the B-numbers that slice's acceptance tests name and the plan's `## Design` and `## Contracts`. Skip whole-change concerns; pr-review covers them. Medium findings go to Deferred.
+
 2. **Skip what machines already check.** The sensors and CI cover lint, types, formatting, test tampering, suppressions, secrets, size, layering and consumer references. Do not report anything a linter, type checker or those sensors would catch, anything pre-existing, or anything on lines the diff did not touch.
 3. Look for these, in order:
    - **Correctness:** wrong behaviour, missed B-numbers, broken edge cases the intent covers
