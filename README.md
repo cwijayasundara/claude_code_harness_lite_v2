@@ -31,9 +31,14 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 |---|---|
 | `/sdlc:start "add CSV export to reports"` | Classifies type and tier, writes `.sdlc/changes/<slug>/intent.md`, and prints the path and the next command. Tier S is built in the same turn. |
 | `/sdlc:next` | Runs whatever comes next for the active change, and stops only at human gates. The one command to remember. |
-| `/sdlc:spec`, `/sdlc:plan`, `/sdlc:build`, `/sdlc:diagnose`, `/sdlc:verify`, `/sdlc:review`, `/sdlc:ship` | One stage each. Every stage ends with the exact next command. |
+| `/sdlc:spec`, `/sdlc:plan`, `/sdlc:build`, `/sdlc:diagnose`, `/sdlc:test`, `/sdlc:pr-review`, `/sdlc:pr` | One stage each (`ship` stays a CLI alias of `pr`). Every stage ends with the exact next command. |
 | `/sdlc-approve <slug> <spec\|plan>` | **Human gate.** A mod command: costs zero tokens, the model cannot invoke it, and the approval goes stale if the artifact changes afterwards. |
 | `/sdlc-waive <sensor> <file\|*> <reason>` | **Human only.** Records a waiver for a sensor finding on the active change (the sensor name is validated). Zero tokens, and the model cannot invoke it. |
+| `/sdlc-approve <slug> budget` | **Human gate.** Raises a change's spend cap; the model cannot. |
+| `/sdlc:sensors` | Runs the sensors on the active change and prints what they found. |
+| `/sdlc-run` | The driver: submits one node per turn and stops at a human gate, a block or a turn with no progress. |
+| `/sdlc-story` | A pane with the change's nodes, rounds, cost against budget and estimated value. Zero tokens. |
+| `/sdlc-metrics-pane` | A pane with the scorecard: cost, tokens and value per change and node. Zero tokens. |
 | `/sdlc-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
 | `/sdlc:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
 | `/sdlc-status` | Where every change stands. Zero tokens. |
@@ -66,6 +71,8 @@ Computational sensors run on the hot path at zero tokens; one inferential review
 - **Waivers** come only from the person (`/sdlc-waive`). Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `impact.json`, `.gate`) are written only by sdlc.
 - **Guides** (contracts, engineering, testing) are copied to `.sdlc/guides/` by init and injected on first touch of a matching path.
 - **CI:** `sdlc.ts vendor` copies the checker into `.sdlc/bin`; copy `templates/sdlc-check.yml` and require `sdlc-check`. CI runs the base branch's checker and config.
+
+**Autonomous build to PR.** Once the plan is approved, build runs slice by slice with a bounded review loop per slice, then test levels, quality sensors compared with the base branch, and the PR with its checks; commands declared in sensors.json and edits inside the plan's files need no prompt. Humans keep approvals, waivers and budget raises. `sensors.json` keys: `gates` (human gates per tier), `levels` (test commands per level), `quality` (lint-style commands compared with base), `ratchet` (round and budget caps) and `value` (hours saved per change, for estimated value). Run autonomous builds in Claude Code's sandbox.
 
 For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you don't have to keep typing "continue".
 

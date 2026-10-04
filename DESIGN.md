@@ -534,3 +534,58 @@ The Spec 1 live trial is recorded in §10.
 - **/sdlc:next** runs the active change's next stage and stops at human gates.
 - Trial results: see §10, v0.3 trial.
 - **Lean S/M (after the v0.3 trials).** Gates by risk, not size: tier S and M have no human gate and no in-session review, and their plans are written by the main thread. Their one review runs on the PR (`templates/sdlc-review.yml`, advisory; `sdlc-check` stays the deterministic gate). A `tier` sensor blocks an S/M change whose diff reaches contracts or auth, security, payments, billing or migrations paths until it is re-tiered to L. The advisor is off (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL`); SDD is opt-in (`"build": "sdd"`). A diff over `limits.diffLines` only warns once its plan is approved. Metrics such as first-pass share, rework cycles and `caught` now cover tier L only, because S/M have no review.md.
+
+## 14. v0.4: the autonomous ratchet
+
+### What shipped
+
+- **Graph and `step()`.** `scripts/graph.ts` holds the per-type paths, the per-tier gates and `step()`, which says for the active change whether to continue, stop for a human, or block, and why.
+- **State.** `ratchet.json` (nodes, rounds, caps, budget credits) and `events.jsonl` per change are evidence files: only sdlc writes them.
+- **Per-slice build loop.** Build runs slice by slice, each with its own review and bounded rounds.
+- **Test levels.** `levels` in sensors.json (unit, integration, acceptance, api); a level that the tier requires and sensors.json does not declare blocks the test node with the exact fix.
+- **Quality sensors vs base.** `quality` commands (lint and similar) run on the branch and on a base worktree; only a worsening blocks, and with no base the category reads `unmeasured`.
+- **Auto-approval.** Inside an approved plan, declared commands, the pinned harness script, read-only git and edits listed in the plan's `## Files` need no prompt (details in the security model).
+- **PR node.** `/sdlc:pr` commits, pushes and opens the PR (`ship` stays a CLI alias); `/sdlc:pr-review` reads the PR and its checks, fail closed.
+- **Scorecard and metrics.** Per change and per node: tokens, cost, spend against budget, estimated value (`value` hours) and value over cost.
+- **Mod.** A band, the `/sdlc-story` and `/sdlc-metrics-pane` panes, and the `/sdlc-run` driver, which submits one node per turn and stops when a turn makes no progress.
+- **Onboarding.** Per-stack starter commands, baselines and verified installs; the mod is vendored as a project plugin, and the global mod steps aside only when the project one is enabled.
+- **Budget.** `/sdlc-approve <slug> budget` is the only way to raise a cap; credits live in `ratchet.json`, not in model-writable usage rows.
+
+### Deviations from the spec
+
+- **No per-model price table (spec §7.4).** The hook already records each main turn's cost as the delta of the session ledger, which includes subagents, advisor calls and classifiers, so per-change and per-node dollars are exact without pricing tokens. Per-agent-type numbers stay in tokens.
+- **No `turn.step` capture (spec §8.6).** The driver submits one node per turn, so rows are already attributed to the right node.
+- **The driver is `/sdlc-run`, not a mod `/sdlc-next`.** A standalone repo ships an `sdlc-next` skill and `$.command.register` throws on a name clash.
+- **Auto-approved share is a per-change count (R29).** `auto_approved_per_change`, not a share: a true share would need every tool call counted.
+- **Mod extras deferred (R36).** The `(slice i/n)` band text, the per-node graph, deferred findings and the Open review, Waive and Stop buttons.
+- **Plan commands are trusted only when the plan is approved (R19).** For ungated tiers only protected sensors.json commands are auto-approvable.
+- **No in-flight legacy shortcut (R24).** Build is done only from `ratchet.json` nodes; a missing file fails closed. Shipped v0.3 changes stay done; an in-flight v0.3 change must redo its slice reviews.
+
+### Security model
+
+- **Auto-approved:** commands declared in sensors.json (an exact match, never a prefix, so chained or control-character commands are refused); the pinned harness script (realpath equal to the plugin's or `.sdlc/bin/sdlc.ts`) for safe subcommands; read-only git; `git checkout -b sdlc/<slug>`; edits inside the plan's `## Files`, excluding dot-segment paths. Bash only when the cwd is the repo root. Only when `step()` says continue at an autonomous node.
+- **Never auto-approved:** approvals, waivers and budget raises (human only, the model cannot invoke them); edits to sensors.json, `.claude/settings.json`, `.claude-plugin/**` and other protected files; anything outside the plan; any approval gone stale because the artifact changed.
+- **Evidence files** (`ratchet.json`, `events.jsonl`, `ship.json`, `pr.md`, approvals, waivers, `runs.jsonl`, `verification.md`) are written only by sdlc. `weakensConfig` flags added or changed gate, level, quality and value entries.
+- **The guard is best effort; CI is the trust boundary.** CI runs the base branch's checker and config.
+- **Known limitation:** evidence filenames built inside interpreter strings (for example a script that assembles the path at run time) can evade the guard.
+- **Recommendation:** run autonomous builds in Claude Code's sandbox with a network allowlist; declared test commands run model-written code, which can do anything the user can. Defaults leave tier S and M ungated, so auto-approval starts as soon as plan.md exists for them (R17).
+
+### Trial results
+
+Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog-search-endpoint`, tier L, scratch copy of shop-app.
+
+- 14 headless `claude -p` runs (1 start, 13 next); 3 were wasted re-running at a human gate and 2 lost to run files polluting the repo. Cumulative cost $3.64, against a $20 target.
+- Permission denials after plan approval: 7 (target 0, missed): runs 7 and 10 had 4 and 3, from compound, piped, `cd`-prefixed or `$S`-variable Bash that the skills' allowed-tools prefixes did not match.
+- Work done: 2 slices, 13/13 tests, lint 0, levels unit, integration, acceptance and api pass, sensors pass. Rounds: test 1, all others 0; no cap exceeded.
+- Stopped at pr (blocked, not ready): the `harness-tamper` ship gate fired because sensors.json was edited mid-change, and the waiver is human only. The work sits uncommitted; no PR was made.
+- Scorecard: value $2400 (24h), 14 auto-approved, 0 escalations, but usd 0, because `.sdlc/usage.jsonl` is not captured in headless `-p`.
+- The fix wave (bd0403f) addressed the denial causes (one call per Bash, `ratchet record --from`, auto-approved `pr` with a one-line message), the undeclared-level and ship-gate blocks (now `blocked` with the exact command) and the missing integration level in the stacks. A re-run to confirm is pending.
+
+### Open items
+
+- Re-run the trial to confirm 0 permission prompts after plan approval.
+- Per-node graph, deferred findings and Open review, Waive and Stop buttons in the story pane (R36).
+- Usage capture in headless `-p`, so the scorecard cost matches the run totals.
+- The driver's running flag after a rejected submit.
+- Tests over 500 lines in `sdlc.spec` and `check.spec`.
+- A true auto-approved share metric.
