@@ -50,7 +50,7 @@ test('new creates intent and makes the change active; status prints next command
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/changes/add-login/intent.md')))
   const status = run(['status']).stdout
   assert.match(status, /▶ add-login/)
-  assert.match(status, /next: \/sdlc:plan add-login/)
+  assert.match(status, /next: \/sdlc:design add-login/)
 })
 
 test('tier L plan needs approval; approval is human-only and goes stale on edit', () => {
@@ -521,9 +521,12 @@ test('a spec or plan with unresolved open questions cannot be approved; resolved
   assert.equal(run(['approve', 'qs', 'plan'], { env: { SDLC_HUMAN: '1' } }).code, 0)
 })
 
-test('lean S/M: tier M has no plan gate and no review stage; tier L keeps both', () => {
+test('lean S/M: a feature has one design gate and no review stage; a tier L refactor keeps the plan gate', () => {
   run(['new', 'mid', '--type', 'feature', '--tier', 'M'])
   write('.sdlc/changes/mid/plan.md', PLAN)
+  assert.match(run(['status']).stdout, /human gate: review mid\/plan\.md/, 'a feature has one gate at design (plan.md for older changes)')
+  write('.sdlc/changes/mid/design.md', PLAN)
+  run(['approve', 'mid', 'design'], { env: { SDLC_HUMAN: '1' } })
   assert.match(run(['status']).stdout, /next: \/sdlc:build mid/)
   const st = JSON.parse(run(['status', '--json']).stdout) as { changes: { slug: string }[] }
   assert.ok(st.changes.some(c => c.slug === 'mid'))

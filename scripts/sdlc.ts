@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, APPROVAL_ARTIFACTS, approvalDigest,
-  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString,
+  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, planPath, planName, isPlanned, frontmatter, parseArgs, optString,
   listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems, checkSlug, SLUG_RE,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
@@ -20,6 +20,7 @@ import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from '
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdScorecard, story } from './scorecard.ts'
+import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
@@ -79,14 +80,14 @@ function clearReady(slug: string): void {
 
 function cmdStatus(args: Args): void {
   const json = Boolean(args.opt.json)
-  if (!exists(SDLC)) return out(json ? JSON.stringify({ initialised: false }) : `sdlc not initialised here: run ${skillRef('start')}`)
+  if (!exists(SDLC)) return out(json ? JSON.stringify({ initialised: false, flow: flowOf(false, null) }) : `sdlc not initialised here: run ${skillRef('start')}`)
   const named = frontmatter(read(STATE)).data.change
   if (named && exists(path.join(CHANGES, named)) && step(named).verdict === 'ready') clearReady(named)
   const active = activeSlug()
   const changes = listChanges().map(loadChange)
   const warnings: string[] = []
   for (const c of changes) {
-    const plan = path.join(c.dir, 'plan.md')
+    const plan = planPath(c.slug)
     if (exists(plan)) for (const p of planProblems(plan)) warnings.push(`${c.slug}: ${p}`)
     const drift = tierDrift(c.slug)
     if (drift) warnings.push(`${c.slug}: ${drift}`)
@@ -100,7 +101,7 @@ function cmdStatus(args: Args): void {
   }
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, next: c.next, command: nextCommand(c) }))
-    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null }))
+    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
   }
   if (!changes.length) return out(`no changes yet: run ${skillRef('start')} "<what you want>"`)
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
@@ -109,7 +110,7 @@ function cmdStatus(args: Args): void {
     .map(c => `${c.slug === active ? '▶' : ' '} ${c.slug.padEnd(28)} ${c.type.padEnd(10)} ${c.tier}  ${label(c)}`)
   const act = active ? loadChange(active) : null
   const st = active ? step(active) : null
-  out([...rows, '', st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
+  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
 }
 
 // A standalone repo's /sdlc-approve and /sdlc-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
@@ -148,7 +149,7 @@ function cmdApprove(args: Args): void {
   const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
   const file = path.join(CHANGES, slug, artifact ?? '')
   if (!artifact || !exists(file)) fail(`nothing to approve: ${slug}/${artifact ?? stage} does not exist`)
-  const open = stage === 'spec' || stage === 'plan' ? openQuestions(read(file)) : []
+  const open = stage === 'spec' || stage === 'plan' || stage === 'design' ? openQuestions(read(file)) : []
   if (open.length) {
     const list = open.map(q => `  - ${q}`).join('\n')
     fail(`resolve the open question(s) in ${slug}/${artifact} before approving: answer each, or record the default under ## Decisions, and leave "## Open questions" as none:\n${list}`)
@@ -172,9 +173,9 @@ function cmdScopeDrift(args: Args): void {
     fs.writeFileSync(shipFile, JSON.stringify(record, null, 2) + '\n')
   }
   if (args.opt.json) return out(JSON.stringify(r))
-  if (!r.patterns.length) out(`warn: ${slug}/plan.md has no "## Files" section; every changed file counts as drift`)
+  if (!r.patterns.length) out(`warn: ${slug}/${planName(slug)} has no "## Files" section; every changed file counts as drift`)
   if (!r.drift.length) return out(`scope ok: ${r.changed.length} changed file(s), all in ${slug}'s plan`)
-  out(`scope drift: ${r.drift.length} of ${r.changed.length} changed file(s) are not in ${slug}/plan.md ## Files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to the plan (and re-approve if gated) or revert them.`)
+  out(`scope drift: ${r.drift.length} of ${r.changed.length} changed file(s) are not in ${slug}/${planName(slug)} ## Files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to the plan (and re-approve if gated) or revert them.`)
   process.exitCode = 1
 }
 
@@ -239,7 +240,7 @@ function cmdVerifyReport(args: Args): void {
   const plan = planVerificationBullets(slug)
   const change = loadChange(slug)
   const { config } = loadConfig()
-  const required = change.type === 'spike' ? [] : requiredLevels(change, read(path.join(CHANGES, slug, 'plan.md')), config)
+  const required = change.type === 'spike' ? [] : requiredLevels(change, read(planPath(slug)), config)
   const latest = new Map(rows.filter(r => !r.expectFail && !r.source).map(r => [normCmd(r.cmd), r.exit]))
   // Plan commands stand in for an undeclared unit level; with no plan list, any explicit green run does (the no-plan fallback).
   const planned = plan.commands.map(normCmd)

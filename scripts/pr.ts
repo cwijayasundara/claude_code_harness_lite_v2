@@ -5,7 +5,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import {
   ROOT, CHANGES, SDLC, exists, read, git, gitIn, out, fail, now, optString, toPosix, defaultBase, scopeDrift, ensureGitignore, checkSlug,
-  planFiles, isPlanned, type Args,
+  planFiles, planName, isPlanned, type Args,
 } from './core.ts'
 import { loadChange, nextCommand, activeSlug, prRecorded, prDone } from './graph.ts'
 import { loadConfig, runChecks } from './check.ts'
@@ -43,7 +43,7 @@ function changedConsumers(slug: string, config: SensorConfig): Consumer[] {
     if (!dirty.length) continue
     const rel = toPosix(path.normalize(c.path)).replace(/\/+$/, '')
     const stray = dirty.filter(f => !isPlanned(`${rel}/${f}`, planned))
-    if (stray.length) fail(`${c.name} has changes outside ${slug}/plan.md ## Files: ${stray.join(', ')}`)
+    if (stray.length) fail(`${c.name} has changes outside ${slug}/${planName(slug)} ## Files: ${stray.join(', ')}`)
     found.push({ name: c.name, dir, test: c.test, files: dirty, branch: gitIn(dir, ['rev-parse', '--abbrev-ref', 'HEAD']) })
   }
   return found
@@ -96,7 +96,7 @@ export function cmdPr(args: Args): void {
   if (stacked) fail(`not shipping: ${stacked}`)
   const base = defaultBase() ?? (head && ['main', 'master'].includes(head) ? git(['rev-parse', 'HEAD']) : null)
   const r = scopeDrift(slug, base)
-  if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to plan.md ## Files (and re-approve if gated) or revert them.`)
+  if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to ${planName(slug)} ## Files (and re-approve if gated) or revert them.`)
   const { config, rules, errors } = loadConfig()
   const sensorsBefore = read(path.join(SDLC, 'sensors.json'))
   const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })

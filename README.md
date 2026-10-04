@@ -38,7 +38,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 | `/sdlc-approve <slug> tier` | **Human gate.** Accepts a tier or type edited in `intent.md`; the recorded tier is the floor, so only a person can lower it. |
 | `/sdlc:sensors` | Runs the sensors on the active change and prints what they found. |
 | `/sdlc-run` | The driver: submits one node per turn and stops at a human gate, a block or a turn with no progress. |
-| `/sdlc-story` | A pane with the change's nodes, rounds, cost against budget and estimated value. Zero tokens. |
+| `/sdlc-story` | A pane with the change's nodes, rounds and cost against budget. Zero tokens. |
 | `/sdlc-metrics-pane` | A pane with the scorecard: cost, tokens and value per change and node. Zero tokens. |
 | `/sdlc-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
 | `/sdlc:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
@@ -73,7 +73,7 @@ Computational sensors run on the hot path at zero tokens; one inferential review
 - **Guides** (contracts, engineering, testing) are copied to `.sdlc/guides/` by init and injected on first touch of a matching path.
 - **CI:** `sdlc.ts vendor` copies the checker into `.sdlc/bin`; copy `templates/sdlc-check.yml` and require `sdlc-check`. CI runs the base branch's checker and config.
 
-**Autonomous build to PR.** Once the plan is approved, build runs slice by slice with a bounded review loop per slice, then test levels, quality sensors compared with the base branch, and the PR with its checks; commands declared in sensors.json and edits inside the plan's files need no prompt. Humans keep approvals, waivers and budget raises. `sensors.json` keys: `gates` (human gates per tier), `levels` (test commands per level), `quality` (lint-style commands compared with base), `ratchet` (round and budget caps) and `value` (`{ rate, hours }`: an hourly rate and hours saved per tier S, M and L, so value is an estimate). Run autonomous builds in Claude Code's sandbox.
+**Autonomous build to PR.** A feature or greenfield change goes intent → design: `/sdlc:start` writes `intent.md`, `design.md` follows in the same turn, and the person is asked **once** (the mod shows an Approve dialog; `/sdlc-approve <slug> design` without the mod) for both files together. Once the design is approved, build runs slice by slice with a bounded review loop per slice, then test levels, quality sensors compared with the base branch, and the PR with its checks; commands declared in sensors.json and edits inside the plan's files need no prompt. Humans keep approvals, waivers and budget raises. `sensors.json` keys: `gates` (human gates per tier), `levels` (test commands per level), `quality` (lint-style commands compared with base), `ratchet` (round and budget caps) and `value` (`{ rate, hours }`: an hourly rate and hours saved per tier S, M and L, so value is an estimate). Run autonomous builds in Claude Code's sandbox.
 
 For long unattended builds, `/sdlc:build` prints a ready `/goal` line, so you don't have to keep typing "continue".
 

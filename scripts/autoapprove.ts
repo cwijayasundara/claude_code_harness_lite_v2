@@ -2,7 +2,7 @@
 // run without a prompt. It only turns "ask" into "allow"; the hooks run it after every deny and ask check.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, approvalOf, planFiles, planVerification, relPosix, type HookInput } from './core.ts'
+import { ROOT, approvalOf, planApproved, planName, planFiles, planVerification, relPosix, type HookInput } from './core.ts'
 import { step, AUTONOMOUS, activeSlug } from './graph.ts'
 import { isProtected } from './sensors.ts'
 import { loadConfig } from './check.ts'
@@ -19,11 +19,11 @@ const SAFE_SUBS = new Set(['status', 'next', 'verify-report', 'diff', 'ratchet s
 const GIT_SUBS = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
 const GIT_BAD_OPT = /^(?:-C|-c|--no-index|--output(?:=.*)?|--ext-diff|-O.*|--open-files-in-pager.*|--textconv|--exec-path.*|--git-dir.*|--work-tree.*|--paginate)$/
 
-// sensors.json is protected, so its commands always count. plan.md is the model's own file unless the person approved
+// sensors.json is protected, so its commands always count. the plan document is the model's own file unless the person approved
 // it (the approval is bound to its digest), so its ## Verification counts only then.
 export function declaredCommandSet(slug: string | null): Set<string> {
   const { config } = loadConfig()
-  const cmds = [...Object.values(config.fast), ...Object.values(config.full), ...Object.values(config.levels), ...Object.values(config.quality).map(q => q.cmd), ...(slug && approvalOf(slug, 'plan') === 'approved' ? planVerification(slug) : [])]
+  const cmds = [...Object.values(config.fast), ...Object.values(config.full), ...Object.values(config.levels), ...Object.values(config.quality).map(q => q.cmd), ...(slug && planApproved(slug) ? planVerification(slug) : [])]
   return new Set(cmds.filter((c): c is string => Boolean(c)).map(normCmd))
 }
 
@@ -132,11 +132,11 @@ export function autoApprove(input: HookInput, tool: 'edit' | 'bash'): string | n
     if (rel.split('/').some(seg => seg.startsWith('.'))) return null // hooks, CI and env files run outside the test runner or hold secrets
     if (!planFiles(slug).some(p => globToRegex(p).test(rel))) return null
     appendEvent(slug, { node: s.node, verdict: 'allow', kind: 'auto-approve', tool: 'Edit', target: rel })
-    return `${rel} is inside ${slug}/plan.md ## Files (node ${s.node})`
+    return `${rel} is inside ${slug}/${planName(slug)} ## Files (node ${s.node})`
   }
   const cmd = String(input.tool_input?.command ?? '')
   const how = cmd ? bashApproval(cmd, slug, s.node, input.cwd) : null
   if (!how) return null
   if (how === 'declared') appendEvent(slug, { node: s.node, verdict: 'allow', kind: 'auto-approve', tool: 'Bash', target: normCmd(cmd).slice(0, 120) })
-  return `a declared, harness or read-only git command inside ${slug}'s ${approvalOf(slug, 'plan') === 'approved' ? 'approved plan' : 'plan'} (node ${s.node})`
+  return `a declared, harness or read-only git command inside ${slug}'s ${planApproved(slug) ? 'approved plan' : 'plan'} (node ${s.node})`
 }

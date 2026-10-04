@@ -10,18 +10,22 @@ beforeEach(() => { repo = makeRepo() })
 const status = () => JSON.parse(sdlc(repo, ['status', '--json']).stdout) as { changes: { slug: string; next: { stage: string; kind: string } | null; command: string }[] }
 const nextOf = (slug: string) => status().changes.find(c => c.slug === slug)?.next
 
-test('feature L walks intent → spec → plan → build → test → sensors → pr → pr-review', () => {
+test('feature L walks intent → design → build → test → sensors → pr → pr-review', () => {
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
-  write(repo, '.sdlc/changes/big/spec.md', '# Spec\n## Open questions\nnone\n')
-  assert.deepEqual(nextOf('big'), { stage: 'spec', kind: 'approve', state: 'missing', gate: 'spec' })
+  assert.deepEqual(nextOf('big'), { stage: 'design', kind: 'work' })
+  write(repo, '.sdlc/changes/big/design.md', '## Files\n- src/a.js\n## Verification\n- `npm test`\n## Open questions\nnone\n')
+  assert.deepEqual(nextOf('big'), { stage: 'design', kind: 'approve', state: 'missing', gate: 'design' })
+  sdlc(repo, ['approve', 'big', 'design'], { env: { SDLC_HUMAN: '1' } })
+  assert.deepEqual(nextOf('big'), { stage: 'build', kind: 'work' })
+  write(repo, '.sdlc/changes/big/intent.md', fs.readFileSync(path.join(repo, '.sdlc/changes/big/intent.md'), 'utf8') + '\nedited\n')
+  assert.equal(nextOf('big')?.kind, 'approve', 'one approval covers intent.md too, so editing it makes the approval stale')
 })
 
-test('gates come from sensors.json: tier M gated on plan when configured', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ gates: { M: ['plan'] } }))
+test('gates come from sensors.json: tier M is gated on design by default and on nothing when configured so', () => {
   sdlc(repo, ['new', 'mid', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/mid/plan.md', '## Files\n- src/a.js\n## Verification\n- `npm test`\n')
-  assert.equal(nextOf('mid')?.kind, 'approve')
-  write(repo, '.sdlc/sensors.json', '{}')
+  write(repo, '.sdlc/changes/mid/design.md', '## Files\n- src/a.js\n## Verification\n- `npm test`\n')
+  assert.deepEqual(nextOf('mid'), { stage: 'design', kind: 'approve', state: 'missing', gate: 'design' })
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ gates: { M: [] } }))
   assert.deepEqual(nextOf('mid'), { stage: 'build', kind: 'work' })
 })
 
@@ -67,7 +71,8 @@ const stepOf = (slug?: string) => JSON.parse(sdlc(repo, ['next', ...(slug ? [slu
 
 test('step: continue at a work node, human at a gate, ready when done', () => {
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
-  write(repo, '.sdlc/changes/big/spec.md', '# Spec\n## Open questions\nnone\n')
+  assert.equal(stepOf('big').verdict, 'continue')
+  write(repo, '.sdlc/changes/big/design.md', '## Files\n- src/a.js\n## Open questions\nnone\n')
   assert.equal(stepOf('big').verdict, 'human')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   const s = stepOf('tiny')

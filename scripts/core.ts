@@ -12,8 +12,8 @@ export { globToRegex }
 
 export type ChangeType = 'greenfield' | 'feature' | 'bugfix' | 'incident' | 'refactor' | 'migration' | 'chore' | 'spike'
 export type Tier = 'S' | 'M' | 'L'
-export type Stage = 'intent' | 'spec' | 'plan' | 'build' | 'diagnose' | 'test' | 'sensors' | 'pr' | 'pr-review' | 'notes'
-export type GatedStage = 'intent' | 'spec' | 'plan' | 'impact'
+export type Stage = 'intent' | 'spec' | 'plan' | 'design' | 'build' | 'diagnose' | 'test' | 'sensors' | 'pr' | 'pr-review' | 'notes'
+export type GatedStage = 'intent' | 'spec' | 'plan' | 'design' | 'impact'
 export type ApprovalState = 'approved' | 'stale' | 'missing'
 export type Fields = Record<string, string>
 
@@ -86,7 +86,7 @@ export const LIMITS = { intentLines: 40, specLines: 150, planLines: 120, planCod
 export const MIN_SAMPLE = 5
 export const SOFT_HOOK_FAILURE = 'sdlc hook error (ignored)'
 
-export const APPROVAL_ARTIFACTS: Record<GatedStage, string> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', impact: 'plan.md' }
+export const APPROVAL_ARTIFACTS: Record<GatedStage, string> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', design: 'design.md', impact: 'plan.md' }
 export type ImpactHit = { consumer: string; file: string; line: number; id: string }
 export type Impact = { at: string; ids: string[]; hits: ImpactHit[]; missing: string[] }
 
@@ -187,6 +187,8 @@ export const optString = (args: Args, key: string): string | undefined => {
 // The impact approval covers plan.md and impact.json, so a re-run of the plan point with new hits makes it stale.
 export function approvalDigest(slug: string, gate: GatedStage): string {
   const dir = path.join(CHANGES, slug)
+  // One approval covers the problem and the design, so a change to either makes it stale.
+  if (gate === 'design') return sha(`${read(path.join(dir, 'intent.md'))}\n${read(path.join(dir, 'design.md'))}`)
   const artifact = read(path.join(dir, APPROVAL_ARTIFACTS[gate]))
   if (gate !== 'impact') return sha(artifact)
   // The timestamp is left out so a re-run with identical results keeps the approval.
@@ -201,11 +203,18 @@ export function approvalDigest(slug: string, gate: GatedStage): string {
   return sha(`${artifact}\n${content}`)
 }
 
+// A change's plan document: design.md (feature and greenfield) when it exists, else plan.md. Every reader of the plan goes through here.
+export const planPath = (slug: string): string => path.join(CHANGES, slug, exists(path.join(CHANGES, slug, 'design.md')) ? 'design.md' : 'plan.md')
+export const planName = (slug: string): string => path.basename(planPath(slug))
+
 export function approvalOf(slug: string, gate: GatedStage): ApprovalState {
   const latest = readJsonl<Approval>(APPROVALS).filter(a => a.slug === slug && a.stage === gate).at(-1)
   if (!latest) return 'missing'
   return latest.digest === approvalDigest(slug, gate) ? 'approved' : 'stale'
 }
+
+// The person approved the plan document: its own gate (plan, or design for feature and greenfield).
+export const planApproved = (slug: string): boolean => approvalOf(slug, planName(slug) === 'design.md' ? 'design' : 'plan') === 'approved'
 
 export const needsImpact = (impact: Impact | null): boolean => Boolean(impact && (impact.hits.length || impact.missing.length))
 
@@ -242,7 +251,7 @@ export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|rat
 // unwrapped to cmd; `sdlc.ts run --expect-fail ...` (red evidence), `sdlc.ts check ...` and other sdlc.ts
 // invocations are ignored.
 export function planVerificationBullets(slug: string): { commands: string[]; ignored: string[] } {
-  const body = read(path.join(CHANGES, slug, 'plan.md'))
+  const body = read(planPath(slug))
   const m = /^##\s+Verification\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(body)
   const commands: string[] = []
   const ignored: string[] = []
@@ -263,7 +272,7 @@ export function planVerificationBullets(slug: string): { commands: string[]; ign
 export const planVerification = (slug: string): string[] => planVerificationBullets(slug).commands
 
 export function planFiles(slug: string): string[] {
-  const { body } = frontmatter(read(path.join(CHANGES, slug, 'plan.md')))
+  const { body } = frontmatter(read(planPath(slug)))
   const m = /^##\s+Files\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(body)
   if (!m) return []
   return (m[1] ?? '')

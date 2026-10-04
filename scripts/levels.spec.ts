@@ -42,7 +42,8 @@ test('a failing verify-report counts a test round; past the cap the change is bl
 const nextStage = (slug: string) => (JSON.parse(sdlc(repo, ['status', '--json']).stdout).changes as { slug: string; next: { stage: string } | null }[]).find(c => c.slug === slug)?.next ?? { stage: 'none' }
 const feature = () => {
   sdlc(repo, ['new', 'two', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/two/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n### Task 1\nA\n### Task 2\nB\n')
+  write(repo, '.sdlc/changes/two/design.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n### Task 1\nA\n### Task 2\nB\n')
+  sdlc(repo, ['approve', 'two', 'design'], { env: { SDLC_HUMAN: '1' } })
   sdlc(repo, ['run', '--slug', 'two', '--', 'node -e "0"'])
 }
 
@@ -71,7 +72,7 @@ test('R24: an in-flight change without ratchet.json stays at build (fails closed
   sdlc(repo, ['verify-report', 'old'])
   assert.match(vfront('old'), /^result: pass$/m)
   fs.rmSync(path.join(repo, '.sdlc/changes/old/ratchet.json'))
-  assert.ok(['intent', 'spec', 'plan', 'build'].includes(nextStage('old').stage), 'never past build')
+  assert.ok(['intent', 'spec', 'plan', 'design', 'build'].includes(nextStage('old').stage), 'never past build')
 })
 
 test('a corrupt ratchet.json also leaves build not done', () => {
@@ -79,12 +80,13 @@ test('a corrupt ratchet.json also leaves build not done', () => {
   sdlc(repo, ['run', '--slug', 'old', '--', 'node -e "0"'])
   sdlc(repo, ['verify-report', 'old'])
   write(repo, '.sdlc/changes/old/ratchet.json', '{not json')
-  assert.ok(['intent', 'spec', 'plan', 'build'].includes(nextStage('old').stage), 'never past build')
+  assert.ok(['intent', 'spec', 'plan', 'design', 'build'].includes(nextStage('old').stage), 'never past build')
 })
 
 test('an undeclared required level blocks the change with the exact edit a person makes', () => {
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
-  write(repo, '.sdlc/changes/big/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n')
+  write(repo, '.sdlc/changes/big/design.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n')
+  sdlc(repo, ['approve', 'big', 'design'], { env: { SDLC_HUMAN: '1' } })
   sdlc(repo, ['run', '--slug', 'big', '--', 'node -e "0"'])
   sdlc(repo, ['verify-report', 'big'])
   const n = JSON.parse(sdlc(repo, ['next', 'big', '--json']).stdout)

@@ -15,8 +15,7 @@ const preEdit = (rel: string): string | undefined => {
 }
 const ratchetJson = (slug: string) => JSON.parse(fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/ratchet.json`), 'utf8'))
 const planned = (slug: string): void => {
-  write(repo, `.sdlc/changes/${slug}/spec.md`, '# Spec\n## Open questions\nnone\n')
-  write(repo, `.sdlc/changes/${slug}/plan.md`, '## Files\n- src/**\n## Verification\n- `npm test`\n## Open questions\nnone\n')
+  write(repo, `.sdlc/changes/${slug}/design.md`, '## Files\n- src/**\n## Verification\n- `npm test`\n## Open questions\nnone\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'plan')
 }
 beforeEach(() => {
@@ -24,7 +23,6 @@ beforeEach(() => {
   write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'npm test' } }))
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
   planned('big')
-  sdlc(repo, ['approve', 'big', 'spec'], { env: { SDLC_HUMAN: '1' } })
 })
 
 test('createChange records the tier and type in ratchet.json', () => {
@@ -64,13 +62,13 @@ test('approve tier is human-only', () => {
 })
 
 test('a person approving tier records the lowered tier and gating follows it', () => {
-  setIntent('big', 'tier: L', 'tier: M')
-  const r = sdlc(repo, ['approve', 'big', 'tier', 'M'], { env: { SDLC_HUMAN: '1' } })
+  setIntent('big', 'tier: L', 'tier: S')
+  const r = sdlc(repo, ['approve', 'big', 'tier', 'S'], { env: { SDLC_HUMAN: '1' } })
   assert.equal(r.code, 0, r.stderr)
-  assert.match(r.stdout, /L → M/)
-  assert.equal(ratchetJson('big').tier, 'M')
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8'), /"kind":"tier".*L → M/)
-  assert.equal(status().changes[0]?.tier, 'M')
+  assert.match(r.stdout, /L → S/)
+  assert.equal(ratchetJson('big').tier, 'S')
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8'), /"kind":"tier".*L → S/)
+  assert.equal(status().changes[0]?.tier, 'S')
   assert.equal(status().step.verdict, 'continue')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /tier changed/)
 })
@@ -81,7 +79,7 @@ test('raising the tier in intent.md takes effect without approval', () => {
   setIntent('small', 'tier: S', 'tier: L')
   const s = status()
   assert.equal(s.changes.find(c => c.slug === 'small')?.tier, 'L')
-  assert.equal(s.step.node, 'spec')
+  assert.equal(s.step.node, 'design')
 })
 
 test('type greenfield recorded cannot be dropped by editing intent.md', () => {
@@ -107,7 +105,7 @@ test('with no recorded type, intent.md cannot pick a shorter path: the type is f
   fs.writeFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), JSON.stringify(r))
   setIntent('big', 'type: feature', 'type: chore')
   assert.equal(status().step.verdict, 'human')
-  assert.equal(status().step.node, 'plan')
+  assert.equal(status().step.node, 'design')
   assert.notEqual(preEdit('src/a.js'), 'allow')
   assert.match(sdlc(repo, ['status']).stdout, /type changed in intent\.md \(feature → chore\)/)
 })

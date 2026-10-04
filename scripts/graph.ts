@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, CHANGES, STATE, exists, read, sha, git, toPosix, frontmatter, reportFields, approvalOf, needsImpact, readImpact, listChanges, isShipped, SLUG_RE, skillRef,
+  ROOT, CHANGES, planPath, STATE, exists, read, sha, git, toPosix, frontmatter, reportFields, approvalOf, needsImpact, readImpact, listChanges, isShipped, SLUG_RE, skillRef,
   APPROVAL_ARTIFACTS, type ChangeType, type Tier, type Stage, type GatedStage, type ApprovalState, type Next, type Change,
 } from './core.ts'
 import { loadConfig } from './check.ts'
@@ -11,8 +11,8 @@ import { readRatchet, spendUsd, block, readEvents } from './ratchet.ts'
 import type { SensorConfig, RatchetNode } from './model.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
-  greenfield: ['intent', 'spec', 'plan', 'build', 'test', 'sensors', 'pr', 'pr-review'],
-  feature: ['intent', 'spec', 'plan', 'build', 'test', 'sensors', 'pr', 'pr-review'],
+  greenfield: ['intent', 'design', 'build', 'test', 'sensors', 'pr', 'pr-review'],
+  feature: ['intent', 'design', 'build', 'test', 'sensors', 'pr', 'pr-review'],
   bugfix: ['intent', 'plan', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'],
   incident: ['intent', 'plan', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'],
   refactor: ['intent', 'plan', 'build', 'test', 'sensors', 'pr', 'pr-review'],
@@ -20,7 +20,7 @@ export const PATHS: Record<ChangeType, Stage[]> = {
   chore: ['intent', 'build', 'test', 'sensors', 'pr', 'pr-review'],
   spike: ['intent', 'notes'],
 }
-const ARTIFACTS: Partial<Record<Stage, string>> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', notes: 'notes.md' }
+const ARTIFACTS: Partial<Record<Stage, string>> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', design: 'design.md', notes: 'notes.md' }
 const TIERS: Tier[] = ['S', 'M', 'L']
 export const isChangeType = (v: string | undefined): v is ChangeType => v !== undefined && v in PATHS
 export const isTier = (v: string | undefined): v is Tier => v !== undefined && (TIERS as string[]).includes(v)
@@ -93,18 +93,21 @@ export function loadChange(slug: string): Change {
       case 'pr': return prDone(slug)
       case 'pr-review': return (review.result === 'pass' || review.result === 'accepted') && readRatchet(slug).nodes['pr-review']?.status !== 'open'
           && (!git(['remote', 'get-url', 'origin']) || /^(pass|no-ci)$/.test(readEvents(slug).filter(e => e.kind === 'checks').at(-1)?.verdict ?? ''))
+      case 'design': return exists(path.join(dir, 'design.md')) || exists(path.join(dir, 'plan.md'))
       default: return exists(path.join(dir, ARTIFACTS[stage] ?? ''))
     }
   }
+  // A change planned before design existed (plan.md, no design.md) keeps its plan gate.
+  const gateOf = (stage: Stage): GatedStage => (stage === 'design' && !exists(path.join(dir, 'design.md')) ? 'plan' : (stage as GatedStage))
   const approvalState = (gate: GatedStage): ApprovalState => approvalOf(slug, gate)
   let next: Next | null = null
   for (const stage of isLegacyShipped(slug) ? [] : stages) {
     if (!isDone(stage)) { next = { stage, kind: 'work' }; break }
-    if ((gates as Stage[]).includes(stage) && approvalState(stage as GatedStage) !== 'approved') {
-      next = { stage, kind: 'approve', state: approvalState(stage as GatedStage), gate: stage as GatedStage }
+    if ((gates as Stage[]).includes(stage) && approvalState(gateOf(stage)) !== 'approved') {
+      next = { stage, kind: 'approve', state: approvalState(gateOf(stage)), gate: gateOf(stage) }
       break
     }
-    if (stage === 'plan' && needsImpact(readImpact(slug)) && approvalState('impact') !== 'approved') {
+    if ((stage === 'plan' || stage === 'design') && needsImpact(readImpact(slug)) && approvalState('impact') !== 'approved') {
       next = { stage, kind: 'approve', state: approvalState('impact'), gate: 'impact' }
       break
     }
@@ -117,8 +120,8 @@ export function nextCommand(change: Change): string {
   if (!next) return 'done: nothing left for this change'
   if (next.kind === 'approve') {
     const why = next.state === 'stale' ? ' (approval is stale: the artifact changed after it was approved)' : ''
-    const what = next.gate === 'impact' ? `the cross-repo impact in ${change.slug}/impact.json and plan.md` : `${change.slug}/${APPROVAL_ARTIFACTS[next.gate]}`
-    return `human gate: review ${what}, then run /sdlc-approve ${change.slug} ${next.gate}${why}`
+    const what = next.gate === 'impact' ? `the cross-repo impact in ${change.slug}/impact.json and ${path.basename(planPath(change.slug))}` : `${change.slug}/${APPROVAL_ARTIFACTS[next.gate]}`
+    return `human gate: review ${next.gate === 'design' ? `${change.slug}/intent.md and ${change.slug}/design.md` : what}, then run /sdlc-approve ${change.slug} ${next.gate}${why}`
   }
   if (next.stage === 'intent') return `${skillRef('start')} ${change.slug}`
   if (next.stage === 'notes') return `${skillRef('start')} ${change.slug} (spike: answer in notes.md)`

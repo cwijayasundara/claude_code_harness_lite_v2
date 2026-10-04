@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
-  ROOT, SDLC, CHANGES, WAIVERS, planFiles, isPlanned, exists, read, out, fail, git, gitIn, approvalOf, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
+  ROOT, SDLC, CHANGES, WAIVERS, planFiles, isPlanned, exists, read, out, fail, git, gitIn, approvalOf, planApproved, planPath, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
@@ -97,7 +97,7 @@ function logRuleFires(findings: Finding[], point: Point): void {
 // an older change's wildcard waiver must not cover what a later PR does.
 function ciScope(slug: string, base: string | null | undefined): ((file: string | undefined) => boolean) | null {
   if (!base || showAt(base, `.sdlc/changes/${slug}/intent.md`) !== null) return null
-  const patterns = exists(path.join(CHANGES, slug, 'plan.md')) ? planFiles(slug) : []
+  const patterns = exists(planPath(slug)) ? planFiles(slug) : []
   const folder = `.sdlc/changes/${slug}/`
   return file => Boolean(file) && (String(file).startsWith(folder) || patterns.some(p => isPlanned(String(file), [p]) && !String(file).startsWith('.sdlc/')))
 }
@@ -179,7 +179,7 @@ export function cmdCheckPlan(args: Args): void {
   const slug = given ? checkSlug(given) : activeSlug()
   if (!slug) fail('check --at plan needs an active change or --slug')
   const { config } = loadConfig()
-  const ids = contractsFromPlan(read(path.join(CHANGES, slug, 'plan.md')))
+  const ids = contractsFromPlan(read(planPath(slug)))
   const found = consumerHits(ids, config)
   const hits = found.hits
   const missing = ids.length ? found.missing : []
@@ -242,7 +242,7 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
   if (!exists(path.join(CHANGES, slug))) return [{ sensor: 'traceability', severity: 'block', message: `unknown change ${slug}`, fix: 'pass a slug that exists under .sdlc/changes/' }]
   const change = loadChange(slug)
   const findings: Finding[] = []
-  const hasPlan = exists(path.join(change.dir, 'plan.md'))
+  const hasPlan = exists(planPath(slug))
   // An ad-hoc change is tiered on its first Stop; vibe coding keeps growing it, so re-tier it from the branch diff.
   const RANK = { S: 0, M: 1, L: 2 } as const
   const fromDiff = tierFromDiff(diffs, config)
@@ -251,7 +251,7 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
     findings.push({ sensor: 'adhoc', severity: 'block', message: `ad-hoc change is now tier ${tier} with no plan`, fix: `run /sdlc:start ${slug} to adopt it: it writes the plan and applies the tier's gates; the code stays` })
   }
   const spec = read(path.join(change.dir, 'spec.md'))
-  const plan = read(path.join(change.dir, 'plan.md'))
+  const plan = read(planPath(slug))
   let [source, heading] = [spec, 'Behaviours']
   let ids = behaviourIds(spec, heading)
   if (!ids.length) { [source, heading] = [plan, 'Slices']; ids = behaviourIds(plan, heading) }
@@ -302,7 +302,7 @@ export function runChecks(i: CheckInput): CheckResult {
     ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
   ]
   // A diff whose plan the person approved is big by design: the diff-size limit warns instead of blocking.
-  if (i.slugs.length && i.slugs.every(s => approvalOf(s, 'plan') === 'approved')) {
+  if (i.slugs.length && i.slugs.every(planApproved)) {
     for (const f of findings) if (f.sensor === 'size' && !f.file) f.severity = 'warn'
   }
   if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))

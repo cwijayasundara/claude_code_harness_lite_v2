@@ -2,7 +2,7 @@
 // Written only by sdlc.ts (ratchet.json and events.jsonl are evidence), so a model cannot reset its own counter.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, EVIDENCE_NAME_RE, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
+import { CHANGES, EVIDENCE_NAME_RE, planPath, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
 import { loadConfig } from './check.ts'
 import type { RatchetNode } from './model.ts'
 
@@ -34,7 +34,7 @@ export function parseReviewFindings(text: string): ReviewFinding[] {
 }
 
 const slicesIn = (slug: string): string[] => {
-  const ids = [...read(file(slug, 'plan.md')).matchAll(/^###\s+Task\s+(\d+)\b/gm)].map(m => m[1] ?? '')
+  const ids = [...read(planPath(slug)).matchAll(/^###\s+Task\s+(\d+)\b/gm)].map(m => m[1] ?? '')
   return ids.length ? ids : ['1']
 }
 

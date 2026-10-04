@@ -34,7 +34,7 @@ export type SensorConfig = {
   limits: { fileLines: number; diffLines: number; lineChars: number }
   knownRed: string[]
   build: 'native' | 'sdd'
-  gates: Record<GateKey, ('spec' | 'plan')[]>
+  gates: Record<GateKey, ('spec' | 'plan' | 'design')[]>
   levels: Partial<Record<Level, string>>
   quality: Partial<Record<QualityCategory, QualityCmd>>
   ratchet: { rounds: Record<RatchetNode, number>; usd: Record<RatchetNode, number> }
@@ -54,7 +54,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   limits: { fileLines: 400, diffLines: 500, lineChars: 160 },
   knownRed: [],
   build: 'native',
-  gates: { S: [], M: [], L: ['spec', 'plan'], greenfield: ['spec', 'plan'] },
+  gates: { S: [], M: ['design'], L: ['spec', 'plan', 'design'], greenfield: ['spec', 'plan', 'design'] },
   levels: {},
   quality: {},
   ratchet: { rounds: { build: 2, test: 2, sensors: 1, 'pr-review': 1 }, usd: { build: 6, test: 2, sensors: 2, 'pr-review': 2 } },
@@ -242,10 +242,10 @@ function parseV4(value: Record<string, unknown>, config: SensorConfig, errors: s
   if (isObject(value.gates)) {
     for (const [k, v] of Object.entries(value.gates)) {
       if (!Object.hasOwn(config.gates, k)) { errors.push(`gates: unknown tier "${k}"`); continue }
-      if (Array.isArray(v) && v.every(s => s === 'spec' || s === 'plan')) config.gates[k as GateKey] = v as ('spec' | 'plan')[]
-      else errors.push(`gates.${k} must list spec and/or plan`)
+      if (Array.isArray(v) && v.every(s => s === 'spec' || s === 'plan' || s === 'design')) config.gates[k as GateKey] = v as ('spec' | 'plan' | 'design')[]
+      else errors.push(`gates.${k} must list spec, plan and/or design`)
     }
-  } else if ('gates' in value) errors.push('gates must be an object of tier → [spec, plan]')
+  } else if ('gates' in value) errors.push('gates must be an object of tier → [spec, plan, design]')
   if (isObject(value.levels)) {
     for (const [k, v] of Object.entries(value.levels)) {
       if (!LEVELS.includes(k as Level)) errors.push(`levels: unknown level "${k}"`)

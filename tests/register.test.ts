@@ -31,6 +31,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     prompts: [] as string[],
     rejectSubmit: false,
     answer: 'Not yet',
+    afterQuality: null as unknown,
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -40,6 +41,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   on('process.run', ($, e) => {
     world.runs.push({ argv: e.argv, env: (e as { init?: { env?: Record<string, string> } }).init?.env })
     const sub = e.argv[3]
+    if (sub === 'quality' && world.afterQuality) world.step = world.afterQuality
     const stdout =
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
@@ -238,14 +240,14 @@ describe('sdlc mod', () => {
   const bandProps = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 160, scroll: { offset: 0, bodyRows: 5 }, view: {} }
   const paneProps = { title: 'x', isFocused: false, bodyColumns: 120, placement: 'inline' as const, scroll: { offset: 0, bodyRows: 10 }, view: {} }
 
-  test('the band shows the story: node, round, tokens, cost and estimated value', async ($, on) => {
+  test('the band shows the story: node, round, tokens and cost, with no value estimate', async ($, on) => {
     worldOf(on)
     on('turn.complete', () => ({ text: '' }))
     await $.session.start(SESSION)
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
     const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'AbovePrompt', props: bandProps, viewport: { columns: 160, rows: 30 } })
     const text = JSON.stringify(await ui.drawn())
-    for (const part of ['build', 'build ⟲1/2', '412k tok', '$2.16', 'value ≈ $1,200 (est.)', 'ctx']) expect(text).toContain(part)
+    for (const part of ['build', 'build ⟲1/2', '412k tok', '$2.16', 'ctx']) expect(text).toContain(part)
     await ui.unmount()
   })
 
@@ -301,14 +303,14 @@ describe('sdlc mod', () => {
     await ui.unmount()
   })
 
-  test('storyText and storyPaneText are pure and label value as an estimate', () => {
+  test('storyText and storyPaneText are pure and carry no value estimate', () => {
     const s: Story = { slug: 'a', node: 'test', verdict: 'human', round: 2, cap: 3, tokens: 900, tokensByNode: {}, budgetByNode: { test: { spent: 0.5, cap: 2 } }, usd: 0.5, usdByNode: { test: 0.5 }, valueUsd: 0, valueHours: 0, autoApproved: 0, escalations: 1, levels: 'unit', sensors: 'ok' }
     expect(storyText(null)).toBe('')
-    expect(storyText(s)).toBe(' · test ⟲2/3 ⏸ gate · 900 tok · $0.50 · value ≈ $0.00 (est.)')
+    expect(storyText(s)).toBe(' · test ⟲2/3 ⏸ gate · 900 tok · $0.50')
     expect(storyText({ ...s, node: null, cap: 0, verdict: 'ready' })).toContain('done ✓ ready')
     expect(storyPaneText(null)).toBe('no active story')
     const pane = storyPaneText(s)
-    expect(pane).toContain('estimate')
+    expect(pane).not.toContain('value')
     expect(pane).toContain('budget test $0.50/$2')
     expect(pane).toContain('escalations 1')
   })
@@ -392,6 +394,37 @@ describe('sdlc mod', () => {
     const run = world.runs.find(r => r.argv.includes('approve'))
     expect(run?.argv).toContain('plan')
     expect(run?.env).toEqual({ SDLC_HUMAN: '1' })
+  })
+
+  test('a turn that ends at the design gate asks once and approves design only on a yes', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    world.step = { slug: 'add-login', node: 'design', verdict: 'human', reason: 'human gate', command: 'human gate: review add-login/intent.md and add-login/design.md, then run /sdlc-approve add-login design', round: 0 }
+    world.answer = 'Not yet'
+    on('tool.call', ($2, e) =>
+      e.tool === 'AskUserQuestion' ? { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map(q => [q.question, world.answer])) } } : { result: 'edited' },
+    )
+    await $.session.start(SESSION)
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    expect(world.runs.some(r => r.argv.includes('approve'))).toBe(false)
+    world.answer = 'Approve design'
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+    const run = world.runs.find(r => r.argv.includes('approve'))
+    expect(run?.argv).toContain('design')
+    expect(run?.env).toEqual({ SDLC_HUMAN: '1' })
+  })
+
+  test('the driver runs the sensors node itself at zero tokens and prompts only for the next node', async ($, on) => {
+    const world = worldOf(on)
+    const clock = mock.clock(on)
+    world.step = { slug: 'add-login', node: 'sensors', verdict: 'continue', reason: '', command: '/sdlc:sensors add-login', round: 0 }
+    world.afterQuality = { slug: 'add-login', node: 'pr', verdict: 'continue', reason: '', command: '/sdlc:pr add-login', round: 0 }
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await clock.advance(1)
+    expect(world.runs.some(r => r.argv.includes('quality'))).toBe(true)
+    expect(world.prompts).toHaveLength(1)
+    expect(world.prompts[0]).toContain('skill pr add-login')
   })
 
   test('blocked and ready stop the driver with a toast', async ($, on) => {

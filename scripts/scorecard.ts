@@ -1,6 +1,6 @@
 // One story's numbers (band, pane, PR body): tokens, cost per node, estimated value, rounds and autonomy.
 import path from 'node:path'
-import { CHANGES, USAGE, read, readJsonl, frontmatter, out, fail, checkSlug, type Args, type UsageRow } from './core.ts'
+import { CHANGES, USAGE, planPath, read, readJsonl, frontmatter, out, fail, checkSlug, type Args, type UsageRow } from './core.ts'
 import { loadChange, step } from './graph.ts'
 import { readEvents, readRatchet, rawSpendUsd } from './ratchet.ts'
 import { loadConfig } from './check.ts'
@@ -12,7 +12,7 @@ const tokensOf = (r: UsageRow): number => (r.in ?? 0) + (r.out ?? 0) + (r.cr ?? 
 
 // Estimated value hours: the tier default, or the architect's override in plan.md, which needs a reason on the same line.
 export function valueHoursFor(slug: string, tier: string, hoursByTier: Record<string, number>): number {
-  const override = /^value_hours:[ \t]*(\d+(?:\.\d+)?)[ \t]+because[ \t]+\S/m.exec(read(path.join(CHANGES, slug, 'plan.md')))
+  const override = /^value_hours:[ \t]*(\d+(?:\.\d+)?)[ \t]+because[ \t]+\S/m.exec(read(planPath(slug)))
   return override ? Number(override[1]) : hoursByTier[tier] ?? 0
 }
 

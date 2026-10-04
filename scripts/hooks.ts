@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
-  planFiles, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
+  planFiles, planName, planApproved, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
 } from './core.ts'
 import { activeSlug, loadChange, nextCommand } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
@@ -198,7 +198,7 @@ function siblingEditReason(rel: string, consumer: { name: string } | undefined):
   if (!consumer) return `${rel} is outside this repo and not a declared consumer. Edit only this repo.`
   const slug = activeSlug()
   if (!slug || approvalOf(slug, 'impact') !== 'approved') return `${consumer.name} is a consumer repo: edit it only in a change whose cross-repo impact the person approved (/sdlc-approve <slug> impact).`
-  if (!isPlanned(rel, planFiles(slug))) return `${rel} is not in ${slug}/plan.md ## Files. Add it to the plan first.`
+  if (!isPlanned(rel, planFiles(slug))) return `${rel} is not in ${slug}/${planName(slug)} ## Files. Add it to the plan first.`
   return null
 }
 
@@ -263,7 +263,7 @@ function hookPreEdit(input: HookInput): void {
   const change = loadChange(slug)
   const stage = change.next?.stage
   const { config } = loadConfig()
-  if ((change.type === 'bugfix' || change.type === 'incident') && change.tier === 'L' && (stage === 'plan' || approvalOf(slug, 'plan') !== 'approved')
+  if ((change.type === 'bugfix' || change.type === 'incident') && change.tier === 'L' && (stage === 'plan' || !planApproved(slug))
     && isSource(rel, config) && !isTest(rel, config)) {
     const why = `${rel}: tier L bug fixes wait for the person to approve plan.md (root cause and fix). `
     return decide('ask', `${why}Write the failing test now; fix after /sdlc-approve ${slug} plan.`, context)
@@ -271,7 +271,7 @@ function hookPreEdit(input: HookInput): void {
   if (stage !== 'build' && stage !== 'diagnose') return allowOrContext(input, context)
   const patterns = planFiles(slug)
   if (patterns.length && !isPlanned(file, patterns)) {
-    return decide('ask', `${relPosix(file)} is not in ${slug}/plan.md ## Files. Add it to the plan if it belongs to this change, otherwise leave it alone.`, context)
+    return decide('ask', `${relPosix(file)} is not in ${slug}/${planName(slug)} ## Files. Add it to the plan if it belongs to this change, otherwise leave it alone.`, context)
   }
   allowOrContext(input, context)
 }
@@ -280,7 +280,7 @@ function hookPostEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? '')
   if (!file || !exists(file)) return
   const problems = scanSecrets(file)
-  if (exists(SDLC) && /\.sdlc\/changes\/[^/]+\/plan\.md$/.test(toPosix(file))) problems.push(...planProblems(file).map(p => `${file}: ${p}`))
+  if (exists(SDLC) && /\.sdlc\/changes\/[^/]+\/(?:plan|design)\.md$/.test(toPosix(file))) problems.push(...planProblems(file).map(p => `${file}: ${p}`))
   let edits = ''
   if (exists(SDLC)) {
     const rel = relPosix(file)

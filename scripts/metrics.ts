@@ -78,7 +78,7 @@ export function cmdMetrics(args: Args): void {
   // Plan
   m.plan_lead_hours = median(changes.map(c => hours(c.intent.created, firstCommitTime(rel(c, 'intent.md')))))
   const decided = changes.filter(c => !c.next || c.stages.indexOf(c.next.stage) !== 0)
-  m.intent_survival = share(decided.filter(c => exists(path.join(c.dir, 'plan.md')) || exists(path.join(c.dir, 'spec.md')) || c.type === 'bugfix').length, decided.length)
+  m.intent_survival = share(decided.filter(c => exists(path.join(c.dir, 'plan.md')) || exists(path.join(c.dir, 'design.md')) || exists(path.join(c.dir, 'spec.md')) || c.type === 'bugfix').length, decided.length)
   // Design
   m.intent_to_spec_hours = median(changes.map(c => hours(firstCommitTime(rel(c, 'intent.md')), firstCommitTime(rel(c, 'spec.md')))))
   m.spec_churn_after_plan = median(

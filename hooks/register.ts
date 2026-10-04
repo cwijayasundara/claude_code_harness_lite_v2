@@ -50,7 +50,7 @@ async function refreshBand($: EngineInterface): Promise<void> {
   const status = await statusJson($)
   const { change, stage } = stageOf(status)
   const session = await $.session.usage()
-  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null }
+  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow }
   await update($, band, () => value)
 }
 
@@ -67,9 +67,7 @@ async function advance($: EngineInterface): Promise<void> {
   let s: StepInfo
   try {
     s = JSON.parse((await $.process.run(sdlc($, ['next', '--json']))).stdout) as StepInfo
-  } catch {
-    return stopDriver($, 'could not read the next step; driver stopped')
-  }
+  } catch { return stopDriver($, 'could not read the next step; driver stopped') }
   const needsNode = s.verdict === 'continue' || s.verdict === 'human'
   if (typeof s.slug !== 'string' || !SLUG_RE.test(s.slug) || (s.node === null || s.node === undefined ? needsNode : typeof s.node !== 'string' || !NODES.has(s.node))) return stopDriver($, 'the next step names an unknown change or node; driver stopped')
   if (s.verdict === 'blocked') return stopDriver($, `blocked: ${s.reason}`)
@@ -81,19 +79,30 @@ async function advance($: EngineInterface): Promise<void> {
     if ((await read($, driverLast)) === `gate:${gate}`) return stopDriver($, `the ${gate} approval did not advance; driver stopped`)
     let answer = ''
     try {
-      answer = await $.ui.ask(`Approve ${gate} for ${s.slug}? (${s.command})`, { options: [`Approve ${gate}`, 'Not yet'], header: 'Gate' })
-    } catch {
-      // nobody to ask (dismissed, -p): never approve
-    }
+      answer = await $.ui.ask(gate === 'design' ? `Approve the intent and design for ${s.slug}? After this the build, tests and PR run without asking.` : `Approve ${gate} for ${s.slug}? (${s.command})`, { options: [`Approve ${gate}`, 'Not yet'], header: 'Gate' })
+    } catch { /* nobody to ask (dismissed, -p): never approve */ }
     if (answer !== `Approve ${gate}`) return stopDriver($, `waiting at the ${gate} gate`)
     const r = await $.process.run(sdlc($, ['approve', s.slug, gate]), { env: { SDLC_HUMAN: '1' } })
     if (r.exitCode !== 0) return stopDriver($, (r.stderr || r.stdout).trim() || `could not approve ${gate}`)
     await update($, driverLast, () => `gate:${gate}`)
     return advance($)
   }
+  // The sensors node needs no model: run it here at zero tokens, and only a regression goes to the model for a fix round.
+  if (s.node === 'sensors' && (await $.process.run(sdlc($, ['quality', s.slug]))).exitCode === 0) { await update($, driverLast, () => ''); return advance($) }
   if ((await read($, driverLast)) === stepKey(s)) return stopDriver($, `no progress on ${s.node} (round ${s.round}); driver stopped`)
   await update($, driverLast, () => stepKey(s))
   $.prompt.submit({ text: promptFor(s, $.plugin.root) }).catch(err => { $.ui.log(`driver could not submit: ${String(err)}`); return stopDriver($, 'the prompt was not accepted; driver stopped') })
+}
+
+// The one human gate of a feature: a turn ending at the design gate starts the driver, which asks once and then drives build to PR.
+async function offerDesignGate($: EngineInterface): Promise<void> {
+  if (!(await isInitialised($))) return
+  try {
+    const s = JSON.parse((await $.process.run(sdlc($, ['next', '--json']))).stdout) as StepInfo
+    if (s.verdict !== 'human' || gateOf(s) !== 'design') return
+  } catch { return }
+  await Promise.all([update($, driverLast, () => ''), update($, driverRunning, () => true)])
+  return advance($)
 }
 
 // The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
@@ -115,7 +124,6 @@ async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
 }
 
 export const register: Register = on => {
-
   on('session.start', async ($, e, next) => {
     mod.aside = await vendoredCopyActive($)
     if (mod.aside) return next(e)
@@ -126,16 +134,14 @@ export const register: Register = on => {
       await $.command.register({ name: 'sdlc-status', description: 'sdlc: where every change stands and the next command (no model call)', immediate: true })
       // A standalone repo ships its own human-only /sdlc-approve and /sdlc-waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/sdlc-approve/SKILL.md'))) {
-        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|impact|budget|tier S|M|L [type]>' })
+        await $.command.register({ name: 'sdlc-approve', description: 'sdlc: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' })
         await $.command.register({ name: 'sdlc-waive', description: 'sdlc: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
       await $.command.register({ name: 'sdlc-sensors', description: 'sdlc: what the sensors found, known-red and waivers (no model call)', immediate: true })
-      await $.command.register({ name: 'sdlc-story', description: 'sdlc: the active story - node, rounds, cost by node, estimated value (no model call)', immediate: true })
+      await $.command.register({ name: 'sdlc-story', description: 'sdlc: the active story - node, rounds, cost by node (no model call)', immediate: true })
       await $.command.register({ name: 'sdlc-run', description: 'sdlc: drive the active change node by node to the next gate (no model call to decide); /sdlc-run stop pauses', argumentHint: '[stop]', immediate: true })
       await $.command.register({ name: 'sdlc-metrics-pane', description: 'sdlc: leading and lagging indicators in a pane (no model call)', immediate: true })
-    } catch (err) {
-      $.ui.log(`could not register commands: ${String(err)}`)
-    }
+    } catch (err) { $.ui.log(`could not register commands: ${String(err)}`) }
     return next(e)
   })
 
@@ -151,7 +157,7 @@ export const register: Register = on => {
     }
     const [slug, stage, ...more] = e.args.trim().split(/\s+/)
     const rest = stage === 'tier' ? more.slice(0, 2) : []
-    if (!slug || !stage) return { text: 'usage: /sdlc-approve <slug> <intent|spec|plan|impact|budget|tier S|M|L [type]>' }
+    if (!slug || !stage) return { text: 'usage: /sdlc-approve <slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' }
     const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
@@ -264,7 +270,7 @@ export const register: Register = on => {
         if (e.isAborted) {
           if (await read($, driverRunning)) await stopDriver($, 'driver paused')
         } else {
-          await advance($)
+          await ((await read($, driverRunning)) ? advance($) : offerDesignGate($))
         }
       } catch (err) {
         $.ui.log(`driver stopped: ${String(err)}`)

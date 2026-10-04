@@ -1,7 +1,7 @@
 // The band above the prompt and the /sdlc-sensors pane: what the sensors saw, at zero tokens.
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
-import type { Band, SensorBand, Story, StepInfo } from '../types'
+import type { Band, SensorBand, Story, StepInfo, FlowStep } from '../types'
 import { mod } from './shared'
 
 export const SOFT_CONTEXT = 120_000
@@ -29,20 +29,25 @@ export function storyText(s: Story | null): string {
   if (!s) return ''
   const loop = s.cap ? ` ⟲${s.round}/${s.cap}` : ''
   const state = s.verdict === 'blocked' ? ' ⛔' : s.verdict === 'human' ? ' ⏸ gate' : s.verdict === 'ready' ? ' ✓ ready' : ''
-  return ` · ${s.node ?? 'done'}${loop}${state} · ${kilo(s.tokens)} tok · ${usd(s.usd)} · value ≈ ${usd(s.valueUsd)} (est.)`
+  return ` · ${s.node ?? 'done'}${loop}${state} · ${kilo(s.tokens)} tok · ${usd(s.usd)}`
 }
 
-export function storyPaneText(s: Story | null, step: StepInfo | null = null): string {
-  if (!s) return 'no active story'
+const MARK = { done: '✓', gate: '⏸', current: '▶', todo: ' ' } as const
+export const flowGuide = (flow: FlowStep[] | undefined): string[] =>
+  flow?.length ? ['where you are', ...flow.map(f => `  ${MARK[f.state]} ${f.command.padEnd(34)} ${f.why}`), ''] : []
+
+export function storyPaneText(s: Story | null, step: StepInfo | null = null, flow?: FlowStep[]): string {
+  if (!s) return [...flowGuide(flow), 'no active story'].join('\n')
   const note = step?.verdict === 'blocked' ? [`blocked: ${step.reason}`, ''] : step?.verdict === 'human' ? [`waiting at gate: ${step.command}`, ''] : []
   const nodes = Object.entries(s.usdByNode ?? {}).map(([n, u]) => `  ${n.padEnd(10)} ${usd(u)}`).join('\n') || '  no turns logged yet'
   const budget = Object.entries(s.budgetByNode ?? {}).map(([n, b]) => `${n} ${usd(b.spent)}/${cap(b.cap)}`).join(' · ')
   return [
+    ...flowGuide(flow),
     ...note,
     `${s.slug} · ${s.node ?? 'done'} · ${s.verdict}${s.cap ? ` · round ${s.round}/${s.cap}` : ''}`,
     '', 'cost by node', nodes,
     ...(budget ? ['', `budget ${budget}`] : []),
-    '', `tokens ${(s.tokens ?? 0).toLocaleString('en-US')} · cost ${usd(s.usd)} · value ≈ ${usd(s.valueUsd)} (${s.valueHours ?? 0} h, estimate) · value/cost ${s.usd ? ((s.valueUsd ?? 0) / s.usd).toFixed(1) : '–'}×`,
+    '', `tokens ${(s.tokens ?? 0).toLocaleString('en-US')} · cost ${usd(s.usd)}`,
     `auto-approved ${s.autoApproved ?? 0} · escalations ${s.escalations ?? 0} · test levels ${s.levels || '–'} · sensors ${s.sensors ?? '–'}`,
   ].join('\n')
 }
@@ -56,12 +61,15 @@ export function registerBand(on: On): void {
     const color = current.contextTokens >= HARD_CONTEXT ? 'red' : current.contextTokens >= SOFT_CONTEXT ? 'yellow' : undefined
     const sensorColor = current.sensors?.blocks || current.sensors?.unresolved ? 'red' : undefined
     return (
+      <Box flexDirection="column">
+        {current.flow?.length ? <Box>{current.flow.map((f, i) => <Text key={f.label + i} bold={f.state === 'current' || f.state === 'gate'} inverse={f.state !== 'done' && f.state !== 'todo'} dimColor={f.state === 'done' || f.state === 'todo'} color={f.state === 'done' ? 'green' : f.state === 'gate' ? 'yellow' : undefined}>{`${i ? ' → ' : ''}${f.state === 'current' || f.state === 'gate' ? ` ${f.label}${f.state === 'gate' ? ' ⏸' : ''} ` : f.state === 'done' ? f.label + ' ✓' : f.label}`}</Text>)}</Box> : null}
       <Box>
         <Text dimColor>sdlc · {current.change ?? 'no active change'}{current.story ? storyText(current.story) : current.stage ? ` · ${current.stage}` : ''} · </Text>
         <Text color={color} dimColor={!color}>ctx {k}k</Text>
         <Text dimColor> · ${current.sessionUsd.toFixed(2)} session{current.contextTokens >= HARD_CONTEXT ? ' · run /compact' : ''}</Text>
         <Text color={sensorColor} dimColor={!sensorColor}>{sensorText(current.sensors)} </Text>
         <Button key="hide" label="Hide" onPress={() => update($, isHidden, () => true)} />
+      </Box>
       </Box>
     )
   })
@@ -80,7 +88,7 @@ export function registerBand(on: On): void {
     const current = await read($, band)
     return (
       <Box flexDirection="column">
-        <Text>{storyPaneText(current?.story ?? null, current?.step ?? null)}</Text>
+        <Text>{storyPaneText(current?.story ?? null, current?.step ?? null, current?.flow)}</Text>
       </Box>
     )
   })
