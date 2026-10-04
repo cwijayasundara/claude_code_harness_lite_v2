@@ -126,3 +126,38 @@ test('config build mode is native by default and only native or sdd', async () =
   assert.equal(parseConfig('{"build":"sdd"}').config.build, 'sdd')
   assert.deepEqual(parseConfig('{"build":"fast"}').errors, ['build must be "native" or "sdd"'])
 })
+
+test('sensors.json v0.4 keys parse, with defaults when absent', () => {
+  const d = parseConfig('{}').config
+  assert.deepEqual(d.gates, { S: [], M: [], L: ['spec', 'plan'], greenfield: ['spec', 'plan'] })
+  assert.deepEqual(d.ratchet, { rounds: { build: 2, test: 2, sensors: 1, 'pr-review': 1 }, usd: { build: 6, test: 2, sensors: 2, 'pr-review': 2 } })
+  assert.deepEqual(d.value, { rate: 100, hours: { S: 2, M: 8, L: 24 } })
+  const { config, errors } = parseConfig(JSON.stringify({
+    gates: { M: ['plan'] },
+    levels: { unit: 'npm test', api: 'npm run test:api' },
+    quality: { lint: { cmd: 'npx eslint .', count: 'lines' }, deps: { cmd: 'npm audit --json', count: 'json:metadata.vulnerabilities.total' } },
+    ratchet: { build: 3, usd: { build: 10 } },
+    value: { rate: 120, hours: { L: 40 } },
+  }))
+  assert.deepEqual(errors, [])
+  assert.deepEqual(config.gates.M, ['plan'])
+  assert.deepEqual(config.gates.L, ['spec', 'plan'], 'unnamed tiers keep defaults')
+  assert.equal(config.levels.api, 'npm run test:api')
+  assert.deepEqual(config.quality.deps, { cmd: 'npm audit --json', count: 'json:metadata.vulnerabilities.total' })
+  assert.equal(config.ratchet.rounds.build, 3)
+  assert.equal(config.ratchet.rounds.test, 2)
+  assert.equal(config.ratchet.usd.build, 10)
+  assert.equal(config.value.rate, 120)
+  assert.equal(config.value.hours.L, 40)
+  assert.equal(config.value.hours.S, 2)
+})
+
+test('sensors.json v0.4 keys reject bad shapes', () => {
+  const bad = (o: unknown) => parseConfig(JSON.stringify(o)).errors.join('\n')
+  assert.match(bad({ gates: { M: ['deploy'] } }), /gates\.M must list spec and\/or plan/)
+  assert.match(bad({ levels: { smoke: 'x' } }), /levels: unknown level "smoke"/)
+  assert.match(bad({ quality: { lint: 'npx eslint .' } }), /quality\.lint must be \{ cmd, count \}/)
+  assert.match(bad({ quality: { lint: { cmd: 'x', count: 'words' } } }), /quality\.lint\.count must be exit, lines or json:<path>/)
+  assert.match(bad({ ratchet: { build: 0 } }), /ratchet\.build must be a positive integer/)
+  assert.match(bad({ value: { rate: -1 } }), /value\.rate must be a non-negative number/)
+})

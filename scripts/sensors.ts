@@ -1,6 +1,6 @@
 // Language-agnostic sensors: pure functions from a parsed diff and config to findings.
 // Language knowledge lives in the pattern tables below, never in code paths per language.
-import { parseConfig, parseRules, type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
+import { RATCHET_NODES, parseConfig, parseRules, type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
 
 export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
   { id: 'skip-or-only', re: /\b(?:it|describe|test|context|suite)\.(?:skip|only|todo)\s*[.(]/, what: 'test skipped or focused' },
@@ -250,6 +250,13 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
     if (!now) reasons.push(`layer ${l.from} removed`)
     else for (const t of removedFrom(l.mustNotImport, now.mustNotImport)) reasons.push(`layer ${l.from} now allows ${t}`)
   }
+  for (const k of Object.keys(b.gates) as (keyof typeof b.gates)[]) for (const g of removedFrom(b.gates[k], a.gates[k])) reasons.push(`gate ${k} removed ${g}`)
+  for (const n of RATCHET_NODES) {
+    if (a.ratchet.rounds[n] > b.ratchet.rounds[n]) reasons.push(`ratchet.${n} raised ${b.ratchet.rounds[n]} → ${a.ratchet.rounds[n]}`)
+    if (a.ratchet.usd[n] > b.ratchet.usd[n]) reasons.push(`ratchet.usd.${n} raised ${b.ratchet.usd[n]} → ${a.ratchet.usd[n]}`)
+  }
+  for (const l of removedFrom(Object.keys(b.levels), Object.keys(a.levels))) reasons.push(`levels.${l} removed`)
+  for (const q of removedFrom(Object.keys(b.quality), Object.keys(a.quality))) reasons.push(`quality.${q} removed`)
   return reasons
 }
 

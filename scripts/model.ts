@@ -13,6 +13,14 @@ export type Finding = { sensor: string; severity: Severity; file?: string; line?
 export type Consumer = { name: string; path: string; repo?: string; test?: string }
 export type Layer = { from: string; mustNotImport: string[]; why: string }
 export type Rule = { id: string; pattern: string; paths?: string[]; message: string; why: string; action: Severity }
+export type GateKey = 'S' | 'M' | 'L' | 'greenfield'
+export type Level = 'unit' | 'integration' | 'acceptance' | 'api'
+export type QualityCategory = 'lint' | 'types' | 'deps' | 'coupling' | 'complexity' | 'security' | 'perf'
+export type QualityCmd = { cmd: string; count: string }
+export type RatchetNode = 'build' | 'test' | 'sensors' | 'pr-review'
+export const LEVELS: Level[] = ['unit', 'integration', 'acceptance', 'api']
+export const QUALITY_CATEGORIES: QualityCategory[] = ['lint', 'types', 'deps', 'coupling', 'complexity', 'security', 'perf']
+export const RATCHET_NODES: RatchetNode[] = ['build', 'test', 'sensors', 'pr-review']
 export type SensorConfig = {
   fast: Record<string, string>
   full: Record<string, string>
@@ -26,6 +34,11 @@ export type SensorConfig = {
   limits: { fileLines: number; diffLines: number; lineChars: number }
   knownRed: string[]
   build: 'native' | 'sdd'
+  gates: Record<GateKey, ('spec' | 'plan')[]>
+  levels: Partial<Record<Level, string>>
+  quality: Partial<Record<QualityCategory, QualityCmd>>
+  ratchet: { rounds: Record<RatchetNode, number>; usd: Record<RatchetNode, number> }
+  value: { rate: number; hours: Record<'S' | 'M' | 'L', number> }
 }
 
 export const DEFAULT_CONFIG: SensorConfig = {
@@ -41,6 +54,11 @@ export const DEFAULT_CONFIG: SensorConfig = {
   limits: { fileLines: 400, diffLines: 500, lineChars: 160 },
   knownRed: [],
   build: 'native',
+  gates: { S: [], M: [], L: ['spec', 'plan'], greenfield: ['spec', 'plan'] },
+  levels: {},
+  quality: {},
+  ratchet: { rounds: { build: 2, test: 2, sensors: 1, 'pr-review': 1 }, usd: { build: 6, test: 2, sensors: 2, 'pr-review': 2 } },
+  value: { rate: 100, hours: { S: 2, M: 8, L: 24 } },
 }
 
 export const SECRET_PATTERNS: [string, RegExp][] = [
@@ -216,6 +234,60 @@ function parseJson(text: string, name: string): { value: unknown; error?: string
   }
 }
 
+const COUNT_RE = /^(?:exit|lines|json:[\w.]+)$/
+const posInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0
+const nonNeg = (v: unknown): v is number => typeof v === 'number' && v >= 0
+
+function parseV4(value: Record<string, unknown>, config: SensorConfig, errors: string[]): void {
+  if (isObject(value.gates)) {
+    for (const [k, v] of Object.entries(value.gates)) {
+      if (!(k in config.gates)) { errors.push(`gates: unknown tier "${k}"`); continue }
+      if (Array.isArray(v) && v.every(s => s === 'spec' || s === 'plan')) config.gates[k as GateKey] = v as ('spec' | 'plan')[]
+      else errors.push(`gates.${k} must list spec and/or plan`)
+    }
+  } else if ('gates' in value) errors.push('gates must be an object of tier → [spec, plan]')
+  if (isObject(value.levels)) {
+    for (const [k, v] of Object.entries(value.levels)) {
+      if (!LEVELS.includes(k as Level)) errors.push(`levels: unknown level "${k}"`)
+      else if (typeof v === 'string' && v.trim()) config.levels[k as Level] = v
+      else errors.push(`levels.${k} must be a command string`)
+    }
+  } else if ('levels' in value) errors.push('levels must map level names to commands')
+  if (isObject(value.quality)) {
+    for (const [k, v] of Object.entries(value.quality)) {
+      if (!QUALITY_CATEGORIES.includes(k as QualityCategory)) { errors.push(`quality: unknown category "${k}"`); continue }
+      if (!isObject(v) || typeof v.cmd !== 'string' || typeof v.count !== 'string') { errors.push(`quality.${k} must be { cmd, count }`); continue }
+      if (!COUNT_RE.test(v.count)) { errors.push(`quality.${k}.count must be exit, lines or json:<path>`); continue }
+      config.quality[k as QualityCategory] = { cmd: v.cmd, count: v.count }
+    }
+  } else if ('quality' in value) errors.push('quality must map categories to { cmd, count }')
+  if (isObject(value.ratchet)) {
+    for (const [k, v] of Object.entries(value.ratchet)) {
+      if (k === 'usd') {
+        if (!isObject(v)) { errors.push('ratchet.usd must map nodes to dollars'); continue }
+        for (const [n, d] of Object.entries(v)) {
+          if (!RATCHET_NODES.includes(n as RatchetNode)) errors.push(`ratchet.usd: unknown node "${n}"`)
+          else if (nonNeg(d) && d > 0) config.ratchet.usd[n as RatchetNode] = d
+          else errors.push(`ratchet.usd.${n} must be a positive number`)
+        }
+      } else if (!RATCHET_NODES.includes(k as RatchetNode)) errors.push(`ratchet: unknown node "${k}"`)
+      else if (posInt(v)) config.ratchet.rounds[k as RatchetNode] = v
+      else errors.push(`ratchet.${k} must be a positive integer`)
+    }
+  } else if ('ratchet' in value) errors.push('ratchet must be an object')
+  if (isObject(value.value)) {
+    const v = value.value
+    if ('rate' in v) { if (nonNeg(v.rate)) config.value.rate = v.rate; else errors.push('value.rate must be a non-negative number') }
+    if (isObject(v.hours)) {
+      for (const [t, h] of Object.entries(v.hours)) {
+        if (!(t in config.value.hours)) errors.push(`value.hours: unknown tier "${t}"`)
+        else if (nonNeg(h)) config.value.hours[t as 'S' | 'M' | 'L'] = h
+        else errors.push(`value.hours.${t} must be a non-negative number`)
+      }
+    }
+  } else if ('value' in value) errors.push('value must be { rate, hours }')
+}
+
 export function parseConfig(text: string): { config: SensorConfig; errors: string[] } {
   const config: SensorConfig = structuredClone(DEFAULT_CONFIG)
   if (!text.trim()) return { config, errors: [] }
@@ -257,6 +329,7 @@ export function parseConfig(text: string): { config: SensorConfig; errors: strin
     if (value.build === 'native' || value.build === 'sdd') config.build = value.build
     else errors.push('build must be "native" or "sdd"')
   }
+  parseV4(value, config, errors)
   for (const k of Object.keys(value)) if (!(k in DEFAULT_CONFIG)) errors.push(`unknown key "${k}"`)
   return { config, errors }
 }

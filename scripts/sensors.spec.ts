@@ -249,3 +249,16 @@ test('size warns once per file on added lines over limits.lineChars, not at edit
   assert.deepEqual(f.map(x => [x.sensor, x.severity, x.line, x.message]), [['size', 'warn', 3, '2 added line(s) over 20 characters']])
   assert.deepEqual(size([d], cfg, { 'src/a.ts': 10 }, 'edit'), [])
 })
+
+test('weakensConfig names v0.4 weakenings: a gate removed, a cap or budget raised, a level or category removed', () => {
+  const before = JSON.stringify({ gates: { M: ['plan'] }, levels: { unit: 'npm test' }, quality: { lint: { cmd: 'x', count: 'lines' } } })
+  const after = JSON.stringify({ gates: { M: [], L: ['plan'] }, ratchet: { build: 4, usd: { test: 9 } } })
+  const reasons = weakensConfig(before, after)
+  assert.ok(reasons.includes('gate M removed plan'))
+  assert.ok(reasons.includes('gate L removed spec'))
+  assert.ok(reasons.includes('ratchet.build raised 2 → 4'))
+  assert.ok(reasons.includes('ratchet.usd.test raised 2 → 9'))
+  assert.ok(reasons.includes('levels.unit removed'))
+  assert.ok(reasons.includes('quality.lint removed'))
+  assert.deepEqual(weakensConfig(after, before).filter(r => /gate|ratchet|levels|quality/.test(r)), [], 'tightening is not weakening')
+})

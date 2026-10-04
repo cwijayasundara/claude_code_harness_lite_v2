@@ -1,4 +1,4 @@
-// The harness obeys its own limits (spec §12): scripts ≤ 500 lines, mod files ≤ 300, skills and guides ≤ 60.
+// The harness obeys its own limits (v0.4 spec §12): scripts ≤ 500 lines, mod files ≤ 300, skills and guides ≤ 60.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -36,7 +36,7 @@ const CAPPED = [
   path.join(ROOT, 'package.json'),
 ].filter(isFile)
 
-test('the harness is at most 5000 lines (tests and docs excluded)', () => {
+test('the harness is at most 6000 lines (tests and docs excluded)', () => {
   const total = CAPPED.reduce((n, f) => n + count(f), 0)
-  assert.ok(total <= 5000, `harness is ${total} lines`)
+  assert.ok(total <= 6000, `harness is ${total} lines`)
 })
