@@ -19,7 +19,7 @@ If the slug starts with `adhoc-`, this is adoption of work done without /sdlc:st
 
 ## New change
 1. **Context hygiene.** If this conversation already carries unrelated work, tell the person to `/clear` and rerun this command, and stop.
-2. **Repo readiness.** If the repo has source code but no `.sdlc/sensors.json`, the next command is `/sdlc:onboard` first. If only CLAUDE.md is missing, say once that `/sdlc:onboard` would add it, then continue with this change. If the repo is empty, the type is `greenfield`.
+2. **Repo readiness.** If the repo has source code but no `.sdlc/sensors.json`, the next command is `/sdlc:init` first. If only CLAUDE.md is missing, say once that `/sdlc:init` would add it, then continue with this change. If the repo is empty, the type is `greenfield`.
 3. **Classify.**
    - If the request is an issue reference (`#123` or a GitHub issue URL), run `gh issue view <ref> --json title,body,labels` and use it as the request; record the reference in intent.md.
    - Type: greenfield, feature, bugfix, refactor, migration, chore, spike or incident.

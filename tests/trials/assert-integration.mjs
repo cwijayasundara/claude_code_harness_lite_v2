@@ -1,4 +1,4 @@
-// Deterministic checks for the harness integration test (run-trials.sh I): what /sdlc:onboard and one change must leave.
+// Deterministic checks for the harness integration test (run-trials.sh I): what /sdlc:init and one change must leave.
 // Usage: node assert-integration.mjs <onboard|change> <repo> <plugin-root>
 import fs from 'node:fs'
 import path from 'node:path'

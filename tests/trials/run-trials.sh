@@ -115,14 +115,14 @@ if [ "$MODE" = M ]; then
 fi
 
 if [ "$MODE" = I ]; then
-  # Integration test: /sdlc:onboard on a four-module app, then one internal change through ship; every artifact is
+  # Integration test: /sdlc:init on a four-module app, then one internal change through ship; every artifact is
   # checked deterministically by assert-integration.mjs. LIVE and PAID (about $2).
   TASK_I='Add a bestSellers(orders, n) function exported from src/orders/report.js. orders is an array of { lines: [{ sku, qty }] }. It returns an array of the n SKU strings with the highest total quantity sold, most first, ties broken by SKU ascending; [] for no orders. It is internal: no HTTP route. Include tests.'
   rm -rf "$OUT/app"; cp -R "$P/tests/trials/shop-app" "$OUT/app"
   (cd "$OUT/app" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm base)
   settings "$OUT/app" false
   (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm settings)
-  (cd "$OUT/app" && claude -p "/sdlc:onboard — this is an existing codebase; answer your own questions with the recommended defaults, decline CI and settings changes, and commit the onboarding files on main." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/onboard.json") || true
+  (cd "$OUT/app" && claude -p "/sdlc:init — this is an existing codebase; answer your own questions with the recommended defaults, decline CI and settings changes, and commit the onboarding files on main." --plugin-dir "$P" "${FLAGS_L[@]}" > "$OUT/onboard.json") || true
   echo "onboard: $(sum "$OUT/onboard.json")"
   R1=0; node "$P/tests/trials/assert-integration.mjs" onboard "$OUT/app" "$P" || R1=$?
   (cd "$OUT/app" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
@@ -174,7 +174,7 @@ print(c[0]["command"] if c else "")' || true)
   greenfield_run() {
     local d="$OUT/greenfield"; rm -rf "$d"; mkdir -p "$d"; settings "$d" false
     (cd "$d" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm empty)
-    (cd "$d" && claude -p "/sdlc:onboard greenfield \"Node.js 22 ESM library, no dependencies, tests with node --test: unit conversion for lengths\" — answer your own questions with the recommended defaults, decline CI and settings changes, and commit the scaffold on main." --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/greenfield.0.json") || true
+    (cd "$d" && claude -p "/sdlc:init greenfield \"Node.js 22 ESM library, no dependencies, tests with node --test: unit conversion for lengths\" — answer your own questions with the recommended defaults, decline CI and settings changes, and commit the scaffold on main." --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/greenfield.0.json") || true
     (cd "$d" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
     drive "$d" greenfield "/sdlc:start \"Add convert(value, from, to) exported from src/convert.js. Units: mm, cm, m, km, in, ft, yd, mi (1 in = 2.54 cm, 1 ft = 12 in, 1 yd = 3 ft, 1 mi = 1760 yd). It returns a number rounded to 6 decimal places and throws a RangeError for an unknown unit. This is the library's first public API. Include tests.\" — continue through ship; commit on the branch, do not push."
   }

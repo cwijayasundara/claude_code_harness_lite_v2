@@ -416,7 +416,7 @@ Same tier L task and hidden test. The table compares the harness runs, oldest fi
 
 ### Integration test (2026-10-03): onboard, wiki and one change on a four-module app
 
-`tests/trials/run-trials.sh I` runs `/sdlc:onboard` on `tests/trials/shop-app` (catalog, cart, orders, http), then takes one internal change (`bestSellers`) through ship. `assert-integration.mjs` checks every artifact deterministically.
+`tests/trials/run-trials.sh I` runs `/sdlc:init` on `tests/trials/shop-app` (catalog, cart, orders, http), then takes one internal change (`bestSellers`) through ship. `assert-integration.mjs` checks every artifact deterministically.
 
 | Run | Onboard checks | Change checks | What it caught (each fixed with tests) |
 |---|---|---|---|

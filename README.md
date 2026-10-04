@@ -6,7 +6,7 @@ It handles every kind of task: greenfield, brownfield, feature, bugfix, refactor
 
 ## Install
 
-The harness lives in each repo it runs on, so a repo never depends on the plugin. You need the plugin only to onboard a repo and to upgrade it.
+The harness lives in each repo it runs on, so a repo never depends on the plugin. You need the plugin only to initialise a repo and to upgrade it.
 
 1. Install the plugin for yourself (once per machine):
 
@@ -16,7 +16,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
    ```
 
    Or, for one session: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
-2. In the repo, make a first commit if it has none, then run `/sdlc:onboard`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and the code wiki, and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/sdlc-*`, agents to `.claude/agents/sdlc-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Sonnet subagents).
+2. In the repo, make a first commit if it has none, then run `/sdlc:init`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and the code wiki, and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/sdlc-*`, agents to `.claude/agents/sdlc-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Sonnet subagents).
 3. Commit `.sdlc/`, `.claude/` and `CLAUDE.md`. Anyone who clones the repo, and any cloud session, now runs the harness with no install. In the repo the commands are `/sdlc-start`, `/sdlc-next` and so on.
 
 **Where things live.** Change artifacts, approvals, waivers and run records go in `.sdlc/`, not `.claude/`, for two reasons. Claude Code treats `.claude/` as protected, so writes there prompt and fail in headless runs. And these files are evidence the `sdlc-check` CI gate reads, so they are meant to be committed. Machine-local state (`.gate`, `.baseline`, `usage.jsonl`, `unresolved.json`) is already in `.sdlc/.gitignore`.
