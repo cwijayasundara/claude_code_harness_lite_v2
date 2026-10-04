@@ -90,7 +90,7 @@ test('an undeclared required level blocks the change with the exact edit a perso
   const n = JSON.parse(sdlc(repo, ['next', 'big', '--json']).stdout)
   assert.equal(n.verdict, 'continue', 'R46: a level block resumes at the test node, which re-derives or clears it')
   assert.match(n.reason, /pending block/)
-  assert.match(n.reason, /level acceptance required but not declared: add "acceptance": "<cmd>" to \.sdlc\/sensors\.json levels \(a person edits it\)/)
+  assert.match(n.reason, /level acceptance required but not declared: add "acceptance": "<cmd>" to \.sdlc\/sensors\.json levels: declare it on the trunk first/)
   write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "0"' } }))
   sdlc(repo, ['run', '--slug', 'big', '--', 'node -e "0"'])
   sdlc(repo, ['verify-report', 'big'])
@@ -125,4 +125,16 @@ test('a cap reached in the same run as a level unblock is recorded, not lost', (
   const blocked = JSON.parse(sdlc(repo, ['ratchet', 'show', 'big']).stdout).blocked
   assert.equal(blocked?.kind, 'cap')
   assert.match(blocked?.reason, /cap: 2 fix rounds/)
+})
+
+test('a pending level block does not hide a later cap: the cap replaces it', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { unit: 'node -e "process.exit(1)"' } }))
+  sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/big/plan.md', '## Files\n- src/**\n')
+  write(repo, '.sdlc/changes/big/ratchet.json', JSON.stringify({ nodes: { test: { rounds: 2, hashes: [], status: 'open' } }, slices: {}, baseline: {},
+    blocked: { node: 'test', reason: 'level acceptance required but not declared', at: 'now', kind: 'level' } }))
+  sdlc(repo, ['run', '--slug', 'big', '--', 'node -e "process.exit(1)"'])
+  sdlc(repo, ['verify-report', 'big'])
+  assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'big']).stdout).blocked?.kind, 'cap')
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'big', '--json']).stdout).verdict, 'blocked')
 })

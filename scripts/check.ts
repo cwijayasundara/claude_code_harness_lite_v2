@@ -102,10 +102,11 @@ function ciScope(slug: string, base: string | null | undefined): ((file: string 
   return file => Boolean(file) && (String(file).startsWith(folder) || patterns.some(p => isPlanned(String(file), [p]) && !String(file).startsWith('.sdlc/')))
 }
 
+// The PR supplies its own waivers.jsonl rows, so at CI a harness-tamper finding is never waivable: harness changes land on the trunk first.
 function applyWaivers(findings: Finding[], slugs: string[], ci?: { base: string | null | undefined }): CheckResult {
   const scopes = new Map(slugs.map(s => [s, ci ? ciScope(s, ci.base) : () => true] as const))
   const waivers = readJsonl<Waiver>(WAIVERS).filter(w => slugs.includes(w.slug) && scopes.get(w.slug) !== null)
-  const waived = (f: Finding): boolean => waivers.some(w => w.sensor === f.sensor && (w.file === '*' || w.file === f.file) && (scopes.get(w.slug) as (file: string | undefined) => boolean)(f.file))
+  const waived = (f: Finding): boolean => waivers.some(w => w.sensor === f.sensor && (w.file === '*' || w.file === f.file) && !(ci && f.sensor === 'harness-tamper') && (scopes.get(w.slug) as (file: string | undefined) => boolean)(f.file))
   const kept = findings.filter(f => !waived(f))
   return { findings: kept, blocks: kept.filter(f => f.severity === 'block'), warns: kept.filter(f => f.severity === 'warn'), waived: findings.length - kept.length }
 }

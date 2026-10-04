@@ -304,7 +304,7 @@ export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | '
       continue
     }
     findings.push(reasons.length
-      ? { sensor: 'harness-tamper', severity: 'block', file: d.file, message: reasons.join('; '), fix: `a person must approve: /sdlc-waive harness-tamper ${d.file} <reason>`, labels: ['weakens-harness'] }
+      ? { sensor: 'harness-tamper', severity: 'block', file: d.file, message: reasons.join('; '), fix: `declare it on the trunk first: a separate harness change to ${d.file}, reviewed by the code owners; then rebase this change (CI never accepts a harness waiver from the PR)`, labels: ['weakens-harness'] }
       : { sensor: 'harness-tamper', severity: 'warn', file: d.file, message: 'harness file changed', fix: 'needs human review' })
   }
   return findings

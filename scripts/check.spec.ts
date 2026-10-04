@@ -649,3 +649,29 @@ test('CI waivers apply only to changes the PR adds, and only to files in that ch
   const outside = ci()
   assert.match(outside.stdout, /suppression[\s\S]*src\/other\.js|src\/other\.js[\s\S]*suppression/, outside.stdout)
 })
+
+test('at CI a harness-tamper waiver in the PR never waives, exact file or *; other waivers on an added change still do', () => {
+  const ci = () => check('--at', 'ci', '--base', 'main', '--config-from', 'main')
+  const waiver = (sensor: string, file: string) => JSON.stringify({ slug: 'lvl', sensor, file, reason: 'r', by: 'p', at: 'now' }) + '\n'
+  gitIn(repo, 'checkout', '-qb', 'pr')
+  sdlc(repo, ['new', 'lvl', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/lvl/plan.md', '## Files\n- src/**\n')
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "0"' } }))
+  write(repo, 'src/app.js', 'export const a = 9 // eslint-disable-line\n')
+  for (const file of ['*', '.sdlc/sensors.json']) {
+    write(repo, '.sdlc/waivers.jsonl', waiver('harness-tamper', file))
+    gitIn(repo, 'add', '-A')
+    gitIn(repo, 'commit', '-qm', `waiver ${file}`)
+    const r = ci()
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /\[harness-tamper\]/, file)
+    assert.match(r.stdout, /declare it on the trunk first/)
+    assert.doesNotMatch(r.stderr, /TypeError/)
+  }
+  write(repo, '.sdlc/waivers.jsonl', waiver('suppression', 'src/app.js'))
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'suppression waiver')
+  const r = ci()
+  assert.doesNotMatch(r.stdout, /\[suppression\]/, r.stdout)
+  assert.match(r.stdout, /\[harness-tamper\]/)
+})

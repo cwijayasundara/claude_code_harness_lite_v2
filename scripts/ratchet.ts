@@ -40,7 +40,10 @@ const slicesIn = (slug: string): string[] => {
 
 // The first block stays: a later one of another kind is only logged, so clearing it can never drop the earlier cause.
 function setBlock(r: Ratchet, node: string, reason: string, kind: BlockKind): boolean {
-  if (r.blocked && (r.blocked.kind ?? 'other') !== kind) return false
+  // gate and level blocks are re-derived by their node, so a severe kind (cap, stall, budget, other) replaces them; never the reverse.
+  const held = r.blocked?.kind ?? 'other'
+  const soft = (k: BlockKind): boolean => k === 'gate' || k === 'level'
+  if (r.blocked && held !== kind && !(soft(held) && !soft(kind))) return false
   r.blocked = { node, reason, at: now(), kind }
   return true
 }
