@@ -267,3 +267,57 @@ test('I3: ship ratchets a known-red full command that now passes and commits the
   assert.equal(gitIn(repo, 'status', '--porcelain').trim(), '')
 })
 
+
+test('pr-checks with no checks: no-ci without workflows, pending with them; both feed pr-review', () => {
+  ready('tiny')
+  withRemote()
+  const gh = fakeGh('echo https://github.com/o/r/pull/7')
+  sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
+  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
+  const empty = fakeGh(`echo '[]'`).env
+  assert.match(sdlc(repo, ['pr-checks', 'tiny'], { env: empty }).stdout, /checks: no-ci/)
+  assert.match(sdlc(repo, ['next', 'tiny']).stdout, /^ready/)
+  write(repo, '.github/workflows/ci.yml', 'name: ci\n')
+  assert.match(sdlc(repo, ['pr-checks', 'tiny'], { env: empty }).stdout, /checks: pending/)
+  assert.doesNotMatch(sdlc(repo, ['next', 'tiny']).stdout, /^ready/)
+})
+
+test('a failed gh pr create leaves the pr node not done; a second pr run resumes without a second commit', () => {
+  ready('tiny')
+  const bare = withRemote()
+  const gh = fakeGh('[ -f "$0.ok" ] || exit 1\necho https://github.com/o/r/pull/11')
+  const first = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
+  assert.notEqual(first.code, 0)
+  assert.match(first.stderr, /gh pr create/)
+  const next = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
+  assert.equal(next.verdict, 'blocked')
+  assert.match(next.reason, /gh pr create/)
+  assert.equal(next.node, 'pr')
+  assert.doesNotMatch(events('tiny'), /"kind":"pr"/)
+  const head = gitIn(repo, 'rev-parse', 'HEAD')
+  fs.writeFileSync(path.join(gh.bin, 'gh.ok'), '')
+  const second = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
+  assert.equal(second.code, 0, second.stderr)
+  assert.equal(gitIn(repo, 'rev-parse', 'HEAD'), head)
+  assert.match(events('tiny'), /"kind":"pr","target":"https:\/\/github.com\/o\/r\/pull\/11"/)
+  assert.ok(gitIn(bare, 'branch', '--list', 'sdlc/tiny').includes('sdlc/tiny'))
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr-review')
+})
+
+test('gh printing no url records no pr event', () => {
+  ready('tiny')
+  withRemote()
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: fakeGh('echo created').env })
+  assert.notEqual(r.code, 0)
+  assert.doesNotMatch(events('tiny'), /"kind":"pr"/)
+})
+
+test('a follow-up is refused until the pr node is done', () => {
+  ready('tiny')
+  withRemote()
+  sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: fakeGh('exit 1').env })
+  write(repo, 'src/app.js', 'y\n')
+  const r = sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: x'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /pr node of tiny is not done/)
+})

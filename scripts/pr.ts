@@ -7,12 +7,12 @@ import {
   ROOT, CHANGES, SDLC, exists, read, git, gitIn, out, fail, now, optString, toPosix, defaultBase, scopeDrift, ensureGitignore, checkSlug,
   planFiles, isPlanned, type Args,
 } from './core.ts'
-import { loadChange, nextCommand, activeSlug } from './graph.ts'
+import { loadChange, nextCommand, activeSlug, prRecorded, prDone } from './graph.ts'
 import { loadConfig, runChecks } from './check.ts'
 import { branchDiff, showAt } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { formatFindings, type SensorConfig } from './model.ts'
-import { appendEvent, block } from './ratchet.ts'
+import { appendEvent, block, unblock } from './ratchet.ts'
 import { renderScorecard } from './scorecard.ts'
 
 type ShippedRepo = { name: string; branch: string; commit: string }
@@ -89,6 +89,7 @@ export function cmdPr(args: Args): void {
   if (change.next && change.next.stage !== 'pr') fail(`not ready to ship (pr): next is ${nextCommand(change)} (pending: ${pending.join(', ')})`)
   if (!change.next) return out(`${slug} is already shipped`)
 
+  if (prRecorded(slug)) return resume(slug, message)
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   const stacked = otherChangeBranch(slug)
   if (stacked) fail(`not shipping: ${stacked}`)
@@ -148,12 +149,34 @@ export function cmdPr(args: Args): void {
     // Only sdlc/<slug> is ever pushed: never the trunk, never forced.
     if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) { block(slug, 'pr', `HEAD is not ${branch}; not pushing`); fail(`not pushing: HEAD is not ${branch} (blocked)`) }
     if (git(['push', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('pushed nothing: git push failed (blocked)') }
-    const url = ghRun(['pr', 'create', '--title', title, '--body-file', path.join(CHANGES, slug, 'pr.md')])
-    if (url === null) { block(slug, 'pr', 'gh pr create failed'); fail('the branch is pushed but gh pr create failed (blocked)') }
-    target = url.trim().split('\n').at(-1) ?? ''
-    appendEvent(slug, { node: 'pr', verdict: 'done', kind: 'pr', target })
+    target = openPr(slug, title)
   }
   out(`pr ${slug} on ${git(['rev-parse', '--abbrev-ref', 'HEAD'])} at ${git(['rev-parse', '--short', 'HEAD'])}: ${code.length} code file(s) + artifacts; ${remote ? `PR ${target}` : 'no origin remote, local only'}. The change stays active for pr-review.`)
+}
+
+const URL_RE = /^https?:\/\//
+
+// gh pr create; records the pr event only for a real URL. Anything else blocks with the manual command.
+function openPr(slug: string, title: string): string {
+  const file = toPosix(path.relative(ROOT, path.join(CHANGES, slug, 'pr.md')))
+  const url = (ghRun(['pr', 'create', '--title', title, '--body-file', path.join(CHANGES, slug, 'pr.md')]) ?? '').trim().split('\n').at(-1) ?? ''
+  if (!URL_RE.test(url)) {
+    block(slug, 'pr', `the branch is pushed but gh pr create printed no PR url; run: gh pr create --title ${JSON.stringify(title)} --body-file ${file}, or rerun sdlc.ts pr ${slug} --message ...`)
+    fail('the branch is pushed but gh pr create failed (blocked)')
+  }
+  appendEvent(slug, { node: 'pr', verdict: 'done', kind: 'pr', target: url })
+  return url
+}
+
+// pr.md is committed but no PR was recorded (gh failed after the push): finish the push and the PR, never a second commit.
+function resume(slug: string, message: string): void {
+  const branch = `sdlc/${slug}`
+  if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) fail(`resuming ${slug} needs HEAD on ${branch}`)
+  if (git(['remote', 'get-url', 'origin']) === null) fail(`cannot resume ${slug}: no origin remote`)
+  if (git(['push', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('git push failed (blocked)') }
+  const url = openPr(slug, (message.split('\n')[0] ?? slug).slice(0, 200))
+  unblock(slug, 'pr created')
+  out(`resumed ${slug}: PR ${url}`)
 }
 
 function ghRun(argv: string[], keepStdoutOnFailure = false): string | null {
@@ -166,6 +189,7 @@ function ghRun(argv: string[], keepStdoutOnFailure = false): string | null {
 
 function followup(slug: string, message: string): void {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (!prDone(slug)) fail(`no follow-up yet: the pr node of ${slug} is not done (run pr ${slug} --message ... first)`)
   if (head !== `sdlc/${slug}`) fail(`follow-ups go on sdlc/${slug}; HEAD is ${head}`)
   const r = scopeDrift(slug, defaultBase())
   if (r.drift.length) fail(`scope drift, not committing: ${r.drift.join(', ')}`)
@@ -193,7 +217,8 @@ export function cmdPrChecks(args: Args): void {
     const parsed: unknown = raw === null ? null : JSON.parse(raw)
     if (Array.isArray(parsed)) states = parsed.map(s => String((s as { state?: unknown } | null)?.state ?? ''))
   } catch { /* unparseable output stays unknown */ }
-  const verdict = checksVerdict(states)
+  const workflows = exists(path.join(ROOT, '.github/workflows')) && fs.readdirSync(path.join(ROOT, '.github/workflows')).some(f => /\.ya?ml$/.test(f))
+  const verdict = states?.length === 0 ? (workflows ? 'pending' : 'no-ci') : checksVerdict(states)
   appendEvent(slug, { node: 'pr-review', verdict, kind: 'checks' })
   out(`checks: ${verdict}`)
   if (verdict === 'fail') process.exitCode = 2

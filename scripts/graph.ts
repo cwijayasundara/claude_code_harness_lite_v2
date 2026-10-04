@@ -31,6 +31,10 @@ export const gatesFor = (type: ChangeType, tier: Tier, config: SensorConfig): Ga
 
 const committed = (slug: string, file: string): boolean => Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug, file)))]))
 export const prRecorded = (slug: string): boolean => committed(slug, 'pr.md')
+// The pr node is done once pr.md is committed AND either the change is local-only or a real PR url was recorded
+// (a pushed branch whose gh pr create failed is not done; `pr` resumes it).
+export const prDone = (slug: string): boolean =>
+  prRecorded(slug) && (/^state: local-only$/m.test(read(path.join(CHANGES, slug, 'pr.md'))) || readEvents(slug).some(e => e.kind === 'pr' && /^https?:\/\//.test(e.target ?? '')))
 export const isLegacyShipped = (slug: string): boolean => isShipped(slug) && !exists(path.join(CHANGES, slug, 'pr.md'))
 
 export function loadChange(slug: string): Change {
@@ -57,9 +61,9 @@ export function loadChange(slug: string): Change {
         return Number(v.runs) >= 1 && v.generated === 'sdlc' && v.result === 'pass' && sha(runs) === v.digest
       }
       case 'sensors': return readRatchet(slug).nodes.sensors?.status === 'done'
-      case 'pr': return prRecorded(slug)
+      case 'pr': return prDone(slug)
       case 'pr-review': return (review.result === 'pass' || review.result === 'accepted') && readRatchet(slug).nodes['pr-review']?.status !== 'open'
-          && (!git(['remote', 'get-url', 'origin']) || readEvents(slug).filter(e => e.kind === 'checks').at(-1)?.verdict === 'pass')
+          && (!git(['remote', 'get-url', 'origin']) || /^(pass|no-ci)$/.test(readEvents(slug).filter(e => e.kind === 'checks').at(-1)?.verdict ?? ''))
       default: return exists(path.join(dir, ARTIFACTS[stage] ?? ''))
     }
   }
