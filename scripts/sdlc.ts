@@ -9,7 +9,7 @@ import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, PATHS, APPROVAL_ARTIFACTS, approvalDigest,
   exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, isPlanned, frontmatter, parseArgs, optString, isChangeType, isTier,
-  listChanges, activeSlug, loadChange, nextCommand, defaultBase, scopeDrift, scanSecrets, planProblems,
+  listChanges, activeSlug, loadChange, nextCommand, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems,
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
 } from './core.ts'
 import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
@@ -47,7 +47,8 @@ function cmdNew(args: Args): void {
   if (exists(dir)) fail(`change ${slug} already exists`)
   if (!exists(SDLC)) cmdInit()
   createChange(slug, type, tier, optString(args, 'title') ?? slug)
-  out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})`)
+  const other = otherChangeBranch(slug)
+  out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})${other ? `\nwarning: ${other}` : ''}`)
 }
 
 function cmdActivate(args: Args): void {
@@ -69,6 +70,11 @@ function cmdStatus(args: Args): void {
     if (lines(read(path.join(c.dir, 'intent.md'))) > LIMITS.intentLines + 10) warnings.push(`${c.slug}: intent.md is long; keep it under ${LIMITS.intentLines} lines`)
   }
   if (lines(frontmatter(read(STATE)).body) > LIMITS.stateLines) warnings.push(`STATE.md over ${LIMITS.stateLines} lines; trim it`)
+  if (active && !isShipped(active)) {
+    const stacked = otherChangeBranch(active)
+    if (stacked) warnings.push(stacked)
+    if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
+  }
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, next: c.next, command: nextCommand(c) }))
     return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus() }))
@@ -158,6 +164,15 @@ function changedConsumers(slug: string, config: SensorConfig): Consumer[] {
 const branchExists = (dir: string, branch: string): boolean => gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) !== null
 const onTrunk = (b: string | null): boolean => b === 'main' || b === 'master'
 
+// Another change's branch with commits of its own: a change started or shipped here would carry them into its PR.
+function otherChangeBranch(slug: string): string | null {
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const base = defaultBase()
+  if (!head?.startsWith('sdlc/') || head === `sdlc/${slug}` || !base || git(['rev-parse', 'HEAD']) === base) return null
+  return `HEAD is on ${head}, which has commits not on the trunk; ${slug} would be stacked on them. `
+    + `Move this change onto the trunk first: git stash -u && git checkout -b sdlc/${slug} ${base.slice(0, 12)} && git stash pop`
+}
+
 function commitConsumer(c: Consumer, slug: string, message: string): ShippedRepo {
   const branch = `sdlc/${slug}`
   if (onTrunk(c.branch)) {
@@ -185,6 +200,8 @@ function cmdShip(args: Args): void {
   if (!change.next) return out(`${slug} is already shipped`)
 
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const stacked = otherChangeBranch(slug)
+  if (stacked) fail(`not shipping: ${stacked}`)
   const base = defaultBase() ?? (head && ['main', 'master'].includes(head) ? git(['rev-parse', 'HEAD']) : null)
   const r = scopeDrift(slug, base)
   if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to plan.md ## Files (and re-approve if gated) or revert them.`)
@@ -292,11 +309,12 @@ function cmdVerifyReport(args: Args): void {
 }
 
 function cmdDiff(args: Args): void {
+  const trunk = args.opt.trunk ? defaultBase() ?? 'HEAD' : null
   const base = optString(args, 'base')
-  if (!base && !args.opt.turn) fail('usage: diff (--turn | --base <ref>) [--json]')
-  const snap = base ? null : readBaseline()
-  if (!base && !snap) return out('no turn baseline yet (run a prompt first)')
-  const diffs = base ? branchDiff(git(['merge-base', 'HEAD', base]) ?? base) : turnDiff(snap as Snapshot)
+  if (!base && !trunk && !args.opt.turn) fail('usage: diff (--turn | --trunk | --base <ref>) [--json]')
+  const snap = base || trunk ? null : readBaseline()
+  if (!base && !trunk && !snap) return out('no turn baseline yet (run a prompt first)')
+  const diffs = trunk ? branchDiff(trunk) : base ? branchDiff(git(['merge-base', 'HEAD', base]) ?? base) : turnDiff(snap as Snapshot)
   if (args.opt.json) return out(JSON.stringify(diffs))
   out(diffs.map(d => `${d.status} ${d.file} (+${d.added.length} -${d.removed.length})`).join('\n') || 'no changes')
 }

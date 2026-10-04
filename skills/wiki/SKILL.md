@@ -11,7 +11,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 ## Update (when the first argument is `update` or `docs/wiki/manifest.json` exists)
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki status --json`. If every list is empty, say "wiki up to date" and stop.
-2. For each `stale` page, launch one `sdlc:wiki` agent (at most 3 per message) with the page path, its globs from the manifest, the change slug (the second argument, or `unreleased` if absent), and the changed files under those globs (`git diff --name-only main...HEAD`, plus the working tree).
+2. For each `stale` page, launch one `sdlc:wiki` agent (at most 3 per message) with the page path, its globs from the manifest, the change slug (the second argument, or `unreleased` if absent), and the changed files under those globs (`node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts diff --trunk`, which includes the working tree).
 3. For each `missing` page, fix its globs in the manifest or delete the page. For each `uncovered` directory, add a manifest entry and launch an agent for it as in Build step 3, or list it under `skip` if it needs no page.
 4. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki stamp <page> ...`, naming only the pages you actually wrote. If it reports uncited pages, have their agent add `path:line` citations, then stamp again.
 

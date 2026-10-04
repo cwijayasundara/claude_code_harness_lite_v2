@@ -134,7 +134,8 @@ export const register: Register = on => {
         // The session ledger includes subagents, advisor calls and classifiers, so the delta is the turn's real cost.
         const session = await $.session.usage()
         const costUsd = session.cost?.usd ?? lastCostUsd
-        row.usd = Number((costUsd - lastCostUsd).toFixed(4))
+        // A ledger below the last reading was reset (/clear starts a new one): everything on it is this turn's.
+        row.usd = Number((costUsd >= lastCostUsd ? costUsd - lastCostUsd : costUsd).toFixed(4))
         row.ctx = session.context.tokens ?? 0
         lastCostUsd = costUsd
         if ((row.ctx as number) > SOFT_CONTEXT && !warnedSoft) {

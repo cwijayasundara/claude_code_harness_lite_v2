@@ -364,7 +364,8 @@ function hookStop(input: HookInput, sub: boolean): void {
   let slug = activeSlug()
   // A turn that shipped (its commits add a change's ship.json) is recorded already; any other commit is still ad hoc.
   const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.sdlc\/changes\/[^/]+\/ship\.json$/.test(f))
-  if (!slug && !sub && !shipped && diffs.some(d => isSource(d.file, config))) slug = createAdhoc(diffs, config)
+  // Harness files alone (onboarding writes CI workflows and settings) are not ad-hoc work.
+  if (!slug && !sub && !shipped && diffs.some(d => isSource(d.file, config) && !isProtected(d.file))) slug = createAdhoc(diffs, config)
   const result = runChecks({
     point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: sub ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
     before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null, ratchet: !sub,

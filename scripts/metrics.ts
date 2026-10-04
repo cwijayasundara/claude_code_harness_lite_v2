@@ -56,6 +56,8 @@ function sumBy(rows: UsageRow[], key: (r: UsageRow) => string, value: (r: UsageR
   return totals
 }
 
+const roundAll = (totals: Record<string, number>): Record<string, number> => Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Number(v.toFixed(4))]))
+
 export function cmdMetrics(args: Args): void {
   if (!exists(SDLC)) fail('sdlc not initialised here')
   const days = Number(optString(args, 'days') ?? 30)
@@ -120,7 +122,8 @@ export function cmdMetrics(args: Args): void {
 
   // Cost, from the mod's usage log
   const usage = readJsonl<UsageRow>(USAGE).filter(r => Date.parse(r.at) >= since)
-  const main = usage.filter(r => r.kind === 'main')
+  // A negative delta is a session ledger that reset under the mod (an old /clear); its real cost is unknown, so it counts 0.
+  const main = usage.filter(r => r.kind === 'main').map(r => ({ ...r, usd: Math.max(0, r.usd ?? 0) }))
   const agents = usage.filter(r => r.kind === 'agent')
   const tokensOf = (r: UsageRow): number => (r.in ?? 0) + (r.out ?? 0) + (r.cr ?? 0) + (r.cw ?? 0)
   const input = usage.reduce((s, r) => s + (r.in ?? 0) + (r.cr ?? 0) + (r.cw ?? 0), 0)
@@ -128,9 +131,9 @@ export function cmdMetrics(args: Args): void {
   const opusWritten = usage.filter(r => /opus/.test(r.model ?? '')).reduce((s, r) => s + (r.out ?? 0) + (r.cw ?? 0), 0)
   const cost = {
     usd_total: Number(main.reduce((s, r) => s + (r.usd ?? 0), 0).toFixed(2)),
-    usd_by_change: sumBy(main, r => r.change ?? '(none)', r => r.usd ?? 0),
-    usd_by_stage: sumBy(main, r => r.stage ?? '(none)', r => r.usd ?? 0),
-    tokens_by_agent_type: sumBy(agents, r => r.agentType ?? 'unknown', tokensOf),
+    usd_by_change: roundAll(sumBy(main, r => r.change ?? '(none)', r => r.usd ?? 0)),
+    usd_by_stage: roundAll(sumBy(main, r => r.stage ?? '(none)', r => r.usd ?? 0)),
+    tokens_by_agent_type: sumBy(agents, r => (r.agentType ?? 'unknown').replace(/^sdlc-/, 'sdlc:'), tokensOf),
     cache_hit_share: input ? Number((usage.reduce((s, r) => s + (r.cr ?? 0), 0) / input).toFixed(3)) : null,
     peak_context: main.reduce((p, r) => Math.max(p, r.ctx ?? 0), 0),
     turns_over_150k: main.filter(r => (r.ctx ?? 0) > 150_000).length,

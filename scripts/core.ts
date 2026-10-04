@@ -100,9 +100,9 @@ export const PATHS: Record<ChangeType, Stage[]> = {
 // Tier M has no human gate: contract, data and security changes are tier L (v0.3 trial: gates by risk, not size).
 export const GATES: Record<Tier, GatedStage[]> = { S: [], M: [], L: ['spec', 'plan'] }
 // Tier S is the fast path: no spec, and review runs on the PR (templates/sdlc-review.yml).
-export const SKIPPED_FOR_S = new Set<Stage>(['spec', 'review'])
-// Tier M review runs on the PR (templates/sdlc-review.yml), not as an in-session stage.
-export const SKIPPED_FOR_M = new Set<Stage>(['spec', 'review'])
+// Tier S and M review runs on the PR (templates/sdlc-review.yml) only where one can: workflow installed, origin remote set.
+export const SKIPPED_FOR_S = new Set<Stage>(['spec', 'review']), SKIPPED_FOR_M = SKIPPED_FOR_S
+export const prReviewAvailable = (): boolean => exists(path.join(ROOT, '.github/workflows/sdlc-review.yml')) && git(['remote', 'get-url', 'origin']) !== null
 export const ARTIFACTS: Partial<Record<Stage, string>> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', notes: 'notes.md' }
 
 export const APPROVAL_ARTIFACTS: Record<GatedStage, string> = { intent: 'intent.md', spec: 'spec.md', plan: 'plan.md', impact: 'plan.md' }
@@ -261,10 +261,12 @@ export function loadChange(slug: string): Change {
   const verification = reportFields(read(path.join(dir, 'verification.md')), ['result'])
   const review = reportFields(read(path.join(dir, 'review.md')), ['result', 'rounds', 'caught'])
   let stages = PATHS[type]
-  if (tier === 'S' && type !== 'greenfield') stages = stages.filter(s => !SKIPPED_FOR_S.has(s))
+  const keepReview = (tier === 'S' || tier === 'M') && !prReviewAvailable()
+  const skip = (set: Set<Stage>) => (s: Stage): boolean => !set.has(s) || (s === 'review' && keepReview)
+  if (tier === 'S' && type !== 'greenfield') stages = stages.filter(skip(SKIPPED_FOR_S))
   const isBug = type === 'bugfix' || type === 'incident'
   if (isBug && tier !== 'L') stages = stages.filter(s => s !== 'plan')
-  if (tier === 'M' && type !== 'greenfield') stages = stages.filter(s => !SKIPPED_FOR_M.has(s))
+  if (tier === 'M' && type !== 'greenfield') stages = stages.filter(skip(SKIPPED_FOR_M))
   const gates = type === 'greenfield' ? GATES.L : GATES[tier]
   const approvalState = (gate: GatedStage): ApprovalState => approvalOf(slug, gate)
   const isDone = (stage: Stage): boolean => {

@@ -1,6 +1,6 @@
 ---
 name: review
-description: One review pass per tier L change - Claude Code's built-in /code-review plus a spec and contract check (and /security-review for risky changes) - recorded in review.md, at most one fix round.
+description: One review pass per change (tier L always; tier S and M when no PR review can run) - Claude Code's built-in /code-review plus a spec and contract check (and /security-review for risky changes) - recorded in review.md, at most one fix round.
 argument-hint: <slug>
 effort: medium
 allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Bash(git diff*), Bash(git log*), Bash(git remote*), Read, Write, Edit, Agent, Skill
@@ -11,7 +11,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 The budget is **one review pass and at most one fix round**. Reviews that chase every conceivable edge case cost more than they save.
 
-1. **Read** `intent.md` for the tier and risks.
+1. **Read** `intent.md` for the tier and risks. Tier S and M come here only when no PR review can run; review them the same way, with `code-review` at `medium`.
 2. **Review.** Run Claude Code's built-in `code-review` skill with `high` on the change's diff: it finds the correctness bugs, cheaply. Then check what it cannot know, in a few lines: each `## Contracts` line of plan.md matches the diff, and nothing contradicts a B-number in spec.md (the traceability sensor already proves each B-number has a test). If `code-review` fails to load, launch `sdlc:reviewer` (Opus) with the change folder and the diff base instead.
    - If the tier is L, or the intent's risks name auth, payments, data, secrets or a public API, also invoke Claude Code's built-in `security-review` skill. Run `git remote get-url origin` first. If it fails, the repo has no remote and `/security-review` cannot diff: review security yourself as the first priority instead, and say so in `review.md`.
 3. **Fix round.** If the review keeps findings, fix them once:

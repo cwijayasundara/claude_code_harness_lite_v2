@@ -106,6 +106,16 @@ describe('sdlc mod', () => {
     expect(row.out).toBe(200)
   })
 
+  test('a cost ledger that reset mid-session logs the new ledger, never a negative delta', async ($, on) => {
+    const world = worldOf(on, { costUsd: 2.3 })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    world.costUsd = 0.04
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    const row = JSON.parse(String(world.runs.find(r => r.argv.includes('log-usage'))?.argv.at(-1)))
+    expect(row.usd).toBe(0.04)
+  })
+
   test('crossing the soft context budget raises one toast', async ($, on) => {
     const world = worldOf(on, { contextTokens: 130_000 })
     on('turn.complete', () => ({ text: '' }))

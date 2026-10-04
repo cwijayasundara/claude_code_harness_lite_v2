@@ -80,10 +80,14 @@ test('tier S chore has no gates and skips spec and plan', () => {
   assert.match(run(['status']).stdout, /next: \/sdlc:build bump-deps/)
 })
 
-test('tier S feature is the fast path: plan, build, verify, ship with no review stage', () => {
+test('tier S feature skips the in-session review only where a PR review can run', () => {
   run(['new', 'tiny', '--type', 'feature', '--tier', 'S'])
   verified(repo, 'tiny')
   write('.sdlc/changes/tiny/plan.md', PLAN)
+  assert.match(run(['status']).stdout, /next: \/sdlc:review tiny/, 'no PR review workflow and no remote: review in session')
+  write('.github/workflows/sdlc-review.yml', 'name: sdlc-review\n')
+  assert.match(run(['status']).stdout, /next: \/sdlc:review tiny/, 'a workflow without a remote still cannot review')
+  git('remote', 'add', 'origin', 'https://example.com/x.git')
   assert.match(run(['status']).stdout, /next: \/sdlc:ship tiny/)
 })
 
@@ -240,6 +244,18 @@ test('log-usage tags rows with the active change; metrics report cost and unmeas
   assert.equal(m.first_pass_share.value, null)
 })
 
+test('metrics merge plugin and standalone agent names and ignore a negative cost delta from a reset ledger', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  run(['log-usage', JSON.stringify({ kind: 'main', usd: 0.5 })])
+  run(['log-usage', JSON.stringify({ kind: 'main', usd: -2.27 })])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'sdlc:scout', in: 10 })])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'sdlc-scout', in: 5 })])
+  const cost = JSON.parse(run(['metrics', '--json']).stdout).metrics.cost
+  assert.equal(cost.usd_total, 0.5)
+  assert.deepEqual(cost.usd_by_change, { 'add-login': 0.5 })
+  assert.deepEqual(cost.tokens_by_agent_type, { 'sdlc:scout': 15 })
+})
+
 test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active change', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
@@ -253,6 +269,30 @@ test('ship clears STATE.md, stages it and .sdlc/.gitignore, and leaves no active
   assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /No active change\. Last shipped: tiny\./)
   assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim(), '')
   assert.doesNotMatch(run(['status']).stdout, /next: /)
+})
+
+test('a change started on another change\'s branch is warned, refused at ship, and diff --trunk lists the branch', () => {
+  run(['new', 'first', '--type', 'chore', '--tier', 'S'])
+  verified(repo, 'first')
+  write('src/a.js', 'x\n')
+  write('.sdlc/changes/first/plan.md', '## Files\n- src/a.js\n')
+  assert.equal(run(['ship', 'first', '--message', 'chore: first']).code, 0)
+  const started = run(['new', 'second', '--type', 'chore', '--tier', 'S'])
+  assert.match(started.stdout, /warning: HEAD is on sdlc\/first[\s\S]*git checkout -b sdlc\/second/)
+  assert.match(run(['diff', '--trunk']).stdout, /A src\/a\.js/)
+  verified(repo, 'second')
+  write('src/b.js', 'y\n')
+  write('.sdlc/changes/second/plan.md', '## Files\n- src/b.js\n')
+  const refused = run(['ship', 'second', '--message', 'chore: second'])
+  assert.notEqual(refused.code, 0)
+  assert.match(refused.stderr, /not shipping: HEAD is on sdlc\/first/)
+})
+
+test('status warns when there is no origin remote to open a PR on', () => {
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  assert.match(run(['status']).stdout, /warn: no origin remote/)
+  git('remote', 'add', 'origin', 'https://example.com/x.git')
+  assert.doesNotMatch(run(['status']).stdout, /no origin remote/)
 })
 
 test('activeSlug never falls back to a finished change', () => {

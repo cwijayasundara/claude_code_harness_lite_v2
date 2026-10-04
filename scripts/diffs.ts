@@ -59,15 +59,19 @@ function addedFile(rel: string): FileDiff {
   return { file: rel, status: 'A', added: text.replace(/\n$/, '').split('\n').map((t, i) => ({ n: i + 1, text: t })), removed: [] }
 }
 
+// A file untracked at the snapshot and committed unchanged during the turn shows as added against the snapshot's
+// commit, but the turn did not change it.
+const unchangedSinceSnap = (snap: Snapshot, d: FileDiff): boolean => d.status === 'A' && snap.untracked[d.file] !== undefined && snap.untracked[d.file] === fingerprint(d.file)
+
 export function turnDiff(snap: Snapshot): FileDiff[] {
-  const tracked = parseUnifiedDiff(git([...DIFF, snap.sha]) ?? '')
+  const tracked = parseUnifiedDiff(git([...DIFF, snap.sha]) ?? '').filter(d => !unchangedSinceSnap(snap, d))
   const fresh = untrackedFiles().filter(f => snap.untracked[f] !== fingerprint(f))
   return [...tracked, ...fresh.map(addedFile)]
 }
 
 export function fileDiff(snap: Snapshot, rel: string): FileDiff[] {
   if (untrackedFiles().includes(rel)) return snap.untracked[rel] === fingerprint(rel) ? [] : [addedFile(rel)]
-  return parseUnifiedDiff(git([...DIFF, snap.sha, '--', rel]) ?? '')
+  return parseUnifiedDiff(git([...DIFF, snap.sha, '--', rel]) ?? '').filter(d => !unchangedSinceSnap(snap, d))
 }
 
 export const branchDiff = (base: string): FileDiff[] => [...parseUnifiedDiff(git([...DIFF, base]) ?? ''), ...untrackedFiles().map(addedFile)]

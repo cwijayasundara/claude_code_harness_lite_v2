@@ -16,11 +16,11 @@ Tier S, and tier M with 3 or fewer slices and 8 or fewer files. Subagent start-u
 1. Write the failing test and run it once with `sdlc.ts run --expect-fail -- "<test command>"`. Implement; run targeted tests quietly. Stay inside `## Files`.
 2. Run each `## Verification` command through `sdlc.ts run -- "<command>"`, then `sdlc.ts verify-report $0`. Never write verification.md by hand.
 
-Next: `/sdlc:ship $0` (tier S and M review runs on the PR). Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
+Next: the command `sdlc.ts status` prints (`/sdlc:review $0`, or `/sdlc:ship $0` where the review runs on the PR). Then keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it, unless the person asked to stop after this stage.
 
 ## Tier L and greenfield, opt-in: superpowers SDD
 Use this only when `.sdlc/sensors.json` has `"build": "sdd"` and `superpowers:subagent-driven-development` is in your available skills; otherwise use the next section. SDD costs several times the tokens of the native build, so it suits plans with many independent slices.
-1. If on main or master: `git checkout -b sdlc/$0`.
+1. If on the trunk: `git checkout -b sdlc/$0`. If on another change's `sdlc/` branch, run the command `sdlc.ts new` warned about first, so this change is not stacked on it.
 2. Invoke `superpowers:subagent-driven-development` on `.sdlc/changes/$0/plan.md` (spec: `.sdlc/changes/$0/spec.md`). These caller instructions override the skill:
    - Work in this tree on `sdlc/$0`. Do not use `using-git-worktrees`.
    - Dispatch implementers and task reviewers with `model: sonnet`. Never escalate to rounds 4–5.
