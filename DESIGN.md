@@ -594,3 +594,14 @@ Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog
 - Usage capture in headless `-p`, so the scorecard cost matches the run totals.
 - Tests over 500 lines in `sdlc.spec` and `check.spec`.
 - A true auto-approved share metric.
+
+## 15. v0.5: rig learn
+
+`rig learn` improves the harness from evidence the harness already stores, with the model frozen and zero tokens. Spec: [docs/superpowers/specs/2026-10-04-rig-learn-design.md](docs/superpowers/specs/2026-10-04-rig-learn-design.md).
+
+- **Signals.** Every change folder with a `ship.json`: `review.md` findings, `events.jsonl` blocks, `waivers.jsonl`, and the diff rebuilt from `ship.json` plus git. Malformed evidence skips that change and is listed, never fails the run.
+- **Clusters.** A pattern needs at least 2 distinct changes. A recurring review category with a recurring backticked token yields a `rule-add` proposal (a `warn` rule, exact token). Repeated waivers of one sensor on similar paths yield an advisory `sensor-tune`. Repeated `cap:` or `stall:` blocks are notes only.
+- **Replay gate.** A rule is promotable only if it fires on the stored diff of a change it came from and on no shipped change without that finding, and at least `minChanges` (10) changes shipped. Below that the status is `insufficient-holdout`. The replay runs again at promotion.
+- **Human-only promotion.** `/rig-approve <id> learn` appends the rule to `.sdlc/rules.json`; the model cannot run it. `sensor-tune` is never applied by a command. The edit then ships through PR review like any harness change.
+- **The verifier is not writable.** The learner lives under `scripts/**` (protected), and `.sdlc/learn/proposals.json` is rig-written evidence the model cannot write, so the improver cannot change the gate that judges it.
+- **Deferred.** A model proposer and edits to skill text or templates (v2, behind the same gate), scheduled runs, improving `learn` itself, a `learn` key in sensors.json, gate-friction signals (approvals store a digest only), and a `/rig-learn` pane.
