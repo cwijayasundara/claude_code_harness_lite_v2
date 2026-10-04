@@ -221,7 +221,7 @@ export function listChanges(): string[] {
   if (!exists(CHANGES)) return []
   return fs
     .readdirSync(CHANGES, { withFileTypes: true })
-    .filter(d => d.isDirectory())
+    .filter(d => d.isDirectory() && SLUG_RE.test(d.name))
     .map(d => d.name)
 }
 

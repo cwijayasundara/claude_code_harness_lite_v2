@@ -11,13 +11,10 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Band, Status, StepInfo } from '../types'
-import { sdlcArgv, parseStatus } from './shared'
+import { sdlcArgv, parseStatus, SLUG_RE, NODES } from './shared'
 import { PANE_ID, STORY_PANE, METRICS_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 import { promptFor, gateOf, stepKey } from './driver'
-
-// The mod runtime provides timers; the mod tsconfig carries no DOM or node lib.
-declare function setTimeout(handler: () => void, ms: number): unknown
 
 const NUDGE_EVERY_PROMPTS = 5
 
@@ -73,6 +70,7 @@ async function advance($: EngineInterface): Promise<void> {
   } catch {
     return stopDriver($, 'could not read the next step; driver stopped')
   }
+  if (!SLUG_RE.test(s.slug) || (s.node && !NODES.has(s.node))) return stopDriver($, 'the next step names an unknown change or node; driver stopped')
   if (s.verdict === 'blocked') return stopDriver($, `blocked: ${s.reason}`)
   if (s.verdict === 'ready') return stopDriver($, `${s.slug} is ready: a person merges the PR`)
   if (s.verdict === 'human') {
@@ -82,7 +80,7 @@ async function advance($: EngineInterface): Promise<void> {
     if ((await read($, driverLast)) === `gate:${gate}`) return stopDriver($, `the ${gate} approval did not advance; driver stopped`)
     let answer = ''
     try {
-      answer = await $.ui.ask(s.command, { options: [`Approve ${gate}`, 'Not yet'], header: 'Gate' })
+      answer = await $.ui.ask(`Approve ${gate} for ${s.slug}? (${s.command})`, { options: [`Approve ${gate}`, 'Not yet'], header: 'Gate' })
     } catch {
       // nobody to ask (dismissed, -p): never approve
     }
@@ -100,6 +98,8 @@ async function advance($: EngineInterface): Promise<void> {
 export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
+    await update($, driverRunning, () => false)
+    await update($, driverLast, () => '')
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
     try {
       await $.command.register({ name: 'sdlc-status', description: 'sdlc: where every change stands and the next command (no model call)', immediate: true })
@@ -153,8 +153,11 @@ export const register: Register = on => {
     if (!(await isInitialised($))) return { text: 'sdlc is not initialised here.' }
     await update($, driverRunning, () => true)
     await update($, driverLast, () => '')
-    // prompt.submit cannot be called from inside a command.run hook (it would wait on the turn the hook holds): kick off after it returns.
-    setTimeout(() => advance($).catch(err => $.ui.log(`driver stopped: ${String(err)}`)), 0)
+    // prompt.submit cannot run inside a command.run hook (it would wait on the turn the hook holds): start once the command has returned.
+    // Any failure on the first step resets the driver, so a later turn never starts driving unannounced.
+    $.clock.after(0, () => {
+      advance($).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined))
+    })
     return {}
   })
 

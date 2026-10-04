@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, CHANGES, STATE, exists, read, sha, git, toPosix, frontmatter, reportFields, approvalOf, needsImpact, readImpact, listChanges, isShipped, skillRef,
+  ROOT, CHANGES, STATE, exists, read, sha, git, toPosix, frontmatter, reportFields, approvalOf, needsImpact, readImpact, listChanges, isShipped, SLUG_RE, skillRef,
   APPROVAL_ARTIFACTS, type ChangeType, type Tier, type Stage, type GatedStage, type ApprovalState, type Next, type Change,
 } from './core.ts'
 import { loadConfig } from './check.ts'
@@ -101,7 +101,7 @@ export function nextCommand(change: Change): string {
 // active after its PR (pr-review follows). A missing STATE.md falls back to the newest unfinished change.
 export function activeSlug(): string | null {
   const { data } = frontmatter(read(STATE))
-  if ('change' in data) return data.change && exists(path.join(CHANGES, data.change)) && loadChange(data.change).next !== null ? data.change : null
+  if ('change' in data) return data.change && SLUG_RE.test(data.change) && exists(path.join(CHANGES, data.change)) && loadChange(data.change).next !== null ? data.change : null
   const byMtime = listChanges()
     .filter(slug => loadChange(slug).next !== null)
     .map(slug => ({ slug, t: fs.statSync(path.join(CHANGES, slug)).mtimeMs }))

@@ -14,3 +14,7 @@ export function parseStatus(stdout: string): Status | null {
     return null
   }
 }
+
+// Copies of core.ts's slug rule and the graph's node names: the driver puts both into a prompt, so it checks them first.
+export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
+export const NODES: ReadonlySet<string> = new Set(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review', 'intent', 'spec', 'plan', 'notes'])

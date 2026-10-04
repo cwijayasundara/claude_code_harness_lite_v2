@@ -250,6 +250,14 @@ test('activeSlug never falls back to a finished change', () => {
 })
 
 
+test('a directory whose name is not a valid slug is never the active change', () => {
+  fs.mkdirSync(path.join(repo, '.sdlc/changes/Bad Name`x'), { recursive: true })
+  write(repo, '.sdlc/changes/Bad Name`x/intent.md', '# x\n')
+  assert.doesNotMatch(sdlc(repo, ['status']).stdout, /Bad Name/)
+  fs.writeFileSync(path.join(repo, '.sdlc/STATE.md'), '---\nchange: Bad Name`x\n---\n')
+  assert.doesNotMatch(sdlc(repo, ['status']).stdout, /▶ Bad Name/)
+})
+
 test('I3: ship ratchets a known-red full command that now passes and commits the tightened sensors.json', () => {
   sdlc(repo, ['init'])
   write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { t: 'node -e "process.exit(0)"' }, knownRed: ['full.t'] }, null, 2) + '\n')
