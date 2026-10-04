@@ -241,7 +241,7 @@ const nonNeg = (v: unknown): v is number => typeof v === 'number' && v >= 0
 function parseV4(value: Record<string, unknown>, config: SensorConfig, errors: string[]): void {
   if (isObject(value.gates)) {
     for (const [k, v] of Object.entries(value.gates)) {
-      if (!(k in config.gates)) { errors.push(`gates: unknown tier "${k}"`); continue }
+      if (!Object.hasOwn(config.gates, k)) { errors.push(`gates: unknown tier "${k}"`); continue }
       if (Array.isArray(v) && v.every(s => s === 'spec' || s === 'plan')) config.gates[k as GateKey] = v as ('spec' | 'plan')[]
       else errors.push(`gates.${k} must list spec and/or plan`)
     }
@@ -256,7 +256,7 @@ function parseV4(value: Record<string, unknown>, config: SensorConfig, errors: s
   if (isObject(value.quality)) {
     for (const [k, v] of Object.entries(value.quality)) {
       if (!QUALITY_CATEGORIES.includes(k as QualityCategory)) { errors.push(`quality: unknown category "${k}"`); continue }
-      if (!isObject(v) || typeof v.cmd !== 'string' || typeof v.count !== 'string') { errors.push(`quality.${k} must be { cmd, count }`); continue }
+      if (!isObject(v) || typeof v.cmd !== 'string' || !v.cmd.trim() || typeof v.count !== 'string') { errors.push(`quality.${k} must be { cmd, count }`); continue }
       if (!COUNT_RE.test(v.count)) { errors.push(`quality.${k}.count must be exit, lines or json:<path>`); continue }
       config.quality[k as QualityCategory] = { cmd: v.cmd, count: v.count }
     }
@@ -280,7 +280,7 @@ function parseV4(value: Record<string, unknown>, config: SensorConfig, errors: s
     if ('rate' in v) { if (nonNeg(v.rate)) config.value.rate = v.rate; else errors.push('value.rate must be a non-negative number') }
     if (isObject(v.hours)) {
       for (const [t, h] of Object.entries(v.hours)) {
-        if (!(t in config.value.hours)) errors.push(`value.hours: unknown tier "${t}"`)
+        if (!Object.hasOwn(config.value.hours, t)) errors.push(`value.hours: unknown tier "${t}"`)
         else if (nonNeg(h)) config.value.hours[t as 'S' | 'M' | 'L'] = h
         else errors.push(`value.hours.${t} must be a non-negative number`)
       }

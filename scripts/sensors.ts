@@ -257,6 +257,15 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
   }
   for (const l of removedFrom(Object.keys(b.levels), Object.keys(a.levels))) reasons.push(`levels.${l} removed`)
   for (const q of removedFrom(Object.keys(b.quality), Object.keys(a.quality))) reasons.push(`quality.${q} removed`)
+  for (const l of Object.keys(a.levels) as (keyof typeof a.levels)[]) {
+    if (!(l in b.levels)) reasons.push(`levels.${l} added`)
+    else if (a.levels[l] !== b.levels[l]) reasons.push(`levels.${l} changed`)
+  }
+  for (const q of Object.keys(a.quality) as (keyof typeof a.quality)[]) {
+    const x = a.quality[q], y = b.quality[q]
+    if (!y) reasons.push(`quality.${q} added`)
+    else if (x?.cmd !== y.cmd || x?.count !== y.count) reasons.push(`quality.${q} changed`)
+  }
   return reasons
 }
 

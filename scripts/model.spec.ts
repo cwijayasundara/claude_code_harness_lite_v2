@@ -161,3 +161,14 @@ test('sensors.json v0.4 keys reject bad shapes', () => {
   assert.match(bad({ ratchet: { build: 0 } }), /ratchet\.build must be a positive integer/)
   assert.match(bad({ value: { rate: -1 } }), /value\.rate must be a non-negative number/)
 })
+
+test('v0.4 keys ignore prototype names and reject blank quality commands', () => {
+  const errs = (t: string) => parseConfig(t).errors.join('\n')
+  assert.match(errs('{"gates":{"toString":[]}}'), /gates: unknown tier "toString"/)
+  const r = parseConfig('{"value":{"hours":{"__proto__":1}}}')
+  assert.match(r.errors.join('\n'), /value\.hours: unknown tier "__proto__"/)
+  assert.deepEqual(r.config.value.hours, { S: 2, M: 8, L: 24 })
+  assert.equal(({} as Record<string, unknown>).toString !== undefined, true)
+  assert.match(errs('{"quality":{"lint":{"cmd":"  ","count":"exit"}}}'), /quality\.lint must be \{ cmd, count \}/)
+  assert.match(errs('{"quality":{"lint":{"cmd":"","count":"exit"}}}'), /quality\.lint must be \{ cmd, count \}/)
+})

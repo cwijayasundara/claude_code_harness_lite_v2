@@ -260,5 +260,17 @@ test('weakensConfig names v0.4 weakenings: a gate removed, a cap or budget raise
   assert.ok(reasons.includes('ratchet.usd.test raised 2 → 9'))
   assert.ok(reasons.includes('levels.unit removed'))
   assert.ok(reasons.includes('quality.lint removed'))
-  assert.deepEqual(weakensConfig(after, before).filter(r => /gate|ratchet|levels|quality/.test(r)), [], 'tightening is not weakening')
+  assert.deepEqual(weakensConfig(after, before).filter(r => /gate|ratchet|removed/.test(r)), [], 'tightening is not weakening')
+})
+
+test('weakensConfig flags changed and added declared level and quality commands', () => {
+  const cfg = (o: object) => JSON.stringify(o)
+  const base = { levels: { unit: 'npm test' }, quality: { lint: { cmd: 'eslint .', count: 'lines' } } }
+  const only = (r: string[]) => r.filter(x => /^(levels|quality)\./.test(x))
+  assert.deepEqual(only(weakensConfig(cfg(base), cfg(base))), [])
+  assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, levels: { unit: 'true' } }))), ['levels.unit changed'])
+  assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, quality: { lint: { cmd: 'true', count: 'lines' } } }))), ['quality.lint changed'])
+  assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, quality: { lint: { cmd: 'eslint .', count: 'exit' } } }))), ['quality.lint changed'])
+  assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, levels: { unit: 'npm test', api: 'x' } }))), ['levels.api added'])
+  assert.deepEqual(only(weakensConfig(cfg(base), cfg({ ...base, quality: { ...base.quality, deps: { cmd: 'x', count: 'exit' } } }))), ['quality.deps added'])
 })
