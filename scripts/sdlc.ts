@@ -82,9 +82,12 @@ function cmdStatus(args: Args): void {
   out([...rows, '', act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
 }
 
+// A standalone repo's /sdlc-approve and /sdlc-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
+const words = (args: Args): string[] => (args.pos.length === 1 ? (args.pos[0] ?? '').trim().split(/\s+/) : args.pos)
+
 function cmdApprove(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /sdlc-approve <slug> <stage>', 3)
-  const [slug, stage] = args.pos
+  const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
   const artifact = APPROVAL_ARTIFACTS[stage as GatedStage]
   const file = path.join(CHANGES, slug, artifact ?? '')
@@ -301,7 +304,7 @@ function cmdDiff(args: Args): void {
 // Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
 function cmdWaive(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /sdlc-waive <sensor> <file|*> <reason>', 3)
-  const [sensor, file, ...reason] = args.pos
+  const [sensor, file, ...reason] = words(args)
   const slug = optString(args, 'slug') ?? activeSlug()
   if (!sensor || !file || !reason.length || !slug) fail('usage: waive <sensor> <file|*> <reason...>  (needs an active change)')
   if (!SENSOR_NAMES.includes(sensor)) fail(`unknown sensor "${sensor}"; known: ${SENSOR_NAMES.join(', ')}`)

@@ -1,29 +1,13 @@
 {
-  "$comment": "Project settings for the sdlc harness. Merge into <project>/.claude/settings.json. Set the marketplace path to where this plugin lives.",
-  "extraKnownMarketplaces": {
-    "sdlc": {
-      "source": {
-        "source": "directory",
-        "path": "/ABSOLUTE/PATH/TO/claude_code_harness_lite_v2"
-      }
-    }
-  },
+  "$comment": "Project settings for the sdlc harness. Merge into <project>/.claude/settings.json and commit. superpowers is off so sdlc routes all work (turn it on only for \"build\": \"sdd\"); turn off any other plugin your team does not use here too.",
   "enabledPlugins": {
-    "sdlc@sdlc": true,
-    "superpowers@claude-plugins-official": false,
-    "security-guidance@claude-plugins-official": false,
-    "financial-analysis@claude-for-financial-services": false,
-    "private-equity@claude-for-financial-services": false,
-    "aws-serverless@claude-plugins-official": false,
-    "harness@harness-local": false,
-    "harness-eng-v2@harness-eng-v2": false
+    "superpowers@claude-plugins-official": false
   },
   "model": "claude-sonnet-5-5",
   "autoCompactWindow": 200000,
   "permissions": {
     "allow": [
-      "Edit(.sdlc/**)",
-      "Write(.sdlc/**)"
+      "Edit(.sdlc/**)"
     ],
     "deny": [
       "Read(.env)",

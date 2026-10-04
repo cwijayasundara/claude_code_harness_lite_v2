@@ -1,4 +1,4 @@
-// Cloud mode: `vendor --cloud` copies the whole harness into a project so cloud sessions (no plugins) run it.
+// Standalone mode: `vendor --standalone` (alias --cloud) copies the whole harness into a project, so it needs no plugin.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -13,9 +13,9 @@ const walk = (dir: string): string[] =>
 const toPosix = (p: string): string => p.split(path.sep).join('/')
 
 // Runs the project's own copy, the way a cloud session's hooks and skills do.
-const vendored = (repo: string, args: string[], input?: string) => {
+const vendored = (repo: string, args: string[], input?: string, human = '') => {
   const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', path.join(repo, '.sdlc/bin/sdlc.ts'), ...args], {
-    cwd: repo, input, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: '', NODE_TEST_CONTEXT: '' },
+    cwd: repo, input, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, SDLC_HUMAN: human, NODE_TEST_CONTEXT: '' },
   })
   return { code: r.status, stdout: r.stdout, stderr: r.stderr }
 }
@@ -72,4 +72,65 @@ test('the PR review may write its two files through Edit rules; a Write(path) ru
   const yml = fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'sdlc-review.yml'), 'utf8')
   const allowed = /--allowedTools "([^"]+)"/.exec(yml)?.[1] ?? ''
   assert.deepEqual(allowed.split(','), ['Read(./**)', 'Grep', 'Glob', 'Edit(./review.md)', 'Edit(./review-verdict.txt)'])
+})
+
+const humanCommand = (cmd: string): string => `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts ${cmd}`
+const bashDecision = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined)
+
+test('standalone ships human-only /sdlc-approve and /sdlc-waive skills the model cannot invoke or imitate', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
+  for (const cmd of ['approve', 'waive']) {
+    const skill = fs.readFileSync(path.join(repo, `.claude/skills/sdlc-${cmd}/SKILL.md`), 'utf8')
+    assert.match(skill, /^disable-model-invocation: true$/m)
+    assert.ok(skill.includes(`allowed-tools: Bash(${humanCommand(cmd)} *)`), `${cmd}: the grant covers exactly the injected command`)
+    assert.ok(skill.includes(`!\`${humanCommand(cmd)} '$ARGUMENTS' 2>&1\``), `${cmd}: arguments are single-quoted, never globbed`)
+  }
+  const input = JSON.stringify({ tool_input: { command: humanCommand('approve demo plan') } })
+  assert.equal(bashDecision(vendored(repo, ['hook', 'pre-bash'], input)), 'deny', 'the model cannot reuse the grant for another approval')
+})
+
+test('a quoted argument string is split: /sdlc-approve and /sdlc-waive work from a standalone skill', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  sdlc(repo, ['vendor', '--standalone'])
+  vendored(repo, ['new', 'demo', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/demo/spec.md', '# Spec\n\n## Open questions\nnone\n')
+  assert.equal(vendored(repo, ['approve', 'demo spec'], undefined, '1').code, 0)
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/approvals.jsonl'), 'utf8'), /"slug":"demo","stage":"spec"/)
+  assert.equal(vendored(repo, ['waive', 'size * too big for one PR'], undefined, '1').code, 0)
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/waivers.jsonl'), 'utf8'), /"file":"\*","reason":"too big for one PR"/)
+  assert.equal(vendored(repo, ['approve', 'demo spec']).code, 3, 'still human-only')
+})
+
+test('the plugin hooks step aside only in a standalone repo, so no hook runs twice', () => {
+  const input = JSON.stringify({ tool_input: { command: humanCommand('approve demo plan') } })
+  const ci = makeRepo()
+  sdlc(ci, ['init'])
+  sdlc(ci, ['vendor'])
+  assert.equal(bashDecision(sdlc(ci, ['hook', 'pre-bash'], { input })), 'deny', 'plain vendor (the CI checker) leaves the plugin hooks on')
+  const standalone = makeRepo()
+  sdlc(standalone, ['init'])
+  sdlc(standalone, ['vendor', '--standalone'])
+  const r = sdlc(standalone, ['hook', 'pre-bash'], { input })
+  assert.equal(r.code, 0)
+  assert.equal(r.stdout, '', 'the plugin copy is silent; the project copy decides')
+  const settings = path.join(standalone, '.claude/settings.json')
+  const full = JSON.parse(fs.readFileSync(settings, 'utf8'))
+  fs.writeFileSync(settings, JSON.stringify({ $comment: 'see .sdlc/bin/sdlc.ts', hooks: { Stop: full.hooks.Stop } }))
+  assert.equal(bashDecision(sdlc(standalone, ['hook', 'pre-bash'], { input })), 'deny', 'a mention or another hook does not silence pre-bash')
+  fs.writeFileSync(settings, '{ not json')
+  assert.equal(bashDecision(sdlc(standalone, ['hook', 'pre-bash'], { input })), 'deny', 'unreadable settings keep the plugin hooks')
+})
+
+test('the settings template is portable: no personal plugins, absolute paths or no-op Write(path) rules', () => {
+  const dir = path.join(import.meta.dirname, '..', 'templates')
+  for (const f of fs.readdirSync(dir)) {
+    const text = fs.readFileSync(path.join(dir, f), 'utf8')
+    assert.doesNotMatch(text, /Write\([^)]*[./*][^)]*\)/, `${f}: path-scoped write rules must be Edit(...)`)
+    assert.doesNotMatch(text, /"\/(Users|home)\/|ABSOLUTE\/PATH/, `${f}: no machine-specific paths`)
+  }
+  const settings = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'))
+  assert.equal(settings.enabledPlugins?.['sdlc@sdlc'], undefined, 'standalone repos do not make teammates install the plugin')
 })

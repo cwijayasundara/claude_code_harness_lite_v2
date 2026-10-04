@@ -482,6 +482,15 @@ CI was red from 38b1cce, so v0.3.4 and v0.3.5 were tagged on red builds; macOS, 
 
 The first release with CI green on Linux, Windows and macOS, and the first with a working `sdlc-review` (both above). Adds `LICENSE` (MIT). Still unchecked by a person: the mod's band, `/sdlc-approve`, `/sdlc-sensors` and the impact dialog.
 
+### Standalone by default (2026-10-04)
+
+A repo onboarded by sdlc carries its own harness, so it never depends on the plugin; the plugin onboards and upgrades. This keeps v6's goal (the child repo is independent) without its `/scaffold` machinery: `vendor --standalone` (alias `--cloud`) is the same 70-line copy cloud sessions already used.
+- **Artifacts stay in `.sdlc/`, committed.** `.claude/` is protected (§10), and the artifacts are the evidence `sdlc-check` reads.
+- **Human gates without the mod.** `/sdlc-approve` and `/sdlc-waive` are vendored skills with `disable-model-invocation` and a `!` command whose `allowed-tools` grant covers only that command. `$ARGUMENTS` is single-quoted, because a Haiku probe showed it is substituted raw: unquoted, `*` globbed into file names. Probed on Haiku: the person's `/sdlc-approve demo spec` wrote the approval; a model told to approve by any means got 3 denials and wrote nothing.
+- **No double hooks.** When the project's settings register `.sdlc/bin/sdlc.ts`, the plugin's hooks return at once and the mod skips its approve and waive commands. The band, pane and impact dialog still run when the plugin is installed too.
+- **Settings template made portable.** The personal plugin list, the absolute marketplace path and the no-op `Write(.sdlc/**)` rule are gone, and the template no longer enables the plugin for the team.
+- **Without the plugin there is no mod**, so there is no band, pane, impact dialog or per-stage cost capture. `/sdlc-approve` has not been tried in a cloud session.
+
 ## 11. Open items to verify
 
 - Mod dollars come from the session cost ledger, which includes advisor and classifier calls. Reconcile them with `/usage` on a real multi-day project.

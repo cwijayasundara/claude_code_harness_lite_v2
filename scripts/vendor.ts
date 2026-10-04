@@ -1,5 +1,5 @@
-// Copies the harness into a project. Plain `vendor` copies the checker CI runs (.sdlc/bin). `vendor --cloud` also
-// writes the skills, agents and hooks into the project's .claude/, because Claude Code cloud sessions load no plugins.
+// Copies the harness into a project. Plain `vendor` copies the checker CI runs (.sdlc/bin). `vendor --standalone`
+// (alias --cloud) also writes the skills, agents and hooks into .claude/, so the repo needs no plugin, cloud sessions included.
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
@@ -43,11 +43,24 @@ function mergeHooks(written: string[]): void {
   writeFile('.claude/settings.json', JSON.stringify({ ...settings, hooks }, null, 2) + '\n', written)
 }
 
-function vendorCloud(written: string[]): void {
+// Human-only gates without the mod: the person invokes these, the model cannot (disable-model-invocation), and the
+// pre-bash hook denies any model Bash naming SDLC_HUMAN. '$ARGUMENTS' is quoted so the shell never globs or splits it.
+function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): string {
+  const run = `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${SDLC_HOOK} ${cmd}`
+  return [
+    '---', `name: sdlc-${cmd}`, `description: Human only. ${what} The model cannot run this.`, `argument-hint: ${hint}`,
+    'disable-model-invocation: true', `allowed-tools: Bash(${run} *)`, '---',
+    `!\`${run} '$ARGUMENTS' 2>&1\``, '', 'Tell the person the result above in one line. Do nothing else.', '',
+  ].join('\n')
+}
+
+function vendorStandalone(written: string[]): void {
   for (const name of fs.readdirSync(path.join(PLUGIN_ROOT, 'skills'))) {
     const src = path.join(PLUGIN_ROOT, 'skills', name, 'SKILL.md')
     if (fs.existsSync(src)) writeFile(`.claude/skills/sdlc-${name}/SKILL.md`, forProject(read(src)), written)
   }
+  writeFile('.claude/skills/sdlc-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact>', 'Approve a gated sdlc artifact.'), written)
+  writeFile('.claude/skills/sdlc-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'agents')).filter(f => f.endsWith('.md'))) {
     writeFile(`.claude/agents/sdlc-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)
   }
@@ -63,9 +76,10 @@ export function cmdVendor(args: Args): void {
   for (const name of VENDORED) writeFile(`.sdlc/bin/${name}.ts`, read(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`)), written)
   const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
   writeFile('.sdlc/bin/VERSION', `${version}\n`, written)
-  if (args.opt.cloud) vendorCloud(written)
+  const standalone = Boolean(args.opt.standalone || args.opt.cloud)
+  if (standalone) vendorStandalone(written)
   sanctionWrites(written)
-  out(args.opt.cloud
-    ? `vendored sdlc ${version} for cloud sessions: .sdlc/bin, .claude/skills/sdlc-*, .claude/agents/sdlc-*, hooks in .claude/settings.json. Commit them.`
+  out(standalone
+    ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/sdlc-*, .claude/agents/sdlc-*, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
     : `vendored sdlc ${version} into ${path.relative(ROOT, path.join(SDLC, 'bin'))} (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }

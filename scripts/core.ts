@@ -420,7 +420,7 @@ export function planProblems(file: string): string[] {
 }
 
 export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
-// Cloud mode runs a project's own copy from .sdlc/bin, where skills are /sdlc-<name> and agents sdlc-<name>.
+// A standalone repo runs its own copy from .sdlc/bin, where skills are /sdlc-<name> and agents sdlc-<name>.
 export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
 export const skillRef = (name: string): string => `/sdlc${IS_VENDORED ? '-' : ':'}${name}`
 export const agentRef = (name: string): string => `sdlc${IS_VENDORED ? '-' : ':'}${name}`
