@@ -108,13 +108,16 @@ async function offerDesignGate($: EngineInterface): Promise<void> {
 // The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
 const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root)
 
+const VENDORED_IDS = ['rig-mod@rig-local', 'sdlc-mod@sdlc-local']
+
 // Step aside only when the vendored copy is really configured: its files exist AND the protected settings enable it.
 // Anything unreadable keeps this copy active (fail closed).
 async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
   if (isVendoredRoot($.plugin.root) || !(await $.fs.exists('.sdlc/mod/hooks/register.ts'))) return false
   try {
     const settings = JSON.parse(await $.fs.read('.claude/settings.json')) as { enabledPlugins?: Record<string, unknown> }
-    if (settings.enabledPlugins?.['rig-mod@rig-local'] === true) {
+    // sdlc-mod@sdlc-local: repos vendored before the rename to rig.
+    if (VENDORED_IDS.some(id => settings.enabledPlugins?.[id] === true)) {
       $.ui.log("rig: using the project's vendored sdlc mod (.sdlc/mod)")
       return true
     }

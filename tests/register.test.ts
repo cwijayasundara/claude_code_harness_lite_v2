@@ -106,6 +106,14 @@ describe('sdlc mod', () => {
     expect(world.runs.length).toBe(0)
   })
 
+  test('a repo vendored before the rename (sdlc-mod@sdlc-local) still makes the plugin copy step aside', async ($, on) => {
+    const world = worldOf(on)
+    world.vendoredMod = true
+    world.settings = '{"enabledPlugins":{"sdlc-mod@sdlc-local":true}}'
+    await $.session.start(SESSION)
+    expect(world.commands).toEqual([])
+  })
+
   test('present but not enabled: the plugin copy stays active', async ($, on) => {
     const world = worldOf(on)
     world.vendoredMod = true
