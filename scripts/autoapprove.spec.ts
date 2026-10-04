@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
+import { makeRepo, sdlc, write, gitIn, verified, ratcheted } from './testkit.ts'
 
 let repo: string
 const SCRIPT = path.resolve(import.meta.dirname, 'sdlc.ts')
@@ -249,4 +249,63 @@ test('the pinned-script pr-checks command is auto-approved, but pr (commit and p
 test('a pinned-script argument with a .. segment is never auto-approved', () => {
   approveAll()
   for (const c of ['quality ..', 'quality ../x', 'quality ../..', 'ratchet show ..', 'status a/../b']) assert.notEqual(bash(`node ${SCRIPT} ${c}`), 'allow', c)
+})
+
+// A small change driven to a given node, so bash approval is judged there.
+function atNode(node: 'build' | 'pr' | 'pr-review'): void {
+  repo = makeRepo()
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  if (node !== 'build') verified(repo, 'tiny')
+  write(repo, 'src/app.js', 'x\n')
+  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  if (node === 'build') return
+  ratcheted(repo, 'tiny')
+  if (node === 'pr-review') assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
+}
+const NODE = `node --disable-warning=ExperimentalWarning ${SCRIPT}`
+
+test('ratchet record is auto-approved only in the --from form, inside the change folder', () => {
+  atNode('build')
+  write(repo, '.sdlc/changes/tiny/review-slice-1.md', 'verdict: pass\n')
+  assert.equal(bash(`${NODE} ratchet record tiny build --slice 1 --from .sdlc/changes/tiny/review-slice-1.md`), 'allow')
+  assert.equal(bash(`${NODE} ratchet record tiny build --from .sdlc/changes/tiny/review-slice-1.md`), 'allow')
+  for (const c of [
+    `${NODE} ratchet record tiny build --slice 1 --from /etc/passwd`,
+    `${NODE} ratchet record tiny build --slice 1 --from .sdlc/changes/tiny/../../sensors.json`,
+    `${NODE} ratchet record tiny build --slice 1 < .sdlc/changes/tiny/review-slice-1.md`,
+    `${NODE} ratchet record tiny build --slice 1`,
+    `${NODE} ratchet record other build --slice 1 --from .sdlc/changes/tiny/review-slice-1.md`,
+    `${NODE} ratchet record tiny sensors --from .sdlc/changes/tiny/review-slice-1.md`,
+  ]) assert.notEqual(bash(c), 'allow', c)
+  const out = path.join(os.tmpdir(), 'sdlc-out-' + process.pid)
+  fs.mkdirSync(out, { recursive: true })
+  fs.writeFileSync(path.join(out, 'r.md'), 'verdict: pass\n')
+  fs.symlinkSync(out, path.join(repo, '.sdlc/changes/tiny/link'))
+  assert.notEqual(bash(`${NODE} ratchet record tiny build --slice 1 --from .sdlc/changes/tiny/link/r.md`), 'allow', 'symlink out')
+})
+
+test('pr is auto-approved at the pr node with one quoted message, and --followup at pr-review', () => {
+  atNode('pr')
+  assert.equal(bash(`${NODE} pr tiny --message "feat(app): add the thing, fast; really"`), 'allow')
+  assert.notEqual(bash(`${NODE} pr tiny --followup --message "fix: x"`), 'allow', 'followup belongs to pr-review')
+  for (const c of [
+    `${NODE} pr tiny --message "feat: $(id)"`,
+    `${NODE} pr tiny --message "feat: \`id\`"`,
+    `${NODE} pr tiny --message "feat: $HOME"`,
+    `${NODE} pr tiny --message "feat: a\nb"`,
+    `${NODE} pr tiny --message "feat: a\\"b"`,
+    `${NODE} pr tiny --message 'feat: x'`,
+    `${NODE} pr tiny --message "feat: x" && id`,
+    `${NODE} pr tiny --message "--force"`,
+    `${NODE} pr other --message "feat: x"`,
+  ]) assert.notEqual(bash(c), 'allow', c)
+  assert.notEqual(bash(`${NODE} pr tiny --message "a\nb"`.replace('\\n', '\n')), 'allow', 'real newline')
+})
+
+test('pr is refused at build; --followup is allowed at pr-review', () => {
+  atNode('build')
+  assert.notEqual(bash(`${NODE} pr tiny --message "feat: x"`), 'allow')
+  atNode('pr-review')
+  assert.equal(bash(`${NODE} pr tiny --followup --message "fix: review findings"`), 'allow')
+  assert.notEqual(bash(`${NODE} pr tiny --message "fix: review findings"`), 'allow', 'plain pr is done')
 })

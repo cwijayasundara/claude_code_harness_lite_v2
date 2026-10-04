@@ -354,3 +354,18 @@ test('gh saying the PR already exists records the existing url instead of blocki
   assert.match(events('tiny'), /"kind":"pr","target":"https:\/\/github.com\/o\/r\/pull\/5"/)
   assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr-review')
 })
+
+test('a refused ship gate blocks the change and names the exact next action', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.sdlc/sensors.json')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'feature')
+  ready('tiny')
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
+  gitIn(repo, 'commit', '-qam', 'loosen')
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(r.code, 1)
+  const n = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
+  assert.equal(n.verdict, 'blocked')
+  assert.match(n.reason, /\/sdlc-waive harness-tamper \.sdlc\/sensors\.json <reason>/)
+})

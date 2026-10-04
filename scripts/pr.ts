@@ -11,8 +11,8 @@ import { loadChange, nextCommand, activeSlug, prRecorded, prDone } from './graph
 import { loadConfig, runChecks } from './check.ts'
 import { branchDiff, showAt } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
-import { formatFindings, type SensorConfig } from './model.ts'
-import { appendEvent, block, unblock } from './ratchet.ts'
+import { formatFindings, SENSOR_NAMES, type SensorConfig } from './model.ts'
+import { appendEvent, block, unblock, readRatchet } from './ratchet.ts'
 import { renderScorecard } from './scorecard.ts'
 
 type ShippedRepo = { name: string; branch: string; commit: string }
@@ -102,9 +102,13 @@ export function cmdPr(args: Args): void {
   const ratcheted = read(path.join(SDLC, 'sensors.json')) !== sensorsBefore
   if (errors.length || gate.blocks.length) {
     const configFindings = errors.map(e => `[config] ${e}`)
+    const waives = [...new Set(gate.blocks.filter(f => SENSOR_NAMES.includes(f.sensor)).map(f => `/sdlc-waive ${f.sensor} ${f.file ?? '*'} <reason>`))]
+    const summary = [...configFindings, ...gate.blocks.map(f => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message}`)].join('; ').replace(/\s+/g, ' ').slice(0, 400)
+    block(slug, 'pr', waives.length && !errors.length ? `the ship gate refused; a person waives with ${waives.join(' ; ')}, or fix: ${summary}` : `fix: ${summary}`)
     fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /sdlc-waive <sensor> <file|*> <reason>.`)
   }
 
+  if (readRatchet(slug).blocked?.node === 'pr' && /^(?:the ship gate refused|fix: )/.test(readRatchet(slug).blocked?.reason ?? '')) unblock(slug, 'ship gate passed')
   const consumers = changedConsumers(slug, config)
   const trunk = onTrunk(head)
   if (trunk && branchExists(ROOT, `sdlc/${slug}`)) fail(`not shipping: branch sdlc/${slug} already exists in this repo`)

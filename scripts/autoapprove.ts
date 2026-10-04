@@ -7,7 +7,7 @@ import { step, AUTONOMOUS, activeSlug } from './graph.ts'
 import { isProtected } from './sensors.ts'
 import { loadConfig } from './check.ts'
 import { globToRegex } from './model.ts'
-import { normCmd, isHarnessScript, atRoot } from './shell.ts'
+import { normCmd, isHarnessScript, atRoot, tokenize } from './shell.ts'
 import { appendEvent } from './ratchet.ts'
 
 const METACHAR = /[;&|`$<>()\\\x00-\x1f\x7f]/
@@ -35,9 +35,42 @@ function gitReadOnly(w: string[]): boolean {
   return w.slice(2).every(x => ARG.test(x) && !expands(x) && (x.startsWith('-') ? !GIT_BAD_OPT.test(x) && !/^-[a-zA-Z]*[CcO]/.test(x) && !x.includes('/') : inside(x)))
 }
 
+// `pr <slug> [--followup] --message "<msg>"` at the pr (or, with --followup, pr-review) node. The message is one
+// double-quoted token with no control char, backslash, $, backtick or inner quote, so bash passes it through verbatim.
+const PR_MSG = /^[^"\\$`\x00-\x1f\x7f-][^"\\$`\x00-\x1f\x7f]*$/
+function prApproval(cmd: string, slug: string, node: string, cwd?: string): boolean {
+  if (/[\x00-\x1f\x7f]/.test(cmd) || !atRoot(cwd) || cmd !== cmd.trim() || / {2,}/.test(cmd.replace(/"[^"]*"/g, '""'))) return false
+  const t = tokenize(cmd)
+  const w = t.segs[0]
+  if (t.bad || t.segs.length !== 1 || !w || w[0] !== 'node') return false
+  const i = w[1] === '--disable-warning=ExperimentalWarning' ? 2 : 1
+  const script = w[i]
+  const [sub, s, ...rest] = w.slice(i + 1)
+  if (!script || !ARG.test(script) || !isHarnessScript(script, cwd) || sub !== 'pr' || s !== slug) return false
+  const follow = rest[0] === '--followup'
+  const [flag, msg, ...extra] = follow ? rest.slice(1) : rest
+  if (follow ? node !== 'pr-review' : node !== 'pr') return false
+  if (flag !== '--message' || msg === undefined || extra.length || !PR_MSG.test(msg)) return false
+  // The quoted form must be exactly one double-quoted token, so single quotes or bare words are not what was tokenized.
+  return cmd.endsWith(` --message "${msg}"`)
+}
+
+// ratchet record <slug> <node> [--slice N] --from <file>: only the file form (no stdin redirect), the active slug and the current node.
+function ratchetFrom(a: string[], slug: string, node: string): boolean {
+  const [s, n, ...rest] = a
+  if (s !== slug || n !== node || !['build', 'test', 'sensors', 'pr-review'].includes(node)) return false
+  const slice = rest[0] === '--slice' ? rest.splice(0, 2)[1] : undefined
+  if (rest[0] === '--slice' || (slice !== undefined && !/^\d+$/.test(slice))) return false
+  if (rest.length !== 2 || rest[0] !== '--from') return false
+  const f = rest[1] ?? ''
+  const dir = `.sdlc/changes/${slug}/`
+  return ARG.test(f) && f.startsWith(dir) && !f.slice(dir.length).includes('/') && !f.includes('..') && insideRepo(f) === f
+}
+
 // Returns how the command was approved, or null. 'read' means read-only git, which is not worth an audit event.
 function bashApproval(cmd: string, slug: string, node: string, cwd?: string): 'declared' | 'read' | null {
   // Judge the raw text: normCmd folds newlines and tabs into spaces, but bash would still run the extra line.
+  if (prApproval(cmd, slug, node, cwd)) return 'declared'
   if (METACHAR.test(cmd) || !atRoot(cwd)) return null
   const c = cmd.trim().replace(/ +/g, ' ')
   if (normCmd(cmd) !== c) return null
@@ -51,6 +84,7 @@ function bashApproval(cmd: string, slug: string, node: string, cwd?: string): 'd
       const m = /^run(?: --slug ([a-z0-9-]+))?(?: --expect-fail)? -- "([^"\\$`\x00-\x1f\x7f]+)"$/.exec(rest.join(' '))
       return m && declaredCommandSet(slug).has(normCmd(m[2] ?? '')) ? 'declared' : null
     }
+    if (rest[0] === 'ratchet' && rest[1] === 'record') return ratchetFrom(rest.slice(2), slug, node) ? 'declared' : null
     const sub = rest[0] === 'ratchet' ? `ratchet ${rest[1] ?? ''}` : rest[0] ?? ''
     const args = rest.slice(rest[0] === 'ratchet' ? 2 : 1)
     return SAFE_SUBS.has(sub) && args.every(x => ARG.test(x) && !expands(x) && !x.split('/').includes('..')) ? 'declared' : null

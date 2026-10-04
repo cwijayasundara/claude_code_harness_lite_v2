@@ -180,3 +180,8 @@ test('every starter stack in templates/stacks.json is a valid sensors.json fragm
   assert.ok(Object.keys(stacks).length >= 4)
   for (const [name, frag] of Object.entries(stacks)) assert.deepEqual(parseConfig(JSON.stringify(frag)).errors, [], name)
 })
+
+test('every starter stack declares unit and integration levels', () => {
+  const stacks = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../templates/stacks.json'), 'utf8')) as Record<string, { levels?: Record<string, string> }>
+  for (const [name, s] of Object.entries(stacks)) assert.ok(s.levels?.unit && s.levels.integration, `${name} needs unit and integration`)
+})

@@ -2,6 +2,7 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, write } from './testkit.ts'
 import { testCaseCount, parseReviewFindings } from './ratchet.ts'
@@ -109,4 +110,23 @@ test('build events are labelled build#<slice>, unknown nodes and changes are ref
   const ghost = sdlc(repo, ['ratchet', 'show', 'nope'])
   assert.notEqual(ghost.code, 0)
   assert.match(ghost.stderr + ghost.stdout, /no change named nope/)
+})
+
+test('ratchet record --from reads the reply from a file inside the change folder only', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['new', 'chg', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/chg/plan.md', '## Files\n- src/**\n')
+  write(repo, '.sdlc/changes/chg/review.md', 'verdict: pass\n')
+  const ok = sdlc(repo, ['ratchet', 'record', 'chg', 'build', '--slice', '1', '--from', '.sdlc/changes/chg/review.md'])
+  assert.equal(ok.code, 0, ok.stderr)
+  assert.match(ok.stdout, /"done"/)
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-from-'))
+  fs.writeFileSync(path.join(outside, 'r.md'), 'verdict: pass\n')
+  fs.symlinkSync(outside, path.join(repo, '.sdlc/changes/chg/link'))
+  write(repo, '.sdlc/changes/chg/runs.jsonl', '')
+  for (const f of ['../../sensors.json', path.join(outside, 'r.md'), '.sdlc/changes/chg/link/r.md', '.sdlc/changes/chg/runs.jsonl', '.sdlc/changes/chg/ratchet.json', '.sdlc/changes/chg/missing.md']) {
+    const r = sdlc(repo, ['ratchet', 'record', 'chg', 'build', '--slice', '1', '--from', f])
+    assert.equal(r.code, 1, f)
+    assert.match(r.stderr, /--from/, f)
+  }
 })

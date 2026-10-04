@@ -1,6 +1,6 @@
 {
   "node": {
-    "levels": { "unit": "npm test" },
+    "levels": { "unit": "npm test", "integration": "npm test" },
     "quality": {
       "lint": { "cmd": "npx --no-install eslint . -f unix", "count": "lines" },
       "types": { "cmd": "npx --no-install tsc --noEmit --pretty false", "count": "lines" },
@@ -10,7 +10,7 @@
     }
   },
   "python": {
-    "levels": { "unit": "pytest -q" },
+    "levels": { "unit": "pytest -q", "integration": "pytest -q" },
     "quality": {
       "lint": { "cmd": "ruff check . --output-format concise", "count": "lines" },
       "types": { "cmd": "mypy . --no-error-summary", "count": "lines" },
@@ -20,7 +20,7 @@
     }
   },
   "go": {
-    "levels": { "unit": "go test ./..." },
+    "levels": { "unit": "go test ./...", "integration": "go test ./..." },
     "quality": {
       "lint": { "cmd": "golangci-lint run --out-format line-number", "count": "lines" },
       "types": { "cmd": "go vet ./...", "count": "lines" },

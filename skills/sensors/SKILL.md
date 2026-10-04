@@ -7,6 +7,8 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 ---
 # Sensors $0
 
+Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+
 **Subagents:** run every subagent in the foreground and wait for its result.
 
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts quality $0`. It runs each declared category on the branch and on the base, the built-in sensors and the test-count invariant, and records the round.

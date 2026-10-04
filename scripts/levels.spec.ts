@@ -81,3 +81,17 @@ test('a corrupt ratchet.json also leaves build not done', () => {
   write(repo, '.sdlc/changes/old/ratchet.json', '{not json')
   assert.equal(nextStage('old').stage, 'build')
 })
+
+test('an undeclared required level blocks the change with the exact edit a person makes', () => {
+  sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/big/plan.md', '## Files\n- src/**\n## Verification\n- `node -e "0"`\n')
+  sdlc(repo, ['run', '--slug', 'big', '--', 'node -e "0"'])
+  sdlc(repo, ['verify-report', 'big'])
+  const n = JSON.parse(sdlc(repo, ['next', 'big', '--json']).stdout)
+  assert.equal(n.verdict, 'blocked')
+  assert.match(n.reason, /level acceptance required but not declared: add "acceptance": "<cmd>" to \.sdlc\/sensors\.json levels \(a person edits it\)/)
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "0"' } }))
+  sdlc(repo, ['run', '--slug', 'big', '--', 'node -e "0"'])
+  sdlc(repo, ['verify-report', 'big'])
+  assert.notEqual(JSON.parse(sdlc(repo, ['next', 'big', '--json']).stdout).verdict, 'blocked', 'declaring the level clears the block')
+})

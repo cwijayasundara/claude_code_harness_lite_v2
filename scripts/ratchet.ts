@@ -2,7 +2,7 @@
 // Written only by sdlc.ts (ratchet.json and events.jsonl are evidence), so a model cannot reset its own counter.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
+import { CHANGES, EVIDENCE_NAME_RE, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
 import { loadConfig } from './check.ts'
 import type { RatchetNode } from './model.ts'
 
@@ -96,6 +96,18 @@ export function spendUsd(slug: string, node?: string): number {
 const TEST_CASE = /(?:^|[^\w.])(?:it|test)(?:\.each\([^)]*\))?\s*\(|^\s*def test_\w+|^\s*func Test\w+|^\s*@Test\b/gm
 export const testCaseCount = (texts: string[]): number => texts.reduce((n, t) => n + (t.match(TEST_CASE)?.length ?? 0), 0)
 
+// The reviewer reply file must really live in the change folder (symlinks resolved) and not be evidence.
+function readFrom(slug: string, from: string): string {
+  const dir = path.join(CHANGES, slug)
+  let real: string
+  let root: string
+  try { real = fs.realpathSync(path.resolve(from)); root = fs.realpathSync(dir) } catch { return fail(`--from ${from}: no such file`) }
+  const rel = path.relative(root, real)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || !fs.statSync(real).isFile()) fail(`--from must be a file inside .sdlc/changes/${slug}/`)
+  if (EVIDENCE_NAME_RE.test(path.basename(real)) || /^(?:verification|impact|pr)\.(?:md|json)$/.test(path.basename(real))) fail('--from cannot be an evidence file')
+  return fs.readFileSync(real, 'utf8')
+}
+
 export function cmdRatchet(args: Args): void {
   const [sub, slug, node] = args.pos
   if (!sub || !slug) fail('usage: ratchet (record <slug> <node> [--slice N] | show <slug> | spend <slug>)')
@@ -106,7 +118,7 @@ export function cmdRatchet(args: Args): void {
     for (const u of readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug)) byNode[u.stage ?? '(none)'] = Number(((byNode[u.stage ?? '(none)'] ?? 0) + (typeof u.usd === 'number' && Number.isFinite(u.usd) ? Math.max(0, u.usd) : 0)).toFixed(4))
     return out(JSON.stringify({ total: spendUsd(slug), byNode }))
   }
-  if (sub !== 'record' || !node) fail('usage: ratchet record <slug> <build|test|sensors|pr-review> [--slice N] < reviewer reply')
+  if (sub !== 'record' || !node) fail('usage: ratchet record <slug> <build|test|sensors|pr-review> [--slice N] (--from <file in the change folder> | < reviewer reply)')
   const { config } = loadConfig()
   if (!Object.hasOwn(config.ratchet.rounds, node)) fail(`unknown ratchet node ${node}`)
   const n = node as RatchetNode
@@ -117,10 +129,12 @@ export function cmdRatchet(args: Args): void {
     if (!slice) fail(`--slice is required: plan.md has ${ids.join(', ')}`)
     if (!ids.includes(slice)) fail(`unknown slice ${slice}; plan.md has ${ids.join(', ')}`)
   }
-  const text = process.stdin.isTTY ? '' : fs.readFileSync(0, 'utf8')
+  const from = args.opt.from
+  if (from === true) fail('--from needs a file path')
+  const text = typeof from === 'string' ? readFrom(slug, from) : process.stdin.isTTY ? '' : fs.readFileSync(0, 'utf8')
   const findings = parseReviewFindings(text)
   const verdictLine = /^\s*verdict:\s*(pass|changes-needed)\b/im.exec(text)?.[1]?.toLowerCase()
-  if (!verdictLine && !findings.length) fail('no reviewer verdict: expected a "verdict: pass|changes-needed" line or finding lines on stdin; nothing recorded')
+  if (!verdictLine && !findings.length) fail('no reviewer verdict: expected a "verdict: pass|changes-needed" line or finding lines in the reply; nothing recorded')
   if (verdictLine === 'changes-needed' && !findings.some(f => BLOCKING.has(f.severity))) fail('changes-needed but no critical or high finding lines parsed: restate findings in the reviewer line format; nothing recorded')
   out(JSON.stringify(recordRound(slug, n, findings, { cap: config.ratchet.rounds[n], slice })))
 }

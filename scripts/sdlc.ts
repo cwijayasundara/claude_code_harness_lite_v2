@@ -22,7 +22,7 @@ import { cmdMetrics } from './metrics.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
-import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
+import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
 import { cmdQuality } from './quality.ts'
 import { requiredLevels, levelResults } from './levels.ts'
@@ -232,6 +232,10 @@ function cmdVerifyReport(args: Args): void {
   if (result === 'fail') {
     recordRound(slug, 'test', [{ severity: 'high', category: 'tests', text: `verification failed at ${now()} (${rows.length} runs, round ${readRatchet(slug).nodes.test?.hashes.length ?? 0})` }], { cap: config.ratchet.rounds.test })
   }
+  // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
+  const undeclared = levels.find(l => l.status === 'undeclared')
+  if (undeclared) block(slug, 'test', `level ${undeclared.level} required but not declared: add "${undeclared.level}": "<cmd>" to .sdlc/sensors.json levels (a person edits it)`)
+  else if (/^level \w+ required but not declared/.test(readRatchet(slug).blocked?.reason ?? '')) unblock(slug, 'levels declared')
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }
 
