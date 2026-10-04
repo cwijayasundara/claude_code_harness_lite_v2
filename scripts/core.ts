@@ -325,6 +325,9 @@ export function planProblems(file: string): string[] {
   const big = [...text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].filter(f => lines(f[1] ?? '') > LIMITS.planCodeBlockLines)
   if (big.length) problems.push(`${big.length} code block(s) over ${LIMITS.planCodeBlockLines} lines: plans carry interfaces and acceptance tests, not implementation code`)
   if (!/^##\s+Files/m.test(text)) problems.push('missing "## Files" section (the ownership contract)')
+  const section = /^##\s+Files\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(text)?.[1] ?? ''
+  const wide = [...new Set(section.split('\n').map(row => /^\s*[-*]\s+`?([^`\s]+)`?\s*$/.exec(row)?.[1]).filter(p => p === '**' || p === '*'))]
+  for (const w of wide) problems.push(`"## Files" lists "${w}", which is too broad: the scope gate would allow every file; list the paths or narrower globs`)
   return problems
 }
 

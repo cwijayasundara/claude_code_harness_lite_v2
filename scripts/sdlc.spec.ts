@@ -595,3 +595,13 @@ test('every slug-taking command refuses a path-like slug and writes nothing outs
   assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc/x')), [], 'nothing written into the sibling directory')
   assert.ok(!fs.existsSync(path.join(repo, '.sdlc/waivers.jsonl')) || fs.readFileSync(path.join(repo, '.sdlc/waivers.jsonl'), 'utf8') === '')
 })
+
+test('status warns when a plan lists ** or * in ## Files, which makes the scope gate vacuous', () => {
+  run(['new', 'wide', '--type', 'chore', '--tier', 'S'])
+  write('.sdlc/changes/wide/plan.md', '## Files\n- src/app.js\n- **\n')
+  assert.match(run(['status']).stdout, /warn: wide: .*"\*\*".*too broad/)
+  write('.sdlc/changes/wide/plan.md', '## Files\n- `*`\n')
+  assert.match(run(['status']).stdout, /warn: wide: .*"\*".*too broad/)
+  write('.sdlc/changes/wide/plan.md', '## Files\n- src/**\n')
+  assert.doesNotMatch(run(['status']).stdout, /too broad/)
+})
