@@ -12,6 +12,8 @@ import { QUALITY_CATEGORIES, isTest, formatFindings, type Finding } from './mode
 
 export type CategoryResult = { category: string; branch: number | null; base: number | null; status: 'pass' | 'regressed' | 'fail' | 'unmeasured'; note?: string }
 const MISSING = 127
+// Not a waivable sensor: a falling test count is never waived, so it stays out of SENSOR_NAMES.
+const INVARIANT = 'invariant'
 const QUALITY_TIMEOUT_MS = 300_000
 
 export function countFindings(output: string, exit: number, how: string): number | null {
@@ -80,7 +82,7 @@ export function runQuality(slug: string): { categories: CategoryResult[]; blocks
   if (base) {
     const before = testCount(base)
     const after = testCount(null)
-    if (after < before) blocks.push({ sensor: 'invariant', severity: 'block', message: `test cases: base ${before} → branch ${after}`, fix: 'restore the removed tests; the test count never drops' })
+    if (after < before) blocks.push({ sensor: INVARIANT, severity: 'block', message: `test cases: base ${before} → branch ${after}`, fix: 'restore the removed tests; the test count never drops' })
   }
   // Pattern sensors and waivers only (point 'stop'); traceability, red proof and full commands run at the pr node's ship gate.
   const gate = runChecks({ point: 'stop', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'none', budgetMs: 60_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: false })
