@@ -482,7 +482,7 @@ CI was red from 38b1cce, so v0.3.4 and v0.3.5 were tagged on red builds; macOS, 
 
 The first release with CI green on Linux, Windows and macOS, and the first with a working `sdlc-review` (both above). Adds `LICENSE` (MIT). Still unchecked by a person: the mod's band, `/sdlc-approve`, `/sdlc-sensors` and the impact dialog.
 
-### Standalone by default (2026-10-04)
+### Standalone by default (2026-10-04, v0.3.7)
 
 A repo onboarded by sdlc carries its own harness, so it never depends on the plugin; the plugin onboards and upgrades. This keeps v6's goal (the child repo is independent) without its `/scaffold` machinery: `vendor --standalone` (alias `--cloud`) is the same 70-line copy cloud sessions already used.
 - **Artifacts stay in `.sdlc/`, committed.** `.claude/` is protected (§10), and the artifacts are the evidence `sdlc-check` reads.
