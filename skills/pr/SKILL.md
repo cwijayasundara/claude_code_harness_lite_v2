@@ -11,7 +11,7 @@ Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` o
 
 1. **Wiki.** If `docs/wiki/manifest.json` exists, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts wiki status`. If it lists anything, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill wiki update $0` and follow it.
 2. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts pr $0 --message "<type(scope): summary>"`. The script checks readiness, scope and the ship gate, writes `pr.md`, commits, pushes and runs `gh pr create`. After a failed `gh` or push, run the same command again: it resumes.
-3. **If the gate refuses** with traceability or red-proof findings, launch one `sdlc:implementer` with only those findings, then run step 2 again. Anything else goes to the person.
+3. **If the gate refuses**, the change is blocked: `next` shows the reason. Show it and stop. The person fixes the findings, waives them (`/sdlc-waive ...`), or runs `/sdlc-approve $0 budget`; then `/sdlc-next` resumes.
 4. Never stage, commit, push or open the PR by hand.
 
 End with the PR URL (or `local-only`) and: `Next: <command from node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json>`. If a person is driving with `/sdlc-run`, stop here; otherwise run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it.

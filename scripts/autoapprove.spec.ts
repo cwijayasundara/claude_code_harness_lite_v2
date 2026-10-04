@@ -298,6 +298,9 @@ test('pr is auto-approved at the pr node with one quoted message, and --followup
     `${NODE} pr tiny --message "feat: x" && id`,
     `${NODE} pr tiny --message "--force"`,
     `${NODE} pr other --message "feat: x"`,
+    `${NODE} pr tiny >/dev/null --message "feat: x"`,
+    `${NODE} pr tiny --message "feat: x" 2>&1`,
+    `${NODE} pr tiny & --message "feat: x"`,
   ]) assert.notEqual(bash(c), 'allow', c)
   assert.notEqual(bash(`${NODE} pr tiny --message "a\nb"`.replace('\\n', '\n')), 'allow', 'real newline')
 })

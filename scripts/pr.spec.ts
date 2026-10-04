@@ -369,3 +369,13 @@ test('a refused ship gate blocks the change and names the exact next action', ()
   assert.equal(n.verdict, 'blocked')
   assert.match(n.reason, /\/sdlc-waive harness-tamper \.sdlc\/sensors\.json <reason>/)
 })
+
+test('a passing ship gate clears only a gate-kind block on pr', () => {
+  for (const [kind, blocked] of [['gate', false], ['cap', true]] as const) {
+    repo = makeRepo()
+    ready('tiny')
+    write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ nodes: { build: { rounds: 0, hashes: [], status: 'done' }, sensors: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {}, blocked: { node: 'pr', reason: 'x', at: 'now', kind } }))
+    assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
+    assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).verdict === 'blocked', blocked, kind)
+  }
+})

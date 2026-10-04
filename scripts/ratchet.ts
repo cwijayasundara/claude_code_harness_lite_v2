@@ -7,7 +7,8 @@ import { loadConfig } from './check.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done' }
-export type Ratchet = { version?: number; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, { cmd: string; count: string; n: number }> }; blocked?: { node: string; reason: string; at: string }; credits?: Partial<Record<RatchetNode, number>> }
+export type Ratchet = { version?: number; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, { cmd: string; count: string; n: number }> }; blocked?: { node: string; reason: string; at: string; kind?: BlockKind }; credits?: Partial<Record<RatchetNode, number>> }
+export type BlockKind = 'cap' | 'stall' | 'budget' | 'level' | 'gate' | 'other'
 export type Event = { at: string; node: string; verdict: string; round?: number; reason?: string; kind?: string; tool?: string; target?: string; usd?: number }
 export type ReviewFinding = { severity: string; category: string; text: string }
 export type RoundVerdict = { verdict: 'continue' | 'done' | 'blocked'; reason: string }
@@ -37,16 +38,23 @@ const slicesIn = (slug: string): string[] => {
   return ids.length ? ids : ['1']
 }
 
-export function block(slug: string, node: string, reason: string): void {
-  const r = readRatchet(slug)
-  r.blocked = { node, reason, at: now() }
-  writeRatchet(slug, r)
-  appendEvent(slug, { node, verdict: 'blocked', reason })
+// The first block stays: a later one of another kind is only logged, so clearing it can never drop the earlier cause.
+function setBlock(r: Ratchet, node: string, reason: string, kind: BlockKind): boolean {
+  if (r.blocked && (r.blocked.kind ?? 'other') !== kind) return false
+  r.blocked = { node, reason, at: now(), kind }
+  return true
 }
 
-export function unblock(slug: string, reason?: string): void {
+export function block(slug: string, node: string, reason: string, kind: BlockKind = 'other'): void {
   const r = readRatchet(slug)
-  if (!r.blocked) return
+  const set = setBlock(r, node, reason, kind)
+  if (set) writeRatchet(slug, r)
+  appendEvent(slug, { node, verdict: 'blocked', reason: set ? reason : `${reason} (also blocked; ${r.blocked?.kind ?? 'other'} block kept)` })
+}
+
+export function unblock(slug: string, reason?: string, kind?: BlockKind): void {
+  const r = readRatchet(slug)
+  if (!r.blocked || (kind && (r.blocked.kind ?? 'other') !== kind)) return
   delete r.blocked
   writeRatchet(slug, r)
   appendEvent(slug, { node: 'any', verdict: 'unblocked', ...(reason ? { reason } : {}) })
@@ -60,13 +68,16 @@ export function recordRound(slug: string, node: RatchetNode, findings: ReviewFin
   const previous = state.hashes.at(-1) ?? []
   state.hashes.push(hashes)
   let result: RoundVerdict
+  let kind: BlockKind = 'cap'
   if (!hashes.length) {
     state.status = 'done'
     result = { verdict: 'done', reason: 'no critical or high findings' }
   } else if (hashes.some(h => previous.includes(h))) {
     result = { verdict: 'blocked', reason: 'stall: the same finding came back after a fix round' }
+    kind = 'stall'
   } else if (state.rounds >= o.cap) {
     result = { verdict: 'blocked', reason: `cap: ${o.cap} fix rounds used and ${hashes.length} finding(s) remain` }
+    kind = 'cap'
   } else {
     state.rounds += 1
     result = { verdict: 'continue', reason: `${hashes.length} finding(s) to fix (round ${state.rounds}/${o.cap})` }
@@ -75,7 +86,7 @@ export function recordRound(slug: string, node: RatchetNode, findings: ReviewFin
     r.slices[o.slice ?? '1'] = state
     if (slicesIn(slug).every(id => r.slices[id]?.status === 'done')) r.nodes.build = { ...(r.nodes.build ?? fresh()), status: 'done' }
   } else r.nodes[node] = state
-  if (result.verdict === 'blocked') r.blocked = { node, reason: result.reason, at: now() }
+  if (result.verdict === 'blocked') setBlock(r, node, result.reason, kind)
   writeRatchet(slug, r)
   appendEvent(slug, { node: node === 'build' ? `build#${o.slice ?? '1'}` : node, verdict: result.verdict, round: state.rounds, reason: result.reason })
   return result

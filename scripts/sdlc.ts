@@ -234,8 +234,8 @@ function cmdVerifyReport(args: Args): void {
   }
   // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
   const undeclared = levels.find(l => l.status === 'undeclared')
-  if (undeclared) block(slug, 'test', `level ${undeclared.level} required but not declared: add "${undeclared.level}": "<cmd>" to .sdlc/sensors.json levels (a person edits it)`)
-  else if (/^level \w+ required but not declared/.test(readRatchet(slug).blocked?.reason ?? '')) unblock(slug, 'levels declared')
+  if (undeclared) block(slug, 'test', `level ${undeclared.level} required but not declared: add "${undeclared.level}": "<cmd>" to .sdlc/sensors.json levels (a person edits it)`, 'level')
+  else unblock(slug, 'levels declared', 'level')
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }
 

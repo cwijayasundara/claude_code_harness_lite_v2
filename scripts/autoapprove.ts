@@ -40,6 +40,7 @@ function gitReadOnly(w: string[]): boolean {
 const PR_MSG = /^[^"\\$`\x00-\x1f\x7f-][^"\\$`\x00-\x1f\x7f]*$/
 function prApproval(cmd: string, slug: string, node: string, cwd?: string): boolean {
   if (/[\x00-\x1f\x7f]/.test(cmd) || !atRoot(cwd) || cmd !== cmd.trim() || / {2,}/.test(cmd.replace(/"[^"]*"/g, '""'))) return false
+  if (/[<>&|;]/.test(cmd.replace(/ --message "[^"]*"$/, ''))) return false
   const t = tokenize(cmd)
   const w = t.segs[0]
   if (t.bad || t.segs.length !== 1 || !w || w[0] !== 'node') return false

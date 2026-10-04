@@ -29,6 +29,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     partial: false,
     verdict: 'continue',
     prompts: [] as string[],
+    rejectSubmit: false,
     answer: 'Not yet',
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -62,6 +63,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     return { value: undefined }
   })
   on('prompt.submit', ($, e) => {
+    if (world.rejectSubmit) throw new Error('rejected')
     world.prompts.push(e.text)
     return { text: e.text }
   })
@@ -421,5 +423,20 @@ describe('sdlc mod', () => {
     world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 1 }
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
     expect(world.prompts.length).toBe(0)
+  })
+
+  test('a rejected first submit stops the driver, so a later turn does not drive', async ($, on) => {
+    const world = worldOf(on)
+    const clock = mock.clock(on)
+    on('turn.complete', () => ({ text: '' }))
+    world.step = { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '', round: 1 }
+    world.rejectSubmit = true
+    await $.session.start(SESSION)
+    await $.command.run(command('sdlc-run'))
+    await clock.advance(1)
+    world.rejectSubmit = false
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't1' })
+    expect(world.prompts.length).toBe(0)
+    expect(world.toasts.at(-1)).toContain('not accepted')
   })
 })

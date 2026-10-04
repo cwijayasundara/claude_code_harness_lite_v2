@@ -70,7 +70,8 @@ async function advance($: EngineInterface): Promise<void> {
   } catch {
     return stopDriver($, 'could not read the next step; driver stopped')
   }
-  if (!SLUG_RE.test(s.slug) || (s.node && !NODES.has(s.node))) return stopDriver($, 'the next step names an unknown change or node; driver stopped')
+  const needsNode = s.verdict === 'continue' || s.verdict === 'human'
+  if (typeof s.slug !== 'string' || !SLUG_RE.test(s.slug) || (s.node === null || s.node === undefined ? needsNode : typeof s.node !== 'string' || !NODES.has(s.node))) return stopDriver($, 'the next step names an unknown change or node; driver stopped')
   if (s.verdict === 'blocked') return stopDriver($, `blocked: ${s.reason}`)
   if (s.verdict === 'ready') return stopDriver($, `${s.slug} is ready: a person merges the PR`)
   if (s.verdict === 'human') {
@@ -92,7 +93,7 @@ async function advance($: EngineInterface): Promise<void> {
   }
   if ((await read($, driverLast)) === stepKey(s)) return stopDriver($, `no progress on ${s.node} (round ${s.round}); driver stopped`)
   await update($, driverLast, () => stepKey(s))
-  $.prompt.submit({ text: promptFor(s, $.plugin.root) }).catch(err => $.ui.log(`driver could not submit: ${String(err)}`))
+  $.prompt.submit({ text: promptFor(s, $.plugin.root) }).catch(err => { $.ui.log(`driver could not submit: ${String(err)}`); return stopDriver($, 'the prompt was not accepted; driver stopped') })
 }
 
 // The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.

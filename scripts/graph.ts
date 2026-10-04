@@ -129,7 +129,7 @@ export function step(slug: string): Step {
     const spent = spendUsd(slug, node)
     if (spent > cap) {
       const reason = `budget: ${node} spent $${spent.toFixed(2)} of $${cap}`
-      block(slug, node, reason)
+      block(slug, node, reason, 'budget')
       return { ...base, verdict: 'blocked', reason: `${node}: ${reason}` }
     }
   }

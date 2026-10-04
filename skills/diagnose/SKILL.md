@@ -7,6 +7,8 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 ---
 # Diagnose $0
 
+Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+
 **Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running, because the work is lost if the session ends.
 
 1. **Reproduce.**
