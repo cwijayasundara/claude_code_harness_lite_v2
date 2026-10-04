@@ -560,3 +560,11 @@ test('economics: ratios need a sample, are windowed to the same changes, and hon
   assert.equal(e.value_over_cost, 360)
   assert.equal(e.tokens_by_node.build, 15 + 0)
 })
+
+test('status --json carries the active story and step for the mod', () => {
+  run(['new', 'aa', '--type', 'chore', '--tier', 'S'])
+  const s = JSON.parse(run(['status', '--json']).stdout)
+  assert.equal(s.story.slug, 'aa')
+  assert.equal(s.step.verdict, 'continue')
+  assert.equal(s.step.node, 'build')
+})
