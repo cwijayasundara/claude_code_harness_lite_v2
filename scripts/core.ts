@@ -329,7 +329,7 @@ export function scanSecrets(file: string): string[] {
   const hits: string[] = []
   text.split('\n').forEach((row, i) => {
     for (const [name, re] of SECRET_PATTERNS) {
-      if (re.test(row) && !/rig:allow-secret/.test(row)) hits.push(`${file}:${i + 1}: possible ${name}`)
+      if (re.test(row) && !/(?:rig|sdlc):allow-secret/.test(row)) hits.push(`${file}:${i + 1}: possible ${name}`)
     }
   })
   return hits

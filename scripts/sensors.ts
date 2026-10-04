@@ -153,7 +153,7 @@ export function secretsInDiff(diffs: FileDiff[]): Finding[] {
   const findings: Finding[] = []
   for (const d of diffs.filter(f => !f.binary)) {
     for (const l of d.added) {
-      if (/rig:allow-secret/.test(l.text)) continue
+      if (/(?:rig|sdlc):allow-secret/.test(l.text)) continue
       const hit = SECRET_PATTERNS.find(([, re]) => re.test(l.text))
       if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; for a test fixture add "rig:allow-secret <why>" on the line' })
     }
@@ -222,7 +222,7 @@ export function contractsFromPlan(planText: string): string[] {
     .filter((id): id is string => Boolean(id))
 }
 
-export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
+export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
 // ci: compare case-insensitively (macOS and Windows file systems treat CLAUDE.MD and CLAUDE.md as one file).
 export const isProtected = (file: string, ci = false): boolean => (ci ? matchesAny(file.toLowerCase(), PROTECTED.map(p => p.toLowerCase())) : matchesAny(file, PROTECTED))
 const SENSORS = '.sdlc/sensors.json'

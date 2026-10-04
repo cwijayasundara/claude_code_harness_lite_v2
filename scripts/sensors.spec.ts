@@ -278,3 +278,12 @@ test('weakensConfig flags changed and added declared level and quality commands'
 test('the repo-root plugin marketplace and the vendored mod are protected, case-insensitively', () => {
   for (const f of ['.claude-plugin/marketplace.json', '.sdlc/mod/hooks/register.ts']) assert.ok(isProtected(f) && isProtected(f.toUpperCase(), true), f)
 })
+
+test('legacy sdlc names stay honoured: protected old workflow, both secret markers', () => {
+  assert.ok(isProtected('.github/workflows/sdlc-check.yml'))
+  assert.ok(isProtected('.github/workflows/rig-check.yml'))
+  const line = 'const key = "AKIAABCDEFGHIJKLMNOP"'
+  assert.equal(secretsInDiff([fd('src/c.js', [line + ' // sdlc:allow-secret fixture'])]).length, 0)
+  assert.equal(secretsInDiff([fd('src/c.js', [line + ' // rig:allow-secret fixture'])]).length, 0)
+  assert.equal(secretsInDiff([fd('src/c.js', [line])]).length, 1)
+})

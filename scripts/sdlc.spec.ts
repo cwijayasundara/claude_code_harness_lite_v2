@@ -94,6 +94,20 @@ test('tier S feature reviews in session only where a PR review cannot run; a loc
   assert.match(run(['status']).stdout, /next: \/rig:pr tiny/, 'a local-only change that gained an origin has no PR yet: pr resumes it (and CI then reviews, so no pr-review node)')
 })
 
+test('a legacy sdlc-review.yml workflow still counts as PR review being available', () => {
+  run(['new', 'tiny', '--type', 'feature', '--tier', 'S'])
+  verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
+  write('.sdlc/changes/tiny/plan.md', PLAN)
+  write('.sdlc/changes/tiny/pr.md', '---\nstate: opened\n---\n')
+  write('.sdlc/changes/tiny/events.jsonl', JSON.stringify({ kind: 'pr', target: 'https://example.com/x/pull/1' }) + '\n')
+  git('add', '-A'); git('commit', '-qm', 'pr')
+  git('remote', 'add', 'origin', 'https://example.com/x.git')
+  assert.match(run(['status']).stdout, /next: \/rig:pr-review tiny/, 'no review workflow: reviewed in session')
+  write('.github/workflows/sdlc-review.yml', 'name: sdlc-review\n')
+  assert.doesNotMatch(run(['status']).stdout, /next: \/rig:pr-review/, 'the legacy workflow reviews in CI, so the in-session node is dropped')
+})
+
 test('log-usage keeps the change and stage captured at turn start', () => {
   run(['new', 'a-change', '--type', 'feature', '--tier', 'M'])
   run(['log-usage', JSON.stringify({ kind: 'main', usd: 0.1, change: 'a-change', stage: 'intent' })])

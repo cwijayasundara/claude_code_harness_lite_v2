@@ -26,7 +26,7 @@ export const isChangeType = (v: string | undefined): v is ChangeType => v !== un
 export const isTier = (v: string | undefined): v is Tier => v !== undefined && (TIERS as string[]).includes(v)
 
 // Tier S and M PR review runs in CI (templates/rig-review.yml) only where one can: workflow installed, origin remote set.
-export const prReviewAvailable = (): boolean => exists(path.join(ROOT, '.github/workflows/rig-review.yml')) && git(['remote', 'get-url', 'origin']) !== null
+export const prReviewAvailable = (): boolean => (exists(path.join(ROOT, '.github/workflows/rig-review.yml')) || exists(path.join(ROOT, '.github/workflows/sdlc-review.yml'))) && git(['remote', 'get-url', 'origin']) !== null
 export const gatesFor = (type: ChangeType, tier: Tier, config: SensorConfig): GatedStage[] => config.gates[type === 'greenfield' ? 'greenfield' : tier]
 
 const committed = (slug: string, file: string): boolean => Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug, file)))]))
