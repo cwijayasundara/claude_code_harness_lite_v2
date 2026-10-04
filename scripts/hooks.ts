@@ -184,7 +184,7 @@ function siblingEditReason(rel: string, consumer: { name: string } | undefined):
 
 // Read-only agents (scout, reviewer, verifier) get an allowlist, not a blacklist (scripts/shell.ts): a Bash command
 // passes only if it tokenizes cleanly and every segment is a known read-only command.
-// The sdlc script as the model should call it: the plugin's copy, or the project's own in cloud mode.
+// The sdlc script as the model should call it: the plugin's copy, or the project's own in a standalone repo.
 const SCRIPT = () => (IS_VENDORED ? '.sdlc/bin/sdlc.ts' : `${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts`)
 const READ_ONLY_AGENT = /(?:^|[:-])(?:scout|reviewer|verifier)$/
 
@@ -402,8 +402,12 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
   'subagent-stop': i => hookStop(i, true),
 }
 
+// A standalone repo registers its own copy's hooks in .claude/settings.json; the plugin's then step aside, so none runs twice.
+export const runsOwnHooks = (): boolean => !IS_VENDORED && read(path.join(ROOT, '.claude', 'settings.json')).includes('.sdlc/bin/sdlc.ts')
+
 export function cmdHook(args: Args): void {
   const handler = HOOKS[args.pos[0] ?? '']
   if (!handler) fail(`unknown hook ${args.pos[0]}`)
+  if (runsOwnHooks()) return
   handler(readStdin())
 }

@@ -19,6 +19,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     sensors: null as unknown,
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
+    standalone: false,
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -39,7 +40,8 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   on('session.usage', () => ({
     value: { startedAt: 0, context: { tokens: world.contextTokens, window: 1_000_000, percent: 5 }, rateLimits: [], cost: { usd: world.costUsd } },
   }))
-  on('fs.exists', () => ({ value: true }))
+  // .sdlc exists; the vendored approve skill exists only in a standalone repo.
+  on('fs.exists', ($, e) => ({ value: !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
   on('agent.list', () => ({ value: [{ id: 'a1', description: 'slice 1', type: 'sdlc:implementer', status: 'running' }] }))
   on('ui.toast', ($, e) => {
     world.toasts.push(String(e.text ?? e))
@@ -59,6 +61,13 @@ describe('sdlc mod', () => {
     const world = worldOf(on)
     await $.session.start(SESSION)
     expect(world.commands.sort()).toEqual(['sdlc-approve', 'sdlc-sensors', 'sdlc-status', 'sdlc-waive'])
+  })
+
+  test('in a standalone repo its own approve and waive skills win; status and sensors stay', async ($, on) => {
+    const world = worldOf(on)
+    world.standalone = true
+    await $.session.start(SESSION)
+    expect(world.commands.sort()).toEqual(['sdlc-sensors', 'sdlc-status'])
   })
 
   test('approve runs the script as the human only when the person typed it', async ($, on) => {

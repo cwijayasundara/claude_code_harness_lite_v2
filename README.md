@@ -6,21 +6,24 @@ It handles every kind of task: greenfield, brownfield, feature, bugfix, refactor
 
 ## Install
 
-For a team, once per project:
+The harness lives in each repo it runs on, so a repo never depends on the plugin. You need the plugin only to onboard a repo and to upgrade it.
 
-1. Add the marketplace and install the plugin for the project (it lands in the committed `.claude/settings.json`):
+1. Install the plugin for yourself (once per machine):
 
    ```bash
-   claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project
-   claude plugin install sdlc@sdlc --scope project
+   claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2
+   claude plugin install sdlc@sdlc
    ```
 
-2. Merge [`templates/settings.json`](templates/settings.json) into `.claude/settings.json` and commit it, so every engineer gets the same models and switches: Sonnet main thread, advisor off (`CLAUDE_CODE_DISABLE_ADVISOR_TOOL`), Sonnet as the default subagent model (`CLAUDE_CODE_SUBAGENT_MODEL`), and the unrelated plugins off.
-3. Run `/sdlc:onboard` once. It sets up `.sdlc/` and the sensors, offers the CI check and the PR review workflow, writes a compact CLAUDE.md and builds the code wiki in `docs/wiki/`.
+   Or, for one session: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
+2. In the repo, make a first commit if it has none, then run `/sdlc:onboard`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and the code wiki, and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/sdlc-*`, agents to `.claude/agents/sdlc-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Sonnet subagents).
+3. Commit `.sdlc/`, `.claude/` and `CLAUDE.md`. Anyone who clones the repo, and any cloud session, now runs the harness with no install. In the repo the commands are `/sdlc-start`, `/sdlc-next` and so on.
 
-To try it for one session without installing: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
+**Where things live.** Change artifacts, approvals, waivers and run records go in `.sdlc/`, not `.claude/`, for two reasons. Claude Code treats `.claude/` as protected, so writes there prompt and fail in headless runs. And these files are evidence the `sdlc-check` CI gate reads, so they are meant to be committed. Machine-local state (`.gate`, `.baseline`, `usage.jsonl`, `unresolved.json`) is already in `.sdlc/.gitignore`.
 
-Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, impact dialog). The skills, agents and settings hooks work on older versions.
+**Upgrade** by re-running `node <plugin>/scripts/sdlc.ts vendor --standalone` from a newer plugin and committing; `.sdlc/bin/VERSION` records the version in the repo. To keep a repo on the plugin instead (central upgrades, no copy), tell onboarding the team installs the plugin.
+
+**With and without the plugin.** A standalone repo has everything that decides what may happen: skills, agents, hooks, sensors, gates and the CI check. `/sdlc-approve` and `/sdlc-waive` are skills only the person can invoke: the model cannot call them, and it cannot set `SDLC_HUMAN` itself. Installing the plugin as well adds the mod: the band, the `/sdlc-sensors` pane, the impact dialog, `/sdlc-status` with no model call, and per-stage cost capture for `/sdlc:metrics`. The plugin's own hooks step aside in a standalone repo, so none runs twice. The mod needs Claude Code 2.1.287 or later.
 
 ## Use
 
@@ -40,7 +43,7 @@ Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, im
 
 ## Team install
 
-1. Install as above. Upgrades reach everyone through `claude plugin marketplace update sdlc`; releases are tagged (`v0.3.6`), and DESIGN.md records what each one changed and measured.
+1. Onboard as above and commit; teammates need nothing else. To upgrade a repo, run `claude plugin marketplace update sdlc`, re-run `vendor --standalone` and commit. Releases are tagged (`v0.3.6`), and DESIGN.md records what each one changed and measured.
 2. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
 3. For the PR review, add a `CLAUDE_CODE_OAUTH_TOKEN` repository secret (your Pro/Max plan, from `claude setup-token`) or an `ANTHROPIC_API_KEY`, copy `templates/sdlc-review.yml`, and make `sdlc-check` and `sdlc-review` required checks with both workflows in CODEOWNERS.
 
@@ -48,22 +51,9 @@ Requires Claude Code 2.1.287 or later for the mod (band, zero-token commands, im
 
 **Gates by risk, not size.** Tier S and M have no human gate and no in-session review: they run plan, build, verify and ship in one turn. Their single review runs on the PR from `templates/sdlc-review.yml` (Opus with no shell or network, reading a prepared diff; a model-free step posts the comment after a credential check; fails only on a high-severity finding; needs a `CLAUDE_CODE_OAUTH_TOKEN` secret from `claude setup-token` for a Pro/Max plan, or an `ANTHROPIC_API_KEY`). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and an in-session `/code-review` plus the plan-contract check. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
 
-## Cloud mode
+## Cloud sessions
 
-Long builds belong in a Claude Code cloud session (claude.ai/code or `claude --cloud`). It keeps running while your laptop sleeps. In the Prism build, the laptop sleeping accounted for most of the 3 days. Cloud sessions load no plugins, so put the harness in the repo itself:
-
-```bash
-node /path/to/claude_code_harness_lite_v2/scripts/sdlc.ts vendor --cloud   # then commit .sdlc/ and .claude/
-```
-
-This copies the scripts to `.sdlc/bin`, the skills to `.claude/skills/sdlc-*` (run them as `/sdlc-start`, `/sdlc-next` and so on), the agents to `.claude/agents/sdlc-*`, and the hooks into `.claude/settings.json`. Re-run it after upgrading the plugin; `.sdlc/bin/VERSION` records which version is in the repo.
-
-The mod does not run in the cloud, so there is no band and no `/sdlc-approve`. Do the gated stages locally and the long build in the cloud:
-
-1. Locally, with the plugin: `/sdlc:start`, then for tier L the spec and plan, and `/sdlc-approve` for each gate. Push the branch.
-2. In the cloud: `claude --cloud "/sdlc-next — continue through ship; commit on the branch"`. The result comes back as a pushed branch or PR, and `--teleport` brings the session back to your machine.
-
-Tier S and M changes have no gates, so they can run in the cloud from start to finish.
+Long builds belong in a Claude Code cloud session (claude.ai/code or `claude --cloud`). It keeps running while your laptop sleeps. In the Prism build, the laptop sleeping accounted for most of the 3 days. A standalone repo runs there as it is: `claude --cloud "/sdlc-next — continue through ship; commit on the branch"`. The result comes back as a pushed branch or PR, and `--teleport` brings the session back to your machine. Tier S and M changes have no gates, so they can run in the cloud from start to finish. For tier L, approve the spec and plan locally and push before the cloud build: `/sdlc-approve` has not been tried in a cloud session.
 
 ## Guides and sensors
 
