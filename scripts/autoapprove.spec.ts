@@ -224,3 +224,9 @@ test('read-only agents do not get the harness script from a foreign working dire
   assert.equal(ask(os.tmpdir()), 'deny')
   assert.notEqual(ask(repo), 'deny')
 })
+
+test('the pinned-script quality command is auto-approved during an autonomous node', () => {
+  approveAll()
+  assert.equal(bash(`node ${SCRIPT} quality big`), 'allow')
+  assert.notEqual(bash(`node ${SCRIPT} quality big; rm -rf .`), 'allow')
+})

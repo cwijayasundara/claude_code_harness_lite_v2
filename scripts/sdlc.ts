@@ -22,6 +22,7 @@ import { cmdMetrics } from './metrics.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock } from './ratchet.ts'
 import { cmdWiki } from './wiki.ts'
+import { cmdQuality } from './quality.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { normCmd } from './shell.ts'
 
@@ -423,6 +424,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   metrics: cmdMetrics,
   wiki: cmdWiki,
   diff: cmdDiff,
+  quality: cmdQuality,
   check: cmdCheck,
   'check-file': cmdCheckFile,
   vendor: cmdVendor,
