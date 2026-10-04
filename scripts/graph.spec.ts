@@ -2,7 +2,7 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { makeRepo, sdlc, write, gitIn, verified } from './testkit.ts'
+import { makeRepo, sdlc, write, gitIn, verified, ratcheted } from './testkit.ts'
 
 let repo: string
 beforeEach(() => { repo = makeRepo() })
@@ -41,7 +41,21 @@ test('a v0.3 shipped change stays done', () => {
 
 test('a change stays active after its PR until pr-review is done', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'L'])
+  verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
   write(repo, '.sdlc/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'pr')
+  assert.equal(nextOf('tiny')?.stage, 'pr-review')
   assert.match(sdlc(repo, ['status']).stdout, /▶ tiny/)
+})
+
+test('a change is no longer active once pr-review passes', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'L'])
+  verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
+  write(repo, '.sdlc/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
+  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'pr')
+  assert.equal(nextOf('tiny'), null)
+  assert.doesNotMatch(sdlc(repo, ['status']).stdout, /▶ tiny/)
 })
