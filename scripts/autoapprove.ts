@@ -138,5 +138,5 @@ export function autoApprove(input: HookInput, tool: 'edit' | 'bash'): string | n
   const how = cmd ? bashApproval(cmd, slug, s.node, input.cwd) : null
   if (!how) return null
   if (how === 'declared') appendEvent(slug, { node: s.node, verdict: 'allow', kind: 'auto-approve', tool: 'Bash', target: normCmd(cmd).slice(0, 120) })
-  return `a declared, harness or read-only git command inside ${slug}'s approved plan (node ${s.node})`
+  return `a declared, harness or read-only git command inside ${slug}'s ${approvalOf(slug, 'plan') === 'approved' ? 'approved plan' : 'plan'} (node ${s.node})`
 }

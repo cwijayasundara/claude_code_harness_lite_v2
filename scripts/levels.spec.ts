@@ -113,3 +113,16 @@ test('declaring a missing level never drops an earlier cap block', () => {
   assert.equal(n.verdict, 'blocked')
   assert.match(n.reason, /cap: 2 fix rounds/)
 })
+
+test('a cap reached in the same run as a level unblock is recorded, not lost', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { unit: 'node -e "process.exit(1)"', acceptance: 'node -e "0"' } }))
+  sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.sdlc/changes/big/plan.md', '## Files\n- src/**\n')
+  write(repo, '.sdlc/changes/big/ratchet.json', JSON.stringify({ nodes: { test: { rounds: 2, hashes: [], status: 'open' } }, slices: {}, baseline: {},
+    blocked: { node: 'test', reason: 'level acceptance required but not declared', at: 'now', kind: 'level' } }))
+  sdlc(repo, ['run', '--slug', 'big', '--', 'node -e "process.exit(1)"'])
+  sdlc(repo, ['verify-report', 'big'])
+  const blocked = JSON.parse(sdlc(repo, ['ratchet', 'show', 'big']).stdout).blocked
+  assert.equal(blocked?.kind, 'cap')
+  assert.match(blocked?.reason, /cap: 2 fix rounds/)
+})

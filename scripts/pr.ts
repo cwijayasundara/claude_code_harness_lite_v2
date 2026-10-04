@@ -188,7 +188,7 @@ function resume(slug: string, message: string): void {
   if (git(['remote', 'get-url', 'origin']) === null) fail(`cannot resume ${slug}: no origin remote`)
   if (git(['push', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('git push failed (blocked)') }
   const url = openPr(slug, (message.split('\n')[0] ?? slug).slice(0, 200))
-  unblock(slug, 'pr created')
+  unblock(slug, 'pr created', 'other')
   out(`resumed ${slug}: PR ${url}`)
 }
 

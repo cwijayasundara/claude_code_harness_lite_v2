@@ -312,3 +312,17 @@ test('pr is refused at build; --followup is allowed at pr-review', () => {
   assert.equal(bash(`${NODE} pr tiny --followup --message "fix: review findings"`), 'allow')
   assert.notEqual(bash(`${NODE} pr tiny --message "fix: review findings"`), 'allow', 'plain pr is done')
 })
+
+test('the bash allow reason says "approved plan" only when a plan was approved', () => {
+  const reason = () => {
+    const r = sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ tool_input: { command: 'git status' } }) })
+    return JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason as string
+  }
+  approveAll()
+  assert.match(reason(), /big's approved plan/)
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/**\n')
+  const ungated = reason()
+  assert.match(ungated, /tiny's plan/)
+  assert.doesNotMatch(ungated, /approved plan/)
+})

@@ -400,3 +400,17 @@ test('R46: after a waiver, next resumes at pr, auto-approval works there, and pr
   assert.equal(r.code, 0, r.stderr)
   assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'tiny']).stdout).blocked, undefined)
 })
+
+test('resuming a recorded pr clears only the other-kind block, never a cap', () => {
+  ready('tiny')
+  withRemote()
+  const gh = fakeGh('[ -f "$0.ok" ] || exit 1\necho https://github.com/o/r/pull/12')
+  assert.notEqual(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env }).code, 0)
+  const file = path.join(repo, '.sdlc/changes/tiny/ratchet.json')
+  const r = JSON.parse(fs.readFileSync(file, 'utf8'))
+  r.blocked.kind = 'cap'
+  fs.writeFileSync(file, JSON.stringify(r))
+  fs.writeFileSync(path.join(gh.bin, 'gh.ok'), '')
+  assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env }).code, 0)
+  assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'tiny']).stdout).blocked?.kind, 'cap')
+})

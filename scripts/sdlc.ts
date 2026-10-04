@@ -229,14 +229,15 @@ function cmdVerifyReport(args: Args): void {
   const levels = levelResults(slug, required, config, planPassed)
   const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels)
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
+  // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
+  // The level kind clears first, so a cap reached in this same run is recorded rather than refused behind the old block.
+  const undeclared = levels.find(l => l.status === 'undeclared')
+  if (!undeclared) unblock(slug, 'levels declared', 'level')
   // A failing report is always a new finding (counter keeps the hash unique), so only the test node's cap applies.
   if (result === 'fail') {
     recordRound(slug, 'test', [{ severity: 'high', category: 'tests', text: `verification failed at ${now()} (${rows.length} runs, round ${readRatchet(slug).nodes.test?.hashes.length ?? 0})` }], { cap: config.ratchet.rounds.test })
   }
-  // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
-  const undeclared = levels.find(l => l.status === 'undeclared')
   if (undeclared) block(slug, 'test', `level ${undeclared.level} required but not declared: add "${undeclared.level}": "<cmd>" to .sdlc/sensors.json levels (a person edits it)`, 'level')
-  else unblock(slug, 'levels declared', 'level')
   out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
 }
 
