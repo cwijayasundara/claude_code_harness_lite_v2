@@ -298,5 +298,6 @@ test('secrets: provider keys, JWTs and unquoted env-file secrets are caught', ()
 test('size: a file too large to scan is blocked, never silently skipped', () => {
   const f = size([{ file: 'dump.sql', status: 'A', added: [], removed: [], binary: true, oversize: true }], CFG, {}, 'stop')
   assert.equal(f.length, 1)
+  assert.equal(f[0]?.sensor, 'unscanned', 'its own sensor name, so a size waiver cannot cover it')
   assert.match(f[0]?.message ?? '', /not scanned/)
 })
