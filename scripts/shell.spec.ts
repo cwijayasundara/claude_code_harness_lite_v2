@@ -37,3 +37,9 @@ test('allowed read-only commands write nothing when the real shell runs them', {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('read-only agents cannot open credential files through Bash', () => {
+  for (const c of ['cat .env', 'grep KEY .env.local', 'head -1 ~/.aws/credentials', 'cat id_rsa', 'cat certs/server.pem', 'cat ~/.ssh/config'])
+    assert.match(readOnlyDenial(c, 'rig:reviewer', () => new Set()) ?? '', /credential files/, c)
+  assert.equal(readOnlyDenial('cat src/environment.ts', 'rig:reviewer', () => new Set()), null)
+})

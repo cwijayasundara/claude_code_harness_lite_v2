@@ -507,3 +507,9 @@ test('git --output (any abbreviation), -o, --ext-diff and --textconv count as wr
   for (const c of ['git log --oneline -- .sdlc', 'git diff --no-ext-diff -- .sdlc/approvals.jsonl', 'git show HEAD:.sdlc/approvals.jsonl', 'git add .sdlc/approvals.jsonl'])
     assert.equal(isSafeEvidenceCommand(c), true, c)
 })
+
+test('usage.jsonl feeds the spend cap, so the model may read it but not rewrite or delete it', () => {
+  assert.equal(isSafeEvidenceCommand('rm .sdlc/usage.jsonl'), false)
+  assert.equal(isSafeEvidenceCommand('echo > .sdlc/usage.jsonl'), false)
+  assert.equal(isSafeEvidenceCommand('cat .sdlc/usage.jsonl'), true)
+})

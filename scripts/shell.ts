@@ -183,10 +183,13 @@ function segmentDenied(w: string[], agent: string, declared: (slug: string | und
 }
 
 // Why a read-only agent may not run cmd, or null when every segment is an allowlisted read-only command.
+// Credential files a read-only agent has no reason to open; the settings Read() deny does not cover Bash.
+const SECRET_FILE = /(?:^|[\\/])(?:\.env(?:\..*)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|credentials|[^\\/]*\.(?:pem|key|p12|pfx))$|[\\/]\.(?:aws|ssh|gnupg)[\\/]/
 export function readOnlyDenial(cmd: string, agent: string, declared: (slug: string | undefined) => Set<string>, cwd?: string): string | null {
   const { segs, bad } = tokenize(cmd)
   if (bad) return bad
   for (const w of segs) {
+    if (w.some(t => SECRET_FILE.test(t))) return `"${w.join(' ').slice(0, 60)}": credential files are off limits to read-only agents`
     const why = segmentDenied(w, agent, declared, cwd)
     if (why) return `"${w.join(' ').slice(0, 60)}": ${why}`
   }

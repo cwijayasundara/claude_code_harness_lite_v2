@@ -119,7 +119,7 @@ export function fail(message: string, code = 1): never {
 // A diff larger than the default 1 MB buffer must not turn into "no changes": allow 256 MB.
 export function gitIn(cwd: string, args: string[]): string | null {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }).trim()
+    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024, timeout: 120_000 }).trim()
   } catch {
     return null
   }
@@ -249,8 +249,8 @@ export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '-
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands. Only paths under .sdlc/ count,
 // so a project's own results/runs.jsonl is not evidence; EVIDENCE_NAME_RE catches bare names once a command names .sdlc.
-export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|learn[\\/](?:proposals|auto)\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
-export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|ratchet\.json|events\.jsonl|ship\.json|proposals\.json/
+export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|usage\.jsonl|\.baseline|\.gate|unresolved\.json|learn[\\/](?:proposals|auto)\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
+export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|usage\.jsonl|runs\.jsonl|ratchet\.json|events\.jsonl|ship\.json|proposals\.json/
 
 // The plan's ## Verification bullets, split into required commands and ignored bullets (never dropped silently).
 // A command is the first backticked span in command position: right at the bullet start, or right after the

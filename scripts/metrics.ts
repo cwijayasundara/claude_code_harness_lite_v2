@@ -48,7 +48,7 @@ function commitTimes(file: string): string[] {
 function ghPrs(): PullRequest[] | null {
   try {
     const fields = 'number,createdAt,mergedAt,body,reviews,statusCheckRollup'
-    const raw = execFileSync('gh', ['pr', 'list', '--state', 'merged', '--limit', '200', '--json', fields], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    const raw = execFileSync('gh', ['pr', 'list', '--state', 'merged', '--limit', '200', '--json', fields], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000 })
     return JSON.parse(raw) as PullRequest[]
   } catch {
     return null

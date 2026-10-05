@@ -176,7 +176,7 @@ function openPr(slug: string, title: string): string {
   const file = toPosix(path.relative(ROOT, path.join(CHANGES, slug, 'pr.md')))
   const body = path.join(CHANGES, slug, 'pr.md')
   let url = ''
-  try { url = ghLast(execFileSync('gh', ['pr', 'create', '--title', title, '--body-file', body], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) } catch (e) {
+  try { url = ghLast(execFileSync('gh', ['pr', 'create', '--title', title, '--body-file', body], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 })) } catch (e) {
     const x = e as { stdout?: unknown; stderr?: unknown }
     // The PR already exists (a rerun, or opened by hand): record its url instead of blocking.
     if (/already exists/i.test(`${String(x.stdout ?? '')}${String(x.stderr ?? '')}`)) url = ghLast(ghRun(['pr', 'view', `sdlc/${slug}`, '--json', 'url', '-q', '.url']) ?? '')
@@ -201,7 +201,7 @@ function resume(slug: string, message: string): void {
 }
 
 function ghRun(argv: string[], keepStdoutOnFailure = false): string | null {
-  try { return execFileSync('gh', argv, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) } catch (e) {
+  try { return execFileSync('gh', argv, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }) } catch (e) {
     // gh pr checks exits non-zero for failing or pending checks but still prints the JSON.
     const stdout = (e as { stdout?: unknown }).stdout
     return keepStdoutOnFailure && typeof stdout === 'string' && stdout.trim() ? stdout : null
