@@ -80,8 +80,19 @@ function vendorStandalone(written: string[], version: string): void {
   mergeHooks(written)
 }
 
+const older = (a: string, b: string): boolean => {
+  const [x, y] = [a, b].map(v => v.split('.').map(n => Number.parseInt(n, 10) || 0))
+  for (let i = 0; i < 3; i++) if ((x?.[i] ?? 0) !== (y?.[i] ?? 0)) return (x?.[i] ?? 0) < (y?.[i] ?? 0)
+  return false
+}
+
 export function cmdVendor(args: Args): void {
   if (IS_VENDORED) fail('run vendor from the sdlc plugin, not from a project copy')
+  if (older(process.versions.node, '22.18.0')) fail(`rig needs Node >= 22.18 (this is ${process.versions.node}); on an older Node its hooks fail silently and every gate is off`)
+  const have = read(path.join(SDLC, 'bin', 'VERSION')).trim()
+  const next = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
+  if (have && older(next, have) && !args.opt.force) fail(`.sdlc/bin is ${have}, newer than this plugin (${next}); upgrade the plugin first, or pass --force to downgrade`)
+  try { if (read(path.join(ROOT, '.claude', 'settings.json'))) JSON.parse(read(path.join(ROOT, '.claude', 'settings.json'))) } catch { fail('.claude/settings.json is not plain JSON (comments or trailing commas?); fix it first so vendoring does not leave a half-written tree') }
   const written: string[] = []
   for (const name of VENDORED) writeFile(`.sdlc/bin/${name}.ts`, read(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`)), written)
   const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'

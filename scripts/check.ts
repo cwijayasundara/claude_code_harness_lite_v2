@@ -1,5 +1,6 @@
 // Orchestrates sensors at a firing point (stop, ship, ci): one set of checks everywhere, so local == CI.
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -347,6 +348,23 @@ export function humanRowsAdded(base: string): string[] {
   return rows
 }
 
+// A PR file cannot prove who wrote an approval row (the model commits as the developer): CI asks GitHub for an approving review of the head commit by someone other than the author.
+export function independentApproval(): string | null {
+  const eventPath = process.env.GITHUB_EVENT_PATH
+  if (!eventPath || !fs.existsSync(eventPath)) return 'cannot verify a reviewer outside a GitHub pull_request run'
+  let pr: { number?: number; user?: { login?: string }; head?: { sha?: string } } = {}, repo = ''
+  try { const ev = JSON.parse(fs.readFileSync(eventPath, 'utf8')) as { pull_request?: typeof pr; repository?: { full_name?: string } }; pr = ev.pull_request ?? {}; repo = ev.repository?.full_name ?? '' } catch { return 'the pull_request event payload is unreadable' }
+  if (!pr.number || !repo || !pr.head?.sha) return 'the pull_request event has no number, repository or head commit'
+  let reviews: { user?: { login?: string }; state?: string; commit_id?: string; author_association?: string }[]
+  try { reviews = (JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `repos/${repo}/pulls/${pr.number}/reviews?per_page=100`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 })) as unknown[]).flat() as typeof reviews } catch { return 'could not read the PR reviews (the job needs pull-requests: read and GH_TOKEN)' }
+  // a pull_request checkout is a merge commit (head is its 2nd parent); a workflow re-run reuses an old event
+  if (![git(['rev-parse', 'HEAD']), git(['rev-parse', 'HEAD^2'])].includes(pr.head.sha)) return `the event's head ${pr.head.sha.slice(0, 7)} is not the checked-out commit (a re-run on a stale event?)`
+  const latest = new Map<string, (typeof reviews)[number]>()
+  for (const r of reviews) if (r.user?.login && r.state !== 'COMMENTED') latest.set(r.user.login, r)
+  const ok = [...latest].some(([login, r]) => login !== pr.user?.login && r.state === 'APPROVED' && r.commit_id === pr.head?.sha && ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(r.author_association ?? ''))
+  return ok ? null : `no approving review of ${pr.head.sha.slice(0, 7)} from someone other than ${pr.user?.login ?? 'the author'}`
+}
+
 function report(point: string, result: CheckResult, count: number, json: boolean, humanRows: string[] = []): void {
   if (json) return out(JSON.stringify({ ...result, humanRows }))
   const text = formatFindings(result.findings)
@@ -380,10 +398,13 @@ export function cmdCheck(args: Args): void {
   const slugs = slugArg ? [slugArg] : at === 'ci' ? slugsIn(diffs) : [activeSlug()].filter((s): s is string => Boolean(s))
   const budgetMs = Number(optString(args, 'budget-ms') ?? (at === 'stop' ? 60_000 : 1_800_000))
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) fail('--budget-ms must be a positive number')
+  const humanRows = at === 'ci' && base ? humanRowsAdded(base) : []
+  const why = humanRows.length ? independentApproval() : null // before runChecks: the PR's test commands could rewrite the event file or shadow gh
   const result = runChecks({ point: at, diffs, config, rules, slugs, commands: at === 'stop' ? 'fast' : 'full', budgetMs, before, base, ratchet: !optString(args, 'config-from') })
   const configFindings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: SENSORS_JSON, message: e, fix: 'fix the file; see the sdlc README for its format' }))
-  const all = { ...result, findings: [...configFindings, ...result.findings], blocks: [...configFindings, ...result.blocks] }
-  report(at, all, diffs.length, Boolean(args.opt.json), at === 'ci' && base ? humanRowsAdded(base) : [])
+  const humanFindings: Finding[] = why ? [{ sensor: 'human-approval', severity: 'block', message: `this PR adds ${humanRows.length} approval/waiver row(s): ${why}`, fix: 'a code owner other than the PR author reviews the rows below and approves the current head commit; pushing again needs a fresh approval' }] : []
+  const all = { ...result, findings: [...humanFindings, ...configFindings, ...result.findings], blocks: [...humanFindings, ...configFindings, ...result.blocks] }
+  report(at, all, diffs.length, Boolean(args.opt.json), humanRows)
   process.exitCode = all.blocks.length ? 1 : 0
 }
 

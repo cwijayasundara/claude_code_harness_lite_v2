@@ -507,3 +507,19 @@ test('git --output (any abbreviation), -o, --ext-diff and --textconv count as wr
   for (const c of ['git log --oneline -- .sdlc', 'git diff --no-ext-diff -- .sdlc/approvals.jsonl', 'git show HEAD:.sdlc/approvals.jsonl', 'git add .sdlc/approvals.jsonl'])
     assert.equal(isSafeEvidenceCommand(c), true, c)
 })
+
+test('usage.jsonl feeds the spend cap, so the model may read it but not rewrite or delete it', () => {
+  assert.equal(isSafeEvidenceCommand('rm .sdlc/usage.jsonl'), false)
+  assert.equal(isSafeEvidenceCommand('echo > .sdlc/usage.jsonl'), false)
+  assert.equal(isSafeEvidenceCommand('cat .sdlc/usage.jsonl'), true)
+})
+
+test('the human-only commands cannot be spelled through shell expansion', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  for (const cmd of ['e=; a=approve; env SDLC_${e}HUMAN=1 node sdlc.ts $a foo design', 'node sdlc.ts "$(echo approve)" foo design', 'node sdlc.ts `echo waive` x', 'eval "node sdlc.ts approve foo plan"', 'env SDLC_H*=1 node sdlc.ts x']) {
+    const out = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: cmd } }).stdout || '{}')
+    assert.equal(out.hookSpecificOutput?.permissionDecision, 'deny', cmd)
+  }
+  assert.equal(hook(repo, 'pre-bash', { tool_input: { command: 'node .sdlc/bin/sdlc.ts status' } }).stdout, '', 'a plain harness call is still fine')
+})

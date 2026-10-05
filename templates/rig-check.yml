@@ -6,6 +6,7 @@ name: rig-check
 on: pull_request
 permissions:
   contents: read
+  pull-requests: read # lets CI verify an independent approving review when a PR adds approval or waiver rows
 jobs:
   rig-check:
     runs-on: ubuntu-latest
@@ -44,4 +45,5 @@ jobs:
         env:
           CLAUDE_PROJECT_DIR: ${{ github.workspace }}
           BASE: ${{ github.base_ref }}
+          GH_TOKEN: ${{ github.token }}
         run: node --disable-warning=ExperimentalWarning "$RUNNER_TEMP/sdlc/sdlc.ts" check --at ci --base "origin/$BASE" --config-from "origin/$BASE"

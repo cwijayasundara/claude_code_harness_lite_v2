@@ -183,10 +183,26 @@ function segmentDenied(w: string[], agent: string, declared: (slug: string | und
 }
 
 // Why a read-only agent may not run cmd, or null when every segment is an allowlisted read-only command.
+// Credential files a read-only agent has no reason to open; the settings Read() deny does not cover Bash.
+const SECRET_FILE = /(?:^|[\\/])(?:\.env(?:\..*)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|credentials|[^\\/]*\.(?:pem|key|p12|pfx))$|[\\/]\.(?:aws|ssh|gnupg)[\\/]/
+// A glob can name a credential file without spelling it (.en*): match it against well-known names.
+const SECRET_NAMES = ['.env', '.env.local', '.env.production', '.netrc', '.npmrc', '.pypirc', 'id_rsa', 'id_ed25519', 'credentials', 'server.pem', 'server.key']
+const globHitsSecret = (t: string): boolean => {
+  if (!/[*?[]/.test(t)) return false
+  const base = t.slice(t.lastIndexOf('/') + 1)
+  let re: RegExp
+  try { re = new RegExp('^' + base.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$') } catch { return true }
+  return SECRET_NAMES.some(n => re.test(n))
+}
+// grep -r reads dotfiles (.env); the Grep tool honours ignore rules, and so does rg unless --hidden or -u.
+const sweepsSecrets = (c: string, args: string[]): boolean =>
+  (c === 'grep' && args.some(x => /^-[a-zA-Z]*[rR]/.test(x) || longOpt(x, ['recursive', 'dereference-recursive']))) ||
+  (c === 'rg' && args.some(x => /^-[a-zA-Z]*u/.test(x) || longOpt(x, ['hidden', 'no-ignore', 'unrestricted'])))
 export function readOnlyDenial(cmd: string, agent: string, declared: (slug: string | undefined) => Set<string>, cwd?: string): string | null {
   const { segs, bad } = tokenize(cmd)
   if (bad) return bad
   for (const w of segs) {
+    if (w.some(t => SECRET_FILE.test(t) || globHitsSecret(t)) || sweepsSecrets(w[0] ?? '', w.slice(1))) return `"${w.join(' ').slice(0, 60)}": credential files are off limits to read-only agents (use the Read or Grep tool; a glob, grep -r or rg --hidden can reach them too)`
     const why = segmentDenied(w, agent, declared, cwd)
     if (why) return `"${w.join(' ').slice(0, 60)}": ${why}`
   }

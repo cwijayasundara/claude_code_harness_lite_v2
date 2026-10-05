@@ -113,7 +113,7 @@ async function autoLearn($: EngineInterface): Promise<void> {
 }
 
 // The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
-const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root)
+const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root.replace(/\\/g, '/'))
 
 const VENDORED_IDS = ['rig-mod@rig-local', 'sdlc-mod@sdlc-local']
 

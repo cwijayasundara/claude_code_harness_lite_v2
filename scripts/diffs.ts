@@ -1,22 +1,26 @@
 // What changed: turn baselines and git diffs (tracked and untracked files) in the pure diff model.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, SDLC, read, sha, now, git } from './core.ts'
+import { ROOT, SDLC, read, sha, now, git, withLock, writeAtomic } from './core.ts'
 import { parseUnifiedDiff, type FileDiff } from './model.ts'
 
 export type Snapshot = { sha: string; at: string; untracked: Record<string, string> }
 type Baselines = { main?: Snapshot; agents: Record<string, Snapshot> }
 
 const BASELINE = path.join(SDLC, '.baseline')
-const MAX_HASHED_BYTES = 2_000_000
+// Past this a file is not read at all (a hook must not run out of memory or time, which would switch the gate off): it is flagged, and the size sensor blocks.
+const MAX_SCAN_BYTES = 20_000_000
+const tooBig = (rel: string): boolean => { try { return fs.statSync(path.join(ROOT, rel)).size > MAX_SCAN_BYTES } catch { return false } }
 const DIFF = ['diff', '--unified=0', '--no-color', '--no-ext-diff', '-M']
 
 const untrackedFiles = (): string[] => (git(['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
 
+// Size, mtime and ctime, never contents, so tens of thousands of untracked files are not all read on every hook. ctime cannot be set
+// from userland, so an edit that keeps the size and restores the mtime (touch -r) still changes the fingerprint.
 function fingerprint(rel: string): string {
   try {
     const st = fs.statSync(path.join(ROOT, rel))
-    return st.size > MAX_HASHED_BYTES ? `${st.size}:${st.mtimeMs}` : sha(fs.readFileSync(path.join(ROOT, rel), 'utf8'))
+    return `${st.size}:${st.mtimeMs}:${st.ctimeMs}`
   } catch {
     return 'gone'
   }
@@ -47,13 +51,16 @@ export const readBaseline = (agentId?: string): Snapshot | null => (agentId ? re
 
 // A new main turn starts fresh; a subagent's baseline is added beside the main one.
 export function writeBaseline(snap: Snapshot, agentId?: string): void {
-  const all: Baselines = agentId ? readAll() : { agents: {} }
-  if (agentId) all.agents[agentId] = snap
-  else all.main = snap
-  fs.writeFileSync(BASELINE, JSON.stringify(all))
+  withLock(BASELINE, () => {
+    const all: Baselines = agentId ? readAll() : { agents: {} }
+    if (agentId) all.agents[agentId] = snap
+    else all.main = snap
+    writeAtomic(BASELINE, JSON.stringify(all))
+  })
 }
 
 function addedFile(rel: string): FileDiff {
+  if (tooBig(rel)) return { file: rel, status: 'A', added: [], removed: [], binary: true, oversize: true }
   const text = read(path.join(ROOT, rel))
   if (text.includes('\0')) return { file: rel, status: 'A', added: [], removed: [], binary: true }
   return { file: rel, status: 'A', added: text.replace(/\n$/, '').split('\n').map((t, i) => ({ n: i + 1, text: t })), removed: [] }
@@ -81,6 +88,7 @@ export const showAt = (ref: string, rel: string): string | null => git(['show', 
 export function fileLines(files: string[]): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const f of files) {
+    if (tooBig(f)) continue
     const text = read(path.join(ROOT, f))
     if (text) counts[f] = text.replace(/\n$/, '').split('\n').length
   }
