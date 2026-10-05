@@ -32,7 +32,32 @@ import { normCmd } from './shell.ts'
 
 // ---------- commands ----------
 
-function cmdInit(): void {
+const STACK_MARKERS: [string, string][] = [['package.json', 'node'], ['go.mod', 'go'], ['pom.xml', 'java-maven'], ['pyproject.toml', 'python'], ['requirements.txt', 'python']]
+
+// `init --stack [name]`: declares sensors.json `levels` from the plugin's own templates/stacks.json, the one path that may do it
+// without a person's yes, because it takes commands only from that shipped template and never from arguments. The write guard
+// asks a person before a model adds a level (declared commands run unprompted). Declares only when `levels` is still empty.
+// acceptance and api are not in the template: acceptance defaults to the unit command until a person points it at a real e2e.
+function declareStackLevels(opt: string | true): string {
+  const stacks = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'stacks.json'))) as Record<string, { levels: Record<string, string> }>
+  const name = typeof opt === 'string' ? opt : STACK_MARKERS.find(([f]) => exists(path.join(ROOT, f)))?.[1]
+  const stack = name ? stacks[name] : undefined
+  if (!name || !stack) return `no stack template for ${name ?? 'this directory'} (known: ${Object.keys(stacks).join(', ')}); declare levels in .sdlc/sensors.json yourself`
+  const file = path.join(SDLC, 'sensors.json')
+  let cfg: Record<string, unknown> = {}
+  if (exists(file)) {
+    try { cfg = JSON.parse(read(file)) as Record<string, unknown> } catch { return '.sdlc/sensors.json does not parse; not touching it' }
+  }
+  if (cfg.levels && Object.keys(cfg.levels as object).length) return 'levels already declared; left as they are'
+  const unit = stack.levels.unit ?? ''
+  cfg.levels = { ...stack.levels, acceptance: unit }
+  if (!cfg.fast && !cfg.full && unit) { cfg.fast = { test: unit }; cfg.full = { test: unit } }
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
+  sanctionWrites(['.sdlc/sensors.json'])
+  return `declared levels for ${name}: ${Object.entries(cfg.levels as Record<string, string>).map(([k, v]) => `${k}=${v}`).join(', ')} (acceptance defaults to the unit command; point it at a real e2e when you have one)`
+}
+
+function cmdInit(args: Args): void {
   // Ship, the PR gate and the wiki's surface stamps all read git, so a directory outside any repo gets one.
   const newRepo = git(['rev-parse', '--is-inside-work-tree']) !== 'true' && git(['init', '-q', '-b', 'main']) !== null
   fs.mkdirSync(CHANGES, { recursive: true })
@@ -45,6 +70,7 @@ function cmdInit(): void {
     sanctionWrites(fs.readdirSync(guides).map(f => `.sdlc/guides/${f}`))
   }
   out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}${newRepo ? ' (ran git init: no repository was here)' : ''}`)
+  if (args.opt.stack) out(declareStackLevels(args.opt.stack))
 }
 
 function cmdNew(args: Args): void {
@@ -56,7 +82,7 @@ function cmdNew(args: Args): void {
   if (!isTier(tier)) fail('tier must be S, M or L')
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
-  if (!exists(SDLC)) cmdInit()
+  if (!exists(SDLC)) cmdInit({ pos: [], opt: {} })
   createChange(slug, type, tier, optString(args, 'title') ?? slug)
   const other = otherChangeBranch(slug)
   out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})${other ? `\nwarning: ${other}` : ''}`)
