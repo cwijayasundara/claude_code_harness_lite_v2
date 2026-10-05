@@ -5,7 +5,7 @@
 set -euo pipefail
 P="$(cd "$(dirname "$0")/../.." && pwd)"
 MODE="${1:-M}"; shift || true
-case "$MODE" in M|L|I|S) ;; *) echo "usage: run-trials.sh [M|L|I|S] [outdir]" >&2; exit 2 ;; esac
+case "$MODE" in M|L|I|S|C) ;; *) echo "usage: run-trials.sh [M|L|I|S|C] [outdir]" >&2; exit 2 ;; esac
 OUT="${1:-$(mktemp -d)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -58,6 +58,30 @@ for f in sys.argv[1:]:
     else: miss.append(os.path.basename(f))
 print(round(sum(x.get('total_cost_usd',0) for x in d),3), sum(x.get('num_turns',0) for x in d), round(sum(x.get('duration_ms',0) for x in d)/1000), 's', ("[missing: "+", ".join(miss)+"]") if miss else "")
 PY
+}
+# Shared by S and C. drive <dir> <tag> <first prompt>: the operator approves human gates, up to $SESSIONS (default 10) sessions.
+FLAGS_S=(--permission-mode acceptEdits --allowedTools "Bash(node *)" "Bash(git *)" "Bash(npm *)" "Bash(bash *)" --max-budget-usd "${BUDGET:-6}" --output-format json)
+NEXT="/rig:next — continue through ship; commit on the branch, do not push."
+# drive <dir> <tag> <first prompt>: run, approve any human gate as the operator, continue, up to 5 sessions.
+drive() {
+  local d="$1" tag="$2" n=1 cmd
+  (cd "$d" && claude -p "$3" --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/$tag.1.json") || true
+  while [ "$n" -lt "${SESSIONS:-10}" ]; do
+    cmd=$(cd "$d" && $SDLC status --json 2>/dev/null | python3 -c 'import json,sys
+d=json.load(sys.stdin); a=d.get("active"); c=[x for x in d.get("changes",[]) if x["slug"]==a]
+print(c[0]["command"] if c else "")' || true)
+    case "$cmd" in
+      "human gate"*)
+        set -- $(printf '%s' "$cmd" | sed -E 's|.*/rig-approve ([^ ]+) ([^ ]+).*|\1 \2|')
+        (cd "$d" && SDLC_HUMAN=1 $SDLC approve "$1" "$2" --by scenario-operator >/dev/null) || true
+        echo "$tag: operator approved $2" ;;
+      done*) break ;;
+      "") echo "$tag: no active change"; break ;;
+      *) : ;;
+    esac
+    n=$((n + 1))
+    (cd "$d" && claude -p "$NEXT" --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/$tag.$n.json") || true
+  done
 }
 ANY_BAD=0; ARM_FLAG=""
 # arm_flag <exit status> <result files...>: sets ARM_FLAG to the first problem found (empty if none) and ANY_BAD=1 on a problem.
@@ -137,27 +161,6 @@ fi
 if [ "$MODE" = S ]; then
   # Scenario suite: greenfield, tier L bugfix and tier M refactor, in parallel, each driven to ship with the person's
   # gates approved by the operator, then checked by assert-scenarios.mjs. LIVE and PAID (about $5).
-  FLAGS_S=(--permission-mode acceptEdits --allowedTools "Bash(node *)" "Bash(git *)" "Bash(npm *)" "Bash(bash *)" --max-budget-usd 6 --output-format json)
-  NEXT="/rig:next — continue through ship; commit on the branch, do not push."
-  # drive <dir> <tag> <first prompt>: run, approve any human gate as the operator, continue, up to 5 sessions.
-  drive() {
-    local d="$1" tag="$2" n=1 cmd
-    (cd "$d" && claude -p "$3" --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/$tag.1.json") || true
-    while [ "$n" -lt 5 ]; do
-      cmd=$(cd "$d" && $SDLC status --json 2>/dev/null | python3 -c 'import json,sys
-d=json.load(sys.stdin); a=d.get("active"); c=[x for x in d.get("changes",[]) if x["slug"]==a]
-print(c[0]["command"] if c else "")' || true)
-      case "$cmd" in
-        "human gate"*)
-          set -- $(printf '%s' "$cmd" | sed -E 's|.*/rig-approve ([^ ]+) ([^ ]+).*|\1 \2|')
-          (cd "$d" && SDLC_HUMAN=1 $SDLC approve "$1" "$2" --by scenario-operator >/dev/null) || true
-          echo "$tag: operator approved $2" ;;
-        ""|done*) break ;;
-      esac
-      n=$((n + 1))
-      (cd "$d" && claude -p "$NEXT" --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/$tag.$n.json") || true
-    done
-  }
   shop() { # $1 dir: the shop app with sdlc initialised (sensors set, no onboarding session)
     rm -rf "$1"; cp -R "$P/tests/trials/shop-app" "$1"; settings "$1" false
     (cd "$1" && git init -q -b main && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json \
@@ -198,4 +201,37 @@ print(c[0]["command"] if c else "")' || true)
   done
   echo "artifacts in $OUT"
   [ "$BAD" = 0 ] || { echo "run-trials: a scenario failed its checks" >&2; exit 1; }
+fi
+
+if [ "$MODE" = C ]; then
+  # Cart lifecycle: ONE repo, three changes in sequence, every human gate approved by the operator, each checked by assert-cart.mjs.
+  #   1 greenfield: empty dir -> /rig:init greenfield -> first feature (Cart)      2 brownfield feature: coupons
+  #   3 brownfield behaviour change: bulk discount alters existing totals (old tests must be updated, old promises must still hold)
+  # LIVE and PAID (about $8-12). Usage: tests/trials/run-trials.sh C [outdir]; BUDGET=<usd per claude call> overrides the cap of 6.
+  d="$OUT/cart"; rm -rf "$d"; mkdir -p "$d"; settings "$d" false
+  (cd "$d" && git init -q -b main && git add -A && git -c user.email=t@e -c user.name=T commit -qm empty)
+  # The operator plays the person who merges the PR: fast-forward main to the change branch, so the next change starts from shipped code.
+  merge_ship() {
+    local b; b=$(cd "$d" && git rev-parse --abbrev-ref HEAD)
+    (cd "$d" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "operator: leftovers" >/dev/null 2>&1 || true)
+    [ "$b" = main ] || (cd "$d" && git checkout -q main && git merge -q --ff-only "$b") || echo "cart: merge of $b failed"
+  }
+  check_phase() { # $1 phase name
+    local rc=0; node "$P/tests/trials/assert-cart.mjs" "$1" "$d" "$P" > "$OUT/cart.$1.check.txt" 2>&1 || rc=$?
+    echo "$rc" > "$OUT/cart.$1.rc"; echo "== $1: $(sum "$OUT/cart.$1".*.json)"; cat "$OUT/cart.$1.check.txt"
+  }
+  (cd "$d" && claude -p "/rig:init --defaults greenfield \"Node.js 22 ESM library, no dependencies, tests with node --test: an in-memory shopping cart\" — commit the scaffold on main." --plugin-dir "$P" "${FLAGS_S[@]}" < /dev/null > "$OUT/cart.scaffold.0.json") || true
+  (cd "$d" && git add -A && git -c user.email=t@e -c user.name=T commit -qm "onboarding leftovers" >/dev/null 2>&1 || true)
+  check_phase scaffold
+  [ "$(cat "$OUT/cart.scaffold.rc")" = 0 ] || { echo "run-trials: scaffold failed; not spending on the changes" >&2; exit 1; }
+  drive "$d" cart.cart "/rig:start \"Add a Cart class exported from src/cart.js. add(sku, priceCents, qty = 1) adds qty of a SKU (a repeat add of the same SKU sums the quantity). remove(sku) deletes the whole line and throws an Error for a SKU not in the cart. lines() returns [{ sku, qty, priceCents }] sorted by sku ascending. totalCents() returns the sum of priceCents * qty. qty must be a positive integer and priceCents a non-negative integer, otherwise add throws a RangeError. This is the library's first public API. Include tests.\" — continue through ship; commit on the branch, do not push."
+  check_phase cart; merge_ship
+  drive "$d" cart.coupon "/rig:start \"Add Cart.applyCoupon(code). SAVE10 takes 10% off the cart total, any other code throws an Error whose message contains 'unknown coupon'. totalCents() then returns the discounted total rounded DOWN to a whole cent; applying a coupon twice keeps a single 10% discount (it does not stack). Everything that worked before must behave the same when no coupon is applied. Include tests.\" — continue through ship; commit on the branch, do not push."
+  check_phase coupon; merge_ship
+  drive "$d" cart.bulk "/rig:start \"Behaviour change: a line with qty of 10 or more now gets 5% off that line (line total = floor(priceCents * qty * 95 / 100)), applied before any coupon. This deliberately changes totalCents() for carts that were previously priced at full price, so update the tests that pinned the old totals. Lines under 10 and the coupon rules are unchanged.\" — continue through ship; commit on the branch, do not push."
+  check_phase bulk
+  BAD=0; for p in scaffold cart coupon bulk; do [ "$(cat "$OUT/cart.$p.rc" 2>/dev/null || echo 1)" = 0 ] || BAD=1; done
+  node "$P/tests/trials/split.mjs" "$OUT"/cart.*.json 2>/dev/null | tail -n +2 || true
+  echo "artifacts in $d"
+  [ "$BAD" = 0 ] || { echo "run-trials: a cart phase failed its checks" >&2; exit 1; }
 fi
