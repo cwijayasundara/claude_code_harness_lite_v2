@@ -228,14 +228,14 @@ export const checksVerdict = (states: string[] | null): string =>
   states === null || states.length === 0 ? 'unknown' : states.some(s => PENDING.test(s)) ? 'pending' : states.every(s => OK.test(s)) ? 'pass' : 'fail'
 
 // pr-review writes review.md, review-pr.md and its ratchet and event rows after the PR commit. Closing the node commits that
-// evidence (this change's folder only, never code) so a shipped change leaves a clean tree; the push is best effort.
+// evidence (this change's folder only, never code) so a shipped change leaves a clean tree. Local commit only: pr-checks is
+// auto-approved as a status command, so it never pushes; the next `pr --followup` (or a person) pushes the branch.
 function commitReviewEvidence(slug: string): void {
   if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== `sdlc/${slug}` || !prDone(slug)) return
   const dir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   if (!git(['status', '--porcelain', '--', dir])) return
   if (git(['add', '--', dir]) === null) return
   if (git(['commit', '-q', '-m', `chore(sdlc): pr-review evidence for ${slug}`, '--', dir]) === null) return
-  if (git(['remote', 'get-url', 'origin']) !== null) git(['push', 'origin', `sdlc/${slug}`])
   out(`pr-review evidence committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
 }
 

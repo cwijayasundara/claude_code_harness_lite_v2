@@ -643,3 +643,16 @@ test('init --stack declares levels from the shipped template once, and never ove
   assert.equal((JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8')) as typeof cfg).levels.unit, 'make t')
   assert.match(init('--stack', 'cobol').stdout, /no stack template for cobol/)
 })
+
+test('init --stack refuses once sensors.json is committed or a change exists', () => {
+  write('package.json', '{ "type": "module" }\n')
+  run(['init'])
+  fs.writeFileSync(path.join(repo, '.sdlc/sensors.json'), JSON.stringify({ fast: { test: 'x' }, full: { test: 'x' } }))
+  git('add', '.'); git('commit', '-qm', 'sensors')
+  assert.match(run(['init', '--stack']).stdout, /is committed/)
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8'))), ['fast', 'full'])
+  git('rm', '-q', '--cached', '.sdlc/sensors.json'); git('commit', '-qm', 'untrack')
+  run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  const r = run(['init', '--stack'])
+  assert.match(r.stdout, /a change already exists/, `${r.code} ${r.stderr}`)
+})

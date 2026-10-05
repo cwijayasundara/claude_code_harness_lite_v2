@@ -36,7 +36,8 @@ const STACK_MARKERS: [string, string][] = [['package.json', 'node'], ['go.mod', 
 
 // `init --stack [name]`: declares sensors.json `levels` from the plugin's own templates/stacks.json, the one path that may do it
 // without a person's yes, because it takes commands only from that shipped template and never from arguments. The write guard
-// asks a person before a model adds a level (declared commands run unprompted). Declares only when `levels` is still empty.
+// asks a person before a model adds a level (declared commands run unprompted). Onboarding only: it declares only while `levels`
+// is empty, no change exists yet and sensors.json is not committed, so it cannot launder an edit to a reviewed config.
 // acceptance and api are not in the template: acceptance defaults to the unit command until a person points it at a real e2e.
 function declareStackLevels(opt: string | true): string {
   const stacks = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'stacks.json'))) as Record<string, { levels: Record<string, string> }>
@@ -44,6 +45,8 @@ function declareStackLevels(opt: string | true): string {
   const stack = name ? stacks[name] : undefined
   if (!name || !stack) return `no stack template for ${name ?? 'this directory'} (known: ${Object.keys(stacks).join(', ')}); declare levels in .sdlc/sensors.json yourself`
   const file = path.join(SDLC, 'sensors.json')
+  if ((git(['ls-tree', '-r', '--name-only', 'HEAD']) ?? '').split('\n').includes('.sdlc/sensors.json')) return '.sdlc/sensors.json is committed; changing it is a reviewed harness edit, not onboarding'
+  if (listChanges().length) return 'a change already exists; --stack is for onboarding only'
   let cfg: Record<string, unknown> = {}
   if (exists(file)) {
     try { cfg = JSON.parse(read(file)) as Record<string, unknown> } catch { return '.sdlc/sensors.json does not parse; not touching it' }
