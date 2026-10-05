@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Tests no longer inherit the runner's `GITHUB_EVENT_PATH`/`GITHUB_STEP_SUMMARY`, which made the reviewer-lookup test fail on GitHub Actions; the new reliability tests import by file URL so they run on Windows.
+
 ## 0.4.1
 
 - CI: a PR that adds approval or waiver rows now fails unless a person with write access other than the author approved the current head commit (looked up before any PR test command runs, and bound to the commit actually checked out, so a stale workflow re-run cannot reuse an old approval) (`human-approval` finding). Needs `pull-requests: read` and `GH_TOKEN` in `rig-check.yml`.

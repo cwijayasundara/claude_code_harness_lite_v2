@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import { makeRepo, sdlc, hook, write } from './testkit.ts'
 
 const SCRIPT = path.join(import.meta.dirname, 'sdlc.ts')
@@ -75,7 +76,7 @@ test('an untracked file edited to the same size with its mtime restored still co
   write(repo, 'src/secret.ts', 'export const k = "aaaaaaaa"\n')
   const prog = `
     import fs from 'node:fs'
-    import { snapshot, turnDiff } from ${JSON.stringify(path.join(import.meta.dirname, 'diffs.ts'))}
+    import { snapshot, turnDiff } from ${JSON.stringify(pathToFileURL(path.join(import.meta.dirname, 'diffs.ts')).href)}
     const f = ${JSON.stringify(path.join(repo, 'src/secret.ts'))}
     fs.utimesSync(f, 1_700_000_000, 1_700_000_000) // a whole-second mtime, so restoring it is exact
     const st = fs.statSync(f)
@@ -93,7 +94,7 @@ test('an untracked file over 20 MB is flagged as unscanned, not read and not ign
   const repo = makeRepo()
   const prog = `
     import fs from 'node:fs'
-    import { snapshot, turnDiff } from ${JSON.stringify(path.join(import.meta.dirname, 'diffs.ts'))}
+    import { snapshot, turnDiff } from ${JSON.stringify(pathToFileURL(path.join(import.meta.dirname, 'diffs.ts')).href)}
     const snap = snapshot()
     fs.writeFileSync(${JSON.stringify(path.join(repo, 'dump.bin'))}, '')
     fs.truncateSync(${JSON.stringify(path.join(repo, 'dump.bin'))}, 21_000_000)

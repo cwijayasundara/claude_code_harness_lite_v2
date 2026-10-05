@@ -27,7 +27,8 @@ export function write(repo: string, rel: string, text: string): void {
 }
 
 // The runner marks its children as nested test runs; a consumer repo's own `node --test` must really run.
-const { NODE_TEST_CONTEXT: _nested, ...CLEAN_ENV } = process.env
+// The runner's own GitHub Actions context must not leak into the tests (a real GITHUB_EVENT_PATH changes what `check --at ci` does).
+const { NODE_TEST_CONTEXT: _nested, GITHUB_EVENT_PATH: _event, GITHUB_STEP_SUMMARY: _summary, ...CLEAN_ENV } = process.env
 
 export function sdlc(repo: string, args: string[], { input, env = {} }: { input?: string; env?: Record<string, string> } = {}) {
   const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', SCRIPT, ...args], {
