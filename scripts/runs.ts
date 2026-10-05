@@ -30,6 +30,9 @@ export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number
   // A declared `node --test` must really run even when sdlc itself runs inside a node test process.
   const env = { ...process.env }
   delete env.NODE_TEST_CONTEXT
+  // The PR's own test commands run here at CI; the review-lookup token is for sdlc itself, not for them.
+  delete env.GH_TOKEN
+  delete env.GITHUB_TOKEN
   const r = spawnSync(process.execPath, ['-e', WRAPPER, cmd, String(timeoutMs)], { cwd: opts.cwd ?? ROOT, env, encoding: 'utf8', timeout: timeoutMs + 5_000, maxBuffer: 64 * 1024 * 1024 })
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`.replace(/\r\n/g, '\n').trimEnd()
   const ms = Date.now() - started

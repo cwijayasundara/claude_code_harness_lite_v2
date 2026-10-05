@@ -120,9 +120,9 @@ test('size warns when a file crosses the line limit, and the diff limit blocks o
   assert.equal(size([fd('docs/x.md', Array.from({ length: 900 }, () => 'z'))], CFG, {}, 'ship').length, 0, 'ignored files do not count')
 })
 
-test('secrets in added lines block; the allow comment opts out', () => {
+test('secrets in added lines block; an in-line allow comment does not opt out', () => {
   assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP"'])]).length, 1)
-  assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP" // rig:allow-secret test fixture'])]).length, 0)
+  assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP" // rig:allow-secret test fixture'])]).length, 1, 'an in-line marker no longer exempts: only base-branch fixtures do')
 })
 
 test('rules apply to added lines within their paths, labelled with the rule id', () => {
@@ -283,7 +283,14 @@ test('legacy sdlc names stay honoured: protected old workflow, both secret marke
   assert.ok(isProtected('.github/workflows/sdlc-check.yml'))
   assert.ok(isProtected('.github/workflows/rig-check.yml'))
   const line = 'const key = "AKIAABCDEFGHIJKLMNOP"'
-  assert.equal(secretsInDiff([fd('src/c.js', [line + ' // sdlc:allow-secret fixture'])]).length, 0)
-  assert.equal(secretsInDiff([fd('src/c.js', [line + ' // rig:allow-secret fixture'])]).length, 0)
+  assert.equal(secretsInDiff([fd('src/c.js', [line + ' // sdlc:allow-secret fixture'])]).length, 1)
+  assert.equal(secretsInDiff([fd('src/c.js', [line + ' // rig:allow-secret fixture'])]).length, 1)
   assert.equal(secretsInDiff([fd('src/c.js', [line])]).length, 1)
+})
+
+test('secrets: provider keys, JWTs and unquoted env-file secrets are caught', () => {
+  for (const line of ['key = AIzaSyA1234567890abcdefghijklmnopqrstuv', 'const k = "sk_live_abcdefghijklmnop1234"', 'auth: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijk', 'DB_PASSWORD=hunter2hunter2hunter2', 'export API_KEY=abcdef0123456789abcdef'])
+    assert.equal(secretsInDiff([fd('config/prod.env', [line])]).length, 1, line)
+  for (const line of ['DB_PASSWORD=${DB_PASSWORD}', 'API_KEY=', 'TOKEN=$TOKEN', 'const password = process.env.PASSWORD'])
+    assert.equal(secretsInDiff([fd('config/prod.env', [line])]).length, 0, line)
 })

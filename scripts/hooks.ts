@@ -92,6 +92,8 @@ const CASE_INSENSITIVE = process.platform !== 'linux'
 const stripQuotes = (cmd: string): string => cmd.replace(/\$(?=["'])/g, '').replace(/["'\\]/g, '')
 const SAFE_EVIDENCE_COMMAND = /^\s*(?:git\s+(?:add|commit|status|diff|log|show)|cat|head|tail|wc|grep|rg|jq)\b/
 const HUMAN_ONLY = /sdlc\.(?:m?js|ts)["']?\s+(?:approve|waive)\b/
+// Refuse an expansion in the env-var name or subcommand slot (SDLC_${e}HUMAN=1, `sdlc.ts $a`, eval); CI is the real boundary.
+const OBFUSCATED_HUMAN = /SDLC_[^\s=]*[$`{*?[]|sdlc\.(?:m?js|ts)["']?\s+(?:--\S+\s+)*[$`]|\beval\b[^]*sdlc\.(?:m?js|ts)/i
 const WRITES = /(?:>|\btee\b|\bsed\s+-i|\b(?:python3?|node|perl|ruby|bash|sh|zsh|pwsh|powershell)\b|\b(?:cp|mv|rm|truncate|dd)\b|\b(?:checkout|restore|reset|apply|stash)\b)/
 
 // git can write a file (--output and its abbreviations, -o) or run a program (--ext-diff, --textconv) without a shell redirect.
@@ -221,7 +223,7 @@ function hookPreBash(input: HookInput): void {
   const cmd = String(input.tool_input?.command ?? '')
   // Only the person's mod commands set SDLC_HUMAN; the model never names it, however the command is spelled.
   const plain = stripQuotes(cmd)
-  if (/SDLC_HUMAN/i.test(plain) || HUMAN_ONLY.test(plain) || !isSafeEvidenceCommand(cmd)) {
+  if (/SDLC_HUMAN/i.test(plain) || HUMAN_ONLY.test(plain) || OBFUSCATED_HUMAN.test(plain) || !isSafeEvidenceCommand(cmd)) {
     return decide('deny', 'Evidence is human- or rig-only: approvals and waivers come from the person (/rig-approve, /rig-waive); '
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
   }

@@ -68,6 +68,11 @@ export const SECRET_PATTERNS: [string, RegExp][] = [
   ['OpenAI-style key', /\bsk-[A-Za-z0-9]{32,}\b/],
   ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
   ['Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
+  ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ['Stripe live key', /\b[rs]k_live_[0-9A-Za-z]{16,}\b/],
+  ['JSON web token', /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/],
+  ['Azure storage key', /AccountKey=[A-Za-z0-9+/]{40,}={0,2}/],
+  ['env-style secret', /^\s*(?:export\s+)?[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY)\s*=\s*[^\s"'$`<{(][^\s"']{15,}\s*$/m],
   ['generic secret assignment', /(?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*["'][^"'\s]{12,}["']/i],
 ]
 

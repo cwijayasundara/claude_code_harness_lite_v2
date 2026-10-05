@@ -153,9 +153,8 @@ export function secretsInDiff(diffs: FileDiff[]): Finding[] {
   const findings: Finding[] = []
   for (const d of diffs.filter(f => !f.binary)) {
     for (const l of d.added) {
-      if (/(?:rig|sdlc):allow-secret/.test(l.text)) continue
       const hit = SECRET_PATTERNS.find(([, re]) => re.test(l.text))
-      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; for a test fixture add "rig:allow-secret <why>" on the line' })
+      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; a deliberate test fixture goes under `fixtures` in .sdlc/sensors.json (a person approves that change)' })
     }
   }
   return findings

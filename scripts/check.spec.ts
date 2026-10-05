@@ -675,3 +675,42 @@ test('at CI a harness-tamper waiver in the PR never waives, exact file or *; oth
   assert.doesNotMatch(r.stdout, /\[suppression\]/, r.stdout)
   assert.match(r.stdout, /\[harness-tamper\]/)
 })
+
+// A fake gh answers the reviews lookup; the event payload says who opened the PR and which commit is its head.
+let prN = 0
+const prRun = (reviews: unknown[], head = 'abc1234deadbeef') => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-gh-'))
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho '${JSON.stringify([reviews])}'\n`, { mode: 0o755 })
+  const ev = path.join(bin, 'event.json')
+  fs.writeFileSync(ev, JSON.stringify({ repository: { full_name: 'o/r' }, pull_request: { number: 5, user: { login: 'dev' }, head: { sha: head } } }))
+  gitIn(repo, 'checkout', '-q', 'main')
+  gitIn(repo, 'checkout', '-qb', `pr${++prN}`)
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'forged', by: 'dev', at: '2026-10-03T00:00:00Z' }) + '\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'pr')
+  return sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main'], { env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_EVENT_PATH: ev } })
+}
+const posix = process.platform !== 'win32'
+
+test('CI blocks added approval/waiver rows with no independent review of the head commit', { skip: !posix }, () => {
+  const none = prRun([])
+  assert.equal(none.code, 1, none.stdout)
+  assert.match(none.stdout, /\[human-approval\][\s\S]*no approving review of abc1234 from someone other than dev/)
+  const self = prRun([{ user: { login: 'dev' }, state: 'APPROVED', commit_id: 'abc1234deadbeef' }])
+  assert.match(self.stdout, /human-approval/, 'the author cannot approve their own rows')
+})
+
+test('CI rejects a stale approval, a later change-request, and a run outside GitHub', { skip: !posix }, () => {
+  assert.match(prRun([{ user: { login: 'lead' }, state: 'APPROVED', commit_id: 'old0000' }]).stdout, /human-approval/)
+  const flipped = prRun([{ user: { login: 'lead' }, state: 'APPROVED', commit_id: 'abc1234deadbeef' }, { user: { login: 'lead' }, state: 'CHANGES_REQUESTED', commit_id: 'abc1234deadbeef' }])
+  assert.match(flipped.stdout, /human-approval/)
+  const offline = sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main'])
+  assert.match(offline.stdout, /cannot verify a reviewer outside a GitHub pull_request run/)
+})
+
+test('CI passes the human-approval gate when a different person approved the head commit', { skip: !posix }, () => {
+  const r = prRun([{ user: { login: 'lead' }, state: 'APPROVED', commit_id: 'abc1234deadbeef' }])
+  assert.doesNotMatch(r.stdout, /\[human-approval\]/, r.stdout)
+  assert.match(r.stdout, /needs human review: 1 waiver\/approval row/)
+})
