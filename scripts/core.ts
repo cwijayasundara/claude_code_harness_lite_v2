@@ -355,6 +355,25 @@ export const skillRef = (name: string): string => `/rig${IS_VENDORED ? '-' : ':'
 export const agentRef = (name: string): string => `rig${IS_VENDORED ? '-' : ':'}${name}`
 const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json', 'learn/']
 
+// Parallel hooks (subagents) read-modify-write the same small state file: serialise them with a mkdir lock (stale after 10 s;
+// after 5 s of waiting, proceed rather than wedge the hook) and write by rename so a reader never sees half a file.
+export function withLock<T>(file: string, fn: () => T): T {
+  const lock = `${file}.lock`
+  const until = Date.now() + 5_000
+  while (Date.now() < until) {
+    try { fs.mkdirSync(lock); break } catch {
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > 10_000) fs.rmSync(lock, { recursive: true, force: true }) } catch { /* raced */ }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+  }
+  try { return fn() } finally { try { fs.rmdirSync(lock) } catch { /* not ours */ } }
+}
+export function writeAtomic(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, text)
+  fs.renameSync(tmp, file)
+}
+
 export function ensureGitignore(): void {
   if (!exists(SDLC)) return
   const ignore = path.join(SDLC, '.gitignore')
@@ -410,7 +429,7 @@ export function setActive(slug: string): void {
   const { body } = frontmatter(read(STATE))
   const kept = body && !GENERATED_STATE.test(body) ? body : `# State\n\nActive change: ${slug}. Next: see /rig-status.\n`
   fs.mkdirSync(SDLC, { recursive: true })
-  fs.writeFileSync(STATE, `---\nchange: ${slug}\nupdated: ${now()}\n---\n${kept}`)
+  fs.writeFileSync(STATE, `---\nchange: ${slug}\n---\n${kept}`)
 }
 
 export const WAIVERS = path.join(SDLC, 'waivers.jsonl')

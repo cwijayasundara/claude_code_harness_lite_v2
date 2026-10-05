@@ -1,7 +1,7 @@
 // What changed: turn baselines and git diffs (tracked and untracked files) in the pure diff model.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, SDLC, read, sha, now, git } from './core.ts'
+import { ROOT, SDLC, read, sha, now, git, withLock, writeAtomic } from './core.ts'
 import { parseUnifiedDiff, type FileDiff } from './model.ts'
 
 export type Snapshot = { sha: string; at: string; untracked: Record<string, string> }
@@ -9,14 +9,16 @@ type Baselines = { main?: Snapshot; agents: Record<string, Snapshot> }
 
 const BASELINE = path.join(SDLC, '.baseline')
 const MAX_HASHED_BYTES = 2_000_000
+const MAX_FRESH_FILES = 2_000
 const DIFF = ['diff', '--unified=0', '--no-color', '--no-ext-diff', '-M']
 
 const untrackedFiles = (): string[] => (git(['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
 
+// Size and mtime, never contents: a repo with tens of thousands of untracked files must not make every hook read them all.
 function fingerprint(rel: string): string {
   try {
     const st = fs.statSync(path.join(ROOT, rel))
-    return st.size > MAX_HASHED_BYTES ? `${st.size}:${st.mtimeMs}` : sha(fs.readFileSync(path.join(ROOT, rel), 'utf8'))
+    return `${st.size}:${st.mtimeMs}`
   } catch {
     return 'gone'
   }
@@ -47,14 +49,17 @@ export const readBaseline = (agentId?: string): Snapshot | null => (agentId ? re
 
 // A new main turn starts fresh; a subagent's baseline is added beside the main one.
 export function writeBaseline(snap: Snapshot, agentId?: string): void {
-  const all: Baselines = agentId ? readAll() : { agents: {} }
-  if (agentId) all.agents[agentId] = snap
-  else all.main = snap
-  fs.writeFileSync(BASELINE, JSON.stringify(all))
+  withLock(BASELINE, () => {
+    const all: Baselines = agentId ? readAll() : { agents: {} }
+    if (agentId) all.agents[agentId] = snap
+    else all.main = snap
+    writeAtomic(BASELINE, JSON.stringify(all))
+  })
 }
 
 function addedFile(rel: string): FileDiff {
-  const text = read(path.join(ROOT, rel))
+  const big = (): boolean => { try { return fs.statSync(path.join(ROOT, rel)).size > MAX_HASHED_BYTES } catch { return false } }
+  const text = big() ? '\0' : read(path.join(ROOT, rel)) // an oversized file is not scanned line by line
   if (text.includes('\0')) return { file: rel, status: 'A', added: [], removed: [], binary: true }
   return { file: rel, status: 'A', added: text.replace(/\n$/, '').split('\n').map((t, i) => ({ n: i + 1, text: t })), removed: [] }
 }
@@ -65,7 +70,7 @@ const unchangedSinceSnap = (snap: Snapshot, d: FileDiff): boolean => d.status ==
 
 export function turnDiff(snap: Snapshot): FileDiff[] {
   const tracked = parseUnifiedDiff(git([...DIFF, snap.sha]) ?? '').filter(d => !unchangedSinceSnap(snap, d))
-  const fresh = untrackedFiles().filter(f => snap.untracked[f] !== fingerprint(f))
+  const fresh = untrackedFiles().filter(f => snap.untracked[f] !== fingerprint(f)).slice(0, MAX_FRESH_FILES)
   return [...tracked, ...fresh.map(addedFile)]
 }
 

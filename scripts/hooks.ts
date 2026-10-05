@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
-  planFiles, planName, planApproved, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, type Tier, type Args, type HookInput,
+  planFiles, planName, planApproved, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, withLock, writeAtomic, type Tier, type Args, type HookInput,
 } from './core.ts'
 import { activeSlug, loadChange, nextCommand } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
@@ -49,12 +49,10 @@ export function listGuides(config: SensorConfig): Guide[] {
 // Progressive disclosure: a guide enters the context the first time this session touches a matching file.
 function guidesFor(rel: string, session: string): string | undefined {
   const { config } = loadConfig()
-  const gate = readGate()
-  const seen = gate.guides[session] ?? []
+  const seen = readGate().guides[session] ?? []
   const fresh = listGuides(config).filter(g => !seen.includes(g.name) && matchesAny(rel, g.globs) && (!g.sourceOnly || (isSource(rel, config) && !isTest(rel, config))))
   if (!fresh.length) return undefined
-  gate.guides[session] = [...seen, ...fresh.map(g => g.name)]
-  writeGate(gate)
+  updateGate(g => { g.guides[session] = [...(g.guides[session] ?? seen), ...fresh.map(f => f.name)] })
   return fresh.map(g => g.body).join('\n\n')
 }
 
@@ -63,9 +61,7 @@ export const ROUTING_LINE = `sdlc routes all work in this repo: start with ${ski
 function hookSessionStart(input: HookInput): void {
   if (!exists(SDLC)) return
   if (input.source === 'compact' || input.source === 'clear') {
-    const gate = readGate()
-    delete gate.guides[input.session_id ?? 'default']
-    writeGate(gate)
+    updateGate(g => { delete g.guides[input.session_id ?? 'default'] })
   }
   const cfg = loadConfig().config
   const guides = listGuides(cfg).map(g => g.name)
@@ -286,10 +282,10 @@ function hookPostEdit(input: HookInput): void {
   let edits = ''
   if (exists(SDLC)) {
     const rel = relPosix(file)
-    const gate = readGate()
-    gate.tool = pushUnique(gate.tool, rel)
-    if (input.agent_id) gate.agents[input.agent_id] = pushUnique(gate.agents[input.agent_id] ?? [], rel)
-    writeGate(gate)
+    updateGate(g => {
+      g.tool = pushUnique(g.tool, rel)
+      if (input.agent_id) g.agents[input.agent_id] = pushUnique(g.agents[input.agent_id] ?? [], rel)
+    })
     edits = formatFindings(editFindings(rel).filter(f => f.severity === 'block' && f.sensor !== 'secrets'))
   }
   if (problems.length || edits) {
@@ -346,7 +342,8 @@ export function readGate(): Gate {
     return emptyGate()
   }
 }
-const writeGate = (g: Gate): void => fs.writeFileSync(GATE, JSON.stringify(g))
+const writeGate = (g: Gate): void => writeAtomic(GATE, JSON.stringify(g))
+const updateGate = (fn: (g: Gate) => void): void => withLock(GATE, () => { const g = readGate(); fn(g); writeGate(g) })
 const pushUnique = (list: string[], item: string): string[] => (list.includes(item) ? list : [...list, item])
 
 function summarize(findings: Finding[]): GateSummary {
@@ -369,7 +366,7 @@ function hookPromptSubmit(): void {
   if (!exists(SDLC)) return
   const snap = snapshot()
   if (snap) writeBaseline(snap)
-  writeGate({ ...readGate(), turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [], agents: {} })
+  updateGate(g => Object.assign(g, { turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [], agents: {} }))
 }
 
 function hookSubagentStart(input: HookInput): void {
@@ -405,20 +402,22 @@ function hookStop(input: HookInput, sub: boolean): void {
   const findings = [...configBlocks, ...result.findings]
   const blocks = findings.filter(f => f.severity === 'block')
   gate.last = summarize(findings)
+  // Write back only what this hook owns: edits recorded while the checks ran must survive.
+  const save = (): void => updateGate(g => { g.last = gate.last; if (gate.passed[key]) g.passed[key] = gate.passed[key]; if (gate.blocks[key]) g.blocks[key] = gate.blocks[key] })
   if (!blocks.length) {
     gate.passed[key] = hash
-    writeGate(gate)
+    save()
     if (!sub && exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
     return
   }
   if (!sub) fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
   const attempt = (gate.blocks[key] ?? 0) + 1
   if (attempt > MAX_BLOCKS) {
-    writeGate(gate)
+    save()
     return out(JSON.stringify({ systemMessage: `sdlc quality gate: ${blocks.length} problem(s) unresolved after ${MAX_BLOCKS} attempts (.sdlc/unresolved.json). Ship and CI will refuse until they are fixed or the person waives them.` }))
   }
   gate.blocks[key] = attempt
-  writeGate(gate)
+  save()
   out(JSON.stringify({ decision: 'block', reason: `sdlc quality gate (attempt ${attempt}/${MAX_BLOCKS}): fix these before you finish.\n${formatFindings(findings)}` }))
 }
 
