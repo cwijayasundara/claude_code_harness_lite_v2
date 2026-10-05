@@ -126,6 +126,22 @@ test('a follow-up pushes to the same branch when there is a remote', () => {
   assert.equal(gitIn(bare, 'log', '-1', '--format=%s', 'sdlc/tiny'), 'fix: review findings')
 })
 
+test('pr-checks commits the pr-review evidence written after ship, leaving a clean tree', () => {
+  ready('tiny')
+  assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
+  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n')
+  write(repo, 'src/other.js', 'not evidence\n')
+  const r = sdlc(repo, ['pr-checks', 'tiny'])
+  assert.match(r.stdout, /pr-review evidence committed/)
+  const files = gitIn(repo, 'show', '--name-only', '--format=%s', 'HEAD')
+  assert.match(files, /pr-review evidence for tiny/)
+  assert.match(files, /\.sdlc\/changes\/tiny\/review\.md/)
+  assert.doesNotMatch(files, /src\/other\.js/)
+  assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/changes/tiny'), /\S/)
+  sdlc(repo, ['pr-checks', 'tiny'])
+  assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/changes/tiny'), /\S/, 'a repeat check appends an event and commits it too')
+})
+
 test('pr-checks records local-only with no remote', () => {
   ready('tiny')
   const r = sdlc(repo, ['pr-checks', 'tiny'])

@@ -227,11 +227,27 @@ const PENDING = /^(PENDING|QUEUED|IN_PROGRESS|EXPECTED|WAITING|REQUESTED)$/i
 export const checksVerdict = (states: string[] | null): string =>
   states === null || states.length === 0 ? 'unknown' : states.some(s => PENDING.test(s)) ? 'pending' : states.every(s => OK.test(s)) ? 'pass' : 'fail'
 
+// pr-review writes review.md, review-pr.md and its ratchet and event rows after the PR commit. Closing the node commits that
+// evidence (this change's folder only, never code) so a shipped change leaves a clean tree; the push is best effort.
+function commitReviewEvidence(slug: string): void {
+  if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== `sdlc/${slug}` || !prDone(slug)) return
+  const dir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
+  if (!git(['status', '--porcelain', '--', dir])) return
+  if (git(['add', '--', dir]) === null) return
+  if (git(['commit', '-q', '-m', `chore(sdlc): pr-review evidence for ${slug}`, '--', dir]) === null) return
+  if (git(['remote', 'get-url', 'origin']) !== null) git(['push', 'origin', `sdlc/${slug}`])
+  out(`pr-review evidence committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
+}
+
 export function cmdPrChecks(args: Args): void {
   const slug = args.pos[0]
   if (!slug) fail('usage: pr-checks <slug>')
   checkSlug(slug)
-  if (git(['remote', 'get-url', 'origin']) === null) { appendEvent(slug, { node: 'pr-review', verdict: 'local-only', kind: 'checks' }); return out('checks: local-only (no origin remote)') }
+  if (git(['remote', 'get-url', 'origin']) === null) {
+    appendEvent(slug, { node: 'pr-review', verdict: 'local-only', kind: 'checks' })
+    out('checks: local-only (no origin remote)')
+    return commitReviewEvidence(slug)
+  }
   const raw = ghRun(['pr', 'checks', `sdlc/${slug}`, '--json', 'state'], true)
   let states: string[] | null = null
   try {
@@ -242,5 +258,6 @@ export function cmdPrChecks(args: Args): void {
   const verdict = states?.length === 0 ? (workflows ? 'pending' : 'no-ci') : checksVerdict(states)
   appendEvent(slug, { node: 'pr-review', verdict, kind: 'checks' })
   out(`checks: ${verdict}`)
+  commitReviewEvidence(slug)
   if (verdict === 'fail') process.exitCode = 2
 }

@@ -14,7 +14,7 @@ const METACHAR = /[;&|`$<>()\\\x00-\x1f\x7f]/
 const ARG = /^[\w./:=@^~,+-]+$/
 // Bash expands these before git or gh sees them, so the path check would judge a different string.
 const expands = (x: string): boolean => /[*?[\]{}]/.test(x) || x.startsWith('~') || /[=:]~/.test(x)
-// pr-checks and scorecard only report status (pr-checks appends one checks event). `pr` is not listed: it commits and pushes, under the pr skill. quality is deterministic: it runs only declared commands.
+// pr-checks and scorecard only report status (pr-checks appends one checks event and commits this change's own folder on sdlc/<slug>). `pr` is not listed: it commits and pushes, under the pr skill. quality is deterministic: it runs only declared commands.
 const SAFE_SUBS = new Set(['status', 'next', 'verify-report', 'diff', 'ratchet show', 'quality', 'scorecard', 'pr-checks'])
 const GIT_SUBS = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
 const GIT_BAD_OPT = /^(?:-C|-c|--no-index|--output(?:=.*)?|--ext-diff|-O.*|--open-files-in-pager.*|--textconv|--exec-path.*|--git-dir.*|--work-tree.*|--paginate)$/
