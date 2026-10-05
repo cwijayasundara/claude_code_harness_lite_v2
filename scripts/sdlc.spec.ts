@@ -622,3 +622,11 @@ test('status warns when a plan lists ** or * in ## Files, which makes the scope 
   write('.sdlc/changes/wide/plan.md', '## Files\n- src/**\n')
   assert.doesNotMatch(run(['status']).stdout, /too broad/)
 })
+
+test('init runs git init when the directory is not inside a repository, and leaves an existing repo alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-norepo-'))
+  const init = (cwd: string) => spawnSync('node', ['--disable-warning=ExperimentalWarning', SCRIPT, 'init'], { cwd, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: cwd } }).stdout
+  assert.match(init(dir), /ran git init/)
+  assert.ok(fs.existsSync(path.join(dir, '.git')))
+  assert.doesNotMatch(init(repo), /ran git init/)
+})

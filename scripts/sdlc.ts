@@ -33,6 +33,8 @@ import { normCmd } from './shell.ts'
 // ---------- commands ----------
 
 function cmdInit(): void {
+  // Ship, the PR gate and the wiki's surface stamps all read git, so a directory outside any repo gets one.
+  const newRepo = git(['rev-parse', '--is-inside-work-tree']) !== 'true' && git(['init', '-q', '-b', 'main']) !== null
   fs.mkdirSync(CHANGES, { recursive: true })
   fs.mkdirSync(path.join(SDLC, 'incidents'), { recursive: true })
   ensureGitignore()
@@ -42,7 +44,7 @@ function cmdInit(): void {
     fs.cpSync(path.join(PLUGIN_ROOT, 'guides'), guides, { recursive: true })
     sanctionWrites(fs.readdirSync(guides).map(f => `.sdlc/guides/${f}`))
   }
-  out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}`)
+  out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}${newRepo ? ' (ran git init: no repository was here)' : ''}`)
 }
 
 function cmdNew(args: Args): void {

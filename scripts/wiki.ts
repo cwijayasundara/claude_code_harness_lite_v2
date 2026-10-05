@@ -80,6 +80,12 @@ export function cmdWiki(args: Args): void {
       return
     }
     const all = tracked()
+    // Outside a repository there are no files to hash, so every page would be stamped with the empty-input hash.
+    if (!all.length) {
+      process.stderr.write('no files to stamp against: this directory is not a git repository (or is empty); run git init first\n')
+      process.exitCode = 1
+      return
+    }
     let stamped = 0
     const uncited: string[] = []
     for (const [page, p] of Object.entries(m.pages)) {

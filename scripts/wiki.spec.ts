@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { makeRepo, write, sdlc, gitIn } from './testkit.ts'
 
 type Status = { stale: string[]; missing: string[]; uncovered: string[] }
@@ -110,4 +113,15 @@ test('top-level directories listed under "skip" are never uncovered', () => {
   write(repo, 'docs/wiki/modules/src.md', '# src\n- `src/a.js:1` a\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'a')
   assert.deepEqual(status(repo).uncovered, [])
+})
+
+test('wiki stamp refuses outside a git repository instead of stamping the empty-input hash', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-norepo-'))
+  fs.mkdirSync(path.join(dir, 'docs/wiki/modules'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'docs/wiki/manifest.json'), JSON.stringify({ pages: { 'modules/a.md': { globs: ['src/**'] } } }))
+  fs.writeFileSync(path.join(dir, 'docs/wiki/modules/a.md'), '`a.js:1`\n')
+  const r = sdlc(dir, ['wiki', 'stamp'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /not a git repository/)
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, 'docs/wiki/manifest.json'), 'utf8'), /surface/)
 })
