@@ -88,3 +88,16 @@ test('an untracked file edited to the same size with its mtime restored still co
   assert.equal(got.sameSize, true, r.stderr)
   assert.deepEqual(got.files, ['src/secret.ts'])
 })
+
+test('an untracked file over 20 MB is flagged as unscanned, not read and not ignored', () => {
+  const repo = makeRepo()
+  const prog = `
+    import fs from 'node:fs'
+    import { snapshot, turnDiff } from ${JSON.stringify(path.join(import.meta.dirname, 'diffs.ts'))}
+    const snap = snapshot()
+    fs.writeFileSync(${JSON.stringify(path.join(repo, 'dump.bin'))}, '')
+    fs.truncateSync(${JSON.stringify(path.join(repo, 'dump.bin'))}, 21_000_000)
+    console.log(JSON.stringify(turnDiff(snap).map(d => [d.file, d.oversize])))`
+  const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', prog], { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo } })
+  assert.deepEqual(JSON.parse(r.stdout || '[]'), [['dump.bin', true]], r.stderr)
+})

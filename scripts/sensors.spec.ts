@@ -294,3 +294,9 @@ test('secrets: provider keys, JWTs and unquoted env-file secrets are caught', ()
   for (const line of ['DB_PASSWORD=${DB_PASSWORD}', 'API_KEY=', 'TOKEN=$TOKEN', 'const password = process.env.PASSWORD'])
     assert.equal(secretsInDiff([fd('config/prod.env', [line])]).length, 0, line)
 })
+
+test('size: a file too large to scan is blocked, never silently skipped', () => {
+  const f = size([{ file: 'dump.sql', status: 'A', added: [], removed: [], binary: true, oversize: true }], CFG, {}, 'stop')
+  assert.equal(f.length, 1)
+  assert.match(f[0]?.message ?? '', /not scanned/)
+})

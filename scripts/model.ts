@@ -1,7 +1,7 @@
 // The pure data model for sensors: diffs, globs, config, rules and findings. No fs, git or process access.
 export type Line = { n: number; text: string }
 export type FileStatus = 'A' | 'M' | 'D' | 'R'
-export type FileDiff = { file: string; from?: string; status: FileStatus; added: Line[]; removed: Line[]; binary?: true }
+export type FileDiff = { file: string; from?: string; status: FileStatus; added: Line[]; removed: Line[]; binary?: true; oversize?: true }
 export type Severity = 'block' | 'warn'
 // Every sensor name a Finding can carry; /rig-waive accepts exactly these (a test keeps this in step with the sources).
 export const SENSOR_NAMES = [

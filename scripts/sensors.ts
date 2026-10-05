@@ -118,7 +118,7 @@ export function layering(diffs: FileDiff[], cfg: SensorConfig): Finding[] {
 }
 
 export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<string, number>, point: 'edit' | 'stop' | 'ship' | 'ci'): Finding[] {
-  const findings: Finding[] = []
+  const findings: Finding[] = diffs.filter(d => d.oversize).map(d => ({ sensor: 'size', severity: 'block', file: d.file, message: 'file is over 20 MB and was not scanned', fix: 'keep it out of the repo (gitignore it, or use LFS); a person can waive this' }))
   const counted = diffs.filter(d => isSource(d.file, cfg) && !d.binary)
   for (const d of counted.filter(f => f.status !== 'D')) {
     const now = fileLines[d.file]

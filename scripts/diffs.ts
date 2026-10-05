@@ -8,6 +8,9 @@ export type Snapshot = { sha: string; at: string; untracked: Record<string, stri
 type Baselines = { main?: Snapshot; agents: Record<string, Snapshot> }
 
 const BASELINE = path.join(SDLC, '.baseline')
+// Past this a file is not read at all (a hook must not run out of memory or time, which would switch the gate off): it is flagged, and the size sensor blocks.
+const MAX_SCAN_BYTES = 20_000_000
+const tooBig = (rel: string): boolean => { try { return fs.statSync(path.join(ROOT, rel)).size > MAX_SCAN_BYTES } catch { return false } }
 const DIFF = ['diff', '--unified=0', '--no-color', '--no-ext-diff', '-M']
 
 const untrackedFiles = (): string[] => (git(['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
@@ -57,6 +60,7 @@ export function writeBaseline(snap: Snapshot, agentId?: string): void {
 }
 
 function addedFile(rel: string): FileDiff {
+  if (tooBig(rel)) return { file: rel, status: 'A', added: [], removed: [], binary: true, oversize: true }
   const text = read(path.join(ROOT, rel))
   if (text.includes('\0')) return { file: rel, status: 'A', added: [], removed: [], binary: true }
   return { file: rel, status: 'A', added: text.replace(/\n$/, '').split('\n').map((t, i) => ({ n: i + 1, text: t })), removed: [] }
@@ -84,6 +88,7 @@ export const showAt = (ref: string, rel: string): string | null => git(['show', 
 export function fileLines(files: string[]): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const f of files) {
+    if (tooBig(f)) continue
     const text = read(path.join(ROOT, f))
     if (text) counts[f] = text.replace(/\n$/, '').split('\n').length
   }
