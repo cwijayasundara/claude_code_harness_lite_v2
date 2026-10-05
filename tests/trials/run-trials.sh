@@ -190,10 +190,12 @@ if [ "$MODE" = S ]; then
     local d="$OUT/refactor"; shop "$d"
     drive "$d" refactor "/rig:start \"Refactor: move the discount codes out of src/orders/orders.js into a new src/orders/discounts.js that exports DISCOUNTS and rateFor(code) (returns the rate, or undefined for an unknown code). Checkout behaviour must not change.\" — continue through ship; commit on the branch, do not push."
   }
-  scenario greenfield & G=$!; scenario bugfix & B=$!; scenario refactor & F=$!
-  wait $G; wait $B; wait $F
+  # SCENARIOS="greenfield bugfix" runs only those (default: all three).
+  SC_LIST="${SCENARIOS:-greenfield bugfix refactor}"
+  for sc in $SC_LIST; do scenario "$sc" & done
+  wait
   BAD=0
-  for sc in greenfield bugfix refactor; do
+  for sc in $SC_LIST; do
     echo "== $sc: $(sum "$OUT/$sc".*.json)"
     cat "$OUT/$sc.check.txt"
     node "$P/tests/trials/split.mjs" "$OUT/$sc".*.json 2>/dev/null | tail -n +2 || true
