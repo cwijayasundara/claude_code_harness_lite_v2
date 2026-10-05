@@ -29,7 +29,7 @@ rig makes a coding agent follow a process. It is not a sandbox. Read this before
 
 - Hooks are text matching. A model that writes and runs a script can touch evidence files locally; CI catches forged approvals and waivers, not forged `runs.jsonl` rows on a branch nobody reviews.
 - The secrets sensor is pattern based. It misses unusual token formats and skips files over 2 MB or detected as binary.
-- Windows is covered by unit tests only; the end-to-end check runs on Linux.
+- Windows is not supported yet: its CI job is red (about ten tests in the `pr` and auto-approve flows use POSIX shell fakes for `gh`), and the end-to-end check runs on Linux. Do not require the Windows job in branch protection until it is fixed.
 
 ## Reporting
 
