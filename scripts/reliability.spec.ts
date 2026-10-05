@@ -69,3 +69,22 @@ test('vendor refuses a downgrade, and a settings file with comments, before writ
   assert.match(down.stderr + down.stdout, /newer than this plugin/)
   assert.equal(vend('--force').status, 0)
 })
+
+test('an untracked file edited to the same size with its mtime restored still counts as changed', () => {
+  const repo = makeRepo()
+  write(repo, 'src/secret.ts', 'export const k = "aaaaaaaa"\n')
+  const prog = `
+    import fs from 'node:fs'
+    import { snapshot, turnDiff } from ${JSON.stringify(path.join(import.meta.dirname, 'diffs.ts'))}
+    const f = ${JSON.stringify(path.join(repo, 'src/secret.ts'))}
+    fs.utimesSync(f, 1_700_000_000, 1_700_000_000) // a whole-second mtime, so restoring it is exact
+    const st = fs.statSync(f)
+    const snap = snapshot()
+    fs.writeFileSync(f, 'export const k = "bbbbbbbb"\\n')
+    fs.utimesSync(f, st.atime, st.mtime)
+    console.log(JSON.stringify({ sameSize: fs.statSync(f).size === st.size, files: turnDiff(snap).map(d => d.file) }))`
+  const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', prog], { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo } })
+  const got = JSON.parse(r.stdout || '{}') as { sameSize?: boolean; files?: string[] }
+  assert.equal(got.sameSize, true, r.stderr)
+  assert.deepEqual(got.files, ['src/secret.ts'])
+})

@@ -8,17 +8,16 @@ export type Snapshot = { sha: string; at: string; untracked: Record<string, stri
 type Baselines = { main?: Snapshot; agents: Record<string, Snapshot> }
 
 const BASELINE = path.join(SDLC, '.baseline')
-const MAX_HASHED_BYTES = 2_000_000
-const MAX_FRESH_FILES = 2_000
 const DIFF = ['diff', '--unified=0', '--no-color', '--no-ext-diff', '-M']
 
 const untrackedFiles = (): string[] => (git(['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
 
-// Size and mtime, never contents: a repo with tens of thousands of untracked files must not make every hook read them all.
+// Size, mtime and ctime, never contents, so tens of thousands of untracked files are not all read on every hook. ctime cannot be set
+// from userland, so an edit that keeps the size and restores the mtime (touch -r) still changes the fingerprint.
 function fingerprint(rel: string): string {
   try {
     const st = fs.statSync(path.join(ROOT, rel))
-    return `${st.size}:${st.mtimeMs}`
+    return `${st.size}:${st.mtimeMs}:${st.ctimeMs}`
   } catch {
     return 'gone'
   }
@@ -58,8 +57,7 @@ export function writeBaseline(snap: Snapshot, agentId?: string): void {
 }
 
 function addedFile(rel: string): FileDiff {
-  const big = (): boolean => { try { return fs.statSync(path.join(ROOT, rel)).size > MAX_HASHED_BYTES } catch { return false } }
-  const text = big() ? '\0' : read(path.join(ROOT, rel)) // an oversized file is not scanned line by line
+  const text = read(path.join(ROOT, rel))
   if (text.includes('\0')) return { file: rel, status: 'A', added: [], removed: [], binary: true }
   return { file: rel, status: 'A', added: text.replace(/\n$/, '').split('\n').map((t, i) => ({ n: i + 1, text: t })), removed: [] }
 }
@@ -70,7 +68,7 @@ const unchangedSinceSnap = (snap: Snapshot, d: FileDiff): boolean => d.status ==
 
 export function turnDiff(snap: Snapshot): FileDiff[] {
   const tracked = parseUnifiedDiff(git([...DIFF, snap.sha]) ?? '').filter(d => !unchangedSinceSnap(snap, d))
-  const fresh = untrackedFiles().filter(f => snap.untracked[f] !== fingerprint(f)).slice(0, MAX_FRESH_FILES)
+  const fresh = untrackedFiles().filter(f => snap.untracked[f] !== fingerprint(f))
   return [...tracked, ...fresh.map(addedFile)]
 }
 
