@@ -159,11 +159,11 @@ if [ "$MODE" = I ]; then
 fi
 
 if [ "$MODE" = S ]; then
-  # Scenario suite: greenfield, tier L bugfix and tier M refactor, in parallel, each driven to ship with the person's
+  # Scenario suite: greenfield, tier L bugfix and tier M refactor (the shop is onboarded with the unit, integration and acceptance levels a tier L change requires, as a trunk commit), in parallel, each driven to ship with the person's
   # gates approved by the operator, then checked by assert-scenarios.mjs. LIVE and PAID (about $5).
   shop() { # $1 dir: the shop app with sdlc initialised (sensors set, no onboarding session)
     rm -rf "$1"; cp -R "$P/tests/trials/shop-app" "$1"; settings "$1" false
-    (cd "$1" && git init -q -b main && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" } }' > .sdlc/sensors.json \
+    (cd "$1" && git init -q -b main && $SDLC init >/dev/null && echo '{ "fast": { "test": "npm test" }, "full": { "test": "npm test" }, "levels": { "unit": "npm test", "integration": "npm test", "acceptance": "npm test" } }' > .sdlc/sensors.json \
       && printf '# shop-app\n\nsdlc routes all work in this repo: start with /rig:start; use superpowers skills only when an sdlc skill names one.\n' > CLAUDE.md \
       && git add -A && git -c user.email=t@e -c user.name=T commit -qm base)
   }
@@ -190,10 +190,12 @@ if [ "$MODE" = S ]; then
     local d="$OUT/refactor"; shop "$d"
     drive "$d" refactor "/rig:start \"Refactor: move the discount codes out of src/orders/orders.js into a new src/orders/discounts.js that exports DISCOUNTS and rateFor(code) (returns the rate, or undefined for an unknown code). Checkout behaviour must not change.\" — continue through ship; commit on the branch, do not push."
   }
-  scenario greenfield & G=$!; scenario bugfix & B=$!; scenario refactor & F=$!
-  wait $G; wait $B; wait $F
+  # SCENARIOS="greenfield bugfix" runs only those (default: all three).
+  SC_LIST="${SCENARIOS:-greenfield bugfix refactor}"
+  for sc in $SC_LIST; do scenario "$sc" & done
+  wait
   BAD=0
-  for sc in greenfield bugfix refactor; do
+  for sc in $SC_LIST; do
     echo "== $sc: $(sum "$OUT/$sc".*.json)"
     cat "$OUT/$sc.check.txt"
     node "$P/tests/trials/split.mjs" "$OUT/$sc".*.json 2>/dev/null | tail -n +2 || true

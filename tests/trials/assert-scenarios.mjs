@@ -50,10 +50,11 @@ if (scenario === 'greenfield') {
     const c = JSON.parse(read('.sdlc/sensors.json'))
     return Object.values({ ...c.fast, ...c.full }).some(cmd => typeof cmd === 'string' && /test/.test(cmd)) || JSON.stringify(c)
   })
-  await check('the first feature went through spec and plan', () => (changeFile('spec.md') !== '' && changeFile('plan.md') !== '') || `type ${change().type}, tier ${change().tier}`)
-  await check('the person approved spec and plan', () => {
+  // v0.4: a greenfield feature goes intent -> design, and the person approves intent.md and design.md together as one gate.
+  await check('the first feature went through intent and design', () => (changeFile('intent.md') !== '' && changeFile('design.md') !== '') || `type ${change().type}, tier ${change().tier}`)
+  await check('the person approved the design', () => {
     const stages = approvals().filter(a => a.slug === change().slug).map(a => a.stage)
-    return (stages.includes('spec') && stages.includes('plan')) || `approved: ${stages.join(', ') || 'none'}`
+    return stages.includes('design') || `approved: ${stages.join(', ') || 'none'}`
   })
   await check('hidden acceptance: convert(value, from, to)', async () => {
     const { convert } = await load('src/convert.js')
