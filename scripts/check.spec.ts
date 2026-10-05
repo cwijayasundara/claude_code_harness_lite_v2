@@ -697,20 +697,44 @@ test('CI blocks added approval/waiver rows with no independent review of the hea
   const none = prRun([])
   assert.equal(none.code, 1, none.stdout)
   assert.match(none.stdout, /\[human-approval\][\s\S]*no approving review of abc1234 from someone other than dev/)
-  const self = prRun([{ user: { login: 'dev' }, state: 'APPROVED', commit_id: 'abc1234deadbeef' }])
+  const self = prRun([{ user: { login: 'dev' }, state: 'APPROVED', author_association: 'MEMBER', commit_id: 'abc1234deadbeef' }])
   assert.match(self.stdout, /human-approval/, 'the author cannot approve their own rows')
 })
 
-test('CI rejects a stale approval, a later change-request, and a run outside GitHub', { skip: !posix }, () => {
+test('CI rejects a stale approval, a later change-request, a drive-by reviewer, and a run outside GitHub', { skip: !posix }, () => {
   assert.match(prRun([{ user: { login: 'lead' }, state: 'APPROVED', commit_id: 'old0000' }]).stdout, /human-approval/)
-  const flipped = prRun([{ user: { login: 'lead' }, state: 'APPROVED', commit_id: 'abc1234deadbeef' }, { user: { login: 'lead' }, state: 'CHANGES_REQUESTED', commit_id: 'abc1234deadbeef' }])
+  const flipped = prRun([{ user: { login: 'lead' }, state: 'APPROVED', author_association: 'MEMBER', commit_id: 'abc1234deadbeef' }, { user: { login: 'lead' }, state: 'CHANGES_REQUESTED', commit_id: 'abc1234deadbeef' }])
   assert.match(flipped.stdout, /human-approval/)
+  assert.match(prRun([{ user: { login: 'rando' }, state: 'APPROVED', author_association: 'NONE', commit_id: 'abc1234deadbeef' }]).stdout, /human-approval/, 'a reviewer without write access does not count')
   const offline = sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main'])
   assert.match(offline.stdout, /cannot verify a reviewer outside a GitHub pull_request run/)
 })
 
 test('CI passes the human-approval gate when a different person approved the head commit', { skip: !posix }, () => {
-  const r = prRun([{ user: { login: 'lead' }, state: 'APPROVED', commit_id: 'abc1234deadbeef' }])
+  const r = prRun([{ user: { login: 'lead' }, state: 'APPROVED', author_association: 'MEMBER', commit_id: 'abc1234deadbeef' }])
   assert.doesNotMatch(r.stdout, /\[human-approval\]/, r.stdout)
   assert.match(r.stdout, /needs human review: 1 waiver\/approval row/)
+})
+
+test('the reviewer lookup happens before any PR test command runs', { skip: !posix }, () => {
+  // A declared full command that plants a fake gh and rewrites the event file must not be able to fake an approval.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-gh-'))
+  fs.writeFileSync(path.join(bin, 'gh'), "#!/bin/sh\necho '[[]]'\n", { mode: 0o755 })
+  const ev = path.join(bin, 'event.json')
+  fs.writeFileSync(ev, JSON.stringify({ repository: { full_name: 'o/r' }, pull_request: { number: 5, user: { login: 'dev' }, head: { sha: 'abc1234' } } }))
+  const planted = path.join(bin, 'planted')
+  fs.mkdirSync(planted)
+  fs.writeFileSync(path.join(planted, 'gh'), `#!/bin/sh\necho '[[{"user":{"login":"lead"},"state":"APPROVED","author_association":"MEMBER","commit_id":"abc1234"}]]'\n`, { mode: 0o755 })
+  gitIn(repo, 'checkout', '-q', 'main')
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { plant: `cp ${planted}/gh ${bin}/gh` } }))
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'config')
+  gitIn(repo, 'checkout', '-qb', 'prx')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'forged', by: 'dev' }) + '\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'pr')
+  const r = sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--config-from', 'main'], { env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_EVENT_PATH: ev } })
+  assert.match(r.stdout, /human-approval/, r.stdout)
+  assert.equal(r.code, 1)
 })

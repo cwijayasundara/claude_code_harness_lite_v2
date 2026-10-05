@@ -2,7 +2,7 @@
 
 ## Unreleased (hardening/pre-team-rollout)
 
-- CI: a PR that adds approval or waiver rows now fails unless a person other than the author approved the current head commit (`human-approval` finding). Needs `pull-requests: read` and `GH_TOKEN` in `rig-check.yml`.
+- CI: a PR that adds approval or waiver rows now fails unless a person with write access other than the author approved the current head commit (looked up before any PR test command runs) (`human-approval` finding). Needs `pull-requests: read` and `GH_TOKEN` in `rig-check.yml`.
 - Secrets: an in-line `rig:allow-secret` no longer exempts a line at CI; use `fixtures`. Added Google, Stripe, JWT, Azure and unquoted env-file patterns.
 - Hooks: `usage.jsonl` (the spend cap's input) is protected evidence; shell-expansion spellings of `SDLC_HUMAN` and `approve`/`waive` are refused.
 - Read-only agents can no longer read credential files, including through globs, `grep -r` or `rg --hidden`.
