@@ -32,6 +32,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     rejectSubmit: false,
     answer: 'Not yet',
     afterQuality: null as unknown,
+    learn: '',
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -51,6 +52,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
       : sub === 'impact-status' ? JSON.stringify(world.impact)
       : sub === 'check-file' ? JSON.stringify(world.fileFindings)
       : sub === 'sensors' ? 'last gate: 0 block(s)'
+      : sub === 'learn' ? world.learn
       : 'approved add-login plan'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -197,6 +199,29 @@ describe('sdlc mod', () => {
     await $.turn.complete({ ...turn, turnId: 't2' })
     expect(world.toasts.length).toBe(1)
     expect(world.toasts[0]).toContain('/compact')
+  })
+
+  test('a finished turn runs learn --auto and toasts only what it prints', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    const turn = { answer: '', durationMs: 1, isAborted: false, reason: 'answer' as const }
+    await $.session.start(SESSION)
+    await $.turn.complete({ ...turn, turnId: 't1' })
+    expect(world.runs.some(r => r.argv.slice(3).join(' ') === 'learn --auto')).toBe(true)
+    expect(world.toasts).toEqual([])
+    world.learn = 'learn: 1 proposal(s), promotable: learned-security. Review them with /rig:learn, then /rig-approve <id> learn'
+    await $.turn.complete({ ...turn, turnId: 't2' })
+    expect(world.toasts.at(-1)).toContain('promotable: learned-security')
+    expect(world.runs.filter(r => r.argv.includes('approve'))).toEqual([])
+  })
+
+  test('an aborted turn does not run learn', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    world.runs.length = 0
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, reason: 'answer' as const, turnId: 't1' })
+    expect(world.runs.some(r => r.argv.includes('learn'))).toBe(false)
   })
 
   test('waive runs the script as the human only when the person typed it', async ($, on) => {

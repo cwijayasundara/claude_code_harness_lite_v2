@@ -2,7 +2,7 @@
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 import type { Band, SensorBand, Story, StepInfo, FlowStep } from '../types'
-import { mod } from './shared'
+import { mod, sdlcArgv } from './shared'
 
 export const SOFT_CONTEXT = 120_000
 export const HARD_CONTEXT = 150_000
@@ -53,6 +53,20 @@ export function storyPaneText(s: Story | null, step: StepInfo | null = null, flo
 }
 
 export function registerBand(on: On): void {
+  on('command.run', { command: 'rig-sensors' }, async $ => {
+    const r = await $.process.run(sdlcArgv($.plugin.root, 'sensors'))
+    await update($, paneText, () => (r.stdout || r.stderr).trim())
+    await $.ui.open({ id: PANE_ID, title: 'sdlc sensors' })
+    return { text: (r.stdout || r.stderr).trim() }
+  })
+
+  on('command.run', { command: 'rig-metrics-pane' }, async $ => {
+    const r = await $.process.run(sdlcArgv($.plugin.root, 'metrics'))
+    await update($, metricsText, () => (r.stdout || r.stderr).trim())
+    await $.ui.open({ id: METRICS_PANE, title: 'sdlc metrics' })
+    return {}
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const current = await read($, band)
     if (mod.aside || e.props.hasSurvey || current === null || (await read($, isHidden))) return next(e)

@@ -42,7 +42,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 | `/rig-metrics-pane` | A pane with the scorecard: cost, tokens and value per change and node. Zero tokens. |
 | `/rig-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
 | `/rig:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
-| `/rig:learn` | Reads every shipped change, finds recurring review findings and waiver churn, and proposes harness edits, each replayed against past diffs. Zero tokens. A person promotes a passing rule with `/rig-approve <id> learn`. |
+| `/rig:learn` | Reads every shipped change, finds recurring review findings and waiver churn, and proposes harness edits, each replayed against past diffs. Zero tokens. A person promotes a passing rule with `/rig-approve <id> learn`. With the mod it also runs by itself when a change ships and toasts what is promotable; a weekly CI job covers repos without the mod. |
 | `/rig-status` | Where every change stands. Zero tokens. |
 | `/rig:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
 | `/rig:wiki` | Builds or updates the code wiki in `docs/wiki/`. |

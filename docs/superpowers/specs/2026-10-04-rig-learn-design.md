@@ -17,7 +17,7 @@ Status: draft for review. Date: 2026-10-04.
 ## 2. Non-goals
 
 - A model proposer, and edits to skill text or templates (v2, once the gate exists).
-- Scheduled or nightly runs.
+- Clock-based schedules in the mod (it is event-driven). Running `learn` on its own when a change ships is in scope: see §4.8.
 - Improving `rig learn` itself (the article's level 2). That needs a metaproductivity metric and explicit human approval, and has neither yet.
 - Replacing `/rig:rule`. A person can still write a rule by hand. `learn` feeds the same path.
 
@@ -106,6 +106,10 @@ The replay runs again at promotion time, so a proposal made against old data can
 
 `learn.ts`, its spec and the replay logic live under `scripts/**`, which is already protected in a standalone repo (`.sdlc/bin/**`). The improver proposes edits only to `rules.json` and `sensors.json`. It has no path to change the gate that judges it, the corpus, or `proposals.json`.
 
+### 4.8 Running on its own
+
+The mod runs `sdlc.ts learn --auto` at session start and after each finished main turn. `--auto` fingerprints the shipped changes, `waivers.jsonl` and `rules.json`; if the fingerprint matches `.sdlc/learn/auto.json` it prints nothing and does no work. Otherwise it writes `proposals.json` and prints one line, which the mod shows as a toast, for example `learn: 1 proposal(s), promotable: learned-security`. It never promotes: `/rig-approve <id> learn` stays human-only, and promoting changes `rules.json`, so the next run re-checks. `auto.json` is protected evidence like `proposals.json`. Mods do not run in `claude -p` or CI, so `.github/workflows/learn.yml` runs `learn` weekly and on demand and prints the report to the job summary.
+
 ## 5. Data flow
 
 ```
@@ -147,7 +151,7 @@ Seeded fixtures in `scripts/learn.spec.ts`:
 
 Listing `tests/trials/live-*/notes.md` for the person to read (free text, not parsed).
 
-Level-1 expansion to skill text and templates with a model proposer behind the same gate, and a nightly zero-token replay loop. Level 2 (improving `learn` itself) only after a metaproductivity metric exists and with explicit human approval.
+Level-1 expansion to skill text and templates with a model proposer behind the same gate. Level 2 (improving `learn` itself) only after a metaproductivity metric exists and with explicit human approval.
 
 ## 10. Known limitations (v1)
 

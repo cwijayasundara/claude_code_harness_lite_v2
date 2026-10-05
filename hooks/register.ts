@@ -4,15 +4,15 @@
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
 //  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
+//  - rig learn on its own when a change ships (proposals only; promotion stays /rig-approve)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
 // Essential gates live in hooks.json settings hooks so they also hold in `claude -p` and CI.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
-
 import type { Band, Status, StepInfo } from '../types'
 import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod } from './shared'
-import { PANE_ID, STORY_PANE, METRICS_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
+import { PANE_ID, STORY_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 import { promptFor, gateOf, stepKey } from './driver'
 
@@ -20,8 +20,6 @@ const NUDGE_EVERY_PROMPTS = 5
 
 // Same plugin and key as band.tsx's atoms: the loader reads state refs only where they are declared, so each file declares its own.
 const band = atom({ plugin: 'rig', key: 'band' } as const, null as Band | null)
-const paneText = atom({ plugin: 'rig', key: 'paneText' } as const, '')
-const metricsText = atom({ plugin: 'rig', key: 'metricsText' } as const, '')
 
 const driverRunning = atom({ plugin: 'rig', key: 'driverRunning' } as const, false)
 const driverLast = atom({ plugin: 'rig', key: 'driverLast' } as const, '')
@@ -105,6 +103,15 @@ async function offerDesignGate($: EngineInterface): Promise<void> {
   return advance($)
 }
 
+// Zero tokens and silent unless a change shipped since the last run; it only writes proposals, promotion stays /rig-approve <id> learn.
+async function autoLearn($: EngineInterface): Promise<void> {
+  try {
+    if (!(await isInitialised($))) return
+    const r = await $.process.run(sdlc($, ['learn', '--auto']))
+    if (r.exitCode === 0 && r.stdout.trim()) $.ui.toast(`rig: ${r.stdout.trim()}`)
+  } catch (err) { $.ui.log(`auto learn skipped: ${String(err)}`) }
+}
+
 // The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
 const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root)
 
@@ -145,6 +152,7 @@ export const register: Register = on => {
       await $.command.register({ name: 'rig-run', description: 'rig: drive the active change node by node to the next gate (no model call to decide); /rig-run stop pauses', argumentHint: '[stop]', immediate: true })
       await $.command.register({ name: 'rig-metrics-pane', description: 'rig: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) { $.ui.log(`could not register commands: ${String(err)}`) }
+    await autoLearn($)
     return next(e)
   })
 
@@ -196,23 +204,9 @@ export const register: Register = on => {
     return {}
   })
 
-  on('command.run', { command: 'rig-sensors' }, async $ => {
-    const r = await $.process.run(sdlc($, ['sensors']))
-    await update($, paneText, () => (r.stdout || r.stderr).trim())
-    await $.ui.open({ id: PANE_ID, title: 'sdlc sensors' })
-    return { text: (r.stdout || r.stderr).trim() }
-  })
-
   on('command.run', { command: 'rig-story' }, async $ => {
     await refreshBand($)
     await $.ui.open({ id: STORY_PANE, title: 'sdlc story' })
-    return {}
-  })
-
-  on('command.run', { command: 'rig-metrics-pane' }, async $ => {
-    const r = await $.process.run(sdlc($, ['metrics']))
-    await update($, metricsText, () => (r.stdout || r.stderr).trim())
-    await $.ui.open({ id: METRICS_PANE, title: 'sdlc metrics' })
     return {}
   })
 
@@ -267,6 +261,7 @@ export const register: Register = on => {
     } catch (err) {
       $.ui.log(`usage capture skipped: ${String(err)}`)
     }
+    if (!e.agentId && !e.isAborted) await autoLearn($)
     // Only main turns drive: an aborted one (the person pressed Esc) pauses, a finished one advances.
     if (!e.agentId) {
       try {

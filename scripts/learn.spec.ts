@@ -228,3 +228,32 @@ test('approve learn promotes the freshly derived rule, not a forged proposals.js
   const rule = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/rules.json'), 'utf8'))[0]
   assert.deepEqual([rule.pattern, rule.action], ['eval\\(', 'warn'])
 })
+
+test('learn --auto runs once per new evidence, says what is promotable, and is silent otherwise', () => {
+  const repo = learnRepo(3, 7)
+  const first = sdlc(repo, ['learn', '--auto'])
+  assert.equal(first.code, 0, first.stderr)
+  assert.match(first.stdout, /1 proposal\(s\), promotable: learned-security/)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/learn/proposals.json'), 'utf8')).proposals[0].id, 'learned-security')
+  assert.equal(sdlc(repo, ['learn', '--auto']).stdout, '')
+  seedShipped(repo, 'ok-8', { added: ['const x = 1'] })
+  assert.match(sdlc(repo, ['learn', '--auto']).stdout, /promotable: learned-security/)
+  assert.equal(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/learn'), '')
+})
+
+test('learn --auto never promotes: rules.json is untouched, and promoting re-arms it', () => {
+  const repo = learnRepo(3, 7)
+  sdlc(repo, ['learn', '--auto'])
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/rules.json')), false)
+  assert.equal(sdlc(repo, ['approve', 'learned-security', 'learn'], HUMAN).code, 0)
+  assert.doesNotMatch(sdlc(repo, ['learn', '--auto']).stdout, /promotable: learned-security/)
+})
+
+test('learn --auto is silent on a repo with no shipped change, and its marker is protected evidence', () => {
+  const repo = learnRepo(0, 0)
+  const r = sdlc(repo, ['learn', '--auto'])
+  assert.equal(r.code, 0)
+  assert.equal(r.stdout, '')
+  const edit = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/learn/auto.json') } }).stdout)
+  assert.equal(edit.hookSpecificOutput.permissionDecision, 'deny')
+})

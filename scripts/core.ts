@@ -249,7 +249,7 @@ export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '-
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands. Only paths under .sdlc/ count,
 // so a project's own results/runs.jsonl is not evidence; EVIDENCE_NAME_RE catches bare names once a command names .sdlc.
-export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|learn[\\/]proposals\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
+export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|\.baseline|\.gate|unresolved\.json|learn[\\/](?:proposals|auto)\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
 export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|runs\.jsonl|ratchet\.json|events\.jsonl|ship\.json|proposals\.json/
 
 // The plan's ## Verification bullets, split into required commands and ignored bullets (never dropped silently).

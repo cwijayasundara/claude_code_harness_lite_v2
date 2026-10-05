@@ -1,13 +1,14 @@
 // rig learn, the I/O half: load the evidence and the diff corpus of shipped changes, write proposals.json.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, SDLC, ROOT, WAIVERS, read, exists, listChanges, isShipped, readJsonl, git, toPosix, out, fail, optString, ensureGitignore, sanctionWrites, type Args, type Waiver } from './core.ts'
+import { CHANGES, SDLC, ROOT, WAIVERS, sha, read, exists, listChanges, isShipped, readJsonl, git, toPosix, out, fail, optString, ensureGitignore, sanctionWrites, type Args, type Waiver } from './core.ts'
 import { parseUnifiedDiff, parseRules, type FileDiff } from './model.ts'
 import { readEvents, parseReviewFindings, type ReviewFinding } from './ratchet.ts'
 import { diagnose, formatReport, LEARN, type ChangeEvidence, type LearnReport } from './learn.ts'
 
 export const RULES = path.join(SDLC, 'rules.json')
 export const PROPOSALS = path.join(SDLC, 'learn', 'proposals.json')
+const AUTO = path.join(SDLC, 'learn', 'auto.json')
 
 // The change's diff is base..head, where head is the first commit that added ship.json.
 function rebuildDiff(slug: string): FileDiff[] | null {
@@ -60,8 +61,25 @@ export function readProposals(): LearnReport | null {
   try { return JSON.parse(read(PROPOSALS)) as LearnReport } catch { return null }
 }
 
+// What learn reads: the shipped changes, the waivers and the rules already promoted. If none moved, a rerun would print the same report.
+const evidenceKey = (): string => sha([...listChanges().filter(isShipped).sort(), read(WAIVERS), read(RULES)].join('\0'))
+
+// --auto is for the mod: silent when nothing new was shipped since the last run, one line when there is something to look at.
+function autoLearn(): void {
+  const key = evidenceKey()
+  try { if ((JSON.parse(read(AUTO)) as { key?: unknown }).key === key) return } catch { /* first run, or a garbled marker: run */ }
+  const report = diagnose(loadEvidence(), knownRuleIds())
+  ensureGitignore()
+  fs.mkdirSync(path.dirname(PROPOSALS), { recursive: true })
+  fs.writeFileSync(PROPOSALS, JSON.stringify(report, null, 2) + '\n')
+  fs.writeFileSync(AUTO, JSON.stringify({ key }) + '\n')
+  const ready = report.proposals.filter(p => p.kind === 'rule-add' && p.replay.status === 'pass').map(p => p.id)
+  if (report.proposals.length) out(`learn: ${report.proposals.length} proposal(s), ${ready.length ? `promotable: ${ready.join(', ')}. Review them with /rig:learn, then /rig-approve <id> learn` : 'none promotable yet'}`)
+}
+
 export function cmdLearn(args: Args): void {
   if (!exists(SDLC)) fail('sdlc not initialised here')
+  if (args.opt.auto) return autoLearn()
   if (args.pos[0] === 'show') {
     const stored = readProposals()
     return out(stored ? formatReport(stored) : 'no proposals yet: run learn')
