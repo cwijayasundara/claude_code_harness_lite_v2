@@ -619,7 +619,10 @@ Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/
 - **`check --at commit`.** The staged diff, read from the index, goes through the Stop sensors and the fast commands. Warnings print with their fix text (five, then `+N more`); blocks refuse the commit. During a merge or rebase, read from git state only (`MERGE_HEAD`, `rebase-merge/head-name`, `rebase-apply/rebasing`), the sensors still run and only the fast commands are skipped.
 - **`check --at push`.** For each pushed branch, the commits go through the ship checks and, when `quality` commands are declared, the quality ratchet. The base is CI's: the merge-base of the pushed commit with the trunk (`origin/main`, `main`, `origin/master`, `master`), so merging or rebasing on the trunk never counts the trunk's work; a push to the trunk itself uses the remote sha from git's stdin when it is an ancestor. Deletes, tags and a push with no base are skipped and named. Config is `githooks: { prePush: "ship" | "off", budgetMs }` (default `ship`, 300000); running out of budget warns and allows, while a failing command still blocks. A checker crash at commit or push warns and allows (spec §2); stop, ship and CI fail closed.
 - **Warnings are visible.** Stop prints a `systemMessage` for a turn that passes with warnings, and the next prompt hands them to the agent once (five rows, then `+N more`). Only the main thread records them, so a subagent's Stop cannot hide them.
-- **The model cannot bypass the hooks.** `pre-bash` reads the command with the `scripts/shell.ts` tokenizer and denies `--no-verify` on commit or push (any prefix), `-n` on commit, `core.hooksPath` in any spelling or scope (env config included), an alias that would bypass, and rig's own `hooks uninstall` / `hooks install --force`. `sh -c` payloads and `eval` are read too, three layers deep; deeper nesting is denied. A command the tokenizer refuses (`$(...)`, redirects, braces) falls back to a regex. CI is the floor.
+- **The model is denied the bypasses it can be seen to make (best effort; CI is the floor).** `pre-bash` runs the guard in `scripts/bypass.ts`, which reads dequoted words from the `scripts/shell.ts` tokenizer. It denies `--no-verify` on commit or push (any prefix of it), `-n` on commit (also inside an option cluster), `core.hooksPath` as a `-c` value, a `git config` key or an env config word (`GIT_CONFIG_KEY_n=…`, `export …`), an alias whose value adds either, and rig's own `hooks uninstall` / `hooks install --force`.
+  - **Spellings.** Quotes, backslashes, line continuations and quote concatenation are undone before the check (`--no"-verify"`, `-'n'`, `core.hooks\Path`). `git` and the shells are matched by lowercased basename, so `GIT`, `/usr/bin/Git`, `git.exe` and `SH` count, as they run on a case-insensitive filesystem.
+  - **Payloads.** The program a segment really runs is found past assignments and the wrappers `env`, `sudo`, `xargs`, `timeout`, `nice`, `nohup`, `time`, `command`, `builtin` and `exec` (with their value-taking options). When that program is a shell, the word after its `-c` cluster (`-c`, `-lc`, `-ec`, an optional `--`) is read as a command; `eval` is read the same way. The rest of the segment is always scanned too, so a word named `sh` among git's arguments hides nothing. Nesting is read three layers deep; past that the command is denied as nested.
+  - **Text the tokenizer refuses.** `$(...)`, backticks, `<(...)`, `$VAR`/`${...}`, redirects, comments, `( )` and standalone `{ }` are swapped for an inert word or a separator and the result is tokenized again, so the spellings above still hold. Substitution bodies are read as commands. Here-doc bodies are data, except when a shell or `eval` reads them (then they are a payload, one layer deeper). Only text that still cannot be followed (`$'...'`, brace expansion, unbalanced quoting) gets the old regex. That path also reads the `-c` and `eval` payloads it can find, one layer deeper. On every path, nesting past the bound is denied, never passed unread.
 - **`/rig:pr`** commits and pushes with `--no-verify`: its ship gate has just judged that tree with waivers applied. A follow-up has no gate, so it keeps the hooks and shows their reasons.
 
 **The five gaps are closed:** (1) outside a Claude turn, by the git hooks; (2) invisible warnings, by the Stop `systemMessage`, the prompt carry-over and the fix-text rows at commit and push; (3) wiki drift, by the wiki warnings at commit and push; (4) the soft Stop cap, by the push ship checks; (5) the ratchet only at `/rig:sensors`, by the quality ratchet at push.
@@ -630,11 +633,19 @@ Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/
 - Ship verdicts apply only to `adhoc-*` changes; a push that carries a named change is left to that change's own ship.
 - At commit, `harness-tamper` only warns, because the commit point follows Stop semantics; push blocks it.
 - `formatFindings` prints warnings as counts, so commit and push add the warning rows with their fix text below it.
-- The harness line cap moved from 6100 to 6400 (`scripts/size.spec.ts`).
+- The harness line cap moved from 6100 to 6400 (`scripts/size.spec.ts`), then to 6650 (measured 6608) for the bypass-guard hardening, which also moved the guard out of `scripts/shell.ts` into `scripts/bypass.ts` (the 500-line script cap).
 
 ### Open items
 
 - The fast commands at commit see the working tree, not the index.
 - The full commands and the quality ratchet at push run against the working tree, not the pushed commits; push says so when the pushed commit is not HEAD or tracked files are dirty.
 - `--no-verify` by a person leaves CI as the only judge.
-- The bypass guard cannot see what it cannot parse statically: `$(...)` (regex fallback only), scripts written and then run, and aliases defined elsewhere.
+- The bypass guard reads only what it can parse statically. It cannot see through the following:
+  - variable expansion (`x=--no-verify; git commit $x`, a substitution that produces the program name);
+  - aliases defined elsewhere;
+  - scripts written and then run;
+  - `GIT_CONFIG_PARAMETERS` and config include files;
+  - edits to `.git/config`;
+  - `rm -rf .sdlc/githooks`.
+
+  CI is the floor for all of these.
