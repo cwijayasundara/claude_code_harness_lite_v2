@@ -1,6 +1,7 @@
 // The code wiki's generated blocks: Mermaid diagrams, link tables and history, spliced between markers so prose is never touched.
 import path from 'node:path'
-import { skillRef } from './core.ts'
+import { isPlanned, skillRef } from './core.ts'
+import { matchesAny, type SensorConfig } from './model.ts'
 import { cmp, dependents, type Graph } from './wikigraph.ts'
 
 export const SURFACE = /^\s*(?:export|pub |def |class |func |public |interface |type |module\.exports)/
@@ -149,3 +150,119 @@ export function startOrder(g: Graph, pages: string[], order: string[]): string[]
   const rest = pages.filter(p => !first.includes(p)).sort((a, b) => degree(b) - degree(a) || cmp(a, b))
   return [...first, ...rest]
 }
+
+export type ChangeRow = { slug: string; type: string; summary: string; created: string; plan: string[] }
+export type CommitRow = { sha: string; date: string; subject: string }
+export type Ctx = {
+  pages: Record<string, { globs: string[] }>
+  files: string[] // tracked files, docs/wiki excluded
+  graph: Graph
+  link: LinkBase
+  config: SensorConfig
+  read: (file: string) => string
+  changes: ChangeRow[]
+  commits: (files: string[], n: number) => CommitRow[]
+}
+
+const filesOf = (ctx: Ctx, page: string): string[] => ctx.files.filter(f => ctx.graph.moduleOf.get(f) === page)
+const isTestFile = (ctx: Ctx, f: string): boolean => matchesAny(f, ctx.config.tests)
+const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/`/g, "'").replace(/\s+/g, ' ').trim()
+const pageDir = (page: string): string => path.posix.join('docs/wiki', path.posix.dirname(page))
+const linkTo = (ctx: Ctx, page: string, file: string, line?: number): string => fileLink(ctx.link, file, line, pageDir(page))
+const lineCount = (text: string): number => (text ? text.replace(/\n$/, '').split('\n').length : 0)
+
+// The first line of a leading comment, as the file's one-line role.
+function role(text: string): string {
+  for (const line of text.split('\n').slice(0, 6)) {
+    const m = /^\s*(?:\/\/+|#(?!!)|\/\*+|\*)\s*(.+?)\s*(?:\*\/)?$/.exec(line)
+    if (m?.[1] && !/^(?:eslint|@ts-|prettier|istanbul|-\*-)/.test(m[1])) return m[1]
+  }
+  return ''
+}
+
+const section = (title: string, empty: string, rows: string[]): string => [`## ${title}`, '', ...(rows.length ? rows : [empty])].join('\n')
+
+export function renderFiles(ctx: Ctx, page: string): string {
+  const src = filesOf(ctx, page).filter(f => !isTestFile(ctx, f))
+  const rows = src.slice(0, 40).map(f => {
+    const text = ctx.read(f)
+    return `| [\`${cell(f)}\`](${linkTo(ctx, page, f)}) | ${cell(clip(role(text), 80))} | ${lineCount(text)} |`
+  })
+  const body = rows.length ? ['| File | Role | Lines |', '|---|---|---|', ...rows, ...(src.length > 40 ? [`| _+${src.length - 40} more_ | | |`] : [])] : []
+  return section('Key files', '_No source files match the module globs._', body)
+}
+
+export function renderEntrypoints(ctx: Ctx, page: string): string {
+  const rows: string[] = []
+  for (const f of filesOf(ctx, page).filter(f => !isTestFile(ctx, f))) {
+    ctx.read(f).split('\n').forEach((line, i) => {
+      if (SURFACE.test(line)) rows.push(`| \`${cell(clip(line.trim(), 90))}\` | [${cell(f)}:${i + 1}](${linkTo(ctx, page, f, i + 1)}) |`)
+    })
+  }
+  const body = rows.length ? ['| Symbol | Where |', '|---|---|', ...rows.slice(0, 60), ...(rows.length > 60 ? [`| _+${rows.length - 60} more_ | |`] : [])] : []
+  return section('Entry points', '_No exported symbols found._', body)
+}
+
+export function renderDeps(ctx: Ctx, page: string): string {
+  const rel = (to: string): string => path.posix.relative(path.posix.dirname(page), to)
+  const item = ([to, n]: [string, number]): string => `- [${label(to)}](${rel(to)}) · ${n} import${n === 1 ? '' : 's'}`
+  const ranked = (m: Map<string, number>): [string, number][] => [...m].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))
+  const out = ranked(ctx.graph.edges.get(page) ?? new Map())
+  const inn = ranked(dependents(ctx.graph, page))
+  const ext = ranked(ctx.graph.external.get(page) ?? new Map()).slice(0, 5)
+  return [
+    '## Depends on / used by', '',
+    '**Depends on**', '', ...(out.length ? out.map(item) : ['_No other module._']), '',
+    '**Used by**', '', ...(inn.length ? inn.map(item) : ['_No other module._']), '',
+    '**External packages** (top 5)', '', ...(ext.length ? ext.map(([n, c]) => `- \`${n}\` · ${c}`) : ['_None._']),
+  ].join('\n')
+}
+
+const TEST_NAME = [/\b(?:test|it|describe)\s*\(\s*['"`]([^'"`\n]+)['"`]/, /^\s*(?:async\s+)?def\s+(test_\w+)/]
+export function renderTests(ctx: Ctx, page: string): string {
+  const mine = new Set(filesOf(ctx, page))
+  const tests = ctx.files.filter(f => isTestFile(ctx, f) && (mine.has(f) || (ctx.graph.imports.get(f) ?? []).some(t => mine.has(t))))
+  const rows = tests.slice(0, 20).map(f => {
+    const names: string[] = []
+    for (const line of ctx.read(f).split('\n')) for (const re of TEST_NAME) { const n = re.exec(line)?.[1]; if (n && names.length < 8) names.push(n) }
+    return `- [\`${cell(f)}\`](${linkTo(ctx, page, f)})${names.length ? `: ${names.map(n => cell(clip(n, 60))).join('; ')}` : ''}`
+  })
+  return section('Tests', '_No test file found for this module._', rows)
+}
+
+// Why the module looks the way it does: the recorded changes whose plan touches it, then commits that name no recorded change.
+export function renderWhy(ctx: Ctx, page: string): string {
+  const mine = filesOf(ctx, page)
+  const rel = (slug: string): string => path.posix.relative(pageDir(page), `.sdlc/changes/${slug}/intent.md`)
+  const changes = ctx.changes
+    .filter(c => c.plan.length && mine.some(f => isPlanned(f, c.plan)))
+    .sort((a, b) => cmp(b.created, a.created) || cmp(a.slug, b.slug))
+    .slice(0, 8)
+  const rows = changes.map(c => `- [${c.slug}](${rel(c.slug)}) · ${c.type} · ${cell(clip(c.summary, 120))}`)
+  const room = 8 - rows.length
+  const commits = room > 0 ? ctx.commits(mine, 20).filter(c => !changes.some(ch => c.subject.includes(ch.slug))).slice(0, room) : []
+  rows.push(...commits.map(c => `- \`${c.sha}\` · commit · ${cell(clip(c.subject, 120))}`))
+  return section('Why it looks like this', '_No recorded change touches this module yet._', rows)
+}
+
+export function renderRecent(ctx: Ctx, page: string): string {
+  return section('Recent changes', '_No commits yet._', ctx.commits(filesOf(ctx, page), 10).map(c => `- \`${c.sha}\` ${c.date} · ${cell(clip(c.subject, 100))}`))
+}
+
+export function renderBlock(ctx: Ctx, page: string, name: BlockName): string {
+  switch (name) {
+    case 'architecture': return architecture(ctx.graph, page)
+    case 'files': return renderFiles(ctx, page)
+    case 'entrypoints': return renderEntrypoints(ctx, page)
+    case 'deps': return renderDeps(ctx, page)
+    case 'tests': return renderTests(ctx, page)
+    case 'why': return renderWhy(ctx, page)
+    case 'recent': return renderRecent(ctx, page)
+  }
+}
+
+export const renderSystem = (g: Graph, pages: string[], groupOf: (page: string) => string): string => ['## System map', '', systemDiagram(g, pages, groupOf)].join('\n')
+export const renderStart = (order: string[], summaryOf: (page: string) => string): string =>
+  ['## Start here', '', ...order.map((p, i) => `${i + 1}. [${label(p)}](${p})${summaryOf(p) ? `: ${summaryOf(p)}` : ''}`)].join('\n')
+export const renderModules = (pages: string[], summaryOf: (page: string) => string): string =>
+  ['## Modules', '', '| Module | What it does | Page |', '|---|---|---|', ...pages.map(p => `| ${label(p)} | ${cell(summaryOf(p)) || '—'} | [${p}](${p}) |`)].join('\n')
