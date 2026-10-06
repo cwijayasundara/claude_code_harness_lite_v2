@@ -11,6 +11,5 @@ node_modules/
 .env
 .env.*
 
-# local docs folder (not part of the harness)
-docs/
+# internal analysis, not part of the harness
 docs/stuff.eml
