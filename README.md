@@ -10,16 +10,16 @@ As of 2026-10-06. `.claude-plugin/plugin.json` says **0.4.1**, the last release 
 
 | Area | State | Evidence |
 |---|---|---|
-| Lifecycle: start, design or plan, build, test, sensors, PR, review; human gates; tiers | Shipped and trialled live with paid runs | [DESIGN.md](DESIGN.md) §§10 to 14 |
-| Autonomous ratchet (bounded build, quality and cost caps) and `rig learn` | Shipped | DESIGN §§14 and 15 |
-| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees, and the guard that stops the model bypassing them | Merged and covered by tests that drive real `git`. **Not yet trialled live.** The bypass guard is a best-effort text match: CI plus branch protection is the boundary, and the guard's open gaps are listed | DESIGN §16, [SECURITY.md](SECURITY.md) |
-| Code wiki: computed diagrams, tables and history, `wiki build/check/status/search`, `/rig:ask` | Merged and tested; run end to end on a sample app. **Not yet used on a large real repo.** Diagrams are computed for JS/TS and Python only | DESIGN §17 |
-| `rig-wiki` refresh workflow | **Never run on GitHub.** Its privilege split was reviewed and is linted, but the first-run checklist in DESIGN §17 is still open | DESIGN §17 |
+| Lifecycle: start, design or plan, build, test, sensors, PR, review; human gates; tiers | Shipped and trialled live with paid runs | [DESIGN.md](DESIGN.md) §§8 and 9 |
+| Autonomous ratchet (bounded build, quality and cost caps) and `rig learn` | Shipped | DESIGN §§9 and 10 |
+| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees, and the guard that stops the model bypassing them | Merged and covered by tests that drive real `git`. **Not yet trialled live.** The bypass guard is a best-effort text match: CI plus branch protection is the boundary, and the guard's open gaps are listed | DESIGN §11, [SECURITY.md](SECURITY.md) |
+| Code wiki: computed diagrams, tables and history, `wiki build/check/status/search`, `/rig:ask` | Merged and tested; run end to end on a sample app. **Not yet used on a large real repo.** Diagrams are computed for JS/TS and Python only | DESIGN §12 |
+| `rig-wiki` refresh workflow | **Never run on GitHub.** Its privilege split was reviewed and is linted, but the first-run checklist in DESIGN §12 is still open | DESIGN §12 |
 | Windows | **Not supported.** Its CI jobs are red, and the hook scripts are POSIX `sh` | SECURITY.md |
 
 **Quality gates on `main`:** the full suite (about 600 tests), `npm run typecheck` and `claude plugin validate` pass locally. In CI the Linux and macOS jobs and the dogfood check are the ones to trust; the Windows jobs fail for the reason above.
 
-**Known limits worth knowing before you adopt it:** the live trials predate the git hooks and the wiki; hooks only protect what is committed through git, so `--no-verify` by a person leaves CI as the only judge; the wiki's model-written prose is reviewed in a PR, not machine-checked beyond citations and section presence. The open items for each area are in DESIGN §§16 and 17.
+**Known limits worth knowing before you adopt it:** the live trials predate the git hooks and the wiki; hooks only protect what is committed through git, so `--no-verify` by a person leaves CI as the only judge; the wiki's model-written prose is reviewed in a PR, not machine-checked beyond citations and section presence. The open items for each area are in DESIGN §§11 and 12.
 
 ## How the harness is put together
 
@@ -37,7 +37,7 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
 | 6 | **Local equals CI** | One `check` entry point serves Stop, plan, ship and CI. CI judges a PR with the *base branch's* checker, so a PR cannot weaken its own judge. |
 | 7 | **Right model for the job** | Sonnet writes code, Opus designs and reviews, Haiku searches. No skill switches model mid-conversation (that re-reads the context uncached). |
 | 8 | **Bounded loops** | Review rounds, Stop blocks and spend are capped. Past a cap the finding goes to `unresolved.json` and ship refuses it. A loop cannot wedge a session. |
-| 9 | **Measure, then change** | Every release is trialled and its cost recorded in DESIGN.md. `/rig:learn` proposes harness edits and replays each against past diffs first. |
+| 9 | **Measure, then change** | Every release is trialled and its cost summarised in DESIGN.md. `/rig:learn` proposes harness edits and replays each against past diffs first. |
 | 10 | **Every step ends with the next command** | You never have to guess what to type. `/rig:next` is the one to remember. |
 
 ### The layers
@@ -189,7 +189,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print with their fix text, blocks refuse the commit (during a merge or rebase only the fast commands are skipped). |
 | You push | git pre-push | The branch's commits (against its merge-base with the trunk, as CI) go through the ship checks and the quality ratchet; warnings print with their fix text; `githooks.prePush: "off"` disables it. |
 | A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
-| A change merges to main | CI `rig-wiki` | Regenerates `docs/wiki/` (zero tokens) and, with a model secret, rewrites stale prose; opens one PR, never pushes to main. Two jobs: `generate` (requests a read-only token; the model step is the only one that runs the model, and is configured, not yet verified, to have no shell or network, see DESIGN §17) and `publish` (write token, no model step). `RIG_WIKI_TOKEN` is optional so required checks start on the PR. |
+| A change merges to main | CI `rig-wiki` | Regenerates `docs/wiki/` (zero tokens) and, with a model secret, rewrites stale prose; opens one PR, never pushes to main. Two jobs: `generate` (requests a read-only token; the model step is the only one that runs the model, and is configured, not yet verified, to have no shell or network, see DESIGN §12) and `publish` (write token, no model step). `RIG_WIKI_TOKEN` is optional so required checks start on the PR. |
 | A change ships | mod, weekly `learn.yml` | `/rig:learn` runs and toasts what is promotable. |
 
 ## Install
@@ -242,7 +242,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 
 ## Team install
 
-1. Onboard as above and commit; teammates need nothing else. To upgrade a repo, run `claude plugin marketplace update rig`, re-run `vendor --standalone` and commit. Releases are tagged (`v0.3.7`), and DESIGN.md records what each one changed and measured.
+1. Onboard as above and commit; teammates need nothing else. To upgrade a repo, run `claude plugin marketplace update rig`, re-run `vendor --standalone` and commit. Releases are tagged (`v0.3.7`), and CHANGELOG.md records what each one changed.
 2. Builds use sdlc's own implementers. To run a tier L or greenfield build through superpowers subagent-driven development (6.4.1 or later), enable superpowers and set `"build": "sdd"` in `.sdlc/sensors.json`. It costs several times the tokens, so keep it for plans with many independent slices.
 3. For the PR review, add a `CLAUDE_CODE_OAUTH_TOKEN` repository secret (your Pro/Max plan, from `claude setup-token`) or an `ANTHROPIC_API_KEY`, copy `templates/rig-review.yml`, and make `rig-check` and `rig-review` required checks with both workflows in CODEOWNERS.
 

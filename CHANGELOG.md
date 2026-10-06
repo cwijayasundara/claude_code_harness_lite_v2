@@ -27,4 +27,4 @@
 
 ## 0.4.0
 
-The autonomous ratchet. See DESIGN.md section 14.
+The autonomous ratchet. See DESIGN.md section 9.
