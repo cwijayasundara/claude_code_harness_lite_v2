@@ -38,7 +38,6 @@ The biggest lever is **bounded context**. Everything below follows from that.
 skills/      the stages, /rig:* (start design spec plan diagnose build test sensors pr pr-review
              incident next init rule metrics), prompts only
 agents/      scout (haiku, read-only) · architect (opus) · implementer (sonnet) · reviewer (opus)
-             · verifier (sonnet)
 hooks/       hooks.json = settings hooks (work in -p and CI) · register.ts = the optional mod
 scripts/     zero-dependency Node, no build step; sdlc.ts is the CLI; check.ts is the one checker
 templates/   CI workflows (rig-check, rig-review), settings.json, stacks.json, REVIEW.md
@@ -91,7 +90,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 |---|---|
 | Bounded context | Small fresh contexts per subagent (`omitClaudeMd` on scout; briefs of ≤ 60 lines); `/compact` rather than a handoff skill |
 | Sonnet main thread, Opus advisor **off** | Template sets `CLAUDE_CODE_DISABLE_ADVISOR_TOOL` (the advisor was a third of each run's cost; a user-level `advisorModel` otherwise still applies) |
-| Cheap subagents | implementer and verifier on Sonnet, scout on Haiku; Opus only for architect and reviewer |
+| Cheap subagents | implementer on Sonnet, scout on Haiku; Opus only for architect and reviewer |
 | One review per change | Findings below confidence 80 dropped; bounded fix rounds |
 | No "continue" prompting | `build` ends with a ready `/goal` line; `/rig-run` drives one node per turn |
 | Lean plans | No code in plans; `status` warns past 120 lines |

@@ -200,11 +200,11 @@ function siblingEditReason(rel: string, consumer: { name: string } | undefined):
   return null
 }
 
-// Read-only agents (scout, reviewer, verifier) get an allowlist, not a blacklist (scripts/shell.ts): a Bash command
+// Read-only agents (scout, reviewer) get an allowlist, not a blacklist (scripts/shell.ts): a Bash command
 // passes only if it tokenizes cleanly and every segment is a known read-only command.
 // The sdlc script as the model should call it: the plugin's copy, or the project's own in a standalone repo.
 const SCRIPT = () => (IS_VENDORED ? '.sdlc/bin/sdlc.ts' : `${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts`)
-const READ_ONLY_AGENT = /(?:^|[:-])(?:scout|reviewer|verifier)$/
+const READ_ONLY_AGENT = /(?:^|[:-])(?:scout|reviewer)$/
 
 // `sdlc.ts run -- "<cmd>"` may only execute a command the plan or sensors.json declares.
 function declaredCommands(slug: string | undefined): Set<string> {

@@ -156,3 +156,28 @@ test('standalone vendoring installs the mod as a project plugin', () => {
   assert.ok(settings.extraKnownMarketplaces['rig-local'])
 })
 
+
+test('init --full vendors, wires git hooks and merges the settings template without overriding the project', () => {
+  const repo = makeRepo()
+  write(repo, '.claude/settings.json', JSON.stringify({ model: 'my-model', permissions: { allow: ['Bash(ls)'] } }))
+  const r = sdlc(repo, ['init', '--full'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/bin/sdlc.ts')))
+  assert.ok(fs.existsSync(path.join(repo, '.sdlc/bin/verify.ts')), 'verify.ts is vendored')
+  const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8')) as { model: string; env: Record<string, string>; permissions: { allow: string[] }; hooks: object }
+  assert.equal(settings.model, 'my-model', 'a value the project set is kept')
+  assert.equal(settings.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, 'true')
+  assert.deepEqual(settings.permissions.allow, ['Bash(ls)', 'Edit(.sdlc/**)'])
+  assert.ok(settings.hooks, 'the harness hooks are still there')
+  assert.equal(spawnSync('git', ['config', '--local', 'core.hooksPath'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), '.sdlc/githooks')
+  assert.equal(fs.existsSync(path.join(repo, '.github/workflows')), false, 'workflows only with --workflows')
+})
+
+test('init --full --workflows writes the CI files and never overwrites an existing one', () => {
+  const repo = makeRepo()
+  write(repo, 'REVIEW.md', 'mine\n')
+  sdlc(repo, ['init', '--full', '--workflows'])
+  assert.ok(fs.existsSync(path.join(repo, '.github/workflows/rig-check.yml')))
+  assert.ok(fs.existsSync(path.join(repo, '.github/workflows/rig-review.yml')))
+  assert.equal(fs.readFileSync(path.join(repo, 'REVIEW.md'), 'utf8'), 'mine\n')
+})

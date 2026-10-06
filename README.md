@@ -33,8 +33,8 @@ Thin layer with built-ins first; ceremony scales with risk; state lives in files
  ├────────────────────────────────────────────────────────────────────────┤
  │ SKILLS (14)    start design plan diagnose build test sensors pr …      │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
- │ AGENTS (5)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
- │                reviewer·opus  verifier·sonnet                         │  small fresh contexts
+ │ AGENTS (4)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
+ │                reviewer·opus                                         │  small fresh contexts
  ├────────────────────────────────────────────────────────────────────────┤
  │ HOOKS          session-start · pre-bash · pre-edit · post-edit ·       │  guardrails: run in
  │                stop · subagent-stop · prompt-submit                    │  -p and CI, zero tokens
@@ -155,7 +155,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig:rule "<what recurs>"` | The agent broke the same convention twice: promote it to a mechanical rule. |
 | `/rig:metrics [days]` | You want the 12 playbook metrics plus cost per change, stage and agent. |
 
-**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
+**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
 
 ### What fires when (the automatic edges)
 
@@ -236,7 +236,6 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md, plan.md and design.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
 | `agents/reviewer.md` | **Opus 5.5**, high effort. One independent review per change, keeping findings at confidence 80 or above. |
-| `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
 | `scripts/*.ts` (20, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |

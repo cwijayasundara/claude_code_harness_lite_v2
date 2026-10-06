@@ -3,9 +3,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
-import { writeHookScripts } from './githooks.ts'
+import { writeHookScripts, installHooks } from './githooks.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'quality', 'levels', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'shell', 'githooks', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'quality', 'levels', 'verify', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'shell', 'githooks', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
 
@@ -105,4 +105,39 @@ export function cmdVendor(args: Args): void {
   out(standalone
     ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/rig-*, .claude/agents/rig-*, the mod in .sdlc/mod, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
     : `vendored sdlc ${version} into ${path.relative(ROOT, path.join(SDLC, 'bin'))} (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
+}
+
+// Settings the template wants, merged under what the project already has: arrays are unioned and a key the project
+// already sets keeps its value, so onboarding never overrides a team's own choice.
+function mergeMissing(into: Record<string, unknown>, from: Record<string, unknown>): Record<string, unknown> {
+  for (const [k, v] of Object.entries(from)) {
+    const have = into[k]
+    if (Array.isArray(v)) into[k] = [...new Set([...(Array.isArray(have) ? have : []), ...v])]
+    else if (v && typeof v === 'object') into[k] = mergeMissing(have && typeof have === 'object' && !Array.isArray(have) ? have as Record<string, unknown> : {}, v as Record<string, unknown>)
+    else if (have === undefined) into[k] = v
+  }
+  return into
+}
+
+// `init --full [--workflows]`: the deterministic half of onboarding, so the model need not hand-copy files. Vendors the
+// standalone harness, wires the git hooks and merges templates/settings.json. The CI workflows and REVIEW.md need a
+// remote, so they are written only with --workflows, and never over a file that is already there.
+export function installStandalone(workflows: boolean): string {
+  cmdVendor({ pos: [], opt: { standalone: true } })
+  const hooks = installHooks()
+  const lines = [hooks.ok ? hooks.message : `git hooks not installed: ${hooks.message}`]
+  const file = path.join(ROOT, '.claude', 'settings.json')
+  const { $comment: _comment, ...template } = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'settings.json'))) as Record<string, unknown>
+  const merged = mergeMissing(JSON.parse(read(file) || '{}') as Record<string, unknown>, template)
+  const written: string[] = []
+  writeFile('.claude/settings.json', JSON.stringify(merged, null, 2) + '\n', written)
+  lines.push('merged templates/settings.json into .claude/settings.json (existing values kept)')
+  if (workflows) {
+    for (const [from, to] of [['rig-check.yml', '.github/workflows/rig-check.yml'], ['rig-review.yml', '.github/workflows/rig-review.yml'], ['REVIEW.md', 'REVIEW.md']] as const) {
+      if (fs.existsSync(path.join(ROOT, to))) lines.push(`${to} already exists; left as it is`)
+      else { writeFile(to, read(path.join(PLUGIN_ROOT, 'templates', from)), written); lines.push(`wrote ${to}`) }
+    }
+  }
+  sanctionWrites(written)
+  return lines.join('\n')
 }

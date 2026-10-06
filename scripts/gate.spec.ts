@@ -121,11 +121,11 @@ test('read-only agents: allowlist only; chained, substituted and interpreter wri
   assert.equal(as('rig:implementer', 'echo x > f'), undefined)
 })
 
-test('the verifier runs only declared verification commands, and only through the recorder', () => {
+test('the reviewer runs only declared verification commands, and only through the recorder', () => {
   sdlc(repo, ['init'])
   sdlc(repo, ['new', 'rate', '--type', 'feature', '--tier', 'L'])
   write(repo, '.sdlc/changes/rate/plan.md', '## Files\n- src/**\n\n## Verification\n- `npm test`\n')
-  const as = (command: string) => decision(hook(repo, 'pre-bash', { agent_type: 'rig:verifier', tool_input: { command } }))
+  const as = (command: string) => decision(hook(repo, 'pre-bash', { agent_type: 'rig:reviewer', tool_input: { command } }))
   assert.equal(as('node ' + SDLC_TS + ' run -- "npm test"'), undefined)
   assert.equal(as('node --disable-warning=ExperimentalWarning ' + SDLC_TS + ' run --slug rate -- "npm  test"'), undefined)
   assert.equal(as('node ' + SDLC_TS + ' run -- "touch f"'), 'deny')

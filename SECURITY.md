@@ -10,7 +10,7 @@ rig makes a coding agent follow a process. It is not a sandbox. Read this before
 | Hooks (`hooks/hooks.json`) | Fast, local feedback: they deny evidence writes, human-only commands and credential reads by text match. | **Yes.** They match command text, so a script the model writes and runs can do what a command could not. Treat them as guardrails, not locks. |
 | `/rig-approve`, `/rig-waive` | A human decision recorded as a row in `.sdlc/`. | The row is only a file. CI is what proves a person made it. |
 | Git hooks (`.sdlc/githooks`, wired at session start) | The same checker at `git commit` and `git push`, for any editor, agent or person. They run tracked code at commit and push, so checking out an untrusted branch and committing runs that branch's checker. The opt-out is `node .sdlc/bin/sdlc.ts hooks uninstall`. | **Yes**, by `--no-verify` or `hooks uninstall`, from a person or the model. They are guardrails; CI plus branch protection remain the boundary. |
-| Read-only agents (reviewer, verifier) | A Bash allowlist that refuses writes and credential files. | Defense in depth only. Use the Read and Grep tools for files. |
+| Read-only agents (scout, reviewer) | A Bash allowlist that refuses writes and credential files. | Defense in depth only. Use the Read and Grep tools for files. |
 
 ## Do these before a team rollout
 

@@ -45,6 +45,7 @@ test('in build, planned edits and declared commands are allowed; the rest is not
   assert.equal(bash('npm test'), 'allow')
   assert.equal(bash('npm run test:api'), 'allow', 'a declared level')
   assert.equal(bash(`node ${SCRIPT} run --slug big -- "npm test"`), 'allow')
+  assert.equal(bash(`node ${SCRIPT} verify big`), 'allow', 'verify only runs commands the config declares')
   assert.equal(bash('git status'), 'allow', 'read-only git')
   assert.notEqual(bash('npm install left-pad'), 'allow')
 })

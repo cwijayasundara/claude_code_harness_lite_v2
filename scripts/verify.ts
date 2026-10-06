@@ -1,0 +1,73 @@
+// `verify` runs a change's verification commands through the recorder and writes verification.md; `verify-report`
+// only writes the report from runs already recorded. Verdicts come from captured exit codes, never from a model.
+import fs from 'node:fs'
+import path from 'node:path'
+import { CHANGES, planPath, planVerificationBullets, checkSlug, exists, read, now, out, fail, type Args } from './core.ts'
+import { activeSlug, loadChange, nextCommand } from './graph.ts'
+import { loadConfig } from './check.ts'
+import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
+import { requiredLevels, levelResults } from './levels.ts'
+import { recordRound, readRatchet, unblock, block } from './ratchet.ts'
+import { declaredCommandSet } from './autoapprove.ts'
+import { normCmd } from './shell.ts'
+
+function slugOf(args: Args, usage: string): string {
+  const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()
+  if (!slug || !exists(path.join(CHANGES, slug))) fail(usage)
+  return slug
+}
+
+function writeReport(slug: string): 'pass' | 'fail' {
+  const rows = readRuns(slug)
+  const plan = planVerificationBullets(slug)
+  const change = loadChange(slug)
+  const { config } = loadConfig()
+  const required = change.type === 'spike' ? [] : requiredLevels(change, read(planPath(slug)), config)
+  const latest = new Map(rows.filter(r => !r.expectFail && !r.source).map(r => [normCmd(r.cmd), r.exit]))
+  // Plan commands stand in for an undeclared unit level; with no plan list, any explicit green run does (the no-plan fallback).
+  const planned = plan.commands.map(normCmd)
+  const planPassed = planned.length ? planned.every(c => latest.get(c) === 0) : latest.size > 0 && [...latest.values()].every(e => e === 0)
+  const levels = levelResults(slug, required, config, planPassed)
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels)
+  fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
+  // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
+  // The level kind clears first, so a cap reached in this same run is recorded rather than refused behind the old block.
+  const undeclared = levels.find(l => l.status === 'undeclared')
+  if (!undeclared) unblock(slug, 'levels declared', 'level')
+  // A failing report is always a new finding (counter keeps the hash unique), so only the test node's cap applies.
+  if (result === 'fail') {
+    recordRound(slug, 'test', [{ severity: 'high', category: 'tests', text: `verification failed at ${now()} (${rows.length} runs, round ${readRatchet(slug).nodes.test?.hashes.length ?? 0})` }], { cap: config.ratchet.rounds.test })
+  }
+  if (undeclared) block(slug, 'test', `level ${undeclared.level} required but not declared: add "${undeclared.level}": "<cmd>" to .sdlc/sensors.json levels: declare it on the trunk first, as a separate harness change to .sdlc/sensors.json reviewed by the code owners; then rebase this change`, 'level')
+  out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
+  return result
+}
+
+export function cmdVerifyReport(args: Args): void {
+  writeReport(slugOf(args, 'usage: verify-report <slug>'))
+}
+
+// Runs the plan's `## Verification` commands and each required level's declared command, one after another, recording
+// each as it finishes. Only commands the harness already trusts run unprompted (sensors.json, or a plan a person
+// approved); the rest are listed for the model to run with `run`, which asks the person.
+export function cmdVerify(args: Args): void {
+  const slug = slugOf(args, 'usage: verify <slug>')
+  const { config } = loadConfig()
+  const change = loadChange(slug)
+  const required = change.type === 'spike' ? [] : requiredLevels(change, read(planPath(slug)), config)
+  const wanted = [...planVerificationBullets(slug).commands, ...required.map(l => config.levels[l] ?? '')].filter(Boolean)
+  const trusted = declaredCommandSet(slug)
+  const seen = new Set<string>()
+  const skipped: string[] = []
+  for (const cmd of wanted) {
+    const key = normCmd(cmd)
+    if (seen.has(key)) continue
+    seen.add(key)
+    if (!trusted.has(key)) { skipped.push(cmd); continue }
+    const row = runCommand(cmd)
+    recordRun(slug, row)
+    out(`exit ${row.exit}${row.timedOut ? ' (timed out)' : ''} in ${row.ms} ms: ${cmd}`)
+  }
+  if (skipped.length) out(`not run (not declared in sensors.json and the plan is not approved): ${skipped.map(c => `\`${c}\``).join(', ')}. Run each with \`sdlc.ts run --slug ${slug} -- "<command>"\`, which asks the person, then \`verify-report ${slug}\`.`)
+  if (writeReport(slug) !== 'pass') process.exitCode = 1
+}

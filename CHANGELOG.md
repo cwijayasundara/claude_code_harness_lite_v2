@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `sdlc.ts verify <slug>` runs the plan's `## Verification` commands and each required level's command through the recorder and writes `verification.md`, at zero tokens. It runs only commands the config declares or an approved plan lists; the rest are listed for `run`, which asks the person. The `verifier` agent is removed and the `test` and `diagnose` skills call `verify`.
+- `sdlc.ts init --full [--workflows]` does the deterministic half of onboarding (vendor standalone, wire git hooks, merge `templates/settings.json` under the project's own values; with `--workflows`, the CI files and `REVIEW.md`, never over an existing file). `/rig:init` calls it instead of copying files by hand.
+- The spec, plan and design format moved from the architect's prompt to `templates/design-format.md`; the three document skills share one question-resolution rule; `/rig-approve`'s hint lists `design`. The harness line cap is now 5890.
 - Removed: the git-hook bypass guard (`bypass.ts`, `inert.ts`) and the live-trial harness (`tests/trials/`; the two verify-report fixtures moved to `tests/fixtures/`). The model can now run `--no-verify`; CI is the boundary.
 - Removed: the code wiki (`wiki*` scripts, `/rig:wiki`, `/rig:ask`, the wiki agent, `rig-wiki.yml`) and `rig learn` (`/rig:learn`, `learn.yml`, the mod's auto-run). The harness line cap is now 5850. Both remain in git history before this commit.
 - Git hooks: `sdlc.ts hooks install` wires `pre-commit` (the staged diff through the Stop sensors and the fast commands) and `pre-push` (what the remote lacks through the ship checks and the quality ratchet), so edits made outside a Claude turn are judged too. A fresh clone is wired at session start. A hook that cannot run warns and lets git continue; `--no-verify` stays available (see the first entry: CI is the boundary). New config `githooks: { prePush, budgetMs }`.

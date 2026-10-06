@@ -21,7 +21,8 @@ import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from 
 import { cmdMetrics } from './metrics.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
-import { cmdVendor } from './vendor.ts'
+import { cmdVendor, installStandalone } from './vendor.ts'
+import { cmdVerify, cmdVerifyReport } from './verify.ts'
 import { cmdHooks, cmdCheckPush } from './githooks.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
@@ -73,6 +74,7 @@ function cmdInit(args: Args): void {
   }
   out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}${newRepo ? ' (ran git init: no repository was here)' : ''}`)
   if (args.opt.stack) out(declareStackLevels(args.opt.stack))
+  if (args.opt.full) out(installStandalone(Boolean(args.opt.workflows)))
 }
 
 function cmdNew(args: Args): void {
@@ -264,33 +266,6 @@ function cmdRun(): void {
   process.exitCode = expectFail ? (row.exit !== 0 ? 0 : 1) : row.exit
 }
 
-function cmdVerifyReport(args: Args): void {
-  const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()
-  if (!slug || !exists(path.join(CHANGES, slug))) fail('usage: verify-report <slug>')
-  const rows = readRuns(slug)
-  const plan = planVerificationBullets(slug)
-  const change = loadChange(slug)
-  const { config } = loadConfig()
-  const required = change.type === 'spike' ? [] : requiredLevels(change, read(planPath(slug)), config)
-  const latest = new Map(rows.filter(r => !r.expectFail && !r.source).map(r => [normCmd(r.cmd), r.exit]))
-  // Plan commands stand in for an undeclared unit level; with no plan list, any explicit green run does (the no-plan fallback).
-  const planned = plan.commands.map(normCmd)
-  const planPassed = planned.length ? planned.every(c => latest.get(c) === 0) : latest.size > 0 && [...latest.values()].every(e => e === 0)
-  const levels = levelResults(slug, required, config, planPassed)
-  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels)
-  fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
-  // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
-  // The level kind clears first, so a cap reached in this same run is recorded rather than refused behind the old block.
-  const undeclared = levels.find(l => l.status === 'undeclared')
-  if (!undeclared) unblock(slug, 'levels declared', 'level')
-  // A failing report is always a new finding (counter keeps the hash unique), so only the test node's cap applies.
-  if (result === 'fail') {
-    recordRound(slug, 'test', [{ severity: 'high', category: 'tests', text: `verification failed at ${now()} (${rows.length} runs, round ${readRatchet(slug).nodes.test?.hashes.length ?? 0})` }], { cap: config.ratchet.rounds.test })
-  }
-  if (undeclared) block(slug, 'test', `level ${undeclared.level} required but not declared: add "${undeclared.level}": "<cmd>" to .sdlc/sensors.json levels: declare it on the trunk first, as a separate harness change to .sdlc/sensors.json reviewed by the code owners; then rebase this change`, 'level')
-  out(`verification ${result}: ${rows.length} recorded run(s). Next: ${nextCommand(loadChange(slug))}`)
-}
-
 function cmdDiff(args: Args): void {
   const trunk = args.opt.trunk ? defaultBase() ?? 'HEAD' : null
   const base = optString(args, 'base')
@@ -365,6 +340,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   'pr-checks': cmdPrChecks,
   skill: cmdSkill,
   run: () => cmdRun(),
+  verify: cmdVerify,
   'verify-report': cmdVerifyReport,
   secrets: cmdSecrets,
   'log-usage': cmdLogUsage,

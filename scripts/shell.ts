@@ -1,4 +1,4 @@
-// Read-only Bash for scout, reviewer and verifier: a bash- and zsh-faithful word tokenizer and a command allowlist.
+// Read-only Bash for scout and reviewer: a bash- and zsh-faithful word tokenizer and a command allowlist.
 // Every check runs on dequoted words, so quotes, escapes and braces cannot hide an option or a second command.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -137,8 +137,8 @@ export function isHarnessScript(token: string, cwd?: string): boolean {
   } catch { return false }
 }
 
-// `node [--disable-warning=X] <path>/sdlc.ts <sub> ...`: reads for everyone; run and verify-report for reviewer and
-// verifier, and run only for a command that exactly matches a declared one (sdlc.ts joins the words after --).
+// `node [--disable-warning=X] <path>/sdlc.ts <sub> ...`: reads for everyone; run and verify-report for the
+// reviewer, and run only for a command that exactly matches a declared one (sdlc.ts joins the words after --).
 function recorderAllowed(w: string[], agent: string, declared: (slug: string | undefined) => Set<string>, cwd?: string): string | null {
   const i = w.findIndex(x => !x.startsWith('-'))
   if (i < 0 || !isHarnessScript(w[i] ?? '', cwd) || w.slice(0, i).some(x => !/^--disable-warning=\S+$/.test(x))) return 'sdlc.ts must be the first thing node runs'
