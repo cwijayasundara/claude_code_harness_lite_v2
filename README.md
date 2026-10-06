@@ -171,7 +171,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print with their fix text, blocks refuse the commit (during a merge or rebase only the fast commands are skipped). |
 | You push | git pre-push | The branch's commits (against its merge-base with the trunk, as CI) go through the ship checks and the quality ratchet; warnings print with their fix text; `githooks.prePush: "off"` disables it. |
 | A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
-| A change merges to main | CI `rig-wiki` | Regenerates `docs/wiki/` (zero tokens) and, with a model secret, rewrites stale prose; opens one PR, never pushes to main. Two jobs: `generate` (read-only token, the only job that runs the model) and `publish` (write token, no model). `RIG_WIKI_TOKEN` is optional so required checks start on the PR. |
+| A change merges to main | CI `rig-wiki` | Regenerates `docs/wiki/` (zero tokens) and, with a model secret, rewrites stale prose; opens one PR, never pushes to main. Two jobs: `generate` (requests a read-only token; the model step is the only one that runs the model, and is configured, not yet verified, to have no shell or network, see DESIGN §17) and `publish` (write token, no model step). `RIG_WIKI_TOKEN` is optional so required checks start on the PR. |
 | A change ships | mod, weekly `learn.yml` | `/rig:learn` runs and toasts what is promotable. |
 
 ## Install
