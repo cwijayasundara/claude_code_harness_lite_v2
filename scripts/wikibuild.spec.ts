@@ -373,3 +373,43 @@ test('a symlinked manifest.json is invalid and its pages are not used; a valid o
   assert.match(s.invalid.join('\n'), /not a regular file/)
   assert.deepEqual([s.stale, s.missing, s.generated, s.prose], [[], [], [], []])
 })
+
+function symlinkDirRepo(): string {
+  const repo = wikiRepo({})
+  fs.mkdirSync(path.join(repo, 'elsewhere'))
+  fs.symlinkSync(path.join(repo, 'elsewhere'), path.join(repo, 'docs/wiki/sub'))
+  const m = JSON.parse(fs.readFileSync(manifestPath(repo), 'utf8')) as { pages: object }
+  fs.writeFileSync(manifestPath(repo), JSON.stringify({ ...m, pages: { ...m.pages, 'sub/a.md': { globs: ['src/auth/**'] } } }))
+  return repo
+}
+
+test('a page under a symlinked directory is reported as invalid; status and the commit check never abort, build and stamp still fail loudly', () => {
+  const repo = symlinkDirRepo()
+  sdlc(repo, ['init'])
+  const s = sdlc(repo, ['wiki', 'status', '--json'])
+  assert.equal(s.code, 0, s.stderr)
+  assert.match((JSON.parse(s.stdout) as { invalid: string[] }).invalid.join('\n'), /page "sub\/a\.md": path is not safe/)
+  write(repo, 'unrelated.txt', 'x\n'); gitIn(repo, 'add', 'unrelated.txt')
+  const c = sdlc(repo, ['check', '--at', 'commit', '--json'])
+  assert.equal(c.code, 0, c.stderr)
+  const f = (JSON.parse(c.stdout) as { findings: { sensor: string; severity: string; file?: string }[] }).findings
+  assert.equal(f.some(x => x.sensor === 'wiki-generated' && x.severity === 'warn' && x.file === 'docs/wiki/manifest.json'), true)
+  const b = build(repo)
+  assert.equal(b.code, 1)
+  assert.match(b.stderr, /not a safe relative \.md path|not a safe path/)
+  const st = sdlc(repo, ['wiki', 'stamp', 'sub/a.md'])
+  assert.equal(st.code, 1)
+  assert.match(st.stderr, /not a safe relative \.md path|not a safe path/)
+})
+
+test('a symlinked index.md is invalid in status, and build still fails loudly', () => {
+  const repo = wikiRepo()
+  fs.writeFileSync(path.join(repo, 'real-index.md'), 'x\n')
+  fs.symlinkSync(path.join(repo, 'real-index.md'), path.join(repo, 'docs/wiki/index.md'))
+  const s = sdlc(repo, ['wiki', 'status', '--json'])
+  assert.equal(s.code, 0, s.stderr)
+  assert.match((JSON.parse(s.stdout) as { invalid: string[] }).invalid.join('\n'), /index\.md is not a safe path/)
+  const b = build(repo)
+  assert.equal(b.code, 1)
+  assert.match(b.stderr, /docs\/wiki: not a safe path/)
+})

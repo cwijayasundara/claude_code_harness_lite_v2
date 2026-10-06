@@ -105,7 +105,9 @@ function loadManifest(): Loaded {
 const readManifest = (): Manifest | null => loadManifest().manifest
 
 const INDEX = 'index.md'
-const pagePath = (page: string): string => safePagePath(page) ?? fail(`page "${page}": not a safe relative .md path`)
+// Throws, never exits: planBuild is reachable from the status sensor (see wikiStatus); CLI entry points turn the error into fail().
+const pagePath = (page: string): string => safePagePath(page) ?? thrown(`page "${page}": not a safe relative .md path`)
+const thrown = (message: string): never => { throw new Error(message) }
 const commitRows = (files: string[], n: number): CommitRow[] => {
   if (!files.length) return []
   const raw = git(['--literal-pathspecs', 'log', `-n${n}`, '--format=%h%x09%cs%x09%s', '--', ...files.slice(0, 200)]) ?? ''
@@ -147,7 +149,7 @@ export function planBuild(m: Manifest): Planned[] {
   })
   const groupOf = (p: string): string => (m.pages[p]?.globs[0] ?? p).replace(/^\.\//, '').split('/')[0] ?? p
   const summaryOf = (p: string): string => pageSummary(read(pagePath(p)))
-  const before = read(safeWikiPath(INDEX) ?? fail(`${WIKI_DIR}/${INDEX}: not a safe path under ${WIKI_DIR}/`))
+  const before = read(safeWikiPath(INDEX) ?? thrown(`${WIKI_DIR}/${INDEX}: not a safe path under ${WIKI_DIR}/`))
   let text = before || indexSkeleton(path.basename(ROOT))
   text = spliceBlock(text, 'system', renderSystem(ctx.graph, pages, groupOf), INDEX_BLOCKS)
   text = spliceBlock(text, 'start', renderStart(startOrder(ctx.graph, pages, m.order ?? []), summaryOf), INDEX_BLOCKS)
@@ -164,7 +166,8 @@ function cmdBuild(args: Args): void {
   const m = readManifest()
   if (!m) return out(`no code wiki here: ${skillRef('wiki')} builds it`)
   for (const page of Object.keys(m.pages)) if (!safePagePath(page)) fail(`docs/wiki/manifest.json: page "${page}": not a safe relative .md path`)
-  const plan = planBuild(m)
+  let plan: Planned[] = []
+  try { plan = planBuild(m) } catch (e) { fail(e instanceof Error ? e.message : String(e)) }
   if (args.opt.check) {
     const rows = plan.flatMap(p => driftOf(p).map(n => `generated: ${p.file} (${n})`))
     out(rows.length ? rows.join('\n') : 'wiki generated blocks up to date')
@@ -180,7 +183,7 @@ type Status = { stale: string[]; missing: string[]; uncovered: string[]; generat
 const wellFormed = (p: unknown): p is Page => !!p && typeof p === 'object' && isStrings((p as Page).globs)
 export function wikiStatus(): Status | null {
   const empty: Status = { stale: [], missing: [], uncovered: [], generated: [], prose: [], invalid: [] }
-  // A sensor must never throw: any failure becomes a finding.
+  // Guarantee: nothing in this call graph exits the process (pagePath and planBuild throw rather than fail()), and this catch turns any throw into a finding.
   try {
     const { exists, manifest: m, errors } = loadManifest()
     if (!exists) return null
@@ -199,12 +202,14 @@ export function wikiStatus(): Status | null {
     const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
     const skip = new Set(isStrings(m.skip) ? m.skip : [])
     const uncovered = [...dirs].filter(d => !skip.has(d) && !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
+    // Unsafe paths are reported, never dropped silently and never allowed to reach planBuild.
+    const unsafe = [...entries.map(([page]) => page).filter(page => !safePagePath(page)).map(page => `page "${page}": path is not safe under ${WIKI_DIR} (a symlink in the way?)`), ...(safeWikiPath(INDEX) ? [] : [`${WIKI_DIR}/${INDEX} is not a safe path`])]
     // The graph build (planBuild) is the costly part and runs at every commit and push: once per call, and only for a valid manifest
     // (planBuild would abort on an unsafe page key; `wiki build` explains an invalid one).
-    const generated = errors.length || !safeWikiPath(INDEX) ? [] : planBuild(m).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
+    const generated = errors.length || unsafe.length ? [] : planBuild(m).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
     // A page whose path is unsafe is never read: it counts as missing prose.
     const prose = entries.map(([page]) => page).filter(page => proseProblems(readRegular(safePagePath(page) ?? '')).length).sort(cmp)
-    return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose, invalid: errors }
+    return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose, invalid: [...errors, ...unsafe] }
   } catch (e) {
     return { ...empty, invalid: [`could not read the wiki: ${e instanceof Error ? e.message : String(e)}`] }
   }
@@ -260,7 +265,8 @@ export function cmdWiki(args: Args): void {
     for (const [page, p] of Object.entries(m.pages)) {
       if (pages.length && !pages.includes(page)) continue
       // A page that cites no `path:line` is not a map an engineer can follow; it stays unstamped (stale) until fixed.
-      const text = readRegular(pagePath(page))
+      let text = ''
+      try { text = readRegular(pagePath(page)) } catch (e) { fail(e instanceof Error ? e.message : String(e)) }
       if (!CITATION.test(text)) {
         uncited.push(page)
         continue
