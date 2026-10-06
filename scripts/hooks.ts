@@ -2,8 +2,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
-  planFiles, planName, planApproved, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, withLock, writeAtomic, type Tier, type Args, type HookInput,
+  ROOT, SDLC, git, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
+  planFiles, planName, planApproved, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, withLock, writeAtomic, type Args, type HookInput,
 } from './core.ts'
 import { activeSlug, loadChange, nextCommand, createAdhoc } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
