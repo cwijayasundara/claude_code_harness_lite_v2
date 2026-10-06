@@ -215,8 +215,18 @@ function declaredCommands(slug: string | undefined): Set<string> {
 }
 
 // The person may bypass the git hooks (`git commit --no-verify`); the model fixes the findings instead.
-const NO_VERIFY = /\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*|\bgit\b[^;&|\n]*core\.hookspath/i
-export const bypassesGitHooks = (cmd: string): boolean => NO_VERIFY.test(cmd.replace(/"[^"]*"|'[^']*'/g, '""'))
+const NO_VERIFY_FLAGS = /\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*/i
+const NO_VERIFY_CONFIG = /\bgit\b[^;&|\n]*core\.hookspath/i
+export const bypassesGitHooks = (cmd: string): boolean => {
+  // For commit/push flags: unwrap quoted segments starting with dash, blank others
+  const unwrappedForFlags = cmd.replace(/"([^"]*)"|'([^']*)'/g, (_m, a, b) => {
+    const s = a ?? b ?? ''
+    return s.startsWith('-') ? ` ${s} ` : '""'
+  })
+  // For core.hooksPath: test against command with all quotes removed (acceptable false positive if mentioned in commit message)
+  const allQuotesRemoved = cmd.replace(/["']/g, '')
+  return NO_VERIFY_FLAGS.test(unwrappedForFlags) || NO_VERIFY_CONFIG.test(allQuotesRemoved)
+}
 
 function hookPreBash(input: HookInput): void {
   if (!exists(SDLC)) return

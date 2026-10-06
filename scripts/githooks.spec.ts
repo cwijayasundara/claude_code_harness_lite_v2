@@ -226,8 +226,9 @@ test('the model may not bypass the git hooks; ordinary commits and pushes are un
   for (const cmd of [
     'git commit --no-verify -m x', 'git commit -nm x', 'git commit -m x --no-verif', 'git push --no-verify origin main',
     'git config core.hooksPath /dev/null', 'git -c core.hooksPath=/x commit -m y',
+    'git config "core.hooksPath" /x', 'git -c "core.hooksPath=/x" commit -m y', 'git commit "--no-verify" -m x',
   ]) assert.equal(bash(cmd), 'deny', cmd)
-  for (const cmd of ['git commit -m "fix the -n flag"', 'git commit -am x', 'git push origin main', 'git status']) assert.notEqual(bash(cmd), 'deny', cmd)
+  for (const cmd of ['git commit -m "fix the -n flag"', 'git commit -am x', 'git push origin main', 'git status', 'git commit --amend --no-edit', 'git push -n origin main', 'git commit -m "docs: say --no-verify"']) assert.notEqual(bash(cmd), 'deny', cmd)
 })
 
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
