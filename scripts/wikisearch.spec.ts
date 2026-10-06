@@ -36,3 +36,13 @@ test('hostile queries: huge, punctuation-only and regex-like input neither crash
   assert.ok(termsOf(Array.from({ length: 500 }, (_, i) => `term${i}`).join(' ')).length <= 20)
   assert.deepEqual(termsOf('x'.repeat(1_000_000)).map(t => t.length), [200])
 })
+
+test('terms inside generated blocks neither rank a page nor become page hits; symbols, files and prose still do', () => {
+  const text = '# alpha\n\nProse about zebra.\n\n<!-- rig:gen:architecture -->\n## Architecture\n\n```mermaid\n  C --> n_gizmo\n```\n<!-- /rig:gen -->\n\n<!-- rig:gen:files -->\n| [`src/x.js`](x) | gizmo widget | 3 |\n<!-- /rig:gen -->\n'
+  const docs = [{ page: 'modules/alpha.md', text, symbols: [{ ref: 'src/x.js:1', text: 'export const sprocket = 1' }], files: ['src/x.js'] }]
+  assert.deepEqual(searchDocs(docs, 'gizmo'), [])
+  assert.deepEqual(searchDocs(docs, 'architecture'), [])
+  assert.equal(searchDocs(docs, 'sprocket')[0]?.page, 'modules/alpha.md')
+  const prose = searchDocs(docs, 'zebra')
+  assert.deepEqual(prose[0]?.hits, [{ ref: 'docs/wiki/modules/alpha.md:3', text: 'Prose about zebra.' }])
+})
