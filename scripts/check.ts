@@ -9,12 +9,12 @@ import {
 } from './core.ts'
 import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
-import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines } from './diffs.ts'
+import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { loadChange, activeSlug } from './graph.ts'
 import { wikiFindings } from './wiki.ts'
 
-export type Point = 'stop' | 'ship' | 'ci'
+export type Point = 'stop' | 'commit' | 'ship' | 'ci'
 export type CheckInput = {
   point: Point
   diffs: FileDiff[]
@@ -27,6 +27,7 @@ export type CheckInput = {
   toolEdited?: Set<string>
   base: string | null
   ratchet?: boolean
+  after?: (file: string) => string // the text being judged; defaults to the working tree (commit passes the index)
 }
 export type CheckResult = { findings: Finding[]; blocks: Finding[]; warns: Finding[]; waived: number }
 
@@ -291,25 +292,28 @@ function tierFindings(slugs: string[], diffs: FileDiff[], config: SensorConfig):
 
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
+  // A commit judges a partial diff, like Stop: same severities, same sensors. Only its wiki check and its text source differ.
+  const point = i.point === 'commit' ? 'stop' : i.point
+  const after = i.after ?? ((f: string) => read(path.join(ROOT, f)))
   const pattern = withoutFixtures(diffs, config)
   const findings: Finding[] = [
     ...testTamper(pattern, config),
     ...suppressions(pattern, config),
     ...layering(pattern, config),
-    ...size(diffs, config, fileLines(diffs.filter(d => d.status !== 'D').map(d => d.file)), i.point),
+    ...size(diffs, config, fileLines(diffs.filter(d => d.status !== 'D').map(d => d.file), after), point),
     ...secretsInDiff(pattern),
     ...rulesSensor(pattern, i.rules),
-    ...contractFindings(i),
-    ...harnessTamper(diffs, { point: i.point, toolEdited: i.toolEdited, before: i.before, after: f => read(path.join(ROOT, f)) }),
+    ...contractFindings({ ...i, point }),
+    ...harnessTamper(diffs, { point, toolEdited: i.toolEdited, before: i.before, after }),
   ]
   // A diff whose plan the person approved is big by design: the diff-size limit warns instead of blocking.
   if (i.slugs.length && i.slugs.every(planApproved)) {
     for (const f of findings) if (f.sensor === 'size' && !f.file) f.severity = 'warn'
   }
-  if (i.point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
+  if (point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.point === 'ship' || i.point === 'ci') findings.push(...wikiFindings())
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
-  if (i.point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
+  if (point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   const result = applyWaivers(findings, i.slugs, i.point === 'ci' ? { base: i.base } : undefined)
   logRuleFires(result.findings, i.point)
@@ -377,14 +381,24 @@ function report(point: string, result: CheckResult, count: number, json: boolean
 export function cmdCheck(args: Args): void {
   if (optString(args, 'at') === 'plan') return cmdCheckPlan(args)
   const at = optString(args, 'at')
-  if (at !== 'stop' && at !== 'ship' && at !== 'ci') fail('usage: check --at stop|ship|ci|plan [--base <ref>] [--config-from <ref>] [--slug <s>] [--budget-ms <n>] [--json]')
+  if (at !== 'stop' && at !== 'commit' && at !== 'ship' && at !== 'ci') fail('usage: check --at stop|commit|ship|ci|plan [--base <ref>] [--config-from <ref>] [--slug <s>] [--budget-ms <n>] [--json]')
   const { config, rules, errors } = loadConfig(optString(args, 'config-from') ?? null)
   const baseRef = optString(args, 'base')
   const base = baseRef ? git(['merge-base', 'HEAD', baseRef]) : defaultBase()
   if (at === 'ci' && !base) fail('check --at ci needs --base <ref> with a merge-base (fetch with fetch-depth: 0)')
+  const partial = at === 'stop' || at === 'commit'
   let diffs: FileDiff[]
   let before: (f: string) => string
-  if (at === 'stop') {
+  let after: ((f: string) => string) | undefined
+  if (at === 'commit') {
+    // A merge replays other people's commits and a rebase replays your own: CI judges the result.
+    if (git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']) || /^(?:rebase|merge)/.test(process.env.GIT_REFLOG_ACTION ?? '')) return out('sdlc check commit: skipped (merge or rebase in progress; CI judges the result)')
+    diffs = stagedDiff()
+    if (!diffs.length) return out('sdlc check commit: nothing staged')
+    before = f => showAt('HEAD', f) ?? ''
+    after = f => showStaged(f) ?? ''
+    if (git(['diff', '--name-only'])) process.stderr.write('rig: the fast commands run against your working tree, which has unstaged changes\n')
+  } else if (at === 'stop') {
     const snap = readBaseline() ?? snapshot()
     if (!snap) return out('sdlc check stop: nothing to compare against (no commits yet)')
     diffs = turnDiff(snap)
@@ -396,11 +410,11 @@ export function cmdCheck(args: Args): void {
   const slugArg = optString(args, 'slug')
   if (slugArg) checkSlug(slugArg)
   const slugs = slugArg ? [slugArg] : at === 'ci' ? slugsIn(diffs) : [activeSlug()].filter((s): s is string => Boolean(s))
-  const budgetMs = Number(optString(args, 'budget-ms') ?? (at === 'stop' ? 60_000 : 1_800_000))
+  const budgetMs = Number(optString(args, 'budget-ms') ?? (partial ? 60_000 : 1_800_000))
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) fail('--budget-ms must be a positive number')
   const humanRows = at === 'ci' && base ? humanRowsAdded(base) : []
   const why = humanRows.length ? independentApproval() : null // before runChecks: the PR's test commands could rewrite the event file or shadow gh
-  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: at === 'stop' ? 'fast' : 'full', budgetMs, before, base, ratchet: !optString(args, 'config-from') })
+  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: partial ? 'fast' : 'full', budgetMs, before, after, base, ratchet: !optString(args, 'config-from') && at !== 'commit' })
   const configFindings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: SENSORS_JSON, message: e, fix: 'fix the file; see the sdlc README for its format' }))
   const humanFindings: Finding[] = why ? [{ sensor: 'human-approval', severity: 'block', message: `this PR adds ${humanRows.length} approval/waiver row(s): ${why}`, fix: 'a code owner other than the PR author reviews the rows below and approves the current head commit; pushing again needs a fresh approval' }] : []
   const all = { ...result, findings: [...humanFindings, ...configFindings, ...result.findings], blocks: [...humanFindings, ...configFindings, ...result.blocks] }

@@ -83,13 +83,17 @@ export function fileDiff(snap: Snapshot, rel: string): FileDiff[] {
 
 export const branchDiff = (base: string): FileDiff[] => [...parseUnifiedDiff(git([...DIFF, base]) ?? ''), ...untrackedFiles().map(addedFile)]
 
+// What `git commit` would record: the index against HEAD (no HEAD yet means everything staged is new).
+export const stagedDiff = (): FileDiff[] => parseUnifiedDiff(git([...DIFF, '--cached']) ?? '')
+export const showStaged = (rel: string): string | null => git(['show', `:${rel}`])
+
 export const showAt = (ref: string, rel: string): string | null => git(['show', `${ref}:${rel}`])
 
-export function fileLines(files: string[]): Record<string, number> {
+export function fileLines(files: string[], textOf: (rel: string) => string = rel => read(path.join(ROOT, rel))): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const f of files) {
     if (tooBig(f)) continue
-    const text = read(path.join(ROOT, f))
+    const text = textOf(f)
     if (text) counts[f] = text.replace(/\n$/, '').split('\n').length
   }
   return counts
