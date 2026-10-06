@@ -447,6 +447,12 @@ test('no regex in the guard backtracks on a long run of letters, and a scan that
   assert.equal(gitHooksBypass('git status', 100, () => (++calls < total ? 0 : 1e9)), 'limit')
 })
 
+test('a substitution or variable standing where the program goes is read as git', () => {
+  denies(['$(echo git) commit -n', '`echo git` commit -n', '$GIT commit -n', '"$GIT" push --no-verify', 'sudo $(which git) commit -n -m x',
+    '$(which sudo) git commit -n'])
+  allows(['$(date) status', '$(pwd)/script.sh arg', '$EDITOR notes.txt', '"$GIT" status'])
+})
+
 const pre = (command: string) => JSON.parse(hook(repo, 'pre-bash', { tool_input: { command } }).stdout || '{}').hookSpecificOutput
 test('pre-bash denies a command past the guard limits and says to ask the person', () => {
   sdlc(repo, ['init'])

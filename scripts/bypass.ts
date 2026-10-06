@@ -154,8 +154,16 @@ function segmentBypasses(seg: string[], depth: number): boolean {
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
   if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
-  const g = seg.findIndex(w => progName(w) === 'git')
-  if (g < 0) return seg.some(w => /^\w+=/.test(w) && HOOKS_PATH.test(w)) || embedded(seg)
+  // Where git stands: the first git word, and the program word when a substitution or variable stands there (the
+  // inert _), since $(echo git) or $GIT may name git.
+  const k = programAt(seg).k
+  const at = [seg.findIndex(w => progName(w) === 'git'), seg[k] === '_' ? k : -1].filter(g => g >= 0)
+  if (!at.length) return seg.some(w => /^\w+=/.test(w) && HOOKS_PATH.test(w)) || embedded(seg)
+  return at.some(g => gitBypasses(seg, g, depth, embedded))
+}
+
+// The words of a git command at seg[g]: its global options, then a commit or push's option words, else every word.
+function gitBypasses(seg: string[], g: number, depth: number, embedded: (words: string[]) => boolean): boolean {
   const scanned = seg.slice(0, g)
   let i = g + 1
   while ((seg[i] ?? '').startsWith('-')) {
