@@ -171,11 +171,14 @@ test('moving a test file out of the test glob lowers the count and blocks', () =
 
 test('moving a non-test file into the test glob does not count its old test( calls as base cases', () => {
   withTwoTests()
-  write(repo, 'src/x.js', "test('x', () => {})\ntest('y', () => {})\ntest('z', () => {})\n")
+  write(repo, 'src/x.js', "test('x', () => {})\ntest('y', () => {})\ntest('z', () => {})\nconst a = 1\nconst b = 2\nconst c = 3\nconst d = 4\nconst e = 5\n")
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'x')
   gitIn(repo, 'checkout', '-q', 'main'); gitIn(repo, 'merge', '-q', 'sdlc/tiny'); gitIn(repo, 'checkout', '-q', 'sdlc/tiny')
   gitIn(repo, 'mv', 'src/x.js', 'test/x.test.js')
-  assert.doesNotMatch(sdlc(repo, ['quality', 'tiny']).stdout, /test cases:/)
+  write(repo, 'test/x.test.js', "test('x', () => {})\nconst a = 1\nconst b = 2\nconst c = 3\nconst d = 4\nconst e = 5\n")
+  const r = sdlc(repo, ['quality', 'tiny'])
+  assert.doesNotMatch(r.stdout, /test cases:/)
+  assert.equal(r.code, 0)
 })
 
 test('a test file that was text at base and became binary still counts at base', () => {
