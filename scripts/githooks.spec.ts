@@ -216,6 +216,20 @@ test('an unplanned tier M ad-hoc change is refused at push; prePush off skips; a
   assert.match(off.stdout, /off/)
 })
 
+const bash = (command: string) => {
+  const r = hook(repo, 'pre-bash', { tool_input: { command } })
+  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
+}
+
+test('the model may not bypass the git hooks; ordinary commits and pushes are untouched', () => {
+  sdlc(repo, ['init'])
+  for (const cmd of [
+    'git commit --no-verify -m x', 'git commit -nm x', 'git commit -m x --no-verif', 'git push --no-verify origin main',
+    'git config core.hooksPath /dev/null', 'git -c core.hooksPath=/x commit -m y',
+  ]) assert.equal(bash(cmd), 'deny', cmd)
+  for (const cmd of ['git commit -m "fix the -n flag"', 'git commit -am x', 'git push origin main', 'git status']) assert.notEqual(bash(cmd), 'deny', cmd)
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {

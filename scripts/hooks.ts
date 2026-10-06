@@ -214,6 +214,10 @@ function declaredCommands(slug: string | undefined): Set<string> {
   return new Set(cmds.map(normCmd))
 }
 
+// The person may bypass the git hooks (`git commit --no-verify`); the model fixes the findings instead.
+const NO_VERIFY = /\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*|\bgit\b[^;&|\n]*core\.hookspath/i
+export const bypassesGitHooks = (cmd: string): boolean => NO_VERIFY.test(cmd.replace(/"[^"]*"|'[^']*'/g, '""'))
+
 function hookPreBash(input: HookInput): void {
   if (!exists(SDLC)) return
   const cmd = String(input.tool_input?.command ?? '')
@@ -222,6 +226,9 @@ function hookPreBash(input: HookInput): void {
   if (/SDLC_HUMAN/i.test(plain) || HUMAN_ONLY.test(plain) || OBFUSCATED_HUMAN.test(plain) || !isSafeEvidenceCommand(cmd)) {
     return decide('deny', 'Evidence is human- or rig-only: approvals and waivers come from the person (/rig-approve, /rig-waive); '
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
+  }
+  if (bypassesGitHooks(cmd)) {
+    return decide('deny', 'The rig git hooks run the quality checks at commit and push. Only the person bypasses them (git commit --no-verify); fix the findings instead. See their state with `sdlc.ts hooks status`.')
   }
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands, input.cwd) : null
