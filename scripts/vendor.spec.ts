@@ -31,7 +31,7 @@ test('vendor --cloud writes project skills, agents and hooks with no plugin refe
   assert.ok(agents.some(f => f.endsWith('rig-scout.md')), 'scout agent')
   for (const f of [...skills, ...agents]) {
     const text = fs.readFileSync(f, 'utf8')
-    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/rig:(?!gen\b|drawn\b)[a-z]|\brig:(?!allow-secret|gen\b|drawn\b)[a-z]/, path.relative(repo, f))
+    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/rig:(?!gen(?![a-z-])|drawn(?![a-z-]))[a-z]|\brig:(?!allow-secret|gen(?![a-z-])|drawn(?![a-z-]))[a-z]/, path.relative(repo, f))
     assert.match(text, /^name: rig-/m, path.relative(repo, f))
   }
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/rig-check.yml')), 'templates copied')
@@ -166,4 +166,10 @@ test('the vendored wiki agent keeps the real rig:gen and rig:drawn markers while
   const wikiSkill = fs.readFileSync(path.join(repo, '.claude/skills/rig-wiki/SKILL.md'), 'utf8')
   assert.match(wikiSkill, /rig-wiki/)
   assert.doesNotMatch(wikiSkill, /\brig:(?!gen|drawn)[a-z]/)
+})
+
+test('only the exact rig:gen and rig:drawn names are exempt from the rig: rewrite', async () => {
+  const { forProject } = await import('./vendor.ts')
+  assert.equal(forProject('rig:generate rig:gen-foo rig:drawn-x /rig:generate'), 'rig-generate rig-gen-foo rig-drawn-x /rig-generate')
+  assert.equal(forProject('<!-- rig:gen:NAME --> <!-- /rig:gen --> <!-- rig:drawn -->'), '<!-- rig:gen:NAME --> <!-- /rig:gen --> <!-- rig:drawn -->')
 })
