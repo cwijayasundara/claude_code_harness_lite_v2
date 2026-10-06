@@ -597,7 +597,7 @@ Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog
 
 ## 15. v0.5: rig learn
 
-`rig learn` improves the harness from evidence the harness already stores, with the model frozen and zero tokens (`learn` runs and writes the proposals, `learn show` reprints them, `--min-changes N` overrides the 10-change minimum). Spec: [docs/superpowers/specs/2026-10-04-rig-learn-design.md](docs/superpowers/specs/2026-10-04-rig-learn-design.md).
+`rig learn` improves the harness from evidence the harness already stores, with the model frozen and zero tokens (`learn` runs and writes the proposals, `learn show` reprints them, `--min-changes N` overrides the 10-change minimum).
 
 - **Runs on its own.** The mod runs `learn --auto` at session start and after each main turn; it is silent unless a change shipped since the last run, then toasts what is promotable. It never promotes. `.github/workflows/learn.yml` does the same weekly for repos without the mod (spec §4.8).
 - **Signals.** Every change folder with a `ship.json`: `review.md`, `review-slice-*.md` and `review-pr.md` findings, `events.jsonl` blocks, `waivers.jsonl`, and the diff rebuilt from `ship.json` plus git. Malformed evidence skips that change and is listed, never fails the run.
@@ -609,7 +609,6 @@ Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog
 
 ## 16. Enforcement everywhere (spec 5)
 
-Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md).
 
 **The problem.** A spike on 2026-10-06 ran the real hooks in a throwaway repo with no active change. The Stop gate already blocked a hardcoded secret, deleted test assertions, failing fast tests, a file written through Bash and a bad change the agent committed mid-turn. It left five gaps: (1) nothing runs outside a Claude turn (an IDE edit, another agent, a manual `git commit`); (2) warnings are invisible, so a 90-line file against a 60-line limit passed in silence; (3) the wiki drifts between ship and CI; (4) the Stop cap is soft, so a direct commit and push meets no refusal until CI; (5) the quality ratchet runs only at `/rig:sensors`.
 
@@ -656,7 +655,6 @@ Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/
 
 ## 17. DeepWiki-class wiki (spec 6)
 
-Spec: [docs/superpowers/specs/2026-10-06-wiki-deepwiki-design.md](docs/superpowers/specs/2026-10-06-wiki-deepwiki-design.md).
 
 **The problem.** The wiki was prose written by a model and checked only for citations and a surface hash. Four gaps: (1) the tables and diagrams a reader wants (module graph, files, entry points, dependencies, tests) were drawn by a model, at token cost, and drifted; (2) nothing said why code looks as it does, though `.sdlc/changes/` and git history know; (3) a reader could not ask a question of the wiki without reading it all; (4) refreshing the wiki needed a person in a session.
 
