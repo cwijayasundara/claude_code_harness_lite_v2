@@ -453,6 +453,13 @@ test('a substitution or variable standing where the program goes is read as git'
   allows(['$(date) status', '$(pwd)/script.sh arg', '$EDITOR notes.txt', '"$GIT" status'])
 })
 
+test('a shell after a reserved word, and csh, tcsh, fish, ash and mksh, are read too', () => {
+  denies([`if sh -c 'true; git commit -n'; then :; fi`, `for d in x; do sh -c 'cd x && git commit -n'; done`, `tcsh -c 'true; git commit -n'`,
+    `! sh -c 'git commit -n'`, `while bash -c 'true; git push --no-verify'; do :; done`, `fish -c 'true; git commit -n'`, `mksh -c 'true; git commit -n' 2>/dev/null`,
+    `echo $'x'; ash -c 'true; git commit -n'`, `csh <<'E'\ngit commit -n\nE`])
+  allows(['if true; then git status; fi', `tcsh -c 'echo hi'`, 'until git fetch; do sleep 1; done'])
+})
+
 const pre = (command: string) => JSON.parse(hook(repo, 'pre-bash', { tool_input: { command } }).stdout || '{}').hookSpecificOutput
 test('pre-bash denies a command past the guard limits and says to ask the person', () => {
   sdlc(repo, ['init'])

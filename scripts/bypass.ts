@@ -46,7 +46,8 @@ function aliasBypass(words: string[], depth: number): boolean {
   })
 }
 
-const SHELLS = /^(?:sh|bash|zsh|dash|ksh)$/i
+const SHELL_NAMES = 'sh|bash|zsh|dash|ksh|ash|mksh|csh|tcsh|fish'
+const SHELLS = new RegExp(`^(?:${SHELL_NAMES})$`, 'i')
 // A program's name as a case-insensitive filesystem (macOS, Windows) finds it: GIT, /usr/bin/Git and git.exe run git.
 const progName = (w: string): string => (w.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.exe$/, '')
 // The fallback for text the tokenizer refuses: quoted strings not starting with - are blanked for the flags (a message
@@ -92,6 +93,8 @@ const WRAPPERS = new Map<string, string[]>([
   ['nohup', []], ['time', []], ['command', []], ['builtin', []], ['setsid', []], ['stdbuf', ['-i', '-o', '-e']],
   ['doas', ['-u', '-C']], ['caffeinate', ['-t', '-w']], ['arch', ['-e', '-d']], ['ionice', ['-c', '-n', '-p']], ['chroot', ['--userspec', '--groups']],
 ])
+// Reserved words a command can follow (the tokenizer splits on ; so `then`, `do` and the like start a segment).
+const RESERVED = new Set(['!', 'if', 'then', 'elif', 'else', 'do', 'while', 'until'])
 // Wrapper options whose value is a whole command line (env -S), read as a payload.
 const LINE_VALUE = new Set(['-S', '--split-string'])
 const SHELL_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
@@ -102,7 +105,7 @@ function programAt(seg: string[]): { k: number; lines: number[] } {
   let k = 0
   const lines: number[] = []
   for (;;) {
-    while (/^\w+=/.test(seg[k] ?? '')) k++
+    while (/^\w+=/.test(seg[k] ?? '') || RESERVED.has(seg[k] ?? '')) k++
     const name = progName(seg[k] ?? '')
     const takes = WRAPPERS.get(name)
     if (!takes) return { k, lines }
@@ -223,7 +226,7 @@ export const bypassesGitHooks = (cmd: string): boolean => gitHooksBypass(cmd) !=
 // layer deeper, like a here-string). Null when the text cannot be followed (the caller then uses the regex).
 type Run = { text: string; deeper: boolean }
 type Inert = { text: string; runs: Run[]; end: number }
-const READS_SCRIPT = /(?:^|[\s/])(?:sh|bash|zsh|dash|ksh|eval)(?:\.exe)?(?:\s|$)/i
+const READS_SCRIPT = new RegExp(`(?:^|[\\s/])(?:${SHELL_NAMES}|eval)(?:\\.exe)?(?:\\s|$)`, 'i')
 const unquote = (w: string): string => w.replace(/'([^']*)'|"((?:[^"\\]|\\[^])*)"|\\([^])/g,
   (_m, a?: string, b?: string, c?: string) => a ?? (b === undefined ? c ?? '' : b.replace(/\\(["\\$`\n])/g, '$1')))
 // $'...' as bash decodes it (\xHH, \uHHHH, octal, \n \t ..., \c), so a flag spelled with escapes is still seen.
@@ -447,7 +450,7 @@ function inert(src: string, start = 0, close = ''): Inert | null {
 // The last resort, for text even inert() cannot follow: the regex, and the words a shell -c or eval runs, unquoted
 // and read again one layer deeper (past the bound: denied).
 // Linear by construction: the shell word is found once, then its words are read one at a time (no nested quantifiers).
-const SHELL_AT = /(?:^|[\s;&|(`/])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?=\s)/gi
+const SHELL_AT = new RegExp(`(?:^|[\\s;&|(\`/])(?:${SHELL_NAMES})(?:\\.exe)?(?=\\s)`, 'gi')
 const NEXT_WORD = /[ \t]+((?:'[^']*'|"(?:[^"\\]|\\[^])*"|\\[^]|[^\s;&|'"\\])+)/y
 function shellPayloads(cmd: string): string[] {
   const found: string[] = []
