@@ -466,6 +466,16 @@ test('a bare \\x, \\u or \\U in $\'...\' stays literal; sudo option clusters and
     `su me --command='true; git commit -n'`, `echo $'\\x'; git commit -"n" -m x`])
 })
 
+test('wrapper option clusters are walked as getopt does: the first value-taking letter takes the rest, or the next word', () => {
+  denies([`env -uu sh -c 'git commit -n'`, `sudo -pu sh -c 'git commit -n'`, `sudo -Eu me sh -c 'git commit -n'`, `env -u X sh -c 'git commit -n'`,
+    `timeout -s KILL 9 sh -c 'git commit -n'`, `env -uu sh -c 'true; git commit -n'`, `sudo -pu sh -c 'true; git commit -n'`,
+    `xargs -0I x sh -c 'true; git commit -n'`, `env -iu X sh -c 'true; git commit -n'`, `nice -n5 sh -c 'true; git commit -n'`,
+    `timeout -sKILL 9 sh -c 'true; git commit -n'`, `sudo --user=me sh -c 'true; git commit -n'`, `sudo --user me sh -c 'true; git commit -n'`,
+    `bash -eo pipefail -c 'true; git commit -n'`, `bash -c -e 'true; git commit -n'`, `env -iS 'sh -c "true; git commit -n"'`,
+    `env -iS'sh -c "true; git commit -n"'`])
+  allows([`env -uu sh -c 'git status'`, 'sudo -Eu me ls', `bash -eo pipefail -c 'git status'`])
+})
+
 const pre = (command: string) => JSON.parse(hook(repo, 'pre-bash', { tool_input: { command } }).stdout || '{}').hookSpecificOutput
 test('pre-bash denies a command past the guard limits and says to ask the person', () => {
   sdlc(repo, ['init'])

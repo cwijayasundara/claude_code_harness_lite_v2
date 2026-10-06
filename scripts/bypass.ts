@@ -95,8 +95,6 @@ const WRAPPERS = new Map<string, string[]>([
 ])
 // Reserved words a command can follow (the tokenizer splits on ; so `then`, `do` and the like start a segment).
 const RESERVED = new Set(['!', 'if', 'then', 'elif', 'else', 'do', 'while', 'until'])
-// Wrapper options whose value is a whole command line (env -S), read as a payload.
-const LINE_VALUE = new Set(['-S', '--split-string'])
 const SHELL_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
 
 type Payload = { text: string; words: string[] } // a command line a segment runs, and the words it came from
@@ -118,10 +116,17 @@ function programAt(seg: string[]): { k: number; lines: Payload[] } {
     while ((seg[k] ?? '').startsWith('-')) {
       const o = seg[k++] ?? ''
       if (o === '--') break
-      const line = name === 'env' ? attached(o, '-S', '--split-string') : null
-      if (line !== null) lines.push({ text: line, words: [o] })
-      else if (name === 'env' && LINE_VALUE.has(o) && k < seg.length) lines.push({ text: seg[k] ?? '', words: [seg[k] ?? ''] })
-      if (takes.includes(o) || (/^-[a-zA-Z]{2,}$/.test(o) && takes.includes(`-${o.at(-1)}`))) k++
+      // As getopt reads a short cluster: the first value-taking letter takes the rest of the word, or the next word.
+      let letter = ''
+      let value: string | null = null
+      if (/^-[^-]/.test(o)) {
+        const j = [...o.slice(1)].findIndex(ch => takes.includes(`-${ch}`)) + 1
+        if (j > 0) (letter = o[j] ?? ''), (value = o.slice(j + 1) || null)
+      } else if (takes.includes(o)) letter = o
+      else value = attached(o, '-S', '--split-string') // --split-string=...; other long options with = take nothing more
+      if (letter && value === null) k++ // the value is the next word
+      const line = letter === 'S' || letter === '--split-string' ? (value ?? seg[k - 1] ?? '') : !letter && value !== null ? value : null
+      if (name === 'env' && line !== null) lines.push({ text: line, words: [value === null ? seg[k - 1] ?? '' : o] })
     }
     if (name === 'timeout' || name === 'chroot') k++ // the duration, the new root
   }
@@ -144,13 +149,20 @@ function payloads(seg: string[]): Payload[] {
       else if (x === '-c' || x === '--command') word(i + 1)
     }
   } else if (SHELLS.test(progName(w))) {
-    for (let i = k + 1; i < seg.length && /^[-+]./.test(seg[i] ?? '') && seg[i] !== '--'; i++) {
-      if (SHELL_VALUE.has(seg[i] ?? '')) i++
-      else if (/^-[a-zA-Z]+$/.test(seg[i] ?? '') && (seg[i] ?? '').includes('c')) {
-        word(seg[i + 1] === '--' ? i + 2 : i + 1)
-        break
-      }
+    // With -c anywhere among the shell's options, the first operand after them is the command (-o and -O take a value).
+    let c = false
+    let i = k + 1
+    for (; i < seg.length; i++) {
+      const o = seg[i] ?? ''
+      if (o === '--') { i++; break }
+      if (!/^[-+]./.test(o)) break
+      if (SHELL_VALUE.has(o)) { i++; continue }
+      const cl = /^[-+]([a-zA-Z]+)$/.exec(o)?.[1]
+      if (!cl) continue
+      if (o.startsWith('-') && cl.includes('c')) c = true
+      if ([...cl].findIndex(ch => ch === 'o' || ch === 'O') === cl.length - 1) i++
     }
+    if (c) word(i)
   }
   return found
 }
