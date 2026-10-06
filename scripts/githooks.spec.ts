@@ -408,6 +408,35 @@ test('one construct the sanitizer cannot follow does not drop the whole command 
     'stdbuf -oL git status', `su me -c 'git status'`])
 })
 
+test('every limit of the guard fails closed: a command too large, deep or slow to read is denied, never passed', () => {
+  const timed = (c: string, budget?: number): [string | null, number] => {
+    const t = performance.now()
+    return [gitHooksBypass(c, budget), performance.now() - t]
+  }
+  const expect = (c: string, want: string | null): void => {
+    const [r, ms] = timed(c)
+    assert.equal(r, want, c.slice(0, 40))
+    assert.ok(ms < 200, `${c.slice(0, 40)}: ${ms.toFixed(0)} ms`)
+  }
+  expect('echo ' + 'a'.repeat(20000) + '; git commit --no-verify', 'bypass')
+  expect('echo ' + 'a'.repeat(20000), null)
+  expect('true; '.repeat(5000) + 'git commit -n', 'bypass')
+  expect(`watch '` + 'git commit '.repeat(1500) + `'`, null) // the old regex took seconds on this
+  expect('cat <<E\nE\n'.repeat(5000) + 'echo $x', null)
+  expect('echo ' + '{a,b}'.repeat(22), 'limit') // four million words
+  expect('$('.repeat(20000) + 'true' + ')'.repeat(20000), 'limit') // deeper than the stack
+  expect('echo ' + 'a'.repeat(200_000), 'limit') // over the size cap
+  assert.equal(timed('git status', 0)[0], 'limit', 'out of time is denied')
+})
+
+const pre = (command: string) => JSON.parse(hook(repo, 'pre-bash', { tool_input: { command } }).stdout || '{}').hookSpecificOutput
+test('pre-bash denies a command past the guard limits and says to ask the person', () => {
+  sdlc(repo, ['init'])
+  const h = pre('echo ' + 'a'.repeat(200_000))
+  assert.equal(h?.permissionDecision, 'deny')
+  assert.match(h?.permissionDecisionReason ?? '', /too large or too deeply nested to check.*ask the person/)
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {

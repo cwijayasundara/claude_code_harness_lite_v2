@@ -4,10 +4,7 @@ import { tokenize } from './shell.ts'
 
 // The model may not switch the git hooks off (only the person does): --no-verify on commit or push (any prefix),
 // -n on commit, core.hooksPath in any spelling or scope, an alias that adds either, or rig's own uninstall / install --force.
-// Read on dequoted words; a command tokenize refuses ($(...), redirects, braces) falls back to a regex.
-const RIG_HOOKS_OFF = /sdlc\.(?:m?js|ts)\b[^;&|\n]*\bhooks\s+(?:uninstall\b|install\b[^;&|\n]*--force)/
-const NO_VERIFY_FLAGS = /\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*/i
-const NO_VERIFY_CONFIG = /\bgit\b[^;&|\n]*core\.hookspath/i
+// Read on dequoted words; what tokenize refuses is made readable by inert() first, and only the rest gets the regex.
 const GIT_GLOBAL_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix'])
 const COMMIT_VALUE = new Set(['-m', '-F', '-C', '-c', '-t', '--message', '--file', '--author', '--date', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--cleanup', '--trailer', '--template'])
 const MESSAGE = new Set(['-m', '-F', '--message', '--file'])
@@ -45,7 +42,7 @@ function aliasBypass(words: string[], depth: number): boolean {
     const m = /^alias\.[^=]*(?:=([^]*))?$/i.exec(w)
     if (!m) return false
     const value = m[1] ?? words[i + 1] ?? ''
-    return bypassesGitHooks(value.startsWith('!') ? value.slice(1) : `git ${value}`, depth + 1)
+    return reads(value.startsWith('!') ? value.slice(1) : `git ${value}`, depth + 1)
   })
 }
 
@@ -55,9 +52,33 @@ const progName = (w: string): string => (w.split(/[\\/]/).pop() ?? '').toLowerCa
 // The fallback for text the tokenizer refuses: quoted strings not starting with - are blanked for the flags (a message
 // that mentions --no-verify is fine), and core.hooksPath must share a line with git.
 function regexBypass(text: string): boolean {
+  tick()
   const flags = text.replace(/"([^"]*)"|'([^']*)'/g, (_m, a?: string, b?: string) => ((a ?? b ?? '').startsWith('-') ? ` ${a ?? b} ` : '""'))
   const plain = text.replace(/["'\\]/g, '')
-  return NO_VERIFY_FLAGS.test(flags) || NO_VERIFY_CONFIG.test(plain) || RIG_HOOKS_OFF.test(plain)
+  return flags.split(/[;&|\n]/).some(flagsLine) || plain.split(/[;&|\n]/).some(plainLine)
+}
+// The regexes, read line by line in linear time (a nested-quantifier regex took seconds on 15 KB): within one command
+// line, the first git and the first commit or push after it leave the longest tail, so testing that tail is the same.
+const after = (s: string, re: RegExp): string | null => {
+  const m = re.exec(s)
+  return m ? s.slice(m.index + m[0].length) : null
+}
+function flagsLine(line: string): boolean { // git ... commit ... --no-v or -..n..; git ... push ... --no-v
+  const g = after(line, /\bgit\b/i)
+  if (g === null) return false
+  const c = after(g, /\bcommit\b/i)
+  if (c !== null && (/--no-v/i.test(c) || c.split(/\s+/).slice(1).some(w => /^-[a-zA-Z]+$/.test(w) && /n/i.test(w)))) return true
+  const p = after(g, /\bpush\b/i)
+  return p !== null && /--no-v/i.test(p)
+}
+function plainLine(line: string): boolean { // git ... core.hooksPath; sdlc.ts ... hooks uninstall | install ... --force
+  const g = after(line, /\bgit\b/i)
+  if (g !== null && /core\.hookspath/i.test(g)) return true
+  const s = after(line, /sdlc\.(?:m?js|ts)\b/)
+  if (s === null) return false
+  const force = s.lastIndexOf('--force')
+  for (const m of s.matchAll(/\bhooks\s+(uninstall|install)\b/g)) if (m[1] === 'uninstall' || m.index < force) return true
+  return false
 }
 // A git command at the start of one word (an argument of another program, e.g. watch 'git ...') gets the regex.
 const embeddedGit = (words: string[]): boolean => words.some(w => /^\s*git(?:\.exe)?\s/i.test(w) && regexBypass(w))
@@ -122,6 +143,7 @@ function payloadSpans(seg: string[]): [number, number][] {
 }
 
 function segmentBypasses(seg: string[], depth: number): boolean {
+  tick()
   // A payload is read the same way, bounded; past the bound it is denied (nested), never passed unread.
   const spans = payloadSpans(seg)
   if (spans.some(span => deeper(seg.slice(...span).join(' '), depth))) return true
@@ -149,12 +171,33 @@ function segmentBypasses(seg: string[], depth: number): boolean {
   return scanned.some(w => HOOKS_PATH.test(w)) || aliasBypass(scanned, depth) || embedded(scanned)
 }
 
+// Limits, each failing closed (the command is denied as 'limit', never passed): a command over MAX_COMMAND characters;
+// more than BUDGET_MS of work (checked as it goes); more than MAX_WORDS words from brace expansion; and anything that
+// throws, such as nesting deeper than the stack. The depth bound for shells and evals is 'nested' (also denied).
+const MAX_COMMAND = 128 * 1024
+const BUDGET_MS = 100
+const MAX_WORDS = 4096
+let deadline = Infinity
+let braceWords = 0
+const tick = (): void => { if (performance.now() >= deadline) throw new Error('out of time') }
+
 let nestedTooDeep = false
-// Why the model may not run cmd: 'bypass', 'nested' (shells or evals more than three deep), or null.
-export function gitHooksBypass(cmd: string): 'bypass' | 'nested' | null {
+// Why the model may not run cmd: 'bypass', 'nested' (shells or evals more than three deep), 'limit' (too large, deep or
+// slow to read), or null.
+export function gitHooksBypass(cmd: string, budgetMs = BUDGET_MS): 'bypass' | 'nested' | 'limit' | null {
   nestedTooDeep = false
-  return bypassesGitHooks(cmd) ? (nestedTooDeep ? 'nested' : 'bypass') : null
+  braceWords = 0
+  if (cmd.length > MAX_COMMAND) return 'limit'
+  deadline = performance.now() + budgetMs
+  try {
+    return reads(cmd) ? (nestedTooDeep ? 'nested' : 'bypass') : null
+  } catch {
+    return 'limit'
+  } finally {
+    deadline = Infinity
+  }
 }
+export const bypassesGitHooks = (cmd: string): boolean => gitHooksBypass(cmd) !== null
 
 // For the guard only: what tokenize refuses but leaves a command readable is swapped for an inert word (_) or removed,
 // and the commands it runs are returned to be read too. $(...), backticks and <(...) >(...) become _ and their bodies
@@ -181,7 +224,10 @@ const [BO, BC, BE] = ['\u0001', '\u0002', '\u0003']
 const literal = (w: string): string => w.replaceAll(BO, '{').replaceAll(BC, ',').replaceAll(BE, '}')
 function expandBraces(w: string): string[] {
   const open = w.indexOf(BO)
-  if (open < 0) return [literal(w)]
+  if (open < 0) {
+    if (++braceWords > MAX_WORDS) throw new Error('too many words')
+    return [literal(w)]
+  }
   const cuts: number[] = []
   for (let i = open, depth = 0; i < w.length; i++) {
     if (w[i] === BO) depth++
@@ -191,7 +237,7 @@ function expandBraces(w: string): string[] {
       const tail = w.slice(i + 1)
       if (!cuts.length) return expandBraces(`${head}{${w.slice(open + 1, i)}}${tail}`)
       const words = [open, ...cuts].flatMap((c, j) => expandBraces(head + w.slice(c + 1, cuts[j] ?? i) + tail))
-      return words.length > 256 ? [literal(w)] : words
+      return words
     }
   }
   return [literal(w)]
@@ -204,7 +250,12 @@ function inert(src: string, start = 0, close = ''): Inert | null {
   let braces = 0
   const runs: Run[] = []
   const docs: { delim: string; tabs: boolean; run: boolean }[] = []
-  const shellHere = (): boolean => READS_SCRIPT.test(out.split(/[;&|\n]/).pop() ?? '')
+  const shellHere = (): boolean => { // a shell or eval earlier in the current command
+    let j = out.length
+    while (j > 0 && !';&|\n'.includes(out[j - 1] ?? '')) j--
+    return READS_SCRIPT.test(out.slice(j))
+  }
+  const endsIn = (set: string): boolean => out === '' || set.includes(out.at(-1) ?? '') // set: characters, \s as space/tab/newline
   const wordEnd = (i: number): number => { // end of the shell word at i (its substitutions are run); -1 when empty or unterminated
     const from = i
     let wq = ''
@@ -233,6 +284,7 @@ function inert(src: string, start = 0, close = ''): Inert | null {
     return wq || i === from ? -1 : i
   }
   for (let i = start; i < src.length; i++) {
+    if ((i & 1023) === 0) tick()
     const ch = src[i] ?? ''
     const next = src[i + 1] ?? ''
     if (q === "'") { out += ch; if (ch === "'") q = ''; continue }
@@ -278,7 +330,7 @@ function inert(src: string, start = 0, close = ''): Inert | null {
     }
     if (ch === '$' && next === '"') continue // a locale string: the quotes that follow are read as usual
     if (ch === "'" || ch === '"') { q = ch; out += ch; continue }
-    if (ch === '#' && /(?:^|[\s;&|()])$/.test(out)) {
+    if (ch === '#' && endsIn(' \t\n;&|()')) {
       while (i + 1 < src.length && src[i + 1] !== '\n') i++
       continue
     }
@@ -296,7 +348,9 @@ function inert(src: string, start = 0, close = ''): Inert | null {
       continue
     }
     if (ch === '<' || ch === '>' || (ch === '&' && next === '>')) {
-      out = out.replace(/(^|[\s;&|()])\d+$/, '$1') // an fd number before the operator
+      let d = out.length
+      while (d > 0 && /\d/.test(out[d - 1] ?? '')) d--
+      if (d < out.length && (d === 0 || ' \t\n;&|()'.includes(out[d - 1] ?? ''))) out = out.slice(0, d) // an fd number before it
       let j = ch === '&' ? i + 2 : i + 1
       if (src[j] === '>' || (ch === '>' && src[j] === '|')) j++
       else if (ch !== '&' && src[j] === '&') {
@@ -341,7 +395,7 @@ function inert(src: string, start = 0, close = ''): Inert | null {
       out += ' ; '
       continue
     }
-    if ((ch === '{' || ch === '}') && /(?:^|[\s;&|])$/.test(out) && /^(?:$|[\s;&|])/.test(next)) { out += ' ; '; continue }
+    if ((ch === '{' || ch === '}') && endsIn(' \t\n;&|') && (next === '' || ' \t\n;&|'.includes(next))) { out += ' ; '; continue }
     if (ch === '{') { braces++; out += BO; continue }
     if (ch === ',' && braces > 0) { out += BC; continue }
     if (ch === '}' && braces > 0) { braces--; out += BE; continue }
@@ -376,29 +430,31 @@ function topLevel(cmd: string): string[] {
   return parts.filter(p => p.trim())
 }
 function lastResort(cmd: string, depth: number): boolean {
+  tick()
   if (regexBypass(cmd)) return true
   // One construct nothing can follow must not hide the other commands: each top-level command is read on its own.
   const parts = topLevel(cmd)
-  if (parts.length > 1 && parts.some(p => bypassesGitHooks(p, depth))) return true
+  if (parts.length > 1 && parts.some(p => reads(p, depth))) return true
   const payloads = [...[...cmd.matchAll(SHELL_PAYLOAD)].map(m => unquote(m[1] ?? '')), ...[...cmd.matchAll(EVAL_PAYLOAD)].map(m => (m[1] ?? '').replace(/["'\\]/g, ''))]
   return payloads.some(p => deeper(p, depth))
 }
 // A payload one layer deeper: read as usual within the bound; past it, denied (nested) unless the regex sees a bypass.
 function deeper(payload: string, depth: number): boolean {
   if (!payload.trim()) return false
-  if (depth < 3) return bypassesGitHooks(payload, depth + 1)
+  if (depth < 3) return reads(payload, depth + 1)
   if (!regexBypass(payload)) nestedTooDeep = true
   return true
 }
 
-export function bypassesGitHooks(cmd: string, depth = 0): boolean {
+function reads(cmd: string, depth = 0): boolean {
+  tick()
   let { segs, bad } = tokenize(cmd)
   if (bad) {
     const r = inert(cmd)
-    if (r?.runs.some(run => (run.deeper ? deeper(run.text, depth) : bypassesGitHooks(run.text, depth)))) return true
+    if (r?.runs.some(run => (run.deeper ? deeper(run.text, depth) : reads(run.text, depth)))) return true
     if (r) ({ segs, bad } = tokenize(r.text))
     if (bad) return lastResort(cmd, depth)
-    segs = segs.map(seg => seg.flatMap(expandBraces))
+    segs = segs.map(seg => seg.flatMap(w => (w.includes(BO) ? expandBraces(w) : [w])))
   }
   return segs.some(seg => segmentBypasses(seg, depth))
 }
