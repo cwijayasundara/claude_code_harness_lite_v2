@@ -11,7 +11,7 @@ import { BLOCKS, STRUCTURAL, INDEX_BLOCKS, SURFACE, spliceBlock, blockBody, page
 // Every human-readable line passes through here once (rows keep their newlines); --json output stays raw because JSON.stringify escapes it.
 const clean = (s: string): string => s.split('\n').map(printable).join('\n')
 const say = (s: string): void => out(clean(s))
-const die = (s: string): never => fail(clean(s))
+function die(s: string): never { return fail(clean(s)) }
 const warn = (s: string): void => { process.stderr.write(clean(s)) }
 
 export const WIKI_DIR = 'docs/wiki'
