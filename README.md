@@ -29,7 +29,7 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
  ┌────────────────────────────────────────────────────────────────────────┐
  │ YOU            /rig:start  /rig:next  /rig-approve  /rig-waive         │  intent, approval
  ├────────────────────────────────────────────────────────────────────────┤
- │ SKILLS (17)    start design plan diagnose build test sensors pr …      │  the stages: prompts
+ │ SKILLS (18)    start design plan diagnose build test sensors pr ask …  │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
  │ AGENTS (6)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
  │                reviewer·opus  verifier·sonnet  wiki                    │  small fresh contexts
@@ -153,9 +153,10 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig:rule "<what recurs>"` | The agent broke the same convention twice: promote it to a mechanical rule. |
 | `/rig:learn` | After a batch of changes ships: find recurring findings and waiver churn, propose edits, replay each. |
 | `/rig:metrics [days]` | You want the 12 playbook metrics plus cost per change, stage and agent. |
-| `/rig:wiki` | After init, or when pages go stale: refresh `docs/wiki/`. |
+| `/rig:wiki` | After init, or when pages go stale: regenerate the diagrams and tables (zero tokens) and rewrite stale prose. |
+| `/rig:ask "<question>"` | You want to know how something works: a Haiku scout answers from the wiki and the lines it cites. |
 
-**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `learn`, `wiki`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
+**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `learn`, `wiki (status, build [--check], search, stamp)`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
 
 ### What fires when (the automatic edges)
 
@@ -170,6 +171,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print with their fix text, blocks refuse the commit (during a merge or rebase only the fast commands are skipped). |
 | You push | git pre-push | The branch's commits (against its merge-base with the trunk, as CI) go through the ship checks and the quality ratchet; warnings print with their fix text; `githooks.prePush: "off"` disables it. |
 | A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
+| A change merges to main | CI `rig-wiki` | Regenerates `docs/wiki/` (zero tokens) and, with a model secret, rewrites stale prose; opens one PR, never pushes to main. Two jobs: `generate` (read-only token, the only job that runs the model) and `publish` (write token, no model). `RIG_WIKI_TOKEN` is optional so required checks start on the PR. |
 | A change ships | mod, weekly `learn.yml` | `/rig:learn` runs and toasts what is promotable. |
 
 ## Install
@@ -214,7 +216,8 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 | `/rig:learn` | Reads every shipped change, finds recurring review findings and waiver churn, and proposes harness edits, each replayed against past diffs. Zero tokens. A person promotes a passing rule with `/rig-approve <id> learn`. With the mod it also runs by itself when a change ships and toasts what is promotable; a weekly CI job covers repos without the mod. |
 | `/rig-status` | Where every change stands. Zero tokens. |
 | `/rig:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
-| `/rig:wiki` | Builds or updates the code wiki in `docs/wiki/`. |
+| `/rig:wiki` | Builds or updates the code wiki in `docs/wiki/`: `sdlc.ts wiki build` regenerates the computed blocks (a module diagram from real imports, file, entry-point, dependency and test tables, a history) at zero tokens, and the agent writes only the plain-words prose. `wiki build --check` fails on drift of the structural blocks; `wiki status` lists `stale`, `missing`, `uncovered`, `generated`, `prose` and `invalid` (a broken manifest is reported, never a crash). |
+| `/rig:ask "<question>"` | Answers from the wiki and the source lines it cites; `sdlc.ts wiki search "<terms>"` is the zero-token ranked search underneath. Wiki text is treated as untrusted data. |
 | `/rig:metrics [days]` | The playbook's 12 metrics (leading and lagging per stage) plus cost per change, stage and agent. |
 
 ## Team install
@@ -253,19 +256,20 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 | Part | Role |
 |---|---|
-| `skills/` (17) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
+| `skills/` (18) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
 | `agents/scout.md` | Haiku, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md and plan.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
 | `agents/reviewer.md` | **Opus 5.5**, high effort. One independent review per change, keeping findings at confidence 80 or above. |
 | `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
-| `agents/wiki.md` | Builds and refreshes the code wiki pages. |
+| `agents/wiki.md` | Writes the plain-words prose of one wiki page; scripts own the rest. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
-| `scripts/*.ts` (23, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `wiki` (surface hash and stale pages), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
+| `scripts/*.ts` (28, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `wikigraph`, `wikigen`, `wikisearch`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `wiki` (surface hash and stale pages), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
 | `templates/rig-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 | `templates/rig-review.yml` | One background Claude review per PR, for tier S and M and as a second look on L. |
+| `templates/rig-wiki.yml` | Refreshes the wiki through one pull request. Optional secrets: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` (prose rewrite only), `RIG_WIKI_TOKEN` (so required checks start on the PR). Untested on GitHub so far. |
 
 Artifacts live in **`.sdlc/`** at the repo root and are committed; `usage.jsonl` is gitignored. They are not under `.claude/`, which Claude Code protects: writes there always prompt, or are denied in headless runs, and allow rules can't change that.
 

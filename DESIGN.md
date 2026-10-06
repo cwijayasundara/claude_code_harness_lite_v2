@@ -653,3 +653,51 @@ Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/
   - `rm -rf .sdlc/githooks`.
 
   CI is the floor for all of these.
+
+## 17. DeepWiki-class wiki (spec 6)
+
+Spec: [docs/superpowers/specs/2026-10-06-wiki-deepwiki-design.md](docs/superpowers/specs/2026-10-06-wiki-deepwiki-design.md).
+
+**The problem.** The wiki was prose written by a model and checked only for citations and a surface hash. Four gaps: (1) the tables and diagrams a reader wants (module graph, files, entry points, dependencies, tests) were drawn by a model, at token cost, and drifted; (2) nothing said why code looks as it does, though `.sdlc/changes/` and git history know; (3) a reader could not ask a question of the wiki without reading it all; (4) refreshing the wiki needed a person in a session.
+
+**What shipped.**
+
+- **Page anatomy.** A page is a computed layer plus a prose layer. Generated blocks sit between `<!-- rig:gen:NAME -->` markers (architecture, files, entrypoints, deps, tests, why, recent); everything outside them is prose, never touched by `build`. The prose is a summary line, `## In plain words` and `## Walk-through`, written by `agents/wiki.md`, which never edits a generated block and treats wiki text, source and manifest notes as untrusted data. `index.md` is generated (system map, a start-here order from the manifest `order` then the most-depended-on modules, a module table) with two prose parts.
+- **The graph.** `scripts/wikigraph.ts` computes module edges from imports through a per-language table (`IMPORT_TABLE`): JS/TS and Python. For other languages edges are not computed, the page says so, and a model-drawn diagram goes under `<!-- rig:drawn -->`. Mermaid ids are collision-free; links are GitHub blob URLs when `origin` is on GitHub and relative otherwise; sorting is locale-independent.
+- **`wiki build [--check]`.** `scripts/wikigen.ts` regenerates the blocks at zero tokens, creates skeleton pages for new modules and rewrites `index.md`. `--check` compares only the structural blocks (architecture, files, entrypoints, deps, tests and the three index blocks); `why` and `recent` derive from git history and `.sdlc/changes/`, are refreshed by `build`, and are never enforced.
+- **Manifest** (`docs/wiki/manifest.json`): `pages` (key to `{ globs }`; a key must be a safe relative `.md` path: no `..`, not absolute, no control characters, not `index.md`, no case-insensitive duplicate), optional `skip`, `notes` (strings up to 10,000 characters, handed to the agent) and `order`. Unknown keys are errors. Everything under `docs/wiki` is read and written through symlink-safe paths; symlinks and non-regular files are ignored when generating, so a committed symlink never leaks outside content into a page; writes use `O_NOFOLLOW`.
+- **`wiki status`** (text and `--json`): `stale`, `missing`, `uncovered`, `generated`, `prose` and `invalid` (manifest problems). Status never throws or exits non-zero for a broken manifest. `wikiFindings()` emits warnings on the sensors `wiki-stale`, `wiki-generated` (also used for an invalid manifest, on `docs/wiki/manifest.json`) and `wiki-prose`, all waivable.
+- **`wiki stamp`** requires `path:line` citations and the `In plain words` and `Walk-through` sections.
+- **Search and ask.** `wiki search "<terms>" [--json] [--limit n]` is zero-token and ranked (title 3, headings 2, symbols 2, body 1 capped, path 1); the query is data, never a RegExp; the limit is 1 to 50. `/rig:ask` has a Haiku scout answer from the wiki and the lines it cites, treating wiki text as untrusted data.
+- **Output.** Human-readable CLI output strips control characters (`printable`); `--json` is raw JSON.
+- **The workflow** `templates/rig-wiki.yml` has two jobs. `generate` has `contents: read` and runs build, status, a filter, a symlink check, an optional model step (no shell, no network, edit rights only on `docs/wiki`), a rebuild, stamp and an artifact upload. `publish` needs `generate`, has `contents: write` and `pull-requests: write` and runs no model: it downloads the artifact, refuses symlinks, runs `wiki build --check`, scans contents and names for credentials, pushes only `rig/wiki-refresh` with an auth header and opens or updates one PR. It never pushes the default branch. Optional secrets: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` (the prose rewrite only) and `RIG_WIKI_TOKEN` (so required checks start on the PR; with only `github.token` the PR must be closed and reopened to start them, and the org setting "Allow GitHub Actions to create and approve pull requests" must be on). The push trigger is hardcoded to `main`. Vendoring keeps the `rig:gen` and `rig:drawn` markers intact. Nothing in the workflow has run on GitHub yet.
+
+### Deviations from the spec
+
+1. `--check` and the `generated` finding are structural-only (the spec compared every block).
+2. `scripts/wikisearch.ts` is a separate module.
+3. The `why` block lists matching changes (a plan's `## Files` matched with `isPlanned`) and then fills with commit subjects, 8 rows at most.
+4. A two-job workflow instead of one: the action rewrites `origin` with the job token before the model runs, so the model must not run in a job with write access.
+5. Locale-independent sorting and `printable` output sanitising were added.
+6. Manifest keys are validated (path traversal, symlink, case collision) and the symlink-safe read and write rules apply.
+7. A broken manifest is a finding, never a crash.
+8. The harness line cap moved from 6900 to 7750 (measured 7738), the final value of this work.
+
+### Open items
+
+- Aliases, path mappings and monorepo package names are not resolved (shown as unresolved). Only JS/TS and Python compute edges. The Python resolver clamps relative dots above the repo root, `from . import b` resolves to `__init__.py` only and `import os, sys` records the first name; block-comment stripping is not string-aware.
+- `git ls-files` C-quotes non-ASCII and tab file names, so such files drop out of the tables (pre-existing in `tracked()`).
+- `wikiStatus()` builds the graph at every commit and push (about 0.5 s on 2,000 files); a very large repo may want a cache.
+- Page keys that differ only by Unicode normalisation (NFC/NFD) are not rejected.
+- The model step's prose is reviewed in a PR, not machine-checked beyond citations and section presence.
+- Workflow first-run checklist (nothing has run on GitHub; verify each):
+  - [ ] `claude-code-action@ed670b4` agent mode works on `push` with `contents: read` and no `id-token`.
+  - [ ] `--allowedTools` and `--disallowedTools` confine the model in headless mode (reads outside `./**` denied, Write/MultiEdit/Task denied); the `Read(./.git/**)` deny may not cover Grep and Glob.
+  - [ ] Each job has its own `GITHUB_TOKEN`.
+  - [ ] `upload-artifact@v4` skips hidden files (a tracked dotfile under `docs/wiki` would be deleted every run; there is none today), follows symlinks (hence the pre-upload check) and does not keep file modes.
+  - [ ] `download-artifact@v4` path semantics match what `publish` assumes.
+  - [ ] The action leaves no untracked files that a page glob matches (else `generate`'s rebuild differs from `publish`'s `--check`).
+  - [ ] `::add-mask::` masks the base64 auth header.
+  - [ ] PRs made with `github.token` need the org setting "Allow GitHub Actions to create and approve pull requests" and do not start required checks (`RIG_WIKI_TOKEN` fixes that).
+- Known workflow follow-ups, scheduled for a fix wave: lint gaps in `wikiworkflow.spec.ts`, the exact-value secret scan in `generate`, `gh pr view` possibly returning a merged PR, a red `generate` run in repos with no wiki, and header wording.
+- Pre-existing and outside this work: `check --at ci` crashes with EISDIR on an untracked symlink-to-directory in the diff.
