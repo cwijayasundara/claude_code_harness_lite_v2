@@ -160,3 +160,28 @@ test('a binary file under test/ is ignored by the count', () => {
   fs.writeFileSync(`${repo}/test/fixture.test.bin`, Buffer.from([0, 1, 2, 0, 3]))
   assert.doesNotMatch(sdlc(repo, ['quality', 'tiny']).stdout, /test cases:/)
 })
+
+test('moving a test file out of the test glob lowers the count and blocks', () => {
+  withTwoTests()
+  gitIn(repo, 'mv', 'test/a.test.js', 'src/moved.js')
+  const r = sdlc(repo, ['quality', 'tiny'])
+  assert.equal(r.code, 2)
+  assert.match(r.stdout, /test cases: base 2 → branch 0/)
+})
+
+test('moving a non-test file into the test glob does not count its old test( calls as base cases', () => {
+  withTwoTests()
+  write(repo, 'src/x.js', "test('x', () => {})\ntest('y', () => {})\ntest('z', () => {})\n")
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'x')
+  gitIn(repo, 'checkout', '-q', 'main'); gitIn(repo, 'merge', '-q', 'sdlc/tiny'); gitIn(repo, 'checkout', '-q', 'sdlc/tiny')
+  gitIn(repo, 'mv', 'src/x.js', 'test/x.test.js')
+  assert.doesNotMatch(sdlc(repo, ['quality', 'tiny']).stdout, /test cases:/)
+})
+
+test('a test file that was text at base and became binary still counts at base', () => {
+  withTwoTests()
+  fs.writeFileSync(`${repo}/test/a.test.js`, Buffer.from([0, 1, 2, 0, 3]))
+  const r = sdlc(repo, ['quality', 'tiny'])
+  assert.equal(r.code, 2)
+  assert.match(r.stdout, /test cases: base 2 → branch 0/)
+})

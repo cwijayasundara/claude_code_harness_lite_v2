@@ -100,7 +100,7 @@ export function showMany(ref: string, paths: string[]): Map<string, string> {
     try {
       buf = execFileSync('git', ['cat-file', '--batch'], { cwd: ROOT, input: safe.map(p => `${ref}:${p}`).join('\n') + '\n', maxBuffer: 256 * 1024 * 1024 })
     } catch {
-      // fall through: every path is read again below
+      // fall through: any failure (e.g. the 256 MB buffer cap) re-reads every path with `git show` below
     }
     let at = 0
     for (const p of safe) {

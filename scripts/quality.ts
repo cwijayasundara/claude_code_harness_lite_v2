@@ -77,11 +77,10 @@ function baseCounts(base: string, categories: [string, { cmd: string; count: str
 // one `git cat-file --batch`, the branch side from disk. Untouched files count equally on both sides, so this equals
 // comparing the whole trees without reading them.
 export function testDelta(base: string, diffs: FileDiff[], config: SensorConfig): { before: number; after: number } {
-  const tests = diffs.filter(d => isTest(d.file, config) && !d.binary)
-  const existing = tests.filter(d => d.status !== 'A')
+  const existing = diffs.filter(d => d.status !== 'A' && isTest(d.from ?? d.file, config))
   const atBase = showMany(base, existing.map(d => d.from ?? d.file))
   const before = testCaseCount(existing.map(d => atBase.get(d.from ?? d.file) ?? ''))
-  const after = testCaseCount(tests.filter(d => d.status !== 'D').map(d => read(path.join(ROOT, d.file))))
+  const after = testCaseCount(diffs.filter(d => d.status !== 'D' && !d.binary && isTest(d.file, config)).map(d => read(path.join(ROOT, d.file))))
   return { before, after }
 }
 
