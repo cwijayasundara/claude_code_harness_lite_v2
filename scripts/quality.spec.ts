@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 import { countFindings } from './quality.ts'
+import { showMany } from './diffs.ts'
 
 let repo: string
 beforeEach(() => { repo = makeRepo() })
@@ -113,4 +114,49 @@ test('the base cache is keyed on the command; unmeasured bases are not cached', 
   write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { deps: { cmd: 'definitely-not-a-command-xyz', count: 'exit' } } }))
   sdlc(repo, ['quality', 'tiny'])
   assert.equal(JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality.deps, undefined)
+})
+
+test('showMany reads many blobs in one call, maps a missing path to an empty string and survives a newline in a name', () => {
+  const got = showMany('HEAD', ['package.json', 'no/such/file.txt', 'scripts/quality.ts', 'odd\nname.txt'])
+  assert.match(got.get('package.json') ?? '', /"name": "rig-plugin"/)
+  assert.equal(got.get('no/such/file.txt'), '')
+  assert.match(got.get('scripts/quality.ts') ?? '', /The sensors node/)
+  assert.equal(got.get('odd\nname.txt'), '')
+  assert.equal(showMany('HEAD', []).size, 0)
+})
+
+const withTwoTests = () => {
+  onBranch()
+  write(repo, 'test/a.test.js', "test('a', () => {})\ntest('b', () => {})\n")
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'tests')
+  gitIn(repo, 'checkout', '-q', 'main'); gitIn(repo, 'merge', '-q', 'sdlc/tiny'); gitIn(repo, 'checkout', '-q', 'sdlc/tiny')
+}
+
+test('a renamed test file keeps its cases: no test-count finding', () => {
+  withTwoTests()
+  gitIn(repo, 'mv', 'test/a.test.js', 'test/b.test.js')
+  const r = sdlc(repo, ['quality', 'tiny'])
+  assert.doesNotMatch(r.stdout, /test cases:/)
+})
+
+test('deleting a test file lowers the count and blocks', () => {
+  withTwoTests()
+  fs.rmSync(`${repo}/test/a.test.js`)
+  const r = sdlc(repo, ['quality', 'tiny'])
+  assert.equal(r.code, 2)
+  assert.match(r.stdout, /test cases: base 2 → branch 0/)
+})
+
+test('adding tests, editing a non-test file and an empty test file never block', () => {
+  withTwoTests()
+  write(repo, 'test/c.test.js', "test('c', () => {})\n")
+  write(repo, 'test/empty.test.js', '')
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  assert.doesNotMatch(sdlc(repo, ['quality', 'tiny']).stdout, /test cases:/)
+})
+
+test('a binary file under test/ is ignored by the count', () => {
+  withTwoTests()
+  fs.writeFileSync(`${repo}/test/fixture.test.bin`, Buffer.from([0, 1, 2, 0, 3]))
+  assert.doesNotMatch(sdlc(repo, ['quality', 'tiny']).stdout, /test cases:/)
 })

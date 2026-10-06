@@ -3,12 +3,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { ROOT, checkSlug, defaultBase, git, gitIn, read, out, fail, type Args } from './core.ts'
+import { ROOT, checkSlug, defaultBase, gitIn, read, out, fail, type Args } from './core.ts'
 import { runCommand } from './runs.ts'
 import { readRatchet, writeRatchet, recordRound, testCaseCount } from './ratchet.ts'
 import { loadConfig, runChecks } from './check.ts'
-import { branchDiff, showAt } from './diffs.ts'
-import { QUALITY_CATEGORIES, isTest, formatFindings, type Finding } from './model.ts'
+import { branchDiff, showAt, showMany } from './diffs.ts'
+import { QUALITY_CATEGORIES, isTest, formatFindings, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 
 export type CategoryResult = { category: string; branch: number | null; base: number | null; status: 'pass' | 'regressed' | 'fail' | 'unmeasured'; note?: string }
 const MISSING = 127
@@ -73,11 +73,16 @@ function baseCounts(base: string, categories: [string, { cmd: string; count: str
   return counts
 }
 
-function testCount(ref: string | null): number {
-  const { config } = loadConfig()
-  const files = (ref ? git(['ls-tree', '-r', '--name-only', ref]) : git(['ls-files', '--cached', '--others', '--exclude-standard'])) ?? ''
-  const tests = files.split('\n').filter(f => f && isTest(f, config))
-  return testCaseCount(tests.map(f => (ref ? showAt(ref, f) ?? '' : read(path.join(ROOT, f)))))
+// The test-case count may not fall. Only test files in the diff can change it, so only those are read: the base side in
+// one `git cat-file --batch`, the branch side from disk. Untouched files count equally on both sides, so this equals
+// comparing the whole trees without reading them.
+export function testDelta(base: string, diffs: FileDiff[], config: SensorConfig): { before: number; after: number } {
+  const tests = diffs.filter(d => isTest(d.file, config) && !d.binary)
+  const existing = tests.filter(d => d.status !== 'A')
+  const atBase = showMany(base, existing.map(d => d.from ?? d.file))
+  const before = testCaseCount(existing.map(d => atBase.get(d.from ?? d.file) ?? ''))
+  const after = testCaseCount(tests.filter(d => d.status !== 'D').map(d => read(path.join(ROOT, d.file))))
+  return { before, after }
 }
 
 export function runQuality(slug: string, baseRef: string | null = defaultBase()): { categories: CategoryResult[]; blocks: Finding[] } {
@@ -99,13 +104,13 @@ export function runQuality(slug: string, baseRef: string | null = defaultBase())
     sensor: `quality.${c.category}`, severity: 'block', message: c.status === 'fail' ? `${c.category} could not run: ${c.note}` : `${c.category} rose from ${c.base} to ${c.branch}`,
     fix: c.status === 'fail' ? 'install the tool or fix the command in .sdlc/sensors.json quality' : `fix the new ${c.category} findings; the base branch has ${c.base}`,
   }))
+  const diffs = branchDiff(base ?? 'HEAD')
   if (base) {
-    const before = testCount(base)
-    const after = testCount(null)
+    const { before, after } = testDelta(base, diffs, config)
     if (after < before) blocks.push({ sensor: INVARIANT, severity: 'block', message: `test cases: base ${before} → branch ${after}`, fix: 'restore the removed tests; the test count never drops' })
   }
   // Pattern sensors and waivers only (point 'stop'); traceability, red proof and full commands run at the pr node's ship gate.
-  const gate = runChecks({ point: 'stop', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'none', budgetMs: 60_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: false })
+  const gate = runChecks({ point: 'stop', diffs, config, rules, slugs: [slug], commands: 'none', budgetMs: 60_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: false })
   blocks.push(...gate.blocks)
   return { categories, blocks }
 }

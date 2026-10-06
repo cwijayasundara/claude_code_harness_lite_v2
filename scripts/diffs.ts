@@ -1,5 +1,6 @@
 // What changed: turn baselines and git diffs (tracked and untracked files) in the pure diff model.
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { ROOT, SDLC, read, sha, now, git, withLock, writeAtomic } from './core.ts'
 import { parseUnifiedDiff, type FileDiff } from './model.ts'
@@ -88,6 +89,33 @@ export const stagedDiff = (): FileDiff[] => parseUnifiedDiff(git([...DIFF, '--ca
 export const showStaged = (rel: string): string | null => git(['show', `:${rel}`])
 
 export const showAt = (ref: string, rel: string): string | null => git(['show', `${ref}:${rel}`])
+
+// One `git cat-file --batch` for many paths at a ref. A path missing at the ref maps to '', and a path with a newline
+// in its name (which the batch protocol cannot carry) is read with `git show`.
+export function showMany(ref: string, paths: string[]): Map<string, string> {
+  const result = new Map<string, string>()
+  const safe = paths.filter(p => !/[\n\r]/.test(p))
+  if (safe.length) {
+    let buf = Buffer.alloc(0)
+    try {
+      buf = execFileSync('git', ['cat-file', '--batch'], { cwd: ROOT, input: safe.map(p => `${ref}:${p}`).join('\n') + '\n', maxBuffer: 256 * 1024 * 1024 })
+    } catch {
+      // fall through: every path is read again below
+    }
+    let at = 0
+    for (const p of safe) {
+      const nl = buf.indexOf(10, at)
+      if (nl < 0) break
+      const size = /^[0-9a-f]+ \w+ (\d+)$/.exec(buf.toString('utf8', at, nl))?.[1]
+      at = nl + 1
+      if (size === undefined) { result.set(p, ''); continue }
+      result.set(p, buf.toString('utf8', at, at + Number(size)).replace(/\r\n/g, '\n'))
+      at += Number(size) + 1
+    }
+  }
+  for (const p of paths) if (!result.has(p)) result.set(p, showAt(ref, p) ?? '')
+  return result
+}
 
 export function fileLines(files: string[], textOf: (rel: string) => string = rel => read(path.join(ROOT, rel))): Record<string, number> {
   const counts: Record<string, number> = {}
