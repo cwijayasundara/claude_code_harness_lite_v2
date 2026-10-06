@@ -23,7 +23,12 @@ const MANIFEST_KEYS = ['pages', 'skip', 'notes', 'order']
 const MAX_NOTE = 10_000
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string')
 
-const tracked = (): string[] => (git(['ls-files', '--cached', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean)
+// NUL-separated with quotepath off, so non-ASCII and tab names arrive as they are, never C-quoted.
+const lsFiles = (...which: string[]): string[] => (git(['-c', 'core.quotepath=off', 'ls-files', '-z', ...which]) ?? '').split('\0').filter(Boolean)
+// Status, stamp and search also see untracked, unignored files (a new directory is uncovered before it is added);
+// the build sees only what git tracks, so a scratch file never enters a committed table and local builds match CI.
+const tracked = (): string[] => lsFiles('--cached', '--others', '--exclude-standard')
+const committed = (): string[] => lsFiles('--cached')
 const filesFor = (globs: string[], all: string[]): string[] => all.filter(f => matchesAny(f, globs)).sort(cmp)
 
 // Only regular files are read: a tracked symlink (even one pointing inside the repo) would pull outside or duplicated text into the wiki, so it is skipped.
@@ -134,7 +139,7 @@ function changeRows(): ChangeRow[] {
 }
 function makeCtx(m: Manifest): Ctx {
   // Symlinks, directories and missing files drop out entirely (see isRegularFile).
-  const files = tracked().filter(f => !f.startsWith(`${WIKI_DIR}/`) && isRegularFile(path.join(ROOT, f)))
+  const files = committed().filter(f => !f.startsWith(`${WIKI_DIR}/`) && isRegularFile(path.join(ROOT, f)))
   const cache = new Map<string, string>()
   const readFile = (f: string): string => { let t = cache.get(f); if (t === undefined) cache.set(f, (t = readRegular(path.join(ROOT, f)))); return t }
   const branch = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])?.replace(/^origin\//, '') ?? 'main'

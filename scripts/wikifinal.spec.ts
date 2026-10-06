@@ -63,3 +63,19 @@ test('check --at commit prints no escape or bidi character from a hostile manife
   assert.doesNotMatch(sdlc(dirRepo, ['wiki', 'status']).stdout, SPOOF)
   assert.doesNotMatch(sdlc(dirRepo, ['check', '--at', 'commit']).stdout, SPOOF)
 })
+
+test('file names git would C-quote (non-ASCII, tab) are listed and covered; an untracked scratch file stays out of built tables', () => {
+  const repo = wikiRepo()
+  write(repo, 'src/auth/déjà.js', 'export const d = 1\n')
+  write(repo, 'src/auth/a\tb.js', 'export const t = 1\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'names')
+  write(repo, 'src/auth/scratch.js', 'export const s = 1\n')
+  assert.equal(build(repo).code, 0)
+  const auth = page(repo, 'modules/auth.md')
+  assert.match(auth, /`src\/auth\/déjà\.js`/)
+  assert.match(auth, /`src\/auth\/a b\.js`/)
+  assert.doesNotMatch(auth, /scratch\.js/)
+  const s = JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as { uncovered: string[] }
+  assert.deepEqual(s.uncovered, [])
+  assert.doesNotMatch(sdlc(repo, ['wiki', 'status']).stdout, /uncovered/)
+})
