@@ -154,7 +154,7 @@ export function cmdCheckPush(_args: Args): void {
     // A rig-managed change in flight is gated by /rig:pr; only ad-hoc work gets ship verdicts here.
     const shipSlugs = slug?.startsWith('adhoc-') ? [slug] : []
     // A rig change verified and sensed on exactly this tree, pushed from a clean checkout of it, needs neither again.
-    const stamped = Boolean(slug) && !slug?.startsWith('adhoc-') && r.localSha === head && !git(['status', '--porcelain', '--', '.', ':(exclude).sdlc'])
+    const stamped = Boolean(slug) && !slug?.startsWith('adhoc-') && r.localSha === head && !git(['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).sdlc'])
     const covered = stamped && verificationFresh(slug as string).fullCovered
     const result = runChecks({
       point: 'ship', diffs, config, rules, slugs: shipSlugs, commands: covered ? 'none' : 'full', budgetMs: config.githooks.budgetMs,
