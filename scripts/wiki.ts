@@ -5,6 +5,7 @@ import { ROOT, read, exists, sha, out, fail, git, toPosix, sanctionWrites, listC
 import { matchesAny, isSource, isTest, type Finding } from './model.ts'
 import { loadConfig } from './check.ts'
 import { buildGraph, cmp } from './wikigraph.ts'
+import { searchDocs, type Doc } from './wikisearch.ts'
 import { BLOCKS, STRUCTURAL, INDEX_BLOCKS, SURFACE, spliceBlock, blockBody, pageSkeleton, indexSkeleton, pageSummary, label, linkBase, startOrder, renderBlock, renderSystem, renderStart, renderModules, proseProblems, type Ctx, type ChangeRow, type CommitRow } from './wikigen.ts'
 
 export const WIKI_DIR = 'docs/wiki'
@@ -232,6 +233,27 @@ export function wikiFindings(): Finding[] {
   ]
 }
 
+// Reads only through the symlink-safe helpers: an unsafe page has no text, and a tracked symlink or directory contributes nothing.
+function cmdSearch(args: Args): void {
+  const { exists: has, manifest: m, errors } = loadManifest()
+  if (!has) return out(`no code wiki here: ${skillRef('wiki')} builds it`)
+  if (errors.length || !m) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
+  const query = args.pos.slice(1).join(' ').trim()
+  if (!query) fail('usage: wiki search "<terms>" [--json] [--limit n]')
+  const all = tracked()
+  const docs: Doc[] = Object.entries(m.pages).filter((e): e is [string, Page] => wellFormed(e[1]) && !!safePagePath(e[0])).sort((a, b) => cmp(a[0], b[0])).map(([page, p]) => {
+    const files = filesFor(p.globs, all).filter(f => isRegularFile(path.join(ROOT, f)))
+    const symbols = files.flatMap(f => readRegular(path.join(ROOT, f)).split('\n').flatMap((line, i) => (SURFACE.test(line) ? [{ ref: `${f}:${i + 1}`, text: line.trim() }] : [])))
+    return { page, text: readRegular(safePagePath(page) ?? ''), symbols, files }
+  })
+  const raw = optString(args, 'limit') ?? ''
+  const limit = /^[1-9][0-9]{0,8}$/.test(raw) ? Math.min(50, Number(raw)) : 5
+  const hits = searchDocs(docs, query, limit, WIKI_DIR)
+  if (args.opt.json) return out(JSON.stringify(hits))
+  if (!hits.length) return out(`no wiki hits for "${query.slice(0, 80)}"`)
+  out(hits.map(h => [`${h.page}  (score ${h.score})`, ...h.hits.map(x => `  ${x.ref}  ${x.text}`)].join('\n')).join('\n'))
+}
+
 export function cmdWiki(args: Args): void {
   const [sub, ...pages] = args.pos
   if (sub === 'status') {
@@ -242,6 +264,7 @@ export function cmdWiki(args: Args): void {
     return out(rows.length ? rows.join('\n') : 'wiki up to date')
   }
   if (sub === 'build') return cmdBuild(args)
+  if (sub === 'search') return cmdSearch(args)
   if (sub === 'stamp') {
     const { exists, manifest: m, errors } = loadManifest()
     if (!exists) return out('no docs/wiki/manifest.json to stamp')
@@ -288,5 +311,5 @@ export function cmdWiki(args: Args): void {
     }
     return out(`stamped ${stamped} page(s)`)
   }
-  out('usage: wiki status [--json] | build [--check] | stamp [page...]')
+  out('usage: wiki status [--json] | build [--check] | search "<terms>" [--json] [--limit n] | stamp [page...]')
 }

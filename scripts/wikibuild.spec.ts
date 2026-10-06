@@ -413,3 +413,72 @@ test('a symlinked index.md is invalid in status, and build still fails loudly', 
   assert.equal(b.code, 1)
   assert.match(b.stderr, /docs\/wiki: not a safe path/)
 })
+
+test('wiki search: ranked pages with page and symbol refs, --json, --limit, and a clear no-match message', () => {
+  const repo = wikiRepo()
+  build(repo)
+  const hit = sdlc(repo, ['wiki', 'search', 'check', 'key'])
+  assert.equal(hit.code, 0, hit.stderr)
+  assert.match(hit.stdout, /^modules\/auth\.md {2}\(score \d+\)/m)
+  assert.match(hit.stdout, /src\/auth\/key\.js:3 {2}export function check\(k\)/)
+  const json = JSON.parse(sdlc(repo, ['wiki', 'search', 'util', '--json']).stdout) as { page: string; hits: { ref: string }[] }[]
+  assert.ok(json.length >= 1 && json.every(h => typeof h.page === 'string'))
+  assert.equal((JSON.parse(sdlc(repo, ['wiki', 'search', 'src', '--json', '--limit', '1']).stdout) as unknown[]).length, 1)
+  const none = sdlc(repo, ['wiki', 'search', 'zzzzzz'])
+  assert.equal(none.code, 0)
+  assert.match(none.stdout, /no wiki hits for "zzzzzz"/)
+  assert.equal(sdlc(repo, ['wiki', 'search']).code, 1)
+})
+
+test('wiki search: no manifest is a friendly exit 0, a broken manifest exits 1', () => {
+  const bare = makeRepo()
+  const r = sdlc(bare, ['wiki', 'search', 'auth'])
+  assert.equal(r.code, 0)
+  assert.match(r.stdout, /no code wiki here/)
+  const repo = wikiRepo()
+  write(repo, 'docs/wiki/manifest.json', '{ nope')
+  const bad = sdlc(repo, ['wiki', 'search', 'auth'])
+  assert.equal(bad.code, 1)
+  assert.match(bad.stderr, /manifest\.json/)
+})
+
+test('wiki search: --limit takes a positive integer only, and a hostile query is harmless', () => {
+  const repo = wikiRepo()
+  build(repo)
+  for (const bad of ['0', '-3', 'abc', '1e9', '1.5']) {
+    const n = (JSON.parse(sdlc(repo, ['wiki', 'search', 'src', '--json', '--limit', bad]).stdout) as unknown[]).length
+    assert.equal(n, 2, `--limit ${bad} falls back to the default`)
+  }
+  const huge = sdlc(repo, ['wiki', 'search', 'auth '.repeat(100_000).slice(0, 100_000), '--json'])
+  assert.equal(huge.code, 0, huge.stderr)
+  const punct = sdlc(repo, ['wiki', 'search', '?!*(', '--json'])
+  assert.equal(punct.code, 0)
+  assert.equal(punct.stdout.trim(), '[]')
+})
+
+test('wiki search: output is byte-identical across runs', () => {
+  const repo = wikiRepo()
+  build(repo)
+  assert.equal(sdlc(repo, ['wiki', 'search', 'src', 'check']).stdout, sdlc(repo, ['wiki', 'search', 'src', 'check']).stdout)
+})
+
+test('wiki search: a tracked symlink to an outside file contributes no symbols or text', () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'wikileak-'))
+  fs.writeFileSync(path.join(outside, 'secret.js'), 'export const leakAlpha = 1\nexport const leakBeta = 2\n')
+  const repo = wikiRepo()
+  fs.symlinkSync(path.join(outside, 'secret.js'), path.join(repo, 'src/auth/leak.js'))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'link')
+  build(repo)
+  for (const args of [['wiki', 'search', 'leakalpha'], ['wiki', 'search', 'leakalpha', '--json']]) {
+    const r = sdlc(repo, args)
+    assert.equal(r.code, 0, r.stderr)
+    assert.doesNotMatch(r.stdout, /leakAlpha|leakBeta/)
+  }
+  const unsafePage = path.join(repo, 'docs/wiki/modules/core.md')
+  fs.rmSync(unsafePage)
+  fs.writeFileSync(path.join(outside, 'page.md'), '# core\n\npagesecret marker\n')
+  fs.symlinkSync(path.join(outside, 'page.md'), unsafePage)
+  const p = sdlc(repo, ['wiki', 'search', 'pagesecret', '--json'])
+  assert.equal(p.code, 0, p.stderr)
+  assert.doesNotMatch(p.stdout, /pagesecret/)
+})
