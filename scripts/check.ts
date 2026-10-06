@@ -1,7 +1,6 @@
 // Orchestrates sensors at a firing point (stop, ship, ci): one set of checks everywhere, so local == CI.
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import os from 'node:os'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, WAIVERS, planFiles, isPlanned, exists, read, out, fail, git, gitIn, approvalOf, planApproved, planPath, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
@@ -11,6 +10,7 @@ import { parseConfig, parseRules, formatFindings, warnLines, matchesAny, isTest,
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
+import { withBaseTree } from './basetree.ts'
 import { loadChange, activeSlug } from './graph.ts'
 
 export type Point = 'stop' | 'commit' | 'ship' | 'ci'
@@ -197,8 +197,6 @@ function testCorpus(config: SensorConfig, diffs: FileDiff[]): string {
   return diffs.filter(d => d.status !== 'D' && !d.binary && isTest(d.file, config)).map(d => read(path.join(ROOT, d.file))).join('\n')
 }
 
-const DEP_DIRS = ['node_modules', '.venv', 'vendor']
-
 // Proof against the base, recomputed (no log entry can fake it): the branch's changed tests run on top of the base code.
 // 'red' (feature, bugfix, incident, greenfield): they must FAIL there, so they prove the change.
 // 'green' (refactor): they must PASS there, so they pin the old behaviour the refactor preserves.
@@ -212,14 +210,7 @@ function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base
   const left = (): number => Math.max(1000, budgetMs - (Date.now() - t0))
   if (!tests.length) return mode === 'red' ? block('no test file changed, so nothing proves this change', 'write the failing test first') : []
   if (!cmd) return block('no test command declared (full.test or fast.test in .sdlc/sensors.json)', 'declare it so red can be proven')
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-red-'))
-  try {
-    if (git(['worktree', 'add', '--detach', tmp, base]) === null) return block(`could not create a worktree at ${base}`, 'run `git worktree prune` and retry')
-    try {
-      for (const dep of DEP_DIRS) if (exists(path.join(ROOT, dep)) && !exists(path.join(tmp, dep))) fs.symlinkSync(path.join(ROOT, dep), path.join(tmp, dep), 'junction')
-    } catch (e) {
-      return block(`could not link dependencies into the base worktree: ${(e as Error).message}`, 'check permissions for symlinks, or the person waives red-proof')
-    }
+  const tree = withBaseTree(base, tmp => {
     const sanity = runCommand(cmd, { cwd: tmp, timeoutMs: left() })
     recordRun(slug, { ...sanity, source: 'ship' })
     if (sanity.exit !== 0 || sanity.timedOut) return block("can't establish red: the tests fail on the base even without the new tests", 'make the test command pass from a clean checkout of the base (dependencies, fixtures), or the person waives red-proof')
@@ -231,12 +222,10 @@ function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base
     if (run.timedOut) return block('proof timed out: the tests did not finish on the base within the budget', 'make the test command faster, or the person waives red-proof')
     recordRun(slug, mode === 'red' ? { ...run, expectFail: true, source: 'ship' } : { ...run, source: 'ship' })
     if (mode === 'red' && run.exit === 0) return block('the new tests already pass on the base: they prove nothing about this change', 'write a test that fails without the change, then make it pass')
-    if (mode === 'green' && run.exit !== 0) return block('the refactor\'s tests fail on the base: they do not describe the behaviour being preserved', 'write characterization tests that pass on the old code first, then refactor under them')
+    if (mode === 'green' && run.exit !== 0) return block("the refactor's tests fail on the base: they do not describe the behaviour being preserved", 'write characterization tests that pass on the old code first, then refactor under them')
     return []
-  } finally {
-    git(['worktree', 'remove', '--force', tmp])
-    fs.rmSync(tmp, { recursive: true, force: true })
-  }
+  }, { prefix: 'rig-red-' })
+  return tree.ok ? tree.value : block(tree.error, 'run `git worktree prune` and retry, check permissions for symlinks, or the person waives red-proof')
 }
 
 export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff[], base: string | null, budgetMs = 1_800_000): Finding[] {

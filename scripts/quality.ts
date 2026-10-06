@@ -1,10 +1,9 @@
 // The sensors node (spec §5.3): each quality category runs on the branch and on the base (a temporary worktree,
 // cached per base SHA in ratchet.json); a category may not rise above the base. Built-in pattern sensors run as at a stop.
-import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
-import { ROOT, checkSlug, defaultBase, gitIn, read, out, fail, type Args } from './core.ts'
+import { ROOT, checkSlug, defaultBase, read, out, fail, type Args } from './core.ts'
 import { runCommand } from './runs.ts'
+import { withBaseTree } from './basetree.ts'
 import { readRatchet, writeRatchet, recordRound, testCaseCount } from './ratchet.ts'
 import { loadConfig, runChecks } from './check.ts'
 import { branchDiff, showAt, showMany } from './diffs.ts'
@@ -35,10 +34,7 @@ function countIn(dir: string, cmd: string, how: string, onBase = false): { n: nu
   return n === null ? { n: null, note: `could not count (${how})` } : { n }
 }
 
-// Dependency directories the base worktree borrows from the checkout so project tools can run there.
-const DEP_DIRS = ['node_modules', '.venv', 'venv', 'vendor']
-
-// The base runs once per base SHA in a throwaway worktree (always removed and pruned). Counts are cached in ratchet.json
+// The base runs once per base SHA in a throwaway worktree (basetree.ts). Counts are cached in ratchet.json
 // per category with the command and counting mode they were measured with; a changed command is measured again.
 function baseCounts(base: string, categories: [string, { cmd: string; count: string }][], slug: string): Record<string, number | null> {
   const r = readRatchet(slug)
@@ -50,21 +46,8 @@ function baseCounts(base: string, categories: [string, { cmd: string; count: str
     return true
   })
   if (todo.length) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-base-'))
-    try {
-      if (gitIn(ROOT, ['worktree', 'add', '--detach', '-q', dir, base]) === null) for (const [c] of todo) counts[c] = null
-      else {
-        for (const d of DEP_DIRS) {
-          const from = path.join(ROOT, d), to = path.join(dir, d)
-          if (fs.existsSync(from) && !fs.existsSync(to)) fs.symlinkSync(from, to, 'dir')
-        }
-        for (const [c, q] of todo) counts[c] = countIn(dir, q.cmd, q.count, true).n
-      }
-    } finally {
-      gitIn(ROOT, ['worktree', 'remove', '--force', dir])
-      fs.rmSync(dir, { recursive: true, force: true })
-      gitIn(ROOT, ['worktree', 'prune'])
-    }
+    const tree = withBaseTree(base, dir => { for (const [c, q] of todo) counts[c] = countIn(dir, q.cmd, q.count, true).n })
+    if (!tree.ok) for (const [c] of todo) counts[c] = null
   }
   const store: NonNullable<typeof r.baseline.quality> = {}
   for (const [c, q] of categories) { const n = counts[c]; if (typeof n === 'number') store[c] = { cmd: q.cmd, count: q.count, n } }
