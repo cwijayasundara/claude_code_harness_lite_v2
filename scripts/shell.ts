@@ -256,7 +256,9 @@ function aliasBypass(words: string[], depth: number): boolean {
   })
 }
 
-const SHELLS = /^(?:sh|bash|zsh|dash|ksh)$/
+const SHELLS = /^(?:sh|bash|zsh|dash|ksh)$/i
+// A program's name as a case-insensitive filesystem (macOS, Windows) finds it: GIT, /usr/bin/Git and git.exe run git.
+const progName = (w: string): string => (w.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.exe$/, '')
 // The fallback for text the tokenizer refuses: quoted strings not starting with - are blanked for the flags (a message
 // that mentions --no-verify is fine), and core.hooksPath must share a line with git.
 function regexBypass(text: string): boolean {
@@ -265,14 +267,14 @@ function regexBypass(text: string): boolean {
   return NO_VERIFY_FLAGS.test(flags) || NO_VERIFY_CONFIG.test(plain) || RIG_HOOKS_OFF.test(plain)
 }
 // A git command at the start of one word (an argument of another program, e.g. watch 'git ...') gets the regex.
-const embedded = (words: string[]): boolean => words.some(w => /^\s*git\s/.test(w) && regexBypass(w))
+const embedded = (words: string[]): boolean => words.some(w => /^\s*git(?:\.exe)?\s/i.test(w) && regexBypass(w))
 
 function segmentBypasses(seg: string[], depth: number): boolean {
   // `sh -c '<payload>'` and `eval <words>` run a command of their own: read it the same way (bounded).
   const k = seg.findIndex(w => !/^\w+=/.test(w))
-  const word = (seg[k] ?? '').split('/').pop() ?? ''
+  const word = progName(seg[k] ?? '')
   const c = SHELLS.test(word) ? seg.findIndex((w, i) => i > k && /^-[a-z]*c[a-z]*$/.test(w)) : -1
-  const payload = c > 0 ? seg[c + 1] ?? '' : word === 'eval' ? seg.slice(k + 1).join(' ') : null
+  const payload = c > 0 ? seg[c + 1] ?? '' : seg[k] === 'eval' ? seg.slice(k + 1).join(' ') : null
   if (payload !== null) {
     if (depth < 3) return bypassesGitHooks(payload, depth + 1)
     if (!payload.trim() || regexBypass(payload)) return Boolean(payload.trim())
@@ -282,7 +284,7 @@ function segmentBypasses(seg: string[], depth: number): boolean {
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
   if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
-  const g = seg.findIndex(w => w === 'git' || w.endsWith('/git'))
+  const g = seg.findIndex(w => progName(w) === 'git')
   if (g < 0) return seg.some(w => /^\w+=/.test(w) && HOOKS_PATH.test(w)) || embedded(seg)
   const scanned = seg.slice(0, g)
   let i = g + 1

@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
+import { gitHooksBypass } from './shell.ts'
 
 const SECRET = 'const apikey = "abcdefghijklmnop12345678"\n'
 let repo: string
@@ -353,6 +354,15 @@ test('the model may not switch the hooks off with rig\'s own command; status and
     assert.match(h.permissionDecisionReason, /person/)
   }
   for (const cmd of ['node .sdlc/bin/sdlc.ts hooks status', 'node .sdlc/bin/sdlc.ts hooks install']) assert.notEqual(bash(cmd), 'deny', cmd)
+})
+
+const denies = (cmds: string[]) => { for (const c of cmds) assert.notEqual(gitHooksBypass(c), null, c) }
+const allows = (cmds: string[]) => { for (const c of cmds) assert.equal(gitHooksBypass(c), null, c) }
+
+test('the bypass guard reads git and the shells case-insensitively, as a case-insensitive filesystem runs them', () => {
+  denies(['GIT commit --no-verify', 'Git commit -n', 'GIT -c core.hooksPath=/x commit -m y', `SH -c 'true; git commit -n'`,
+    '/usr/bin/GIT commit --no-verify', 'git.exe commit -n', `watch 'GIT commit -n'`])
+  allows(['GIT status', 'Git log -n 5', `SH -c 'git status'`])
 })
 
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
