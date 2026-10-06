@@ -181,3 +181,12 @@ test('init --full --workflows writes the CI files and never overwrites an existi
   assert.ok(fs.existsSync(path.join(repo, '.github/workflows/rig-review.yml')))
   assert.equal(fs.readFileSync(path.join(repo, 'REVIEW.md'), 'utf8'), 'mine\n')
 })
+
+test('standalone vendoring copies the review workflow and points the skills at it', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['vendor', '--standalone'])
+  assert.ok(fs.existsSync(path.join(repo, '.claude/workflows/review.js')))
+  const skill = fs.readFileSync(path.join(repo, '.claude/skills/rig-pr-review/SKILL.md'), 'utf8')
+  assert.match(skill, /\.claude\/workflows\/review\.js/)
+  assert.doesNotMatch(skill, /CLAUDE_PLUGIN_ROOT/)
+})

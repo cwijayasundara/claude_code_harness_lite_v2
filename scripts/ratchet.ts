@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { CHANGES, EVIDENCE_NAME_RE, planPath, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
 import { loadConfig } from './check.ts'
+import { checkSlice } from './slicecheck.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done'; tree?: string }
@@ -132,7 +133,7 @@ export function cmdRatchet(args: Args): void {
     for (const u of readJsonl<UsageRow>(USAGE).filter(u => u.kind === 'main' && u.change === slug)) byNode[u.stage ?? '(none)'] = Number(((byNode[u.stage ?? '(none)'] ?? 0) + (typeof u.usd === 'number' && Number.isFinite(u.usd) ? Math.max(0, u.usd) : 0)).toFixed(4))
     return out(JSON.stringify({ total: spendUsd(slug), byNode }))
   }
-  if (sub !== 'record' || !node) fail('usage: ratchet record <slug> <build|test|sensors|pr-review> [--slice N] (--from <file in the change folder> | < reviewer reply)')
+  if (sub !== 'record' || !node) fail('usage: ratchet record <slug> <build|test|sensors|pr-review> [--slice N] ([--checks] | --from <file in the change folder> | < reviewer reply)')
   const { config } = loadConfig()
   if (!Object.hasOwn(config.ratchet.rounds, node)) fail(`unknown ratchet node ${node}`)
   const n = node as RatchetNode
@@ -144,6 +145,12 @@ export function cmdRatchet(args: Args): void {
     slice ??= ids.length === 1 ? ids[0] : undefined
     if (!slice) fail(`--slice is required: plan.md has ${ids.join(', ')}`)
     if (!ids.includes(slice)) fail(`unknown slice ${slice}; plan.md has ${ids.join(', ')}`)
+  }
+  if (args.opt.checks) {
+    if (n !== 'build') fail('--checks applies to the build node only')
+    const c = checkSlice(slug)
+    if (!c.ok) fail(`slice ${slice} not recorded: ${c.why}`)
+    return out(JSON.stringify(recordRound(slug, 'build', [], { cap: config.ratchet.rounds.build, slice })))
   }
   const from = args.opt.from
   if (from === true) fail('--from needs a file path')

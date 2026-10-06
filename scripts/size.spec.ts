@@ -31,6 +31,7 @@ const CAPPED = [
   ...filesIn('agents', n => n.endsWith('.md')),
   ...filesIn('guides', n => n.endsWith('.md')),
   ...filesIn('templates', () => true),
+  ...filesIn('workflows', n => n.endsWith('.js')),
   ...filesIn('.github/workflows', () => true),
   ...filesIn('.claude-plugin', n => n.endsWith('.json')),
   path.join(ROOT, 'package.json'),

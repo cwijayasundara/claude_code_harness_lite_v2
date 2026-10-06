@@ -5,7 +5,7 @@ import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
 import { writeHookScripts, installHooks } from './githooks.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'quality', 'basetree', 'levels', 'verify', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'shell', 'githooks', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'shards', 'quality', 'basetree', 'levels', 'verify', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'shell', 'githooks', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
 
@@ -14,6 +14,7 @@ export function forProject(text: string): string {
   return text
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('<plugin>/scripts/sdlc.ts', SDLC_HOOK)
+    .replaceAll('${CLAUDE_PLUGIN_ROOT}/workflows/', '.claude/workflows/')
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.sdlc/templates/')
     .replace(/\/rig:([a-z][a-z-]*)/g, '/rig-$1')
     .replace(/\brig:(?!allow-secret)([a-z][a-z-]*)/g, 'rig-$1')
@@ -72,6 +73,9 @@ function vendorStandalone(written: string[], version: string): void {
   }
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'templates'))) {
     writeFile(`.sdlc/templates/${file}`, read(path.join(PLUGIN_ROOT, 'templates', file)), written)
+  }
+  for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'workflows')).filter(f => f.endsWith('.js'))) {
+    writeFile(`.claude/workflows/${file}`, read(path.join(PLUGIN_ROOT, 'workflows', file)), written)
   }
   for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, 'hooks')).filter(f => /\.(?:ts|tsx)$/.test(f))) writeFile(`.sdlc/mod/hooks/${f}`, read(path.join(PLUGIN_ROOT, 'hooks', f)), written)
   writeFile('.sdlc/mod/hooks/hooks.json', JSON.stringify({ modules: ['./register.ts'] }, null, 2) + '\n', written)

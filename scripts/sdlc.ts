@@ -27,6 +27,7 @@ import { cmdHooks, cmdCheckPush } from './githooks.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
+import { cmdShards } from './shards.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { normCmd } from './runs.ts'
 import { treeStamp } from './stamp.ts'
@@ -353,6 +354,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   scorecard: cmdScorecard,
   diff: cmdDiff,
   quality: cmdQuality,
+  shards: cmdShards,
   check: args => (args.opt.at === 'push' ? cmdCheckPush(args) : cmdCheck(args)),
   'check-file': cmdCheckFile,
   vendor: cmdVendor,
