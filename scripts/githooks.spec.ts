@@ -385,6 +385,20 @@ test('only the program a segment really runs is read as a shell; a word named sh
   allows(['git commit sh -c HEAD -m ok', 'git log sh -c', `sh -c 'git commit -m ok'`, 'git commit sh -c -m ok', 'git commit -m x sh -c --no-verify', 'sh script.sh -c x', 'echo sh -c x'])
 })
 
+test('substitutions, redirects and comments do not drop the guard to the regex; their own commands are read too', () => {
+  denies([`git commit --no"-verify" -m "$(date)"`, 'git commit -"n" -m x 2>/tmp/err',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m "$(date)"',
+    `git config alias.c 'commit --no-verify' 2>/tmp/e`, `sh -c 'git commit --no-verify -m x' 2>/tmp/e`, `sh -c 'git commit -n' # x`,
+    `echo $(true); sh -c 'git commit -n'`, `eval 'git commit -n' >/tmp/x`, 'true $(true); ' + nest('git commit -n', 5),
+    'echo "$(git commit --no-verify -m x)"', 'echo `git commit -n -m x`', 'echo $(git commit -n)', `git commit --no"-verify" -m "$MSG"`,
+    `sh <<'EOF'\ngit commit -n\nEOF`, `{ sh -c 'git commit -n'; }`, `echo $'x'; sh -c 'git commit -n'`, `git -c core.hooks"Path"=/x commit -m x < /dev/null`])
+  assert.equal(gitHooksBypass('true $(true); ' + nest('git status', 5)), 'nested')
+  assert.equal(gitHooksBypass(`echo $'x'; ` + nest('git status', 5)), 'nested')
+  allows([`git commit -m "$(cat <<'EOF'\nfix\nEOF\n)"`, 'git status 2>&1', 'git log > /tmp/x', 'git log --oneline | head -5 # recent',
+    `git commit -m "$(cat <<'EOF'\nfix: don't use sh -c 'git commit -n' or --no-verify\nEOF\n)"`, `git commit -F - <<'EOF'\nmention git commit -n\nEOF`,
+    'echo $((1+2))', 'ls ${HOME} >/dev/null 2>&1', 'git commit -m "$MSG"', 'npm test > /tmp/out.txt 2>&1 < /dev/null', `echo $'x'; sh -c 'git status'`])
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {

@@ -319,13 +319,7 @@ function segmentBypasses(seg: string[], depth: number): boolean {
   // A payload is read the same way, bounded; past the bound it is denied (nested), never passed unread.
   const span = payloadSpan(seg)
   const payload = span ? seg.slice(...span).join(' ') : ''
-  if (payload.trim()) {
-    if (depth >= 3) {
-      if (!regexBypass(payload)) nestedTooDeep = true // past the bound and no visible bypass: deny anyway, never fail open
-      return true
-    }
-    if (bypassesGitHooks(payload, depth + 1)) return true
-  }
+  if (deeper(payload, depth)) return true
   // The whole segment is read as usual too (never masked); only the embedded-git heuristic skips the payload words,
   // which were just read exactly.
   const skip = new Set(span ? seg.slice(...span) : [])
@@ -357,8 +351,167 @@ export function gitHooksBypass(cmd: string): 'bypass' | 'nested' | null {
   return bypassesGitHooks(cmd) ? (nestedTooDeep ? 'nested' : 'bypass') : null
 }
 
+// For the guard only: what tokenize refuses but leaves a command readable is swapped for an inert word (_) or removed,
+// and the commands it runs are returned to be read too. $(...), backticks and <(...) >(...) become _ and their bodies
+// are run; $NAME, ${...} and $1 $@ $? ... become _; redirects go with their target; comments go; ( ) and standalone
+// { } become separators; here-doc bodies are data and go, unless a shell or eval reads them (then they are run, one
+// layer deeper, like a here-string). Null when the text cannot be followed (the caller then uses the regex).
+type Run = { text: string; deeper: boolean }
+type Inert = { text: string; runs: Run[]; end: number }
+const READS_SCRIPT = /(?:^|[\s/])(?:sh|bash|zsh|dash|ksh|eval)(?:\.exe)?(?:\s|$)/i
+const unquote = (w: string): string => w.replace(/'([^']*)'|"((?:[^"\\]|\\[^])*)"|\\([^])/g,
+  (_m, a?: string, b?: string, c?: string) => a ?? (b === undefined ? c ?? '' : b.replace(/\\(["\\$`\n])/g, '$1')))
+function inert(src: string, start = 0, close = ''): Inert | null {
+  let out = ''
+  let q = ''
+  let parens = 0
+  const runs: Run[] = []
+  const docs: { delim: string; tabs: boolean; run: boolean }[] = []
+  const shellHere = (): boolean => READS_SCRIPT.test(out.split(/[;&|\n]/).pop() ?? '')
+  const wordEnd = (i: number): number => { // end of the shell word at i; -1 when it is empty, unterminated or substitutes
+    const from = i
+    let wq = ''
+    for (; i < src.length; i++) {
+      const c = src[i] ?? ''
+      if (wq === "'") { if (c === "'") wq = ''; continue }
+      if (c === '\\') { i++; continue }
+      if (c === '`' || (c === '$' && src[i + 1] === '(')) return -1
+      if (wq) { if (c === '"') wq = ''; continue }
+      if (c === "'" || c === '"') wq = c
+      else if (/[\s;&|<>()]/.test(c)) break
+    }
+    return wq || i === from ? -1 : i
+  }
+  for (let i = start; i < src.length; i++) {
+    const ch = src[i] ?? ''
+    const next = src[i + 1] ?? ''
+    if (q === "'") { out += ch; if (ch === "'") q = ''; continue }
+    if (ch === '\\') { out += ch + next; i++; continue }
+    if (q === '"' && ch === '"') { out += ch; q = ''; continue }
+    if ((ch === '$' || (!q && (ch === '<' || ch === '>'))) && next === '(') {
+      const r = inert(src, i + 2, ')')
+      if (!r) return null
+      runs.push({ text: src.slice(i + 2, r.end), deeper: false })
+      out += '_'
+      i = r.end
+      continue
+    }
+    if (ch === '`') {
+      let j = i + 1
+      while (j < src.length && src[j] !== '`') j += src[j] === '\\' ? 2 : 1
+      if (j >= src.length) return null
+      runs.push({ text: src.slice(i + 1, j).replace(/\\([`\\$])/g, '$1'), deeper: false })
+      out += '_'
+      i = j
+      continue
+    }
+    if (ch === '$' && next === '{') {
+      const j = src.indexOf('}', i)
+      if (j < 0 || /\$\(|`/.test(src.slice(i, j))) return null
+      out += '_'
+      i = j
+      continue
+    }
+    if (ch === '$' && /[\w@*#?$!-]/.test(next)) {
+      i += /[A-Za-z_]/.test(next) ? (/^\w+/.exec(src.slice(i + 1))?.[0].length ?? 1) : 1
+      out += '_'
+      continue
+    }
+    if (q === '"') { out += ch; continue }
+    if (ch === "'" || ch === '"') { q = ch; out += ch; continue }
+    if (ch === '#' && /(?:^|[\s;&|()])$/.test(out)) {
+      while (i + 1 < src.length && src[i + 1] !== '\n') i++
+      continue
+    }
+    if (ch === '<' && next === '<') {
+      const here = src[i + 2] === '<'
+      const tabs = !here && src[i + 2] === '-'
+      let j = i + (here || tabs ? 3 : 2)
+      while (src[j] === ' ' || src[j] === '\t') j++
+      const e = wordEnd(j)
+      if (e < 0) return null
+      if (here && shellHere()) runs.push({ text: unquote(src.slice(j, e)), deeper: true })
+      if (!here) docs.push({ delim: unquote(src.slice(j, e)), tabs, run: shellHere() })
+      out += ' '
+      i = e - 1
+      continue
+    }
+    if (ch === '<' || ch === '>' || (ch === '&' && next === '>')) {
+      out = out.replace(/(^|[\s;&|()])\d+$/, '$1') // an fd number before the operator
+      let j = ch === '&' ? i + 2 : i + 1
+      if (src[j] === '>' || (ch === '>' && src[j] === '|')) j++
+      else if (ch !== '&' && src[j] === '&') {
+        const fd = /^(?:\d+|-)(?=$|[\s;&|)])/.exec(src.slice(j + 1))?.[0]
+        if (fd) { out += ' '; i = j + fd.length; continue }
+        j++
+      }
+      while (src[j] === ' ' || src[j] === '\t') j++
+      const e = wordEnd(j)
+      if (e < 0) return null
+      out += ' '
+      i = e - 1
+      continue
+    }
+    if (ch === '\n' && docs.length) {
+      let j = i + 1
+      for (const d of docs) {
+        const from = j
+        let body = ''
+        for (;;) {
+          const nl = src.indexOf('\n', j)
+          const line = src.slice(j, nl < 0 ? src.length : nl)
+          const ends = (d.tabs ? line.replace(/^\t+/, '') : line) === d.delim
+          if (ends || nl < 0) {
+            body = ends ? src.slice(from, j) : src.slice(from)
+            j = nl < 0 ? src.length : nl + 1
+            break
+          }
+          j = nl + 1
+        }
+        if (d.run) runs.push({ text: body, deeper: true })
+      }
+      docs.length = 0
+      out += '\n'
+      i = j - 1
+      continue
+    }
+    if (ch === '(') { parens++; out += ' ; '; continue }
+    if (ch === ')') {
+      if (close && parens === 0) return { text: out, runs, end: i }
+      if (--parens < 0) return null
+      out += ' ; '
+      continue
+    }
+    if ((ch === '{' || ch === '}') && /(?:^|[\s;&|])$/.test(out) && /^(?:$|[\s;&|])/.test(next)) { out += ' ; '; continue }
+    out += ch
+  }
+  return q || close || docs.length ? null : { text: out, runs, end: src.length }
+}
+
+// The last resort, for text even inert() cannot follow: the regex, and the words a shell -c or eval runs, unquoted
+// and read again one layer deeper (past the bound: denied).
+const SHELL_PAYLOAD = /(?:^|[\s;&|(`/])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?\s+(?:[-+]\S*\s+)*?-[a-zA-Z]*c[a-zA-Z]*\s+(?:--\s+)?((?:'[^']*'|"(?:[^"\\]|\\[^])*"|\\[^]|[^\s;&|'"\\])+)/gi
+const EVAL_PAYLOAD = /(?:^|[\s;&|(`])eval\s+([^;&|\n]+)/g
+function lastResort(cmd: string, depth: number): boolean {
+  if (regexBypass(cmd)) return true
+  const payloads = [...[...cmd.matchAll(SHELL_PAYLOAD)].map(m => unquote(m[1] ?? '')), ...[...cmd.matchAll(EVAL_PAYLOAD)].map(m => (m[1] ?? '').replace(/["'\\]/g, ''))]
+  return payloads.some(p => deeper(p, depth))
+}
+// A payload one layer deeper: read as usual within the bound; past it, denied (nested) unless the regex sees a bypass.
+function deeper(payload: string, depth: number): boolean {
+  if (!payload.trim()) return false
+  if (depth < 3) return bypassesGitHooks(payload, depth + 1)
+  if (!regexBypass(payload)) nestedTooDeep = true
+  return true
+}
+
 export function bypassesGitHooks(cmd: string, depth = 0): boolean {
-  const { segs, bad } = tokenize(cmd)
-  if (bad) return regexBypass(cmd)
+  let { segs, bad } = tokenize(cmd)
+  if (bad) {
+    const r = inert(cmd)
+    if (r?.runs.some(run => (run.deeper ? deeper(run.text, depth) : bypassesGitHooks(run.text, depth)))) return true
+    if (r) ({ segs, bad } = tokenize(r.text))
+    if (bad) return lastResort(cmd, depth)
+  }
   return segs.some(seg => segmentBypasses(seg, depth))
 }
