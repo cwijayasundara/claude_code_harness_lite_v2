@@ -297,6 +297,13 @@ test('the bypass guard reads commands as bash does: quotes, escapes, continuatio
   ]) assert.notEqual(bash(cmd), 'deny', cmd)
 })
 
+test('a shell -c or eval payload is read too; harmless payloads pass', () => {
+  sdlc(repo, ['init'])
+  for (const cmd of [`sh -c 'git commit --no-verify -m x'`, 'bash -c "git config core.hooksPath /x"', `eval 'git commit -n -m x'`, `/bin/sh -c 'git push --no-verify'`,
+    `bash -lc 'git commit --no-verify'`, `sh -c 'git commit -m "$(date)" --no-verify'`, `FOO=1 sh -c "sh -c 'git commit -n'"`]) assert.equal(bash(cmd), 'deny', cmd)
+  for (const cmd of [`sh -c 'git commit -m "docs -n"'`, `bash -c 'git status'`, `eval 'echo hi'`]) assert.notEqual(bash(cmd), 'deny', cmd)
+})
+
 test('the model may not switch the hooks off with rig\'s own command; status and a plain install are fine', () => {
   sdlc(repo, ['init'])
   for (const cmd of ['node .sdlc/bin/sdlc.ts hooks uninstall', 'node .sdlc/bin/sdlc.ts hooks install --force', 'node "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hooks uninstall']) {

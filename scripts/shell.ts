@@ -246,21 +246,32 @@ function optionsBypass(sub: string, args: string[], scanned: string[]): boolean 
   return false
 }
 
-function aliasBypass(words: string[]): boolean {
+function aliasBypass(words: string[], depth: number): boolean {
   return words.some((w, i) => {
     const m = /^alias\.[^=]*(?:=([^]*))?$/i.exec(w)
     if (!m) return false
     const value = m[1] ?? words[i + 1] ?? ''
-    return bypassesGitHooks(value.startsWith('!') ? value.slice(1) : `git ${value}`)
+    return bypassesGitHooks(value.startsWith('!') ? value.slice(1) : `git ${value}`, depth + 1)
   })
 }
 
-function segmentBypasses(seg: string[]): boolean {
+const SHELLS = /^(?:sh|bash|zsh|dash|ksh)$/
+const regexBypass = (text: string): boolean => REGEX_BYPASS.some(re => re.test(text.replace(/["'\\]/g, '')))
+// A git command embedded in one word (an argument of another program) gets the regex.
+const embedded = (words: string[]): boolean => words.some(w => /\bgit\s/.test(w) && regexBypass(w))
+
+function segmentBypasses(seg: string[], depth: number): boolean {
+  // `sh -c '<payload>'` and `eval <words>` run a command of their own: read it the same way (bounded).
+  const k = seg.findIndex(w => !/^\w+=/.test(w))
+  const word = (seg[k] ?? '').split('/').pop() ?? ''
+  const c = SHELLS.test(word) ? seg.findIndex((w, i) => i > k && /^-[a-z]*c[a-z]*$/.test(w)) : -1
+  if (c > 0) return depth < 3 && bypassesGitHooks(seg[c + 1] ?? '', depth + 1)
+  if (word === 'eval') return depth < 3 && bypassesGitHooks(seg.slice(k + 1).join(' '), depth + 1)
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
   if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
   const g = seg.findIndex(w => w === 'git' || w.endsWith('/git'))
-  if (g < 0) return seg.some(w => /^\w+=/.test(w) && HOOKS_PATH.test(w))
+  if (g < 0) return seg.some(w => /^\w+=/.test(w) && HOOKS_PATH.test(w)) || embedded(seg)
   const scanned = seg.slice(0, g)
   let i = g + 1
   while ((seg[i] ?? '').startsWith('-')) {
@@ -273,11 +284,11 @@ function segmentBypasses(seg: string[]): boolean {
   if (sub === 'commit' || sub === 'push') {
     if (optionsBypass(sub, args, scanned)) return true
   } else scanned.push(sub, ...args)
-  return scanned.some(w => HOOKS_PATH.test(w)) || aliasBypass(scanned)
+  return scanned.some(w => HOOKS_PATH.test(w)) || aliasBypass(scanned, depth) || embedded(scanned)
 }
 
-export function bypassesGitHooks(cmd: string): boolean {
+export function bypassesGitHooks(cmd: string, depth = 0): boolean {
   const { segs, bad } = tokenize(cmd)
-  if (bad) return REGEX_BYPASS.some(re => re.test(cmd.replace(/["'\\]/g, '')))
-  return segs.some(segmentBypasses)
+  if (bad) return regexBypass(cmd)
+  return segs.some(seg => segmentBypasses(seg, depth))
 }
