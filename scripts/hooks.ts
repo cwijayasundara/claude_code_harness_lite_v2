@@ -10,7 +10,8 @@ import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } fro
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, parseConfig, warnRow, type Finding, type SensorConfig } from './model.ts'
-import { readOnlyDenial, normCmd, bypassesGitHooks, gitHooksBypass } from './shell.ts'
+import { readOnlyDenial, normCmd } from './shell.ts'
+import { bypassesGitHooks, gitHooksBypass } from './bypass.ts'
 import { autoApprove } from './autoapprove.ts'
 import { sessionNote } from './githooks.ts'
 

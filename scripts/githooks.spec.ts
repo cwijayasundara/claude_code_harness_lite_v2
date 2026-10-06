@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
-import { gitHooksBypass } from './shell.ts'
+import { gitHooksBypass } from './bypass.ts'
 
 const SECRET = 'const apikey = "abcdefghijklmnop12345678"\n'
 let repo: string
