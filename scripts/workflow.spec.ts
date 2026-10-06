@@ -191,3 +191,52 @@ test('Unicode line separators in a problem are flattened: one line, no forged ve
   assert.equal(result.lines.length, 1)
   assert.ok(!/[\u0085\u009f\u2028\u2029]/.test(result.lines[0]))
 })
+
+test('a high reported after a medium at the same spot is not masked: the highest severity survives the de-dup', async () => {
+  const { result } = await run({ ...base, shards: [shard(1, ['src/a.ts'])] }, async (p, o) => {
+    if (o.phase === 'Review') return { findings: [{ ...high('src/a.ts', 6), severity: 'medium' }, high('src/a.ts', 6)] }
+    return { real: p.includes('[high]'), why: 'n' }
+  })
+  assert.notEqual(result.verdict, 'pass')
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0].severity, 'high')
+  const equal = await run({ ...base, shards: [shard(1, ['src/a.ts'])] }, async (_p, o) => (o.phase === 'Review' ? { findings: [{ ...high('src/a.ts', 6), problem: 'first' }, { ...high('src/a.ts', 6), problem: 'second' }] } : { real: true, why: 'y' }))
+  assert.match(equal.result.lines[0], /first/)
+})
+
+test('shard-name de-dup loops until the name is unused', async () => {
+  const { result } = await run({ ...base, shards: [{ name: 'a-3', files: ['x.ts'] }, { name: 'a', files: ['y.ts'] }, { name: 'a', files: ['z.ts'] }] }, async () => null)
+  assert.equal(new Set(result.failedShards).size, 3)
+})
+
+test('the script builds the shell commands: every path is single-quoted, and a path with a single quote is dropped, not quoted', async () => {
+  const paths = ['x;touch pwned', 'a b', '$HOME/x', 'a&b', 'src/(g)/[id].ts', 'p|q*?~#<>.ts']
+  const prompts: string[] = []
+  const { result } = await run({ ...base, shards: [shard(1, [...paths, "it's.ts"])] }, async (p, o) => {
+    prompts.push(p)
+    return o.phase === 'Review' ? { findings: [high('a b', 2)] } : { real: true, why: 'y' }
+  })
+  const text = prompts.join('\n')
+  for (const f of paths) assert.ok(text.includes(`git --literal-pathspecs diff 'abc123' -- '${f}'\n`) || text.includes(`git --literal-pathspecs diff 'abc123' -- '${f}'`), f)
+  const cmds = text.split('\n').filter(l => l.startsWith('git --literal-pathspecs diff'))
+  assert.ok(cmds.length >= paths.length + 1)
+  for (const c of cmds) assert.match(c, /^git --literal-pathspecs diff 'abc123' -- '[^']*'$/)
+  assert.ok(!text.includes("it's.ts"))
+  assert.deepEqual(result.unreviewed, ["it's.ts"])
+  assert.equal(result.verdict, 'incomplete')
+  const referee = prompts.find(p => p.startsWith('A reviewer reported')) ?? ''
+  assert.ok(referee.includes("git --literal-pathspecs diff 'abc123' -- 'a b'"))
+  assert.match(text, /never assemble a shell command/i)
+})
+
+test('backslashes and bidi or zero-width characters in a path drop the file (incomplete), never reach a prompt', async () => {
+  const bad = ['a\\b.ts', 'x\\', ...[0x200b, 0x200f, 0x202a, 0x202e, 0x2066, 0x2069, 0xfeff].map(c => `src/a${String.fromCharCode(c)}b.ts`)]
+  const prompts: string[] = []
+  const { result } = await run({ ...base, shards: [shard(1, ['ok.ts', ...bad])] }, async p => { prompts.push(p); return { findings: [] } })
+  assert.equal(result.verdict, 'incomplete')
+  assert.equal(result.unreviewed.length, bad.length)
+  const text = prompts.join('\n')
+  assert.ok(text.includes("git --literal-pathspecs diff 'abc123' -- 'ok.ts'"))
+  assert.ok(!text.includes('\\') || !text.includes('a\\b'))
+  assert.ok(!/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(text))
+})
