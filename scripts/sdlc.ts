@@ -22,6 +22,7 @@ import { cmdMetrics } from './metrics.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor } from './vendor.ts'
+import { cmdHooks } from './githooks.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdLearn, approveLearn } from './learncli.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
@@ -379,6 +380,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   check: cmdCheck,
   'check-file': cmdCheckFile,
   vendor: cmdVendor,
+  hooks: cmdHooks,
   ratchet: cmdRatchet,
   waive: cmdWaive,
   sensors: () => cmdSensors(),
