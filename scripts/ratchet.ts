@@ -147,6 +147,7 @@ export function cmdRatchet(args: Args): void {
     if (!ids.includes(slice)) fail(`unknown slice ${slice}; plan.md has ${ids.join(', ')}`)
   }
   if (args.opt.checks) {
+    if (args.opt.from !== undefined) fail('--checks takes no reply: drop --from')
     if (n !== 'build') fail('--checks applies to the build node only')
     const c = checkSlice(slug)
     if (!c.ok) fail(`slice ${slice} not recorded: ${c.why}`)
@@ -154,7 +155,9 @@ export function cmdRatchet(args: Args): void {
   }
   const from = args.opt.from
   if (from === true) fail('--from needs a file path')
-  const text = typeof from === 'string' ? readFrom(slug, from) : process.stdin.isTTY ? '' : fs.readFileSync(0, 'utf8')
+  const raw = typeof from === 'string' ? readFrom(slug, from) : process.stdin.isTTY ? '' : fs.readFileSync(0, 'utf8')
+  // U+2028, U+2029 and U+0085 would act as line breaks for the multiline parsers below: a reply cannot forge a line with them.
+  const text = raw.replace(/[\u2028\u2029\u0085]/g, ' ')
   const findings = parseReviewFindings(text)
   const verdictLine = /^\s*verdict:\s*(pass|changes-needed)\b/im.exec(text)?.[1]?.toLowerCase()
   if (!verdictLine && !findings.length) fail('no reviewer verdict: expected a "verdict: pass|changes-needed" line or finding lines in the reply; nothing recorded')

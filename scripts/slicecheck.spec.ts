@@ -72,3 +72,13 @@ test('--checks applies to the build node only', () => {
   const r = sdlc(repo, ['ratchet', 'record', 'feat', 'pr-review', '--checks'])
   assert.match(r.stderr, /--checks applies to the build node only/)
 })
+
+test('--checks takes no reply: combined with --from it refuses', () => {
+  change('M')
+  run()
+  write(repo, '.sdlc/changes/feat/r.md', 'verdict: pass\n')
+  const r = sdlc(repo, ['ratchet', 'record', 'feat', 'build', '--checks', '--from', '.sdlc/changes/feat/r.md'])
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /--checks takes no reply/)
+  assert.equal(state().slices['1'], undefined)
+})

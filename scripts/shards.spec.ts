@@ -33,15 +33,23 @@ test('shard names are stable and say which directories they cover', () => {
 test('the shards command splits the branch diff, leaves out .sdlc and ignored files, and prints JSON', () => {
   const repo = makeRepo()
   write(repo, '.sdlc/sensors.json', '{}')
+  write(repo, 'src/old-auth.ts', 'export const check = () => true\nexport const other = 1\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/big')
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
   for (let i = 0; i < 30; i++) write(repo, `src/f${String(i).padStart(2, '0')}.ts`, `export const v${i} = ${i}\n`)
   write(repo, 'docs/notes.md', '# notes\n')
+  fs.rmSync(path.join(repo, 'src/old-auth.ts'))
   const r = sdlc(repo, ['shards', 'big', '--json'])
   assert.equal(r.code, 0, r.stderr)
   const out = JSON.parse(r.stdout) as { base: string; shards: { name: string; files: string[] }[] }
-  assert.deepEqual(out.shards.map(s => s.files.length), [25, 5])
+  assert.deepEqual(out.shards.map(s => s.files.length), [25, 6])
   assert.ok(out.shards.flatMap(s => s.files).every(f => f.startsWith('src/')))
+  assert.ok(out.shards.flatMap(s => s.files).includes('src/old-auth.ts'), 'a deleted file is still reviewed')
   assert.ok(fs.existsSync(path.join(repo, 'docs/notes.md')))
+})
+
+test('shard order is locale-independent: plain code-point order, uppercase before lowercase, non-ASCII last', () => {
+  const s = makeShards(['b.ts', 'B.ts', 'é.ts', 'a.ts', 'Z.ts'].map(file => ({ file, lines: 1 })))
+  assert.deepEqual(s[0]?.files, ['B.ts', 'Z.ts', 'a.ts', 'b.ts', 'é.ts'])
 })

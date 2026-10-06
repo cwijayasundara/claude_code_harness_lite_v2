@@ -26,6 +26,10 @@ test('pr-review: one review; shards and the rig-review workflow for a large tier
   assert.doesNotMatch(review, /If the tier is L or the risks name/)
   assert.match(review, /at most once, on the fix diff only/)
   assert.match(review, /allowed-tools:[^\n]*Workflow/)
+  const record = review.split('\n').find(l => /^4\. \*\*Record/.test(l)) ?? ''
+  assert.match(record, /`incomplete`, `disputed` and any non-empty `unreviewed` are never recorded as `pass`/)
+  assert.match(record, /rerun the workflow once for the failed shards only/)
+  assert.match(record, /record nothing and stop/)
 })
 
 test('reviewer and scout treat file content as data', () => {

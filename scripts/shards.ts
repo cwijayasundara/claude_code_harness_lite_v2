@@ -15,7 +15,7 @@ export const MAX_SHARD_LINES = 5000
 export function makeShards(files: { file: string; lines: number }[], maxFiles = MAX_SHARD_FILES, maxLines = MAX_SHARD_LINES): Shard[] {
   const shards: Shard[] = []
   let cur: Shard | null = null
-  for (const f of [...files].sort((a, b) => a.file.localeCompare(b.file))) {
+  for (const f of [...files].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))) {
     if (!cur || cur.files.length >= maxFiles || cur.lines + f.lines > maxLines) {
       cur = { name: '', files: [], lines: 0 }
       shards.push(cur)
@@ -36,7 +36,7 @@ export function cmdShards(args: Args): void {
   const { config } = loadConfig()
   const base = defaultBase() ?? 'HEAD'
   const files = branchDiff(base)
-    .filter(d => d.status !== 'D' && !d.binary && !d.file.startsWith('.sdlc/') && !matchesAny(d.file, config.ignore))
+    .filter(d => !d.binary && !d.file.startsWith('.sdlc/') && !matchesAny(d.file, config.ignore))
     .map(d => ({ file: d.file, lines: d.added.length + d.removed.length }))
   const shards = makeShards(files)
   if (args.opt.json) return out(JSON.stringify({ base, shards }))
