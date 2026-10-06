@@ -2,14 +2,20 @@
 // only writes the report from runs already recorded. Verdicts come from captured exit codes, never from a model.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, planPath, planVerificationBullets, checkSlug, exists, read, now, out, fail, type Args } from './core.ts'
+import { CHANGES, planPath, planVerificationBullets, planVerification, planApproved, checkSlug, exists, read, now, out, fail, type Args } from './core.ts'
 import { activeSlug, loadChange, nextCommand } from './graph.ts'
 import { loadConfig } from './check.ts'
-import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
+import { runCommand, recordRun, readRuns, renderVerification, runsDigest, normCmd } from './runs.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { recordRound, readRatchet, unblock, block } from './ratchet.ts'
-import { declaredCommandSet } from './autoapprove.ts'
-import { normCmd } from './shell.ts'
+
+// sensors.json is protected, so its commands always count. The plan document is the model's own file unless the person
+// approved it (the approval is bound to its digest), so its ## Verification counts only then.
+export function declaredCommandSet(slug: string | null): Set<string> {
+  const { config } = loadConfig()
+  const cmds = [...Object.values(config.fast), ...Object.values(config.full), ...Object.values(config.levels), ...Object.values(config.quality).map(q => q.cmd), ...(slug && planApproved(slug) ? planVerification(slug) : [])]
+  return new Set(cmds.filter((c): c is string => Boolean(c)).map(normCmd))
+}
 
 function slugOf(args: Args, usage: string): string {
   const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()

@@ -3,6 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseArgs, ROOT, PLUGIN_ROOT } from './core.ts'
+import { normCmd } from './runs.ts'
 
 export type Tokens = { segs: string[][]; bad: string | null }
 
@@ -111,7 +112,7 @@ const FIND_WRITES = /^-(?:delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)$/
 const RECORDER_READS = new Set(['status', 'check', 'check-file', 'diff', 'skill', 'scope-drift'])
 const RECORDER_FLAGS = new Set(['slug', 'json', 'at', 'base', 'expect-fail', 'turn'])
 const SED_PRINT = /^(?:\d+|\$|\/[^/]*\/)?(?:,(?:\d+|\$|\/[^/]*\/))?p$/
-export const normCmd = (s: string): string => s.trim().replace(/\s+/g, ' ')
+export { normCmd } from './runs.ts'
 
 function gitAllowed(args: string[]): boolean {
   const w = args[0] === '--no-pager' ? args.slice(1) : args

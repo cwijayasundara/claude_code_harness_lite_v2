@@ -28,7 +28,7 @@ import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
 import { requiredLevels, levelResults } from './levels.ts'
-import { normCmd } from './shell.ts'
+import { normCmd } from './runs.ts'
 
 // ---------- commands ----------
 

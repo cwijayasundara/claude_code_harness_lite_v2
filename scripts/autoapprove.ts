@@ -2,12 +2,12 @@
 // run without a prompt. It only turns "ask" into "allow"; the hooks run it after every deny and ask check.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, approvalOf, planApproved, planName, planFiles, planVerification, relPosix, type HookInput } from './core.ts'
+import { ROOT, approvalOf, planApproved, planName, planFiles, relPosix, type HookInput } from './core.ts'
 import { step, AUTONOMOUS, activeSlug } from './graph.ts'
 import { isProtected } from './sensors.ts'
-import { loadConfig } from './check.ts'
 import { globToRegex } from './model.ts'
 import { normCmd, isHarnessScript, atRoot, tokenize } from './shell.ts'
+import { declaredCommandSet } from './verify.ts'
 import { appendEvent } from './ratchet.ts'
 
 const METACHAR = /[;&|`$<>()\\\x00-\x1f\x7f]/
@@ -18,14 +18,6 @@ const expands = (x: string): boolean => /[*?[\]{}]/.test(x) || x.startsWith('~')
 const SAFE_SUBS = new Set(['status', 'next', 'verify', 'verify-report', 'diff', 'ratchet show', 'quality', 'scorecard', 'pr-checks'])
 const GIT_SUBS = new Set(['status', 'diff', 'log', 'show', 'rev-parse'])
 const GIT_BAD_OPT = /^(?:-C|-c|--no-index|--output(?:=.*)?|--ext-diff|-O.*|--open-files-in-pager.*|--textconv|--exec-path.*|--git-dir.*|--work-tree.*|--paginate)$/
-
-// sensors.json is protected, so its commands always count. the plan document is the model's own file unless the person approved
-// it (the approval is bound to its digest), so its ## Verification counts only then.
-export function declaredCommandSet(slug: string | null): Set<string> {
-  const { config } = loadConfig()
-  const cmds = [...Object.values(config.fast), ...Object.values(config.full), ...Object.values(config.levels), ...Object.values(config.quality).map(q => q.cmd), ...(slug && planApproved(slug) ? planVerification(slug) : [])]
-  return new Set(cmds.filter((c): c is string => Boolean(c)).map(normCmd))
-}
 
 // A path argument must stay inside the repo once `..` and symlinks are resolved.
 const inside = (arg: string): boolean => insideRepo(arg) !== null

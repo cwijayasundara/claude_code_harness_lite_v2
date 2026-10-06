@@ -51,15 +51,15 @@ export function recordRun(slug: string, row: RunRow): void {
   fs.appendFileSync(runsFile(slug), JSON.stringify(row) + '\n')
 }
 
-const norm = (cmd: string): string => cmd.trim().replace(/\s+/g, ' ')
+export const normCmd = (cmd: string): string => cmd.trim().replace(/\s+/g, ' ')
 
 // The verdict is the latest explicit run of each plan ## Verification command (or of every explicit command
 // when the plan lists none). Expect-fail rows are evidence of red, and gate/ship rows are the sensors' own runs:
 // neither is a verdict, so a known-red lint at Stop or an abandoned exploratory run cannot poison verification.
 export function renderVerification(rows: RunRow[], digest: string, planned: string[] = [], ignored: string[] = [], levels: { level: string; status: string }[] = []): { text: string; result: 'pass' | 'fail' } {
   const latest = new Map<string, RunRow>()
-  for (const r of rows) if (!r.expectFail && !r.source) latest.set(norm(r.cmd), r)
-  const wanted = planned.map(norm)
+  for (const r of rows) if (!r.expectFail && !r.source) latest.set(normCmd(r.cmd), r)
+  const wanted = planned.map(normCmd)
   // A section whose bullets all failed to parse requires nothing; that must fail, not fall back to every run.
   const unparsed = wanted.length === 0 && ignored.length > 0
   const verdicts = wanted.length ? wanted.flatMap(c => latest.get(c) ?? []) : unparsed ? [] : [...latest.values()]
