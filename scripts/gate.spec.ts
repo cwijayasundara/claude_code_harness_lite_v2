@@ -260,7 +260,9 @@ test('a harness file changed by Bash blocks at Stop; the same change through Edi
   hook(repo, 'prompt-submit', {})
   write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 950 } }))
   hook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json') } })
-  assert.equal(stop().stdout, '')
+  const warned = JSON.parse(stop().stdout) as { decision?: string; systemMessage?: string }
+  assert.equal(warned.decision, undefined, 'a warning does not block')
+  assert.match(warned.systemMessage ?? '', /1 warning.*harness-tamper/)
 })
 
 test('post-edit blocks a single edited file with exit 2 and records the edit', () => {

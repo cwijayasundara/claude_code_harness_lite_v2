@@ -319,7 +319,7 @@ function hookSkillFailed(input: HookInput): void {
   out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: context } }))
 }
 
-export type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number> }
+export type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number>; warnRows?: string[]; shown?: boolean }
 export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; agents: Record<string, string[]>; guides: Record<string, string[]>; last?: GateSummary }
 
 const GATE = path.join(SDLC, '.gate')
@@ -346,18 +346,30 @@ const writeGate = (g: Gate): void => writeAtomic(GATE, JSON.stringify(g))
 const updateGate = (fn: (g: Gate) => void): void => withLock(GATE, () => { const g = readGate(); fn(g); writeGate(g) })
 const pushUnique = (list: string[], item: string): string[] => (list.includes(item) ? list : [...list, item])
 
+const warnRow = (f: Finding): string => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message} → ${f.fix}`.slice(0, 200)
+
 function summarize(findings: Finding[]): GateSummary {
   const bySensor: Record<string, number> = {}
   for (const f of findings) bySensor[f.sensor] = (bySensor[f.sensor] ?? 0) + 1
-  return { at: now(), blocks: findings.filter(f => f.severity === 'block').length, warns: findings.filter(f => f.severity === 'warn').length, bySensor }
+  const warns = findings.filter(f => f.severity === 'warn')
+  return { at: now(), blocks: findings.filter(f => f.severity === 'block').length, warns: warns.length, bySensor, warnRows: warns.slice(0, 5).map(warnRow) }
 }
 
 // Each prompt starts a turn: record the tree and reset the per-turn gate, so Stop diffs exactly this turn's changes.
+// Warnings the last turn left are handed to the agent once, here, because a passing Stop cannot show them to it.
 function hookPromptSubmit(): void {
   if (!exists(SDLC)) return
+  const last = readGate().last
+  const carry = last && !last.shown && last.warns > 0 && last.warnRows?.length ? last.warnRows : null
   const snap = snapshot()
   if (snap) writeBaseline(snap)
-  updateGate(g => Object.assign(g, { turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [], agents: {} }))
+  updateGate(g => {
+    Object.assign(g, { turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [], agents: {} })
+    if (carry && g.last) g.last.shown = true
+  })
+  if (carry) {
+    out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `sdlc: the last turn left ${carry.length} warning(s) that did not block. Fix them if they are yours:\n${carry.map(r => `- ${r}`).join('\n')}` } }))
+  }
 }
 
 function hookSubagentStart(input: HookInput): void {
@@ -399,6 +411,8 @@ function hookStop(input: HookInput, sub: boolean): void {
     gate.passed[key] = hash
     save()
     if (!sub && exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
+    const warns = gate.last?.warnRows ?? []
+    if (!sub && warns.length) out(JSON.stringify({ systemMessage: `sdlc: ${gate.last?.warns} warning(s), not blocking: ${warns.join(' | ')}` }))
     return
   }
   if (!sub) fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
