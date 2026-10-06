@@ -1,6 +1,7 @@
 // The git-hook bypass guard for pre-bash: whether a Bash command switches the rig git hooks off. Best effort; CI is
 // the floor. It reads dequoted words from the shell.ts tokenizer, so quotes and escapes cannot hide a flag.
 import { tokenize } from './shell.ts'
+import { SHELL_NAMES, tick, startBudget, overBudget, endBudget, inert, unquote, expandWord, topLevel } from './inert.ts'
 
 // The model may not switch the git hooks off (only the person does): --no-verify on commit or push (any prefix),
 // -n on commit, core.hooksPath in any spelling or scope, an alias that adds either, or rig's own uninstall / install --force.
@@ -46,7 +47,6 @@ function aliasBypass(words: string[], depth: number): boolean {
   })
 }
 
-const SHELL_NAMES = 'sh|bash|zsh|dash|ksh|ash|mksh|csh|tcsh|fish'
 const SHELLS = new RegExp(`^(?:${SHELL_NAMES})$`, 'i')
 // A program's name as a case-insensitive filesystem (macOS, Windows) finds it: GIT, /usr/bin/Git and git.exe run git.
 const progName = (w: string): string => (w.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.exe$/, '')
@@ -99,11 +99,16 @@ const RESERVED = new Set(['!', 'if', 'then', 'elif', 'else', 'do', 'while', 'unt
 const LINE_VALUE = new Set(['-S', '--split-string'])
 const SHELL_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
 
-// Where the program a segment really runs stands, past assignments and the wrappers above with their options; and
-// the wrapper option values that are command lines of their own.
-function programAt(seg: string[]): { k: number; lines: number[] } {
+type Payload = { text: string; words: string[] } // a command line a segment runs, and the words it came from
+// The value of an option written attached (-S'...', -c'...', --command=...), or null.
+const attached = (o: string, short: string, long: string): string | null =>
+  o.startsWith(`${long}=`) ? o.slice(long.length + 1) : o.startsWith(short) && o.length > short.length && !o.startsWith('--') ? o.slice(short.length) : null
+
+// Where the program a segment really runs stands, past reserved words, assignments and the wrappers above with their
+// options (a cluster such as sudo -Eu takes a value when its last letter does); and env -S's command line.
+function programAt(seg: string[]): { k: number; lines: Payload[] } {
   let k = 0
-  const lines: number[] = []
+  const lines: Payload[] = []
   for (;;) {
     while (/^\w+=/.test(seg[k] ?? '') || RESERVED.has(seg[k] ?? '')) k++
     const name = progName(seg[k] ?? '')
@@ -113,46 +118,51 @@ function programAt(seg: string[]): { k: number; lines: number[] } {
     while ((seg[k] ?? '').startsWith('-')) {
       const o = seg[k++] ?? ''
       if (o === '--') break
-      if (LINE_VALUE.has(o) && name === 'env') lines.push(k)
-      if (takes.includes(o)) k++
+      const line = name === 'env' ? attached(o, '-S', '--split-string') : null
+      if (line !== null) lines.push({ text: line, words: [o] })
+      else if (name === 'env' && LINE_VALUE.has(o) && k < seg.length) lines.push({ text: seg[k] ?? '', words: [seg[k] ?? ''] })
+      if (takes.includes(o) || (/^-[a-zA-Z]{2,}$/.test(o) && takes.includes(`-${o.at(-1)}`))) k++
     }
     if (name === 'timeout' || name === 'chroot') k++ // the duration, the new root
   }
 }
 
-// The words a segment runs as a command of its own, as [from, to): the word after the -c cluster (and an optional --)
-// of a shell that is the program really run (so env, sudo -u x, xargs, nohup, timeout N, nice or time cannot hide it,
-// and a word named sh among git's arguments is not one); su's -c value; env -S's value; or the words after eval
-// (behind command or builtin).
-function payloadSpans(seg: string[]): [number, number][] {
-  const { k, lines } = programAt(seg)
-  const spans = lines.filter(i => i < seg.length).map((i): [number, number] => [i, i + 1])
+// The command lines a segment runs of its own: the word after the -c cluster (and an optional --) of a shell that is
+// the program really run (so env, sudo -u x, xargs, nohup, timeout N, nice or time cannot hide it, and a word named sh
+// among git's arguments is not one); su's -c or --command value, attached or not; env -S's value; or the words after
+// eval (behind command or builtin).
+function payloads(seg: string[]): Payload[] {
+  const { k, lines: found } = programAt(seg)
   const w = seg[k] ?? ''
-  const one = (p: number): void => { if (p < seg.length) spans.push([p, p + 1]) }
-  if (w === 'eval') spans.push([k + 1, seg.length])
+  const word = (p: number): void => { if (p < seg.length) found.push({ text: seg[p] ?? '', words: [seg[p] ?? ''] }) }
+  if (w === 'eval') found.push({ text: seg.slice(k + 1).join(' '), words: seg.slice(k + 1) })
   else if (progName(w) === 'su') {
-    const c = seg.findIndex((x, i) => i > k && (x === '-c' || x === '--command'))
-    if (c > 0) one(c + 1)
+    for (let i = k + 1; i < seg.length; i++) {
+      const x = seg[i] ?? ''
+      const value = attached(x, '-c', '--command')
+      if (value !== null) found.push({ text: value, words: [x] })
+      else if (x === '-c' || x === '--command') word(i + 1)
+    }
   } else if (SHELLS.test(progName(w))) {
     for (let i = k + 1; i < seg.length && /^[-+]./.test(seg[i] ?? '') && seg[i] !== '--'; i++) {
       if (SHELL_VALUE.has(seg[i] ?? '')) i++
       else if (/^-[a-zA-Z]+$/.test(seg[i] ?? '') && (seg[i] ?? '').includes('c')) {
-        one(seg[i + 1] === '--' ? i + 2 : i + 1)
+        word(seg[i + 1] === '--' ? i + 2 : i + 1)
         break
       }
     }
   }
-  return spans
+  return found
 }
 
 function segmentBypasses(seg: string[], depth: number): boolean {
   tick()
   // A payload is read the same way, bounded; past the bound it is denied (nested), never passed unread.
-  const spans = payloadSpans(seg)
-  if (spans.some(span => deeper(seg.slice(...span).join(' '), depth))) return true
+  const runs = payloads(seg)
+  if (runs.some(run => deeper(run.text, depth))) return true
   // The whole segment is read as usual too (never masked); only the embedded-git heuristic skips the payload words,
   // which were just read exactly.
-  const skip = new Set(spans.flatMap(span => seg.slice(...span)))
+  const skip = new Set(runs.flatMap(run => run.words))
   const embedded = (words: string[]): boolean => embeddedGit(words.filter(w => !skip.has(w)))
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
@@ -183,17 +193,11 @@ function gitBypasses(seg: string[], g: number, depth: number, embedded: (words: 
 }
 
 // Limits, each failing closed (the command is denied as 'limit', never passed): a command over MAX_COMMAND characters;
-// more than BUDGET_MS of work (checked as it goes, and again at the end); more than MAX_WORDS words or MAX_EXPANDED
-// characters from brace expansion; and anything that throws, such as nesting deeper than the stack. The depth bound for shells and evals is 'nested' (also denied).
+// more than BUDGET_MS of work (checked as it goes by tick(), and again at the end); brace expansion past its caps
+// (inert.ts); and anything that throws, such as nesting deeper than the stack. The depth bound for shells and evals is
+// 'nested' (also denied).
 const MAX_COMMAND = 128 * 1024
 const BUDGET_MS = 100
-const MAX_WORDS = 4096
-const MAX_EXPANDED = 1 << 20 // characters brace expansion may produce
-let deadline = Infinity
-let braceWords = 0
-let braceChars = 0
-let clock = (): number => performance.now()
-const tick = (): void => { if (clock() >= deadline) throw new Error('out of time') }
 
 let nestedTooDeep = false
 // Why the model may not run cmd: 'bypass', 'nested' (shells or evals more than three deep), 'limit' (too large, deep or
@@ -201,251 +205,19 @@ let nestedTooDeep = false
 // budgetMs and now are for tests; a scan that ends past the deadline (a step tick() could not interrupt) is denied too.
 export function gitHooksBypass(cmd: string, budgetMs = BUDGET_MS, now = (): number => performance.now()): 'bypass' | 'nested' | 'limit' | null {
   nestedTooDeep = false
-  braceWords = 0
-  braceChars = 0
   if (cmd.length > MAX_COMMAND) return 'limit'
-  clock = now
-  deadline = clock() + budgetMs
+  startBudget(budgetMs, now)
   try {
     const bypass = reads(cmd)
-    if (clock() >= deadline) return 'limit'
+    if (overBudget()) return 'limit'
     return bypass ? (nestedTooDeep ? 'nested' : 'bypass') : null
   } catch {
     return 'limit'
   } finally {
-    deadline = Infinity
-    clock = () => performance.now()
+    endBudget()
   }
 }
 export const bypassesGitHooks = (cmd: string): boolean => gitHooksBypass(cmd) !== null
-
-// For the guard only: what tokenize refuses but leaves a command readable is swapped for an inert word (_) or removed,
-// and the commands it runs are returned to be read too. $(...), backticks and <(...) >(...) become _ and their bodies
-// are run; $NAME, ${...} and $1 $@ $? ... become _; redirects go with their target; comments go; ( ) and standalone
-// { } become separators; here-doc bodies are data and go, unless a shell or eval reads them (then they are run, one
-// layer deeper, like a here-string). Null when the text cannot be followed (the caller then uses the regex).
-type Run = { text: string; deeper: boolean }
-type Inert = { text: string; runs: Run[]; end: number }
-const READS_SCRIPT = new RegExp(`(?:^|[\\s/])(?:${SHELL_NAMES}|eval)(?:\\.exe)?(?:\\s|$)`, 'i')
-const unquote = (w: string): string => w.replace(/'([^']*)'|"((?:[^"\\]|\\[^])*)"|\\([^])/g,
-  (_m, a?: string, b?: string, c?: string) => a ?? (b === undefined ? c ?? '' : b.replace(/\\(["\\$`\n])/g, '$1')))
-// $'...' as bash decodes it (\xHH, \uHHHH, octal, \n \t ..., \c), so a flag spelled with escapes is still seen.
-const ANSI = new Map(Object.entries({ n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v' }))
-const ansiC = (body: string): string => body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|[0-7]{1,3}|c[^]|[^])/g, (_m, e: string) => {
-  const c = e[0] ?? ''
-  if ('xuU'.includes(c)) return String.fromCodePoint(Math.min(parseInt(e.slice(1), 16), 0x10ffff))
-  if (/[0-7]/.test(c)) return String.fromCharCode(parseInt(e, 8) & 255)
-  if (c === 'c') return String.fromCharCode(e.charCodeAt(1) & 31)
-  return `\\'"?`.includes(c) ? c : ANSI.get(c) ?? `\\${e}`
-})
-// Brace expansion: inert() marks an unquoted { , } with these, and each word is expanded after tokenize (a{b,c} is
-// ab ac; a brace with no comma, as in {} or @{u}, stays literal).
-const [BO, BC, BE] = ['\u0001', '\u0002', '\u0003']
-const literal = (w: string): string => w.replaceAll(BO, '{').replaceAll(BC, ',').replaceAll(BE, '}')
-// One linear pass first: a brace with no comma of its own, or with no partner, is literal, so only real groups recurse.
-function realGroups(w: string): string {
-  const chars = w.split('')
-  const open: { at: number; comma: boolean }[] = []
-  chars.forEach((c, i) => {
-    if (c === BO) open.push({ at: i, comma: false })
-    else if (c === BC) { const top = open.at(-1); if (top) top.comma = true; else chars[i] = ',' }
-    else if (c === BE) {
-      const top = open.pop()
-      if (!top || !top.comma) (chars[i] = '}'), top && (chars[top.at] = '{')
-    }
-  })
-  for (const o of open) chars[o.at] = '{'
-  return chars.join('')
-}
-function expandBraces(w: string): string[] {
-  tick()
-  const open = w.indexOf(BO)
-  if (open < 0) {
-    braceChars += w.length
-    if (++braceWords > MAX_WORDS || braceChars > MAX_EXPANDED) throw new Error('too many words')
-    return [literal(w)]
-  }
-  const cuts: number[] = []
-  for (let i = open, depth = 0; i < w.length; i++) {
-    if (w[i] === BO) depth++
-    else if (w[i] === BC && depth === 1) cuts.push(i)
-    else if (w[i] === BE && --depth === 0) {
-      const head = w.slice(0, open)
-      const tail = w.slice(i + 1)
-      const words = [open, ...cuts].flatMap((c, j) => expandBraces(head + w.slice(c + 1, cuts[j] ?? i) + tail))
-      return words
-    }
-  }
-  return [literal(w)]
-}
-
-function inert(src: string, start = 0, close = ''): Inert | null {
-  const buf: string[] = [] // the output, in chunks; last is its last character (reading a growing string is quadratic)
-  let last = ''
-  const put = (t: string): void => { if (t) (buf.push(t), (last = t.at(-1) ?? '')) }
-  let q = ''
-  let parens = 0
-  let braces = 0
-  const runs: Run[] = []
-  const docs: { delim: string; tabs: boolean; run: boolean }[] = []
-  const shellHere = (): boolean => { // a shell or eval earlier in the current command
-    let j = buf.length
-    while (j > 0 && !/[;&|\n]/.test(buf[j - 1] ?? '')) j--
-    const head = buf[j - 1] ?? ''
-    return READS_SCRIPT.test(head.slice(Math.max(...[';', '&', '|', '\n'].map(c => head.lastIndexOf(c))) + 1) + buf.slice(j).join(''))
-  }
-  const endsIn = (set: string): boolean => last === '' || set.includes(last)
-  const wordEnd = (i: number): number => { // end of the shell word at i (its substitutions are run); -1 when empty or unterminated
-    const from = i
-    let wq = ''
-    for (; i < src.length; i++) {
-      const c = src[i] ?? ''
-      if (wq === "'") { if (c === "'") wq = ''; continue }
-      if (c === '\\') { i++; continue }
-      if (c === '$' && src[i + 1] === '(') {
-        const r = inert(src, i + 2, ')')
-        if (!r) return -1
-        runs.push({ text: src.slice(i + 2, r.end), deeper: false })
-        i = r.end
-        continue
-      }
-      if (c === '`') {
-        const j = src.indexOf('`', i + 1)
-        if (j < 0) return -1
-        runs.push({ text: src.slice(i + 1, j), deeper: false })
-        i = j
-        continue
-      }
-      if (wq) { if (c === '"') wq = ''; continue }
-      if (c === "'" || c === '"') wq = c
-      else if (/[\s;&|<>()]/.test(c)) break
-    }
-    return wq || i === from ? -1 : i
-  }
-  for (let i = start; i < src.length; i++) {
-    if ((i & 1023) === 0) tick()
-    const ch = src[i] ?? ''
-    const next = src[i + 1] ?? ''
-    if (q === "'") { put(ch); if (ch === "'") q = ''; continue }
-    if (ch === '\\') { put(ch + next); i++; continue }
-    if (q === '"' && ch === '"') { put(ch); q = ''; continue }
-    if ((ch === '$' || (!q && (ch === '<' || ch === '>'))) && next === '(') {
-      const r = inert(src, i + 2, ')')
-      if (!r) return null
-      runs.push({ text: src.slice(i + 2, r.end), deeper: false })
-      put('_')
-      i = r.end
-      continue
-    }
-    if (ch === '`') {
-      let j = i + 1
-      while (j < src.length && src[j] !== '`') j += src[j] === '\\' ? 2 : 1
-      if (j >= src.length) return null
-      runs.push({ text: src.slice(i + 1, j).replace(/\\([`\\$])/g, '$1'), deeper: false })
-      put('_')
-      i = j
-      continue
-    }
-    if (ch === '$' && next === '{') {
-      const j = src.indexOf('}', i)
-      if (j < 0 || /\$\(|`/.test(src.slice(i, j))) return null
-      put('_')
-      i = j
-      continue
-    }
-    if (ch === '$' && /[\w@*#?$!-]/.test(next)) {
-      i += /[A-Za-z_]/.test(next) ? (/^\w+/.exec(src.slice(i + 1))?.[0].length ?? 1) : 1
-      put('_')
-      continue
-    }
-    if (q === '"') { put(ch); continue }
-    if (ch === '$' && next === "'") {
-      let j = i + 2
-      while (j < src.length && src[j] !== "'") j += src[j] === '\\' ? 2 : 1
-      if (j >= src.length) return null
-      put(`'${ansiC(src.slice(i + 2, j)).replaceAll("'", `'\\''`)}'`)
-      i = j
-      continue
-    }
-    if (ch === '$' && next === '"') continue // a locale string: the quotes that follow are read as usual
-    if (ch === "'" || ch === '"') { q = ch; put(ch); continue }
-    if (ch === '#' && endsIn(' \t\n;&|()')) {
-      while (i + 1 < src.length && src[i + 1] !== '\n') i++
-      continue
-    }
-    if (ch === '<' && next === '<') {
-      const here = src[i + 2] === '<'
-      const tabs = !here && src[i + 2] === '-'
-      let j = i + (here || tabs ? 3 : 2)
-      while (src[j] === ' ' || src[j] === '\t') j++
-      const e = wordEnd(j)
-      if (e < 0) return null
-      if (here && shellHere()) runs.push({ text: unquote(src.slice(j, e)), deeper: true })
-      if (!here) docs.push({ delim: unquote(src.slice(j, e)), tabs, run: shellHere() })
-      put(' ')
-      i = e - 1
-      continue
-    }
-    if (ch === '<' || ch === '>' || (ch === '&' && next === '>')) {
-      let d = buf.length // an fd number before it (digits arrive one per chunk) goes with it
-      while (d > 0 && /^\d$/.test(buf[d - 1] ?? '')) d--
-      if (d < buf.length && (d === 0 || ' \t\n;&|()'.includes((buf[d - 1] ?? '').at(-1) ?? ''))) {
-        buf.length = d
-        last = buf[d - 1]?.at(-1) ?? ''
-      }
-      let j = ch === '&' ? i + 2 : i + 1
-      if (src[j] === '>' || (ch === '>' && src[j] === '|')) j++
-      else if (ch !== '&' && src[j] === '&') {
-        const fd = /^(?:\d+|-)(?=$|[\s;&|)])/.exec(src.slice(j + 1))?.[0]
-        if (fd) { put(' '); i = j + fd.length; continue }
-        j++
-      }
-      while (src[j] === ' ' || src[j] === '\t') j++
-      const e = wordEnd(j)
-      if (e < 0) return null
-      put(' ')
-      i = e - 1
-      continue
-    }
-    if (ch === '\n' && docs.length) {
-      let j = i + 1
-      for (const d of docs) {
-        const from = j
-        let body = ''
-        for (;;) {
-          const nl = src.indexOf('\n', j)
-          const line = src.slice(j, nl < 0 ? src.length : nl)
-          const ends = (d.tabs ? line.replace(/^\t+/, '') : line) === d.delim
-          if (ends || nl < 0) {
-            body = ends ? src.slice(from, j) : src.slice(from)
-            j = nl < 0 ? src.length : nl + 1
-            break
-          }
-          j = nl + 1
-        }
-        if (d.run) runs.push({ text: body, deeper: true })
-      }
-      docs.length = 0
-      put('\n')
-      i = j - 1
-      continue
-    }
-    if (ch === '(') { parens++; put(' ; '); continue }
-    if (ch === ')') {
-      if (close && parens === 0) return { text: buf.join(''), runs, end: i }
-      if (--parens < 0) return null
-      put(' ; ')
-      continue
-    }
-    if ((ch === '{' || ch === '}') && endsIn(' \t\n;&|') && (next === '' || ' \t\n;&|'.includes(next))) { put(' ; '); continue }
-    if (ch === '{') { braces++; put(BO); continue }
-    if (ch === ',' && braces > 0) { put(BC); continue }
-    if (ch === '}' && braces > 0) { braces--; put(BE); continue }
-    if (/[\s;&|]/.test(ch)) braces = 0
-    put(ch)
-  }
-  return q || close ? null : { text: buf.join(''), runs, end: src.length } // a here-doc left open runs to the end, as in bash
-}
 
 // The last resort, for text even inert() cannot follow: the regex, and the words a shell -c or eval runs, unquoted
 // and read again one layer deeper (past the bound: denied).
@@ -471,26 +243,6 @@ function shellPayloads(cmd: string): string[] {
   return found
 }
 const EVAL_PAYLOAD = /(?:^|[\s;&|(`])eval\s+([^;&|\n]+)/g
-// The top-level commands of text, split on unquoted ; & | and newlines outside parentheses.
-function topLevel(cmd: string): string[] {
-  const parts: string[] = []
-  let q = ''
-  let depth = 0
-  let from = 0
-  for (let i = 0; i < cmd.length; i++) {
-    const c = cmd[i] ?? ''
-    if (q === "'") { if (c === "'") q = ''; continue }
-    if (c === '\\') { i++; continue }
-    if (q === '"') { if (c === '"') q = ''; continue }
-    if (c === '$' && cmd[i + 1] === "'") { for (i += 2; i < cmd.length && cmd[i] !== "'"; i++) if (cmd[i] === '\\') i++; continue }
-    if (c === "'" || c === '"') q = c
-    else if (c === '(') depth++
-    else if (c === ')') depth--
-    else if (depth === 0 && /[;&|\n]/.test(c)) (parts.push(cmd.slice(from, i)), (from = i + 1))
-  }
-  parts.push(cmd.slice(from))
-  return parts.filter(p => p.trim())
-}
 function lastResort(cmd: string, depth: number): boolean {
   tick()
   if (regexBypass(cmd)) return true
@@ -516,7 +268,7 @@ function reads(cmd: string, depth = 0): boolean {
     if (r?.runs.some(run => (run.deeper ? deeper(run.text, depth) : reads(run.text, depth)))) return true
     if (r) ({ segs, bad } = tokenize(r.text))
     if (bad) return lastResort(cmd, depth)
-    segs = segs.map(seg => seg.flatMap(w => (w.includes(BO) ? expandBraces(realGroups(w)) : [literal(w)])))
+    segs = segs.map(seg => seg.flatMap(expandWord))
   }
   return segs.some(seg => segmentBypasses(seg, depth))
 }

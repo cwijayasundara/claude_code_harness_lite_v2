@@ -460,6 +460,12 @@ test('a shell after a reserved word, and csh, tcsh, fish, ash and mksh, are read
   allows(['if true; then git status; fi', `tcsh -c 'echo hi'`, 'until git fetch; do sleep 1; done'])
 })
 
+test('a bare \\x, \\u or \\U in $\'...\' stays literal; sudo option clusters and attached -S, -c and --command= values are read', () => {
+  allows([`echo $'\\x'`, `grep $'\\x' file`, `printf $'\\u \\U'`, `sudo -Eu me sh -c 'git status'`])
+  denies([`sudo -Eu me sh -c 'true; git commit -n'`, `env -S'sh -c "true; git commit -n"'`, `su me -c'true; git commit -n'`,
+    `su me --command='true; git commit -n'`, `echo $'\\x'; git commit -"n" -m x`])
+})
+
 const pre = (command: string) => JSON.parse(hook(repo, 'pre-bash', { tool_input: { command } }).stdout || '{}').hookSpecificOutput
 test('pre-bash denies a command past the guard limits and says to ask the person', () => {
   sdlc(repo, ['init'])
