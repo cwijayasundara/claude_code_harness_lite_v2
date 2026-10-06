@@ -606,3 +606,32 @@ Live trial 2026-10-04 (`tests/trials/live-2026-10-04/notes.md`): change `catalog
 - **Human-only promotion.** `/rig-approve <id> learn` appends the rule to `.sdlc/rules.json`; the model cannot run it. `sensor-tune` is never applied by a command. The edit then ships through PR review like any harness change.
 - **The verifier is not writable.** The learner lives under `scripts/**` (protected), and `.sdlc/learn/proposals.json` is rig-written evidence the model cannot write, so the improver cannot change the gate that judges it.
 - **Deferred.** A model proposer and edits to skill text or templates (v2, behind the same gate), scheduled runs, improving `learn` itself, a `learn` key in sensors.json, gate-friction signals (approvals store a digest only), and a `/rig-learn` pane.
+
+## 16. Enforcement everywhere (spec 5)
+
+Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md).
+
+**The problem.** A spike on 2026-10-06 ran the real hooks in a throwaway repo with no active change. The Stop gate already blocked a hardcoded secret, deleted test assertions, failing fast tests, a file written through Bash and a bad change the agent committed mid-turn. It left five gaps: (1) nothing runs outside a Claude turn (an IDE edit, another agent, a manual `git commit`); (2) warnings are invisible, so a 90-line file against a 60-line limit passed in silence; (3) the wiki drifts between ship and CI; (4) the Stop cap is soft, so a direct commit and push meets no refusal until CI; (5) the quality ratchet runs only at `/rig:sensors`.
+
+**The decision.** Git is the common layer: every editor, agent and person ends in `git commit` and `git push`. The hooks call the same checker as Stop, ship and CI, so local equals CI. A hook that cannot run (no Node, no `.sdlc/bin`) warns and lets git continue, because a broken hook must not wedge a repo; a finding that blocks still blocks. The model is denied the bypasses; a person keeps `--no-verify`, and CI is the floor.
+
+- **`hooks install|uninstall|status`.** Sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh` scripts that run the vendored `.sdlc/bin/sdlc.ts`); `vendor` copies the checker. A foreign `core.hooksPath` is left alone unless `--force`. Session start wires a fresh clone (`core.hooksPath` is local git config) and tells the agent what it did.
+- **`check --at commit`.** The staged diff, read from the index, goes through the Stop sensors and the fast commands. Warnings print as counts plus the Stop and prompt carry-over text; blocks refuse the commit. A merge or rebase in progress is skipped.
+- **`check --at push`.** For each pushed branch, what the remote lacks goes through the ship checks and, when `quality` commands are declared, the quality ratchet against the base. The remote sha comes from git's pre-push stdin; a new branch uses the merge-base with the default branch. Deletes, tags and a new branch with no base are skipped. Config is `githooks: { prePush: "ship" | "off", budgetMs }` (default `ship`, 300000); running out of budget warns and allows.
+- **Warnings are visible.** Stop prints a `systemMessage` for a turn that passes with warnings, and the next prompt hands them to the agent once.
+- **The model cannot bypass the hooks.** `pre-bash` denies `git commit --no-verify`, `git push --no-verify` (and abbreviations), `-n` on commit, and any command naming `core.hooksPath`. Best-effort regex; CI is the floor.
+
+### Deviations from the spec
+
+- Push diffs the remote sha from stdin, not `defaultBase()` (null on trunk), and filters on the destination ref, so `HEAD:main` and `<sha>:main` are judged.
+- Ship verdicts apply only to `adhoc-*` changes; a push that carries a named change is left to that change's own ship.
+- At commit, `harness-tamper` only warns, because the commit point follows Stop semantics; push blocks it.
+- `formatFindings` prints warnings as counts only, so a budget warning at push adds a `warning: <message>` note.
+- The harness line cap moved from 6100 to the final value in `scripts/size.spec.ts`.
+
+### Open items
+
+- The fast commands at commit see the working tree, not the index.
+- `--no-verify` by a person leaves CI as the only judge.
+- The bypass denial is a regex; a tokenizer from `scripts/shell.ts` would be sturdier.
+- A checker crash inside a hook exits non-zero and blocks the commit; the hook script fails soft only when Node or `.sdlc/bin` is missing.

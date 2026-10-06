@@ -53,6 +53,16 @@ export function installHooks(force = false): { ok: boolean; message: string } {
   return { ok: true, message: `git hooks installed (core.hooksPath = ${HOOKS_DIR}): commit and push now run the rig checks` }
 }
 
+// Session start wires committed hooks in a fresh clone (core.hooksPath is local git config, so a clone never has it).
+export function sessionNote(): string {
+  if (!exists(path.join(SDLC, 'bin', 'sdlc.ts')) || !exists(path.join(ROOT, HOOKS_DIR))) return ''
+  const { state, path: current } = hooksState()
+  if (state === 'installed') return ''
+  if (state === 'other') return `Git hooks: core.hooksPath is ${current}, so the rig commit and push checks are not wired; \`sdlc.ts hooks install --force\` replaces it.`
+  const r = installHooks()
+  return r.ok ? `Git hooks: installed the rig pre-commit and pre-push checks (core.hooksPath = ${HOOKS_DIR}).` : `Git hooks: ${r.message}`
+}
+
 export function uninstallHooks(): string {
   if (hooksState().state !== 'installed') return 'rig git hooks are not installed; nothing changed'
   git(['config', '--local', '--unset', 'core.hooksPath'])

@@ -292,3 +292,16 @@ test('a Stop that passes with a warning tells the person, and the next prompt te
   assert.match(next.hookSpecificOutput.additionalContext, /big\.js/)
   assert.equal(hook(repo, 'prompt-submit', { session_id: 's' }).stdout, '', 'shown once, not again')
 })
+
+test('session-start installs the git hooks when they are committed but not wired, and stays quiet once they are', () => {
+  sdlc(repo, ['vendor'])
+  sdlc(repo, ['hooks', 'install'])
+  gitIn(repo, 'config', '--local', '--unset', 'core.hooksPath')
+  const first = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
+  assert.match(first, /Git hooks: installed/)
+  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.sdlc/githooks')
+  const again = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
+  assert.doesNotMatch(again, /Git hooks/)
+  gitIn(repo, 'config', '--local', 'core.hooksPath', '.husky')
+  assert.match(JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext, /Git hooks: core\.hooksPath is \.husky/)
+})

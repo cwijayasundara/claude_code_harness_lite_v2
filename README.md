@@ -155,7 +155,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig:metrics [days]` | You want the 12 playbook metrics plus cost per change, stage and agent. |
 | `/rig:wiki` | After init, or when pages go stale: refresh `docs/wiki/`. |
 
-**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `learn`, `wiki`, `vendor`, `hook <event>`. Skills and CI call these; so can you.
+**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `learn`, `wiki`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
 
 ### What fires when (the automatic edges)
 
@@ -167,6 +167,8 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | Before an edit | `pre-edit` | Asks about files outside the plan's `## Files`; rejects secrets and plans containing code. |
 | After an edit | `post-edit` | Notices for secrets, test tampering and the matching guide. |
 | A turn or subagent ends | `stop`, `subagent-stop` | Runs the sensors on the turn's diff; blocks at most 2 times, then records `unresolved.json`. |
+| You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print, blocks refuse the commit (rebase and merge are skipped). |
+| You push | git pre-push | What the remote lacks goes through the ship checks and the quality ratchet against the base; `githooks.prePush: "off"` disables it. |
 | A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
 | A change ships | mod, weekly `learn.yml` | `/rig:learn` runs and toasts what is promotable. |
 
@@ -183,6 +185,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 
    Or, for one session: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
 2. In the repo, make a first commit if it has none, then run `/rig:init`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and the code wiki, and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/rig-*`, agents to `.claude/agents/rig-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Sonnet subagents).
+   Run `node .sdlc/bin/sdlc.ts hooks install` (or let the first Claude Code session do it) to wire the git hooks; they cover editors and other agents. `--no-verify` still works for a person; CI is the floor.
 3. Commit `.sdlc/`, `.claude/` and `CLAUDE.md`. Anyone who clones the repo, and any cloud session, now runs the harness with no install. In the repo the commands are `/rig-start`, `/rig-next` and so on.
 
 **Where things live.** Change artifacts, approvals, waivers and run records go in `.sdlc/`, not `.claude/`, for two reasons. Claude Code treats `.claude/` as protected, so writes there prompt and fail in headless runs. And these files are evidence the `rig-check` CI gate reads, so they are meant to be committed. Machine-local state (`.gate`, `.baseline`, `usage.jsonl`, `unresolved.json`) is already in `.sdlc/.gitignore`.
@@ -233,7 +236,7 @@ Long builds belong in a Claude Code cloud session (claude.ai/code or `claude --c
 ## Guides and sensors
 
 Computational sensors run on the hot path at zero tokens; one inferential review runs per change. `sdlc.ts check` is the single entry point, so local equals CI.
-- **Config** is `.sdlc/sensors.json`: `fast`/`full` commands, `tests`, `testSupport` (overlaid with the tests when proving against the base), `fixtures` (exempt from pattern sensors only; deletions stay tracked and adding a glob counts as weakening), `ignore`, `contracts`, `consumers`, `layers`, `limits`, `knownRed`. `.sdlc/rules.json` holds regex rules.
+- **Config** is `.sdlc/sensors.json`: `fast`/`full` commands, `tests`, `testSupport` (overlaid with the tests when proving against the base), `fixtures` (exempt from pattern sensors only; deletions stay tracked and adding a glob counts as weakening), `ignore`, `contracts`, `consumers`, `layers`, `limits`, `knownRed`, `githooks` (`{ prePush: "ship" | "off", budgetMs }`). `.sdlc/rules.json` holds regex rules.
 - **Sensors:** test-tamper, suppression, layering, size, secrets, rules, contract-impact, harness-tamper, traceability and red-proof, plus ad-hoc, commands and config findings.
 - **When they fire:** on each edit (secrets, tamper and guide context, as notices), at Stop (the turn's diff), at plan and ship (traceability, red-proof, impact), and in CI.
 - **Red-proof** depends on the change type: changed tests must fail on the base for bugfix and incident, and for feature and greenfield at M and L; they must pass on the base for refactor at M and L; chore and migration are exempt.

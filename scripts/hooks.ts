@@ -12,6 +12,7 @@ import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, parseConfig, type FileDiff, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd } from './shell.ts'
 import { autoApprove } from './autoapprove.ts'
+import { sessionNote } from './githooks.ts'
 
 function readStdin(): HookInput {
   try {
@@ -75,6 +76,7 @@ function hookSessionStart(input: HookInput): void {
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : `No active change. Start one with ${skillRef('start')} "<request>".`,
     `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to ${agentRef('scout')} and slices to ${agentRef('implementer')}; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .sdlc/STATE.md). If an sdlc skill fails to load, run \`node "${SCRIPT()}" skill <stage> <slug>\` and follow it exactly.`,
     wikiMissing ? `No code wiki yet: ${skillRef('wiki')} builds it.` : '',
+    sessionNote(),
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
   ].filter(Boolean)

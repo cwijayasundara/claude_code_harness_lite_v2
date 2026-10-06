@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Git hooks: `sdlc.ts hooks install` wires `pre-commit` (the staged diff through the Stop sensors and the fast commands) and `pre-push` (what the remote lacks through the ship checks and the quality ratchet), so edits made outside a Claude turn are judged too. A fresh clone is wired at session start. A hook that cannot run warns and lets git continue; `--no-verify` stays a person's option and the model is denied it, along with `core.hooksPath`. New config `githooks: { prePush, budgetMs }`.
+- Stop now tells the person about non-blocking warnings, and the next prompt hands them to the agent once (a 90-line file over a 60-line limit used to pass in silence).
 - Tests no longer inherit the runner's `GITHUB_EVENT_PATH`/`GITHUB_STEP_SUMMARY`, which made the reviewer-lookup test fail on GitHub Actions; the new reliability tests import by file URL so they run on Windows.
 
 ## 0.4.1
