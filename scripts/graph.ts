@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, CHANGES, planPath, STATE, exists, read, sha, git, toPosix, frontmatter, reportFields, approvalOf, needsImpact, readImpact, listChanges, isShipped, SLUG_RE, skillRef,
+  ROOT, CHANGES, planPath, STATE, now, createChange, exists, read, sha, git, toPosix, frontmatter, reportFields, approvalOf, needsImpact, readImpact, listChanges, isShipped, SLUG_RE, skillRef,
   APPROVAL_ARTIFACTS, type ChangeType, type Tier, type Stage, type GatedStage, type ApprovalState, type Next, type Change,
 } from './core.ts'
 import { loadConfig } from './check.ts'
@@ -172,4 +172,13 @@ export function step(slug: string): Step {
     }
   }
   return { ...base, verdict: 'continue', reason: `next node: ${node}${pending}` }
+}
+
+// Work done without /rig:start is recorded as an ad-hoc chore so the ship gate and CI still triage it.
+export function createAdhoc(tier: Tier): string {
+  const stamp = now().replace(/[-:T]/g, '').slice(0, 12)
+  let slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}`
+  for (let n = 2; exists(path.join(CHANGES, slug)); n++) slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}-${n}`
+  createChange(slug, 'chore', tier, 'Ad-hoc change made without /rig:start')
+  return slug
 }

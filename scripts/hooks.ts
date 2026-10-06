@@ -5,7 +5,7 @@ import {
   ROOT, SDLC, git, CHANGES, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
   planFiles, planName, planApproved, isPlanned, approvalOf, planVerification, EVIDENCE_RE, EVIDENCE_NAME_RE, relPosix, scanSecrets, planProblems, sha, createChange, withLock, writeAtomic, type Tier, type Args, type HookInput,
 } from './core.ts'
-import { activeSlug, loadChange, nextCommand } from './graph.ts'
+import { activeSlug, loadChange, nextCommand, createAdhoc } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
@@ -352,15 +352,6 @@ function summarize(findings: Finding[]): GateSummary {
   return { at: now(), blocks: findings.filter(f => f.severity === 'block').length, warns: findings.filter(f => f.severity === 'warn').length, bySensor }
 }
 
-function createAdhoc(diffs: FileDiff[], config: SensorConfig): string {
-  const tier: Tier = tierFromDiff(diffs, config)
-  const stamp = now().replace(/[-:T]/g, '').slice(0, 12)
-  let slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}`
-  for (let n = 2; exists(path.join(CHANGES, slug)); n++) slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}-${n}`
-  createChange(slug, 'chore', tier, 'Ad-hoc change made without /rig:start')
-  return slug
-}
-
 // Each prompt starts a turn: record the tree and reset the per-turn gate, so Stop diffs exactly this turn's changes.
 function hookPromptSubmit(): void {
   if (!exists(SDLC)) return
@@ -393,7 +384,7 @@ function hookStop(input: HookInput, sub: boolean): void {
   // A turn that shipped (its commits add a change's ship.json) is recorded already; any other commit is still ad hoc.
   const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.sdlc\/changes\/[^/]+\/ship\.json$/.test(f))
   // Harness files alone (onboarding writes CI workflows and settings) are not ad-hoc work.
-  if (!slug && !sub && !shipped && diffs.some(d => isSource(d.file, config) && !isProtected(d.file))) slug = createAdhoc(diffs, config)
+  if (!slug && !sub && !shipped && diffs.some(d => isSource(d.file, config) && !isProtected(d.file))) slug = createAdhoc(tierFromDiff(diffs, config))
   const result = runChecks({
     point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: sub ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
     before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null, ratchet: !sub,
