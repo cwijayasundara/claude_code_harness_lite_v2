@@ -94,15 +94,15 @@ export function cmdCheckPush(_args: Args): void {
   if (config.githooks.prePush === 'off') return out('sdlc check push: off (githooks.prePush)')
   const raw = readStdin()
   const refs = raw.trim()
-    ? parsePushRefs(raw).filter(r => !ZERO.test(r.localSha) && r.localRef.startsWith('refs/heads/'))
-    : [{ localRef: 'refs/heads/HEAD', localSha: git(['rev-parse', 'HEAD']) ?? '', remoteRef: '', remoteSha: '0' }]
+    ? parsePushRefs(raw).filter(r => !ZERO.test(r.localSha) && r.remoteRef.startsWith('refs/heads/'))
+    : [{ localRef: 'refs/heads/HEAD', localSha: git(['rev-parse', 'HEAD']) ?? '', remoteRef: 'refs/heads/HEAD', remoteSha: '0' }]
   if (!refs.length) return out('sdlc check push: nothing to judge (a delete or tag push)')
   const t0 = Date.now()
   const findings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
   const notes: string[] = []
   for (const r of refs) {
     const base = ZERO.test(r.remoteSha) ? defaultBase() : r.remoteSha
-    if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.localRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }
+    if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.remoteRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }
     const diffs = rangeDiff(base, r.localSha)
     if (!diffs.length) continue
     const active = activeSlug()
