@@ -58,7 +58,7 @@ export function sessionNote(): string {
   if (!exists(path.join(SDLC, 'bin', 'sdlc.ts')) || !exists(path.join(ROOT, HOOKS_DIR))) return ''
   const { state, path: current } = hooksState()
   if (state === 'installed') return ''
-  if (state === 'other') return `Git hooks: core.hooksPath is ${current}, so the rig commit and push checks are not wired; \`sdlc.ts hooks install --force\` replaces it.`
+  if (state === 'other') return `Git hooks: core.hooksPath is ${current}, so the rig commit and push checks are not wired. Do not change it yourself: ask the person to run \`node .sdlc/bin/sdlc.ts hooks install --force\` if they want rig's hooks.`
   const r = installHooks()
   return r.ok ? `Git hooks: installed the rig pre-commit and pre-push checks (core.hooksPath = ${HOOKS_DIR}).` : `Git hooks: ${r.message}`
 }

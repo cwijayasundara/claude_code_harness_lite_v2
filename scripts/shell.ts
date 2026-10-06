@@ -208,3 +208,76 @@ export function readOnlyDenial(cmd: string, agent: string, declared: (slug: stri
   }
   return null
 }
+
+// The model may not switch the git hooks off (only the person does): --no-verify on commit or push (any prefix),
+// -n on commit, core.hooksPath in any spelling or scope, an alias that adds either, or rig's own uninstall / install --force.
+// Read on dequoted words; a command tokenize refuses ($(...), redirects, braces) falls back to a regex.
+const RIG_HOOKS_OFF = /sdlc\.(?:m?js|ts)\b[^;&|\n]*\bhooks\s+(?:uninstall\b|install\b[^;&|\n]*--force)/
+const REGEX_BYPASS = [/\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*/i, /core\.hookspath/i, RIG_HOOKS_OFF]
+const GIT_GLOBAL_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix'])
+const COMMIT_VALUE = new Set(['-m', '-F', '-C', '-c', '-t', '--message', '--file', '--author', '--date', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--cleanup', '--trailer', '--template'])
+const MESSAGE = new Set(['-m', '-F', '--message', '--file'])
+const HOOKS_PATH = /core\.hookspath/i
+const noVerify = (w: string): boolean => w.startsWith('--no-v') && !w.startsWith('--no-verb')
+
+// Option words of a commit or push, minus message values; true when one skips the hooks.
+function optionsBypass(sub: string, args: string[], scanned: string[]): boolean {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i] ?? ''
+    if (w === '--') break
+    if (sub === 'commit' && COMMIT_VALUE.has(w)) {
+      if (!MESSAGE.has(w)) scanned.push(args[i + 1] ?? '')
+      i++
+      continue
+    }
+    if (/^--(?:message|file)=/.test(w) || (sub === 'commit' && /^-[mF]/.test(w))) continue
+    scanned.push(w)
+    if (noVerify(w)) return true
+    if (sub !== 'commit' || !/^-[^-]/.test(w)) continue
+    for (let j = 1; j < w.length; j++) {
+      const ch = w[j] ?? ''
+      if (ch === 'n') return true
+      if ('mFCctuS'.includes(ch)) {
+        if (j === w.length - 1 && 'mFCct'.includes(ch)) i++ // a value-taking letter last: the value is the next word
+        break
+      }
+    }
+  }
+  return false
+}
+
+function aliasBypass(words: string[]): boolean {
+  return words.some((w, i) => {
+    const m = /^alias\.[^=]*(?:=([^]*))?$/i.exec(w)
+    if (!m) return false
+    const value = m[1] ?? words[i + 1] ?? ''
+    return bypassesGitHooks(value.startsWith('!') ? value.slice(1) : `git ${value}`)
+  })
+}
+
+function segmentBypasses(seg: string[]): boolean {
+  const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
+  const h = seg.indexOf('hooks', s + 1)
+  if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
+  const g = seg.findIndex(w => w === 'git' || w.endsWith('/git'))
+  if (g < 0) return seg.some(w => /^\w+=/.test(w) && HOOKS_PATH.test(w))
+  const scanned = seg.slice(0, g)
+  let i = g + 1
+  while ((seg[i] ?? '').startsWith('-')) {
+    scanned.push(seg[i] ?? '')
+    if (GIT_GLOBAL_VALUE.has(seg[i] ?? '')) scanned.push(seg[++i] ?? '')
+    i++
+  }
+  const sub = seg[i] ?? ''
+  const args = seg.slice(i + 1)
+  if (sub === 'commit' || sub === 'push') {
+    if (optionsBypass(sub, args, scanned)) return true
+  } else scanned.push(sub, ...args)
+  return scanned.some(w => HOOKS_PATH.test(w)) || aliasBypass(scanned)
+}
+
+export function bypassesGitHooks(cmd: string): boolean {
+  const { segs, bad } = tokenize(cmd)
+  if (bad) return REGEX_BYPASS.some(re => re.test(cmd.replace(/["'\\]/g, '')))
+  return segs.some(segmentBypasses)
+}

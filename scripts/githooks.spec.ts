@@ -282,6 +282,32 @@ test('the model may not bypass the git hooks; ordinary commits and pushes are un
   for (const cmd of ['git commit -m "fix the -n flag"', 'git commit -am x', 'git push origin main', 'git status', 'git commit --amend --no-edit', 'git push -n origin main', 'git commit -m "docs: say --no-verify"']) assert.notEqual(bash(cmd), 'deny', cmd)
 })
 
+test('the bypass guard reads commands as bash does: quotes, escapes, continuations, env config and aliases', () => {
+  sdlc(repo, ['init'])
+  for (const cmd of [
+    'git commit \\\n--no-verify -m x', 'git commit --no"-verify" -m x', 'git commit "--no-"verify -m x', 'git commit -"n" -m x',
+    "git commit -'n' -m x", 'git commit --no\\-verify -m x', 'git -c core.hooks\\Path=/dev/null commit -m x',
+    'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x', "git config alias.c 'commit --no-verify'",
+    "git -c alias.c='commit -n' c -m x", 'export GIT_CONFIG_KEY_0=core.hooksPath; git commit -m x', 'git -C . commit -n -m x',
+    'git commit -m "$(date)" --no-verify', 'git push --no-ver origin main',
+  ]) assert.equal(bash(cmd), 'deny', cmd)
+  for (const cmd of [
+    'git log --grep=commit -n 5', 'git commit -m "-n flag docs"', 'git commit -m "mention core.hooksPath"', 'git commit -m x -- -n',
+    'git commit -uno -m x', 'git commit -F msg.txt', "git config alias.lg 'log --oneline'", 'git push --dry-run origin main',
+  ]) assert.notEqual(bash(cmd), 'deny', cmd)
+})
+
+test('the model may not switch the hooks off with rig\'s own command; status and a plain install are fine', () => {
+  sdlc(repo, ['init'])
+  for (const cmd of ['node .sdlc/bin/sdlc.ts hooks uninstall', 'node .sdlc/bin/sdlc.ts hooks install --force', 'node "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hooks uninstall']) {
+    const r = hook(repo, 'pre-bash', { tool_input: { command: cmd } })
+    const h = JSON.parse(r.stdout).hookSpecificOutput
+    assert.equal(h.permissionDecision, 'deny', cmd)
+    assert.match(h.permissionDecisionReason, /person/)
+  }
+  for (const cmd of ['node .sdlc/bin/sdlc.ts hooks status', 'node .sdlc/bin/sdlc.ts hooks install']) assert.notEqual(bash(cmd), 'deny', cmd)
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {
@@ -354,5 +380,7 @@ test('session-start installs the git hooks when they are committed but not wired
   const again = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
   assert.doesNotMatch(again, /Git hooks/)
   gitIn(repo, 'config', '--local', 'core.hooksPath', '.husky')
-  assert.match(JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext, /Git hooks: core\.hooksPath is \.husky/)
+  const other = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
+  assert.match(other, /Git hooks: core\.hooksPath is \.husky/)
+  assert.match(other, /ask the person to run `node \.sdlc\/bin\/sdlc\.ts hooks install --force`/)
 })

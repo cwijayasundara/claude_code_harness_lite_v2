@@ -10,7 +10,7 @@ import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } fro
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, parseConfig, type FileDiff, type Finding, type SensorConfig } from './model.ts'
-import { readOnlyDenial, normCmd } from './shell.ts'
+import { readOnlyDenial, normCmd, bypassesGitHooks } from './shell.ts'
 import { autoApprove } from './autoapprove.ts'
 import { sessionNote } from './githooks.ts'
 
@@ -216,19 +216,7 @@ function declaredCommands(slug: string | undefined): Set<string> {
   return new Set(cmds.map(normCmd))
 }
 
-// The person may bypass the git hooks (`git commit --no-verify`); the model fixes the findings instead.
-const NO_VERIFY_FLAGS = /\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*/i
-const NO_VERIFY_CONFIG = /\bgit\b[^;&|\n]*core\.hookspath/i
-export const bypassesGitHooks = (cmd: string): boolean => {
-  // For commit/push flags: unwrap quoted segments starting with dash, blank others
-  const unwrappedForFlags = cmd.replace(/"([^"]*)"|'([^']*)'/g, (_m, a, b) => {
-    const s = a ?? b ?? ''
-    return s.startsWith('-') ? ` ${s} ` : '""'
-  })
-  // For core.hooksPath: test against command with all quotes removed (acceptable false positive if mentioned in commit message)
-  const allQuotesRemoved = cmd.replace(/["']/g, '')
-  return NO_VERIFY_FLAGS.test(unwrappedForFlags) || NO_VERIFY_CONFIG.test(allQuotesRemoved)
-}
+export { bypassesGitHooks }
 
 function hookPreBash(input: HookInput): void {
   if (!exists(SDLC)) return
@@ -240,7 +228,7 @@ function hookPreBash(input: HookInput): void {
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
   }
   if (bypassesGitHooks(cmd)) {
-    return decide('deny', 'The rig git hooks run the quality checks at commit and push. Only the person bypasses them (git commit --no-verify); fix the findings instead. See their state with `sdlc.ts hooks status`.')
+    return decide('deny', 'The rig git hooks run the quality checks at commit and push. Only the person bypasses or switches them off (git commit --no-verify, hooks uninstall, hooks install --force); fix the findings instead. See their state with `sdlc.ts hooks status`.')
   }
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands, input.cwd) : null
