@@ -1,6 +1,6 @@
 # rig v0.5 to v0.7: follow the official plugin pattern, do each thing once, scale to large repos
 
-Status: draft 2 for review. Replaces draft 1, which carried old-harness machinery (a result cache, per-change preflight, cross-change dependencies) that the official pattern does not use. Evidence and measurements are in `docs/proposals/2026-10-06-efficiency-and-scale.md`. Path: architectural. After approval: `writing-plans`.
+Status: draft 3 for review. D1 to D4 are approved (§9). Draft 3 adds vibe-coding parity (R1), story points (R14) and sprint planning with dependency clusters (R15, R16). Draft 2 replaced draft 1's old-harness machinery (a result cache, a per-change preflight) with the official pattern. Evidence and measurements are in `docs/proposals/2026-10-06-efficiency-and-scale.md`. Path: architectural. After approval: `writing-plans`.
 
 Pattern source: Anthropic's `code-modernization` plugin (`anthropics/claude-plugins-official`), read in full for this draft: README, `plugin.json`, `hooks.json`, `modernize`, `-preflight`, `-status`, `-verify`, an agent, the `extract-rules` workflow and `make_shards.py`. Large-codebase and best-practice guidance: the two Claude Code docs pages you named.
 
@@ -12,15 +12,18 @@ Pattern source: Anthropic's `code-modernization` plugin (`anthropics/claude-plug
 
 | Measure | Today | Target |
 |---|---|---|
-| Hook processes spawned per tool call | 1 to 3 (PreToolUse on every Bash and Edit, PostToolUse on every edit) | 0 |
-| Registered hook events | 9 | 6, none per tool call (§4) |
+| Hook processes per tool call | 1 to 3 on every Bash and Edit | 0 on Bash; 1 on source-file edits only (R1) |
+| Unplanned ("vibe") work, no `/rig:start` | Stop and commit gates | every sensor runs at edit, stop, commit, push and CI with no active change (matrix test, R1) |
+| Story points | none | on every change; velocity and cost per point reported (R14) |
+| Sprint planning | none | a PRD becomes a validated task graph, dependency clusters and an allocation proposal in one command (R15, R16) |
+| Registered hook events | 9 | 7; none on Bash (R1) |
 | Runs of the full test command per tier M change, same tree | 6 to 8 plus CI | verify once from clean, red-proof once on base, CI once |
 | In-session model review passes, tier S / M / L | 2 / 2 / 3-4 | 0-1 / 1 / one sharded pass |
 | Largest agent context in a review | whole diff in one reviewer | ≤ 25 files and ≤ 5,000 changed lines per shard |
 | Non-test source lines | about 5.2k | ≤ 5.0k at v0.7 (gated; every release is net negative) |
 | Email failure modes without a full guard (§8) | 8 of 11 | 0 |
 
-**Non-goals.** No wiki, no learning loop, no `bin/rig` wrapper, no dependency-graph parsing, no cross-change dependencies, no Windows support, no telemetry.
+**Non-goals.** No wiki, no learning loop, no `bin/rig` wrapper, no dependency-graph parsing from source, no tracker integration (Jira and similar; a PRD is a file or a `gh` issue), no Windows support, no telemetry.
 
 **Interpretation to confirm.** "The v5 of my previous attempt" is read as the harness in `docs/stuff.eml` (the `/auto` scaffold with generator and evaluator, seven gates, self-heal, learned rules, Jira stories). Its design choices are listed in §3 as "not carried". If you meant a different version, tell me and §3 changes.
 
@@ -30,6 +33,7 @@ Pattern source: Anthropic's `code-modernization` plugin (`anthropics/claude-plug
 |---|---|---|
 | **Front door writes `INTENT.md` once; every command reads it and never re-asks** (`modernize`) | `/rig:start` writes `intent.md`, max two questions | Keep |
 | **Each command stands alone, writes one artifact, ends on the exact next command** (every command; "each step stands alone") | Same, but `build`, `test`, `sensors` end by chaining into `skill next` unless `/rig-run` drives | Keep chaining only under `/rig:run`; default is stop and print `Next:` (decision D2) |
+| **A phased plan a person approves before anything is built, steered by editing it; many systems ranked on one page** (`modernize-brief`, `assess --portfolio`) | One change at a time; nothing plans a sprint's worth of work or groups tasks for a team | `/rig:sprint` (R15, R16): an approved task plan with dependencies, clusters and points |
 | **Verdicts computed by a script from files, recomputed each time, none carried over** (`proof_pack.py`; "recomputed from current evidence each time") | `verify` does this; ship, push and quality then re-run the same checks again | Run once from clean; later gates check a tree stamp, never re-run (R2) |
 | **Preflight is one run-first command**: every check runs, one complete report, at most five questions only a person can answer, proves the build on this code, checks the source is protected (`modernize-preflight`) | None. `init` baselines commands, nothing reports readiness | `init` writes `.sdlc/PREFLIGHT.md` (R6). Once per repo, not per change |
 | **`status` inspects and never modifies; flags stale artifacts by file time; ends with three lines (where you are, what is stale, next command)** (`modernize-status`) | `status` and `next` exist; no staleness | Add staleness and the three lines (R7) |
@@ -37,7 +41,7 @@ Pattern source: Anthropic's `code-modernization` plugin (`anthropics/claude-plug
 | **Large codebases are sharded with hard bounds, run in ordered batches, announced before launch, resumable from a journal** (`make_shards.py`: ≤ 25 files, ≤ 5,000 LOC; `extract-rules.js`: batches of 8, per-finding referee, `resumeFromRunId`) | One Opus reviewer reads the whole diff; the 200K ceiling was the email's top cause | Shard review by scope with the same bounds, as a plugin workflow (R3, R8) |
 | **Source stays where it is: `--source` links, nothing is copied** | `vendor --standalone` copies scripts, skills and agents into each repo | Keep for v0.5 (CI loads the checker from the base branch, so removing it is its own change); decision D3 |
 | **Protection = convention backed by settings deny rules, checked by preflight; "a script that opens files itself is not covered", so stay on a prompted mode for fan-out** (README "Set it up") | Regex guards parse every Bash command and every edit (`HUMAN_ONLY`, `OBFUSCATED_HUMAN`, `isSafeEvidenceCommand`, auto-approval); DESIGN §10 already calls such matching "too leaky" | Delete the guard layer; use deny rules; CI plus branch protection is the boundary (R1) |
-| **Hooks are observational: async, 10 s timeout, `asyncRewake`** (`hooks.json`); the pane is an optional `modules` entry | 9 events, three of them synchronous on every tool call, plus a 90 s Stop gate | Keep one blocking Stop gate (the best-practices doc endorses a Stop hook as the deterministic gate); everything else async or removed (R1) |
+| **Hooks are observational: async, 10 s timeout, `asyncRewake`** (`hooks.json`); the pane is an optional `modules` entry | 9 events, three of them synchronous on every tool call, plus a 90 s Stop gate | Keep one blocking Stop gate (the best-practices doc endorses a Stop hook as the deterministic gate) and one slim per-edit check so unplanned work is held to the architecture sensors; everything else async or removed (R1) |
 | **Per-user knobs in `plugin.json` `userConfig`** | Not used | `userConfig` for per-user switches only (the band and panes: auto, command, off). Repo policy stays in committed `sensors.json`, as `analysis/` is committed state |
 | **README: install, start here, the path table, what to expect (times, agent counts, "asks before a big run"), words you will see, safety (analysed code is untrusted input), working in a team (artifact to reviewer), and a human-readable CHANGELOG per version** | README covers most; no "what to expect"; changelog is per-release | Add "what to expect" and the team table; keep the changelog |
 | **Agents write only inside their unit; one job each; secrets masked; file content is data, instruction-shaped text is listed, never followed** | Same shape | Add the untrusted-input line to `reviewer` and `scout` |
@@ -53,7 +57,7 @@ Each is a choice visible in `docs/stuff.eml`. None may enter rig.
 | Self-heal loops up to 9 attempts against a limit of 2 (20.2 h) | A loop past its cap stops and reports. No new loops. The ratchet caps stay as they are and are not extended |
 | Learned rules loaded wholesale into every agent | Not built. If ever added, optional plugin, filtered by touched scope |
 | Org-specific preflight: Jira story-to-epic lookup, Bitbucket fleet sync, manifest Java version, prototype folder | Preflight reads only what the repo itself declares (build files, `sensors.json`, git). No tracker, no hosting, no fleet |
-| Cross-story dependencies as blockers (all 21 unmet ACs) | No `depends:`. Order work by running commands in the order a person chooses; ship each change separately |
+| Cross-story dependencies as blockers, found late (all 21 unmet ACs; runs restarted with them open) | Dependencies are declared up front by an architect in a sprint plan a person approves (R15), computed into clusters by a script (R16), and visible in `status` before work starts. A run is never the way a dependency is discovered. No tracker lookups |
 | Hand-kept `features.json` status | Status is derived from which files exist and their times; nothing stored (a test enforces it) |
 | Agents loaded to a 200K ceiling, work lost uncommitted | Bounded shards and slices, a checkpoint commit per slice |
 | Runs left open, untimed lanes (44% of the clock) | Observational lane events; span ends at the last event, never at now |
@@ -63,16 +67,17 @@ Each is a choice visible in `docs/stuff.eml`. None may enter rig.
 | Release | Contents |
 |---|---|
 | **v0.5.0** "align and stop repeating" | R1 delete the guard layer and per-call hooks; R2 stamp, don't re-run; R3 one review per change, sharded when large; R4 one base-tree helper; R5 batched, diff-only test count |
-| **v0.6.0** "scale" | R6 preflight in `init`; R7 `status` staleness; R8 scopes and shards; R9 slice checkpoints; R10 lane events; R11 size block at Stop |
+| **v0.6.0** "scale" | R6 preflight in `init`; R7 `status` staleness; R8 scopes and shards; R9 slice checkpoints; R10 lane events; R11 size block at edit and Stop; R14 story points |
 | **v0.7.0** "monorepo onboarding" | R12 `init --monorepo`; R13 fewer model turns |
+| **v0.8.0** "team planning" | R15 sprint plan; R16 clusters and allocation |
 
-After v0.6.0 every row of §8 is guarded. Compatibility: every new key in `sensors.json` is optional and an old config works unchanged. Deleted behaviour (R1) is listed in `CHANGELOG.md` with its replacement. Vendored copies upgrade with `vendor --standalone`.
+After v0.6.0 every row of §8 is guarded except the dependency half of E5, which v0.8.0 completes. Compatibility: every new key in `sensors.json` is optional and an old config works unchanged. Deleted behaviour (R1) is listed in `CHANGELOG.md` with its replacement. Vendored copies upgrade with `vendor --standalone`.
 
 ## 5. v0.5.0
 
 ### R1. Delete the guard layer and the per-call hooks
 
-Removed: the `pre-bash` and `pre-edit` hooks and their logic (`hooks.ts` guards, `shell.ts`, `autoapprove.ts` and their specs, about 550 lines), the `post-edit` hook, and the per-agent Stop bookkeeping (`subagent-start` snapshot, `subagent-stop` gate).
+Removed: the `pre-bash` and `pre-edit` hooks and their logic (`hooks.ts` guards, `shell.ts`, `autoapprove.ts` and their specs, about 550 lines), and the per-agent Stop bookkeeping (`subagent-start` snapshot, `subagent-stop` gate). The `post-edit` hook stays, slimmed (see Vibe-coding parity below).
 
 Replaced by, following the official "Set it up" section:
 
@@ -81,11 +86,20 @@ Replaced by, following the official "Set it up" section:
 - Auto-approval of declared commands is replaced by `permissions.allow` rules for the exact commands in `sensors.json` (written by `init`) and by Claude Code's auto mode; the best-practices doc names both.
 - Human-only approve and waive keep `disable-model-invocation` on their skills. A script that opens files itself is not covered by deny rules (the official README says the same); the boundary is CI: `check --at ci` already refuses approval and waiver rows added by a PR unless an independent reviewer approves the head commit, and recomputes every verdict from the base branch's checker and config. DESIGN §10 already states this ("CI plus branch protection is the boundary"). Document that in the README's Safety section.
 
-Registered hooks after R1: `SessionStart` (context), `UserPromptSubmit` (turn baseline), `Stop` (the one blocking gate), `SubagentStart` and `SubagentStop` (async, observational, R10), `PostToolUseFailure` for the Skill fallback (kept until D2 settles chaining). No hook runs per Bash or Edit call.
+Registered hooks after R1: `SessionStart` (context), `UserPromptSubmit` (turn baseline), `Stop` (the blocking gate), `PostToolUse` on `Write|Edit|MultiEdit` (slim, below), `SubagentStart` and `SubagentStop` (async, observational, R10), `PostToolUseFailure` for the Skill fallback (kept while chaining remains under `/rig:run`). No hook runs on Bash calls.
 
 Tests: a repo whose `settings.json` lacks a deny rule is reported by `preflight`; deleted-module imports are gone (`tsc`, existing size test); the Stop gate and baseline tests still pass; a scenario test confirms an Edit to a denied evidence path is refused by the permission rule (using Claude Code's `--permission-mode dontAsk` in a recorded run, not a mock); the non-test source ceiling test (≤ 5.0k at v0.7) is added.
 
 Risk: the model can write evidence through a shell script. Accepted and documented: CI recomputes everything, so tampered local evidence cannot reach the trunk. This is the trade the official plugin makes.
+
+**Vibe-coding parity (decided with D1).** Work done without `/rig:start` is held to the same sensors, and no active change is needed for any of them:
+
+- **At edit.** The `post-edit` hook is kept and slimmed: lazy-loaded, it returns in its first lines for a non-source file and otherwise runs only the pure per-file checks that need no git call: layering and import rules (`layers`), file-size crossing (R11), secrets, suppressions, test tampering and the `rules.json` patterns. A block is exit 2 with the exact fix, so the model corrects the file the moment it breaks the architecture.
+- **At Stop.** Every sensor runs on the whole turn diff, including coupling and diff size. The work is adopted as an `adhoc-` change with a tier from the diff. Attempts are capped (`MAX_BLOCKS`); past the cap findings go to `unresolved.json`, which ship and CI refuse.
+- **At commit, push and CI.** The git hooks and CI run the same checker on the same diff, so an editor, another agent or a person typing code gets the same answer.
+- **At ship.** An ad-hoc change that outgrows tier S without a plan blocks (the existing `adhoc` sensor).
+
+Tests: a matrix test runs every sensor at every point (edit, stop, commit, push, ci) in a repo with no active change and no `.sdlc/changes`, and asserts each fires; a scenario where a prompt introduces a forbidden import blocks at the edit, and the same content committed from a shell blocks at pre-commit and at CI.
 
 ### R2. Stamp, don't re-run
 
@@ -183,9 +197,15 @@ Tests: the commit holds only plan files; none on trunk; a killed session leaves 
 
 Tests: overlapping lanes counted once; a 3 h gap is idle; the hooks are `async` in `hooks.json`; a headless fixture yields the numbers.
 
-### R11. Size block at Stop
+### R11. Size block at edit and at Stop
 
-In the Stop gate, a file at or under `limits.fileLines` at the turn baseline that crosses it now blocks (waivable). Already-large files still warn. This replaces the per-edit check removed in R1 and still lands before review.
+A file at or under `limits.fileLines` at the turn baseline that crosses it blocks, first in the slim per-edit hook (R1) and again at Stop. Waivable. Already-large files still warn. It lands at write time, before any review.
+
+### R14. Story points
+
+Every change carries `points` in `intent.md` frontmatter. The default comes from the tier through a new optional `sensors.json` key, `points: { "S": 5, "M": 7, "L": 11 }` (your example numbers; D5). An architect or person can set an explicit number for one change; `points_source: tier|set` records which, and a re-tier (for example the `tier` sensor bumping a change to L) recomputes only `tier`-sourced points. `/rig:start` records them, `status` shows them, and `scorecard` and `metrics` report points shipped, velocity per week, and **cost per point** (dollars from the existing cost ledger divided by points; `unmeasured` when fewer than 5 changes shipped or cost is not captured). Cost per point is the number that shows whether this spec made the harness cheaper.
+
+Tests: default mapping; explicit override survives a re-tier and a tier-sourced value does not; non-positive or non-integer rejected; cost per point is `unmeasured` below 5 shipped changes.
 
 ## 7. v0.7.0
 
@@ -199,6 +219,35 @@ Tests: npm, Maven and Go fixtures produce the expected stubs, `scopes` and setti
 
 Skills pre-run `next $0 --json` with the `!` injection; node-finishing commands end with `Next:` themselves, so the closing `next --json` call is dropped; boilerplate repeated across skills moves to the `SessionStart` rules block. A test asserts the duplicated lines are gone and total skill bytes shrink by at least 15%.
 
+## 7a. v0.8.0: team planning
+
+An architect breaks a sprint PRD into tasks; a team needs to know which tasks depend on which, which can run in parallel, and who should hold which. The old harness found dependencies when runs failed. rig declares them up front, in a plan a person approves (the official `brief` pattern), and a script derives the rest.
+
+### R15. Sprint plan
+
+`/rig:sprint <prd-path | #issue> [--engineers N] [--capacity P]` is a standalone command that writes one artifact, `.sdlc/sprints/<name>/SPRINT.md`, and ends on the next command. It does not chain.
+
+1. The `rig:architect` agent (Opus) reads the PRD once (a scout summarises a long one) and drafts the tasks. Each task has: `id` (T1, T2, ...), title, `type`, `tier` (S, M, L), optional `points`, `needs` (hard dependencies: needs the other task's code, data or the same files), `after` (ordering only: the other task defines a contract this one builds against), `touches` (scope names or path globs), and its acceptance outcomes in one line each. More than 20 tasks asks before proceeding, as the official `extract-rules` asks before a big run.
+2. `sdlc.ts sprint check <name>` validates by script: unique ids, every referenced id exists, no cycle in `needs` or `after`, tiers are S, M or L, `touches` resolve to declared scopes or existing paths, and a task whose `touches` reach contract, auth, payments, data or migration paths with a tier below L is flagged (the existing `tier` sensor's path rules).
+3. `SPRINT.md` is plain Markdown with a table in a fixed, parsed format and an `## Approval` block. The person steers by editing it. Approval is a human gate (`/rig-approve <name> sprint`, stale when the file changes, like every other approval).
+4. `/rig:start <task-id>` creates the change from the task, prefilled (type, tier, points, `needs`, `touches`, outcomes), so nothing is asked twice. A change created from a sprint cannot start `build` until the sprint is approved.
+5. **Dependency rules.** `step()` blocks `build` while any `needs` task is not shipped, naming the task and its owner; `after` tasks only produce a warning in `status`. A task is shipped when its `ship.json` exists in `HEAD`'s history or on `origin/<trunk>` (read from refs; no fetch). An acceptance outcome the task's design marks as depending on another task reads **blocked by T3** in `verification.md` and the scorecard, never "failed" or silently unmet (the email's fix: flag cross-story ACs at handover).
+6. No tracker. A task may link a `gh` issue; nothing syncs.
+
+Tests: parse and validate (cycle, missing id, bad tier); approval goes stale on edit; `start` prefill; `build` blocked until the `needs` task has `ship.json` in history or on the trunk ref, then allowed; `after` does not block; a blocked-by outcome is reported distinctly; an unapproved sprint blocks build for its tasks.
+
+### R16. Clusters and allocation
+
+Tasks are generally not independent, so the unit of allocation is a cluster, not a task.
+
+- `sdlc.ts sprint clusters <name>`: a cluster is a connected component over the undirected graph of `needs` edges plus **conflict** edges, where two tasks conflict when their `touches` overlap (same scope, or one glob contains the other). `after` edges do not join clusters, because the dependent task can be built against the other's contract by someone else. Output per cluster: its tasks in dependency order, total points, the critical path (the longest path in points through `needs` and `after`), and the scopes it touches.
+- `sdlc.ts sprint assign <name> --engineers N [--capacity P]`: places whole clusters on engineers, largest first onto the least-loaded engineer, and prints a proposal. It flags a cluster larger than `P` ("split candidate: define the contract first and turn a `needs` into `after`, or narrow `touches`"), a critical path longer than `P` ("this sprint cannot finish in capacity") and an unbalanced result. It never decides: a person writes `owner:` per cluster in `SPRINT.md`.
+- `sprint check` fails when two tasks of one cluster have different owners ("T5 and T7 share a cluster but not an owner: move one, or make the link an `after`").
+- `sdlc.ts sprint status <name>`: per owner and cluster, points done and remaining, blocked tasks and why, all derived from `ship.json` files (nothing stored). It does one `git fetch` for the whole command, the only sync.
+- **Stacked work in a cluster.** An engineer builds a cluster's tasks in order, each on `sdlc/<slug>` branched from the previous task's branch. `pr` accepts a base other than the trunk when that base is the task's `needs` branch (today it refuses stacked changes), and the PR targets that branch.
+
+Tests: components with `needs` only, with a conflict edge only (overlapping globs), and with an `after` edge that must not join; critical path; LPT allocation on a fixture with 5 clusters and 3 engineers; an oversize-cluster flag; owner mismatch fails; `sprint status` derives progress from fixture `ship.json` files and stores nothing; stacked PR base accepted only for a `needs` branch.
+
 ## 8. Email failure modes: closure matrix
 
 Each row has a regression test that fails if the guard is removed. "Not by" names the old-harness mechanism that must not be used.
@@ -209,25 +258,28 @@ Each row has a regression test that fails if the guard is removed. "Not by" name
 | E2 | Agents run out of context and lose work (10.3 h; 22 findings; 9 of 15 stories) | R3 shards ≤ 25 files and 5,000 lines; R9 checkpoint commits; ≤ 5-file slices | Bigger windows | R3, R9 tests; killed-session fixture resumes |
 | E3 | Gates fail then re-run (5.7 h) | R2 stamp checks at ship and push; sensors are scripts | A result cache | R2 spy test |
 | E4 | Preflight blockers: Java check, fetch, clones, prototype path (13 of 22 runs, zero code written) | R6 `PREFLIGHT.md`, every check runs, exact fixes, one retry | Jira, Bitbucket or fleet-specific steps | R6 tests |
-| E5 | Restart with questions unanswered (21 unmet ACs) | Intent recorded once; R7 lists open items; design, plan and intent approval refuse open questions | Cross-change `depends:` | R7 tests |
+| E5 | Restart with questions unanswered; 21 ACs blocked outside the story | Intent recorded once; R7 lists open items; approvals refuse open questions; R15 and R16 declare dependencies at plan time in an approved sprint plan, `build` waits for `needs` tasks, and an AC that depends on another task reads "blocked by T3" | Dependencies found by a failing run or a tracker lookup | R7, R15, R16 tests |
 | E6 | 44% idle or untimed (lanes, review-fix loops, runs left open) | R10 lane events, span ends at last event, R7 last-activity | A run clock that must be stopped | R10 tests |
 | E7 | Learned rules loaded wholesale | Not built | Any rule loader | Documented; none |
 | E8 | Repo sync three times in one run | R6 is the only remote check, once per repo | A per-change sync step | R6 tests |
-| E9 | File growth found at review | R11 block at Stop | A per-edit hook | R11 tests |
+| E9 | File growth found at review | R11 block at edit (slim hook) and at Stop | A review step | R11 tests |
 | E10 | `features.json` stale after merge | Status derived from files | A stored status list | R7 derivation test |
 | E11 | The 200K ceiling as top cause | E2 guards, R3 one review, R13 fewer turns, README note on the status line context meter | n/a | R3, R13 tests |
 
 One scenario test (`scripts/scenario.spec.ts`, fixture repo) covers E2, E4, E5 and E8 together: start a change with a toolchain mismatch and a missing consumer clone (preflight lists both with fixes), satisfy them, kill the implementer mid-slice, resume from the checkpoint, and assert the declared test command ran at most twice on the final tree (verify, then red-proof on base).
 
-## 9. Decisions to confirm
+## 9. Decisions
 
-- **D1. Guard layer deletion (R1).** The largest call. It removes about 550 lines and every per-call hook, accepts that a shell script can bypass local deny rules, and relies on CI recomputing everything. It follows the official plugin and DESIGN §10's own conclusion. Veto here and R1 shrinks to the hook-count reduction only.
-- **D2. Chaining.** Official commands stop and print the next command; rig chains nodes unless `/rig-run` drives. Proposed: stop by default, chain only under `/rig:run` (which uses `/goal`). Cost: more "continue" prompts for people not using `/rig:run`.
-- **D3. Standalone vendoring.** The official plugin is installed, never copied. rig vendors its checker so CI can load it from the base branch. Proposed: keep for v0.5 and revisit once CI can pin the plugin by commit.
-- **D4. Review shards use Opus reviewers and Sonnet referees** at tier L. A cheaper split is possible if a measured run shows no quality loss.
+Approved: **D1** delete the guard layer, with vibe-coding parity kept (R1); **D2** stop and print `Next:` by default, chain only under `/rig:run`; **D3** keep vendoring for v0.5 and revisit once CI can pin the plugin by commit; **D4** Opus reviewers and Sonnet referees at tier L.
+
+To confirm:
+
+- **D5. Point defaults.** S 5, M 7, L 11, from your example, configurable per repo and overridable per task. Note that tier measures ceremony and risk, not effort, so a large-effort S task can carry more points; say if you want a different scale (for example 2, 5, 13).
+- **D6. Two dependency kinds.** `needs` (same cluster, one engineer) and `after` (ordering only, contract-first, may be a different engineer). Say if you want a single kind.
+- **D7. Capacity input.** `--engineers N --capacity P` at planning time, with the allocation a proposal only and owners written by a person. No calendar, availability or tracker data.
 
 Earlier decisions stand: monorepo toolchains first are npm/pnpm/yarn, Maven, Go; proving ground is the generated fixture (`scripts/fixture-monorepo.ts`, never committed) plus a real repo when available.
 
 ## 10. Measurement and open items
 
-Same three tasks before and after: a tier S bugfix, a tier M feature, and a tier L change in the generated 40-package, 50k-file fixture. Gated counts: hook processes per tool call, command executions per change, worktrees, process spawns, shard sizes. Reported: wall-clock, work/span/idle, dollars (interactive runs only; headless records $0, DESIGN §11). Not verified and not depended on: `autoCompactWindow` from project settings. Still open from DESIGN §11: the mod's interactive parts have never been checked by a person; git hooks have not been trialled live.
+Same three tasks before and after: a tier S bugfix, a tier M feature, and a tier L change in the generated 40-package, 50k-file fixture. Gated counts: hook processes per tool call, command executions per change, worktrees, process spawns, shard sizes. Reported: wall-clock, work/span/idle, dollars and cost per story point (interactive runs only; headless records $0, DESIGN §11). Not verified and not depended on: `autoCompactWindow` from project settings. Still open from DESIGN §11: the mod's interactive parts have never been checked by a person; git hooks have not been trialled live.
