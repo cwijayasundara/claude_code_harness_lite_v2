@@ -198,6 +198,18 @@ test('renderDeps: depends on, used by, and the top external packages', () => {
   assert.match(renderDeps(c, 'm/c.md'), /\*\*Used by\*\*\n\n_No other module\._/)
 })
 
+test('renderDeps: relative imports that match no file are listed as unresolved, sorted and capped at 10', () => {
+  assert.match(renderDeps(mk(SRC3, THREE), 'm/a.md'), /\*\*Unresolved imports\*\*\n\n_None\._$/)
+  const missing = Array.from({ length: 12 }, (_, i) => `import m${i} from './gone${String(11 - i).padStart(2, '0')}.js'`)
+  const out = renderDeps(mk({ 'src/a/x.js': [...missing, "import w from './we`ird|x.js'"].join('\n') + '\n' }, A), 'm/a.md')
+  const list = out.split('**Unresolved imports**\n\n')[1] ?? ''
+  assert.deepEqual(list.split('\n'), [
+    ...Array.from({ length: 10 }, (_, i) => `- \`./gone${String(i).padStart(2, '0')}.js\``),
+    '- _+3 more_',
+  ])
+  assert.match(renderDeps(mk({ 'src/a/x.js': "import w from './we`ird|x.js'\n" }, A), 'm/a.md'), /- `\.\/we'ird\\\|x\.js`$/)
+})
+
 test('renderTests: tests inside the module and tests that import it, with test names', () => {
   const c = mk({
     'src/a/x.js': 'export const x = 1\n',

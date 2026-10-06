@@ -109,3 +109,16 @@ test('status (the commit check) and --check render only the structural blocks (n
   assert.ok(spy.calls().some(c => /\blog\b/.test(c)))
   assert.match(page(repo, 'modules/auth.md'), /explain the check/)
 })
+
+test('an unresolved relative import is shown in the deps block and is enforced by --check', () => {
+  const repo = wikiRepo()
+  assert.equal(build(repo).code, 0)
+  assert.match(page(repo, 'modules/auth.md'), /\*\*Unresolved imports\*\*\n\n_None\._/)
+  write(repo, 'src/auth/lost.js', "import { gone } from './missing.js'\n")
+  gitIn(repo, 'add', '.')
+  const r = build(repo, '--check')
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /modules\/auth\.md \(deps\)/)
+  build(repo)
+  assert.match(page(repo, 'modules/auth.md'), /\*\*Unresolved imports\*\*\n\n- `\.\/missing\.js`/)
+})

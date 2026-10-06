@@ -221,11 +221,13 @@ export function renderDeps(ctx: Ctx, page: string): string {
   const out = ranked(ctx.graph.edges.get(page) ?? new Map())
   const inn = ranked(dependents(ctx.graph, page))
   const ext = ranked(ctx.graph.external.get(page) ?? new Map()).slice(0, 5)
+  const lost = [...(ctx.graph.unresolved.get(page) ?? [])].sort(cmp)
   return [
     '## Depends on / used by', '',
     '**Depends on**', '', ...(out.length ? out.map(item) : ['_No other module._']), '',
     '**Used by**', '', ...(inn.length ? inn.map(item) : ['_No other module._']), '',
-    '**External packages** (top 5)', '', ...(ext.length ? ext.map(([n, c]) => `- \`${n}\` · ${c}`) : ['_None._']),
+    '**External packages** (top 5)', '', ...(ext.length ? ext.map(([n, c]) => `- \`${n}\` · ${c}`) : ['_None._']), '',
+    '**Unresolved imports**', '', ...(lost.length ? lost.slice(0, 10).map(s => `- \`${cell(s)}\``) : ['_None._']), ...(lost.length > 10 ? [`- _+${lost.length - 10} more_`] : []),
   ].join('\n')
 }
 
