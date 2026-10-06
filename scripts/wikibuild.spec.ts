@@ -206,3 +206,65 @@ test('the first build creates docs/wiki/modules when it does not exist', () => {
   assert.equal(build(repo).code, 0)
   assert.ok(fs.existsSync(path.join(repo, 'docs/wiki/modules/auth.md')))
 })
+
+const wikiText = (repo: string): string => {
+  const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walk(path.join(d, e.name)) : [fs.readFileSync(path.join(d, e.name), 'utf8')]))
+  return walk(path.join(repo, 'docs/wiki')).join('\n')
+}
+const outsideFile = (body: string): string => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wiki-leak-')), 'secret.txt')
+  fs.writeFileSync(f, body)
+  return f
+}
+
+test('a tracked symlink to an outside file contributes nothing to the wiki', () => {
+  const repo = wikiRepo()
+  fs.symlinkSync(outsideFile('// TOP SECRET ROLE LINE\nexport const something = "API_KEY=abc123"\ndef leaked_function():\n'), path.join(repo, 'src/auth/leak.js'))
+  gitIn(repo, 'add', '.')
+  assert.equal(build(repo).code, 0)
+  const all = wikiText(repo)
+  for (const s of ['TOP SECRET', 'API_KEY', 'leaked_function', 'leak.js']) assert.ok(!all.includes(s), s)
+})
+
+test('a symlinked intent.md leaks no Problem text', () => {
+  const repo = wikiRepo()
+  fs.mkdirSync(path.join(repo, '.sdlc/changes/evil'), { recursive: true })
+  fs.symlinkSync(outsideFile('---\nslug: evil\ntype: feature\n---\n# evil\n\n## Problem\nLEAKED PROBLEM TEXT\n'), path.join(repo, '.sdlc/changes/evil/intent.md'))
+  write(repo, '.sdlc/changes/evil/plan.md', '# plan\n\n## Files\n- `src/auth/**`\n')
+  assert.equal(build(repo).code, 0)
+  assert.ok(!wikiText(repo).includes('LEAKED PROBLEM'))
+})
+
+test('a glob matching a symlink to a directory does not crash', () => {
+  const repo = wikiRepo()
+  fs.symlinkSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wiki-dir-')), path.join(repo, 'src/auth/ldir'))
+  gitIn(repo, 'add', '.')
+  const r = build(repo)
+  assert.equal(r.code, 0, r.stderr)
+  assert.ok(!/EISDIR|at /.test(r.stderr))
+})
+
+test('a tracked symlink does not change the module surface hash', () => {
+  const repo = wikiRepo()
+  build(repo)
+  sdlc(repo, ['wiki', 'stamp'])
+  const before = JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as { stale: string[] }
+  fs.symlinkSync(outsideFile('export const x = 1\n'), path.join(repo, 'src/auth/link.js'))
+  const after = JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as { stale: string[] }
+  assert.deepEqual(after.stale, before.stale)
+})
+
+test('page keys that collide case-insensitively or hold control characters are rejected', () => {
+  const repo = wikiRepo()
+  const g = { globs: ['src/**'] }
+  for (const [pages, re] of [
+    [{ 'm/a.md': g, 'm/A.md': g }, /page "m\/(?:a|A)\.md": collides case-insensitively with "m\/(?:A|a)\.md"/],
+    [{ 'Index.md': g }, /page "Index\.md": collides case-insensitively with the reserved index\.md/],
+    [{ 'a\nb.md': g }, /not a safe relative \.md path/],
+  ] as [object, RegExp][]) {
+    write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages }))
+    const r = build(repo)
+    assert.equal(r.code, 1)
+    assert.match(r.stderr, re)
+  }
+})

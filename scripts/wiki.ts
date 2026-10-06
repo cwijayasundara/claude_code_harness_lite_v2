@@ -1,7 +1,7 @@
 // The code wiki's zero-token staleness check: each page records a hash of its module's public surface.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, read, exists, sha, out, fail, git, toPosix, sanctionWrites, listChanges, frontmatter, planFiles, CHANGES, optString, skillRef, type Args } from './core.ts'
+import { ROOT, read, exists, sha, out, fail, git, toPosix, sanctionWrites, listChanges, frontmatter, planFiles, CHANGES, planPath, optString, skillRef, type Args } from './core.ts'
 import { matchesAny, isSource, isTest, type Finding } from './model.ts'
 import { loadConfig } from './check.ts'
 import { buildGraph, cmp } from './wikigraph.ts'
@@ -29,12 +29,16 @@ function readManifest(): Manifest | null {
 const tracked = (): string[] => (git(['ls-files', '--cached', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean)
 const filesFor = (globs: string[], all: string[]): string[] => all.filter(f => matchesAny(f, globs)).sort(cmp)
 
+// Only regular files are read: a tracked symlink (even one pointing inside the repo) would pull outside or duplicated text into the wiki, so it is skipped.
+const isRegularFile = (abs: string): boolean => fs.lstatSync(abs, { throwIfNoEntry: false })?.isFile() ?? false
+const readRegular = (abs: string): string => (isRegularFile(abs) ? read(abs) : '')
+
 function surfaceOf(files: string[]): string {
-  const lines = files.flatMap(f => [`# ${f}`, ...read(path.join(ROOT, f)).split('\n').filter(l => SURFACE.test(l)).map(l => l.trim())])
+  const lines = files.filter(f => isRegularFile(path.join(ROOT, f))).flatMap(f => [`# ${f}`, ...read(path.join(ROOT, f)).split('\n').filter(l => SURFACE.test(l)).map(l => l.trim())])
   return sha(lines.join('\n'))
 }
 
-const SAFE_KEY = /^(?!index\.md$)[^\\\0:*?"<>|]+\.md$/
+const SAFE_KEY = /^(?!index\.md$)[^\\\x00-\x1f\x7f:*?"<>|]+\.md$/
 const safeKey = (k: string): boolean => SAFE_KEY.test(k) && !k.startsWith('/') && k.split('/').every(s => s !== '' && s !== '.' && s !== '..')
 // Every path under docs/wiki (pages and index.md alike) is made here: no symlink may sit anywhere between the repo root and the target.
 export function safeWikiPath(rel: string): string | null {
@@ -76,8 +80,13 @@ export function manifestErrors(raw: unknown): string[] {
   const pages = m.pages
   if (!pages || typeof pages !== 'object' || Array.isArray(pages)) errors.push('pages must be an object of page → { globs }')
   else {
+    const lowered = new Map<string, string>()
     for (const [name, p] of Object.entries(pages as Record<string, unknown>)) {
       if (!safeKey(name)) { errors.push(`page "${name}": not a safe relative .md path`); continue }
+      const clash = lowered.get(name.toLowerCase())
+      if (name.toLowerCase() === 'index.md') errors.push(`page "${name}": collides case-insensitively with the reserved index.md`)
+      else if (clash !== undefined) errors.push(`page "${name}": collides case-insensitively with "${clash}"`)
+      else lowered.set(name.toLowerCase(), name)
       const o = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>
       if (!isStrings(o.globs)) errors.push(`page ${name}: globs must be a list of strings`)
       for (const k of Object.keys(o)) if (k !== 'globs' && k !== 'surface') errors.push(`page ${name}: unknown key "${k}"`)
@@ -98,16 +107,22 @@ const commitRows = (files: string[], n: number): CommitRow[] => {
   return raw.split('\n').filter(Boolean).map(l => { const [sha = '', date = '', ...s] = l.split('\t'); return { sha, date, subject: s.join('\t') } })
 }
 function changeRows(): ChangeRow[] {
-  return listChanges().map(slug => {
-    const { data, body } = frontmatter(read(path.join(CHANGES, slug, 'intent.md')))
+  const rows: ChangeRow[] = []
+  for (const slug of listChanges()) {
+    const intent = path.join(CHANGES, slug, 'intent.md')
+    if (!isRegularFile(intent)) continue
+    const plan = (() => { try { return isRegularFile(planPath(slug)) ? planFiles(slug) : [] } catch { return [] } })()
+    const { data, body } = frontmatter(read(intent))
     const summary = /^##\s+Problem\s*\n+([^\n]+)/m.exec(body)?.[1] ?? /^#\s+(.+)$/m.exec(body)?.[1] ?? slug
-    return { slug, type: data.type ?? 'chore', summary: summary.trim(), created: data.created ?? '', plan: planFiles(slug) }
-  })
+    rows.push({ slug, type: data.type ?? 'chore', summary: summary.trim(), created: data.created ?? '', plan })
+  }
+  return rows
 }
 function makeCtx(m: Manifest): Ctx {
-  const files = tracked().filter(f => !f.startsWith(`${WIKI_DIR}/`))
+  // Symlinks, directories and missing files drop out entirely (see isRegularFile).
+  const files = tracked().filter(f => !f.startsWith(`${WIKI_DIR}/`) && isRegularFile(path.join(ROOT, f)))
   const cache = new Map<string, string>()
-  const readFile = (f: string): string => { let t = cache.get(f); if (t === undefined) cache.set(f, (t = read(path.join(ROOT, f)))); return t }
+  const readFile = (f: string): string => { let t = cache.get(f); if (t === undefined) cache.set(f, (t = readRegular(path.join(ROOT, f)))); return t }
   const branch = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])?.replace(/^origin\//, '') ?? 'main'
   return {
     pages: m.pages, files, graph: buildGraph(m.pages, files, readFile), link: linkBase(git(['remote', 'get-url', 'origin']), branch),
