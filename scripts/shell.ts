@@ -265,8 +265,13 @@ function segmentBypasses(seg: string[], depth: number): boolean {
   const k = seg.findIndex(w => !/^\w+=/.test(w))
   const word = (seg[k] ?? '').split('/').pop() ?? ''
   const c = SHELLS.test(word) ? seg.findIndex((w, i) => i > k && /^-[a-z]*c[a-z]*$/.test(w)) : -1
-  if (c > 0) return depth < 3 && bypassesGitHooks(seg[c + 1] ?? '', depth + 1)
-  if (word === 'eval') return depth < 3 && bypassesGitHooks(seg.slice(k + 1).join(' '), depth + 1)
+  const payload = c > 0 ? seg[c + 1] ?? '' : word === 'eval' ? seg.slice(k + 1).join(' ') : null
+  if (payload !== null) {
+    if (depth < 3) return bypassesGitHooks(payload, depth + 1)
+    if (!payload.trim() || regexBypass(payload)) return Boolean(payload.trim())
+    nestedTooDeep = true // past the bound and no visible bypass: deny anyway, never fail open
+    return true
+  }
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
   if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
@@ -285,6 +290,13 @@ function segmentBypasses(seg: string[], depth: number): boolean {
     if (optionsBypass(sub, args, scanned)) return true
   } else scanned.push(sub, ...args)
   return scanned.some(w => HOOKS_PATH.test(w)) || aliasBypass(scanned, depth) || embedded(scanned)
+}
+
+let nestedTooDeep = false
+// Why the model may not run cmd: 'bypass', 'nested' (shells or evals more than three deep), or null.
+export function gitHooksBypass(cmd: string): 'bypass' | 'nested' | null {
+  nestedTooDeep = false
+  return bypassesGitHooks(cmd) ? (nestedTooDeep ? 'nested' : 'bypass') : null
 }
 
 export function bypassesGitHooks(cmd: string, depth = 0): boolean {

@@ -304,6 +304,19 @@ test('a shell -c or eval payload is read too; harmless payloads pass', () => {
   for (const cmd of [`sh -c 'git commit -m "docs -n"'`, `bash -c 'git status'`, `eval 'echo hi'`]) assert.notEqual(bash(cmd), 'deny', cmd)
 })
 
+const nest = (inner: string, n: number): string => (n ? nest(`sh -c '${inner.replace(/'/g, `'\\''`)}'`, n - 1) : inner)
+test('shells nested deeper than three layers are denied, whatever they run; three layers are read as usual', () => {
+  sdlc(repo, ['init'])
+  assert.equal(bash(`sh -c "sh -c \\"sh -c 'sh -c \\\\\\"git commit --no-verify\\\\\\"'\\""`), 'deny')
+  assert.equal(bash(nest('git commit --no-verify', 4)), 'deny')
+  const deep = JSON.parse(hook(repo, 'pre-bash', { tool_input: { command: nest('git status', 4) } }).stdout).hookSpecificOutput
+  assert.equal(deep.permissionDecision, 'deny')
+  assert.match(deep.permissionDecisionReason, /nested/)
+  assert.notEqual(bash(nest('git status', 3)), 'deny')
+  assert.notEqual(bash(`sh -c "sh -c 'git status'"`), 'deny')
+  assert.equal(bash(nest('git commit -n -m x', 3)), 'deny')
+})
+
 test('the model may not switch the hooks off with rig\'s own command; status and a plain install are fine', () => {
   sdlc(repo, ['init'])
   for (const cmd of ['node .sdlc/bin/sdlc.ts hooks uninstall', 'node .sdlc/bin/sdlc.ts hooks install --force', 'node "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hooks uninstall']) {

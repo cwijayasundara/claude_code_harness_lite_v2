@@ -10,7 +10,7 @@ import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } fro
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, parseConfig, warnRow, type Finding, type SensorConfig } from './model.ts'
-import { readOnlyDenial, normCmd, bypassesGitHooks } from './shell.ts'
+import { readOnlyDenial, normCmd, bypassesGitHooks, gitHooksBypass } from './shell.ts'
 import { autoApprove } from './autoapprove.ts'
 import { sessionNote } from './githooks.ts'
 
@@ -227,7 +227,9 @@ function hookPreBash(input: HookInput): void {
     return decide('deny', 'Evidence is human- or rig-only: approvals and waivers come from the person (/rig-approve, /rig-waive); '
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
   }
-  if (bypassesGitHooks(cmd)) {
+  const bypass = gitHooksBypass(cmd)
+  if (bypass === 'nested') return decide('deny', 'Shells or evals nested more than three deep cannot be checked for a git-hook bypass; run the command directly.')
+  if (bypass) {
     return decide('deny', 'The rig git hooks run the quality checks at commit and push. Only the person bypasses or switches them off (git commit --no-verify, hooks uninstall, hooks install --force); fix the findings instead. See their state with `sdlc.ts hooks status`.')
   }
   const agent = input.agent_type ?? ''
