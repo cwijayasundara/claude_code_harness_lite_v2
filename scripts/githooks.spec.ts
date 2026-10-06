@@ -450,3 +450,64 @@ test('warnings at commit print with their fix text, five at most plus a count', 
   assert.equal(many.stdout.split('\n').filter(l => l.startsWith('  ! ')).length, 5, many.stdout)
   assert.match(many.stdout, /^  \+2 more$/m)
 })
+
+const context = () => JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext as string
+
+test('hooks uninstall is an opt-out session start respects; install clears it; the install note names it', () => {
+  sdlc(repo, ['vendor'])
+  const note = context()
+  assert.match(note, /Git hooks: installed .*\(core\.hooksPath = \.sdlc\/githooks\)\. Opt out with: node \.sdlc\/bin\/sdlc\.ts hooks uninstall/)
+  assert.equal(sdlc(repo, ['hooks', 'uninstall']).code, 0)
+  assert.equal(gitIn(repo, 'config', '--local', 'rig.githooks'), 'off')
+  assert.doesNotMatch(context(), /Git hooks/)
+  assert.throws(() => gitIn(repo, 'config', '--local', 'core.hooksPath'), 'not reinstalled')
+  assert.equal(sdlc(repo, ['hooks', 'install']).code, 0)
+  assert.throws(() => gitIn(repo, 'config', '--local', 'rig.githooks'), 'install clears the opt-out')
+})
+
+test('an opt-out before the hooks were ever wired still holds', () => {
+  sdlc(repo, ['vendor'])
+  assert.equal(sdlc(repo, ['hooks', 'uninstall']).code, 0)
+  assert.doesNotMatch(context(), /Git hooks/)
+  assert.throws(() => gitIn(repo, 'config', '--local', 'core.hooksPath'))
+})
+
+test('hooks uninstall leaves a foreign core.hooksPath alone', () => {
+  sdlc(repo, ['vendor'])
+  gitIn(repo, 'config', 'core.hooksPath', '.husky')
+  sdlc(repo, ['hooks', 'uninstall'])
+  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.husky')
+})
+
+test('a failed git config set is reported, not claimed as installed', () => {
+  sdlc(repo, ['vendor'])
+  fs.rmSync(path.join(repo, '.git'), { recursive: true })
+  const r = sdlc(repo, ['hooks', 'install'])
+  assert.equal(r.code, 1, r.stdout)
+  assert.match(r.stderr, /could not set core\.hooksPath/)
+})
+
+test('hooks state sees any config scope and reads ./ and trailing-slash spellings as installed', () => {
+  sdlc(repo, ['vendor'])
+  for (const p of ['./.sdlc/githooks', '.sdlc/githooks/']) {
+    gitIn(repo, 'config', '--local', 'core.hooksPath', p)
+    assert.match(sdlc(repo, ['hooks', 'status']).stdout, /^rig git hooks installed/, p)
+  }
+  gitIn(repo, 'config', '--local', '--unset', 'core.hooksPath')
+  const global = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rig-global-')), 'gitconfig')
+  fs.writeFileSync(global, '[core]\n\thooksPath = /elsewhere\n')
+  const env = { GIT_CONFIG_GLOBAL: global }
+  assert.match(sdlc(repo, ['hooks', 'status'], { env }).stdout, /core\.hooksPath is \/elsewhere/)
+  assert.equal(sdlc(repo, ['hooks', 'install'], { env }).code, 1, 'a global hooksPath is not silently shadowed')
+})
+
+test('install rewrites a hook script only when its content or mode differs', () => {
+  sdlc(repo, ['vendor'])
+  const file = path.join(repo, '.sdlc/githooks/pre-commit')
+  const before = fs.statSync(file).mtimeMs
+  sdlc(repo, ['hooks', 'install'])
+  assert.equal(fs.statSync(file).mtimeMs, before)
+  fs.chmodSync(file, 0o644)
+  sdlc(repo, ['hooks', 'install'])
+  assert.ok(fs.statSync(file).mode & 0o111)
+})

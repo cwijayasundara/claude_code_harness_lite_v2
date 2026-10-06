@@ -30,16 +30,19 @@ export function writeHookScripts(written: string[] = []): void {
   fs.mkdirSync(path.join(ROOT, HOOKS_DIR), { recursive: true })
   for (const name of NAMES) {
     const file = path.join(ROOT, HOOKS_DIR, name)
-    fs.writeFileSync(file, script(name))
-    fs.chmodSync(file, 0o755)
+    // Unchanged scripts are left alone, so a session start under the same plugin never dirties the tree.
+    if (!exists(file) || fs.readFileSync(file, 'utf8') !== script(name)) fs.writeFileSync(file, script(name))
+    if ((fs.statSync(file).mode & 0o777) !== 0o755) fs.chmodSync(file, 0o755)
     written.push(`${HOOKS_DIR}/${name}`)
   }
 }
 
 export type HooksState = 'installed' | 'missing' | 'other'
 export function hooksState(): { state: HooksState; path: string } {
-  const p = git(['config', '--local', '--get', 'core.hooksPath']) ?? ''
-  return { state: p === HOOKS_DIR ? 'installed' : p === '' ? 'missing' : 'other', path: p }
+  // Any scope: a global or system hooksPath would otherwise be shadowed in silence. ./x and x/ are x.
+  const p = git(['config', '--get', 'core.hooksPath']) ?? ''
+  const norm = p.replace(/^(?:\.\/)+/, '').replace(/\/+$/, '')
+  return { state: norm === HOOKS_DIR ? 'installed' : p === '' ? 'missing' : 'other', path: p }
 }
 
 export function installHooks(force = false): { ok: boolean; message: string } {
@@ -51,22 +54,34 @@ export function installHooks(force = false): { ok: boolean; message: string } {
   if (state === 'other' && !force) {
     return { ok: false, message: `core.hooksPath is already ${current}, so it was left alone. Call rig from your existing hooks instead:\n  sh .sdlc/githooks/pre-commit\n  sh .sdlc/githooks/pre-push "$@"\nor re-run with --force to replace it.` }
   }
-  git(['config', '--local', 'core.hooksPath', HOOKS_DIR])
+  if (git(['config', '--local', 'core.hooksPath', HOOKS_DIR]) === null) return { ok: false, message: 'could not set core.hooksPath in the local git config (is this a git repository with a writable .git/config?)' }
+  git(['config', '--local', '--unset', 'rig.githooks']) // clears an earlier opt-out; a missing key is fine
   return { ok: true, message: `git hooks installed (core.hooksPath = ${HOOKS_DIR}): commit and push now run the rig checks` }
 }
 
 // Session start wires committed hooks in a fresh clone (core.hooksPath is local git config, so a clone never has it).
+// `hooks uninstall` is the person's opt-out (rig.githooks = off): session start then stays silent.
 export function sessionNote(): string {
+  try {
+    return wireAtSessionStart()
+  } catch {
+    return '' // a throw here must not drop the rest of the SessionStart context
+  }
+}
+
+function wireAtSessionStart(): string {
   if (!exists(path.join(SDLC, 'bin', 'sdlc.ts')) || !exists(path.join(ROOT, HOOKS_DIR))) return ''
+  if (git(['config', '--get', 'rig.githooks']) === 'off') return ''
   const { state, path: current } = hooksState()
   if (state === 'installed') return ''
   if (state === 'other') return `Git hooks: core.hooksPath is ${current}, so the rig commit and push checks are not wired. Do not change it yourself: ask the person to run \`node .sdlc/bin/sdlc.ts hooks install --force\` if they want rig's hooks.`
   const r = installHooks()
-  return r.ok ? `Git hooks: installed the rig pre-commit and pre-push checks (core.hooksPath = ${HOOKS_DIR}).` : `Git hooks: ${r.message}`
+  return r.ok ? `Git hooks: installed the rig pre-commit and pre-push checks (core.hooksPath = ${HOOKS_DIR}). Opt out with: node .sdlc/bin/sdlc.ts hooks uninstall` : `Git hooks: ${r.message}`
 }
 
 export function uninstallHooks(): string {
-  if (hooksState().state !== 'installed') return 'rig git hooks are not installed; nothing changed'
+  git(['config', '--local', 'rig.githooks', 'off']) // session start will not wire them again
+  if (hooksState().state !== 'installed') return 'rig git hooks are not installed (session start will not wire them; `hooks install` undoes this)'
   git(['config', '--local', '--unset', 'core.hooksPath'])
   return 'rig git hooks uninstalled (core.hooksPath unset); the scripts stay in .sdlc/githooks'
 }
