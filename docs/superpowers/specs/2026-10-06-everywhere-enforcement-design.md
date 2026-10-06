@@ -18,7 +18,7 @@ The goal is a clean, tidy codebase even when work does not go through `/rig:star
 | 4 | **The Stop cap is soft.** After 2 blocks the agent finishes; only ship and CI enforce `unresolved.json`. A vibe coder who commits and pushes directly meets no refusal until CI, and only if `rig-check` is a required check. | Spike scenario H2. |
 | 5 | **The quality ratchet (lint, coupling versus base) runs only at `/rig:sensors`.** CI does not run it either (`cmdCheck` calls `runChecks` only). | `scripts/quality.ts:83`, `scripts/check.ts:403`. |
 
-This spec closes 1 to 4. Gap 5 is deferred (§3).
+This spec closes all five. Gap 5 is closed at push, not at commit (§4.2).
 
 ## 2. Decisions
 
@@ -33,7 +33,7 @@ This spec closes 1 to 4. Gap 5 is deferred (§3).
 
 ## 3. Non-goals
 
-- **Quality ratchet at commit or push (gap 5).** It needs a base worktree and a `ratchet.json` under a change slug, which a commit hook does not have. It stays at `/rig:sensors`. Revisit after this ships.
+- **Quality ratchet at commit.** It needs a base worktree and a `ratchet.json` under a change slug, so it runs at push only (§4.2), never on every commit.
 - No new sensors. This spec changes where and when the existing ones run, and who sees their warnings.
 - No server-side enforcement. Branch protection and the required `rig-check` remain the real boundary (SECURITY.md).
 - No Windows support (already documented). The hook scripts are POSIX `sh`.
@@ -54,6 +54,8 @@ A new `Point` value in `scripts/check.ts`. It judges what is about to be committ
 ### 4.2 `check --at push`
 
 For `pre-push`, `check --at ship --base <default base>` on the pushed branch. It reuses the ship path without a new point: traceability, red-proof where the change type requires it, tier and `adhoc` findings, and the full commands. Hence an unplanned tier M or L ad-hoc change is refused at push as it is at CI, and the person gets the CI answer before CI. `sensors.json` gains `githooks: { "prePush": "ship" | "off", "budgetMs": 300000 }` (default `"ship"`). Past the budget the hook warns and lets the push through; CI still runs.
+
+**Quality ratchet at push.** When `sensors.json` declares `quality` commands, pre-push also runs `runQuality(slug)` (`scripts/quality.ts:83`): each category's count on the branch against the base, plus the test-case count that never drops. The slug is the active change; else the newest `adhoc-*` change; else a new `adhoc-…` change that the hook creates from the branch diff (the one place a git hook writes a record, because the ratchet stores its baseline under a change folder). Regressions block the push; a category that cannot run blocks with its `fix`. With no `quality` declared the step is skipped and says so. It shares the push budget.
 
 ### 4.3 Install and lifecycle (`scripts/githooks.ts`, new)
 
@@ -81,11 +83,12 @@ For `pre-push`, `check --at ship --base <default base>` on the pushed branch. It
 | `scripts/githooks.ts` (new) | install, uninstall, status, hook script text (about 70 lines) |
 | `scripts/check.ts` | `commit` point, `--at commit` wiring, `push` alias to ship (about 25 lines) |
 | `scripts/diffs.ts` | `stagedDiff`, `stagedText` (about 15 lines) |
+| `scripts/githooks.ts` | push path: resolve or create the ad-hoc slug, call `runQuality` (about 25 lines more) |
 | `scripts/hooks.ts` | session-start install and notice, warn carry-over in prompt-submit, Stop `systemMessage`, pre-bash denials (about 35 lines) |
 | `scripts/sensors.ts`, `scripts/model.ts` | `isProtected` glob, `githooks` config keys and parsing (about 15 lines) |
 | `scripts/vendor.ts`, `scripts/sdlc.ts` | vendor the scripts; register `hooks` command (about 6 lines) |
 
-About 170 added lines. `scripts/size.spec.ts` caps the harness at 6100 lines, so the cap rises with this change, as it did for 0.4.1.
+About 195 added lines. `scripts/size.spec.ts` caps the harness at 6100 lines, so the cap rises with this change, as it did for 0.4.1.
 
 ## 6. Testing (test first)
 
@@ -100,6 +103,7 @@ Each is a `scripts/*.spec.ts` using the existing `testkit.ts` temp-repo helpers,
 7. **pre-bash** denies `git commit --no-verify` and `git config core.hooksPath x` for the model.
 8. **Regression for the spike:** the A, B, D and E scenarios (secret, tamper, mid-turn commit, Bash write) still block at Stop, and now also at commit.
 9. **Push**: an unplanned tier M ad-hoc change is refused by `check --at ship`; `prePush: "off"` skips it; a budget overrun warns and allows.
+10. **Quality at push**: a branch that raises a declared category's count above the base's is blocked; equal passes; a dropped test count blocks; no `quality` declared skips with a note; with no active change the hook reuses or creates one `adhoc-…` change and a second push reuses it.
 
 ## 7. Risks
 
@@ -108,7 +112,7 @@ Each is a `scripts/*.spec.ts` using the existing `testkit.ts` temp-repo helpers,
 - **Hooks only exist where installed.** A clone that never ran Claude Code or `hooks install` has none. CI remains the floor, which is why `rig-check` should be a required check.
 - **Commands see the working tree, not the index.** Documented in the hook's output; staging with `git add -p` can yield a green run on code that is not what gets committed.
 
-## 8. Open points for the reviewer
+## 8. Decisions taken at review
 
-1. **`prePush` default.** `"ship"` (CI-grade answer before CI, but runs the full commands on every push) versus `"off"` (cheaper; commit hook only). Proposed: `"ship"`.
-2. **Quality ratchet at push** is deferred (§3). Say if it should be in this spec.
+1. `prePush` defaults to `"ship"`.
+2. The quality ratchet is in this spec, at push (§4.2).
