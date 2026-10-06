@@ -36,12 +36,12 @@ The biggest lever is **bounded context**. Everything below follows from that.
 
 ```
 skills/      the stages, /rig:* (start design spec plan diagnose build test sensors pr pr-review
-             incident next init rule metrics learn wiki ask), prompts only
+             incident next init rule metrics), prompts only
 agents/      scout (haiku, read-only) · architect (opus) · implementer (sonnet) · reviewer (opus)
-             · verifier (sonnet) · wiki
+             · verifier (sonnet)
 hooks/       hooks.json = settings hooks (work in -p and CI) · register.ts = the optional mod
 scripts/     zero-dependency Node, no build step; sdlc.ts is the CLI; check.ts is the one checker
-templates/   CI workflows (rig-check, rig-review, rig-wiki), settings.json, stacks.json, REVIEW.md
+templates/   CI workflows (rig-check, rig-review), settings.json, stacks.json, REVIEW.md
 guides/      contracts, engineering, testing: injected on first touch of a matching path
 .sdlc/       the consumer repo's committed evidence (see §5)
 ```
@@ -125,11 +125,7 @@ Live, paid, one run per arm: treat as directional.
 
 Known limits: quality is compared at ship, not in CI, and reads `unmeasured` with no base (on trunk). Run autonomous builds in Claude Code's sandbox: declared test commands run model-written code. Defaults leave tier S and M ungated, so auto-approval starts once `plan.md` exists.
 
-## 10. `rig learn` (v0.5)
-
-Zero-token. From every change with a `ship.json` (review findings, blocked events, waivers, the diff rebuilt from git) it clusters patterns seen in at least 2 changes: a recurring review category with a recurring token becomes a `rule-add` proposal; repeated waivers of one sensor become an advisory `sensor-tune`. A rule is promotable only if replay fires on the stored diff of a change it came from and on no shipped change without that finding, with at least 10 changes shipped. Promotion is human-only (`/rig-approve <id> learn` appends to `rules.json`) and the learner lives in protected `scripts/**`, so the improver cannot change the gate that judges it. It runs from the mod after a ship, or weekly from `.github/workflows/learn.yml`. Deferred: a model proposer, edits to skill text or templates.
-
-## 11. Git hooks and the bypass guard (spec 5)
+## 10. Git hooks and the bypass guard (spec 5)
 
 Git is the common layer for every editor, agent and person, so `hooks install` sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh`, running the vendored checker). `check --at commit` runs the Stop sensors on the staged diff plus the fast commands; `check --at push` runs the ship checks and the quality ratchet against CI's base (merge-base with the trunk), within `githooks.budgetMs`. A hook that cannot run warns and lets git continue; a finding that blocks still blocks. Warnings are visible: Stop prints a `systemMessage` and the next prompt carries them over once. `/rig:pr` commits with `--no-verify` because its ship gate has just judged that tree. Opt out with `hooks uninstall` (`rig.githooks = off`).
 
@@ -137,16 +133,10 @@ The model is denied the bypasses it can be seen to make (`--no-verify`, `core.ho
 
 Open: fast and full commands at commit and push see the working tree rather than the index or pushed commits.
 
-## 12. Code wiki (spec 6)
-
-`docs/wiki/` in the consumer repo is a computed layer plus a prose layer. `wiki build` regenerates, at zero tokens, blocks between `<!-- rig:gen:NAME -->` markers (architecture diagram, files, entry points, deps, tests, why, recent) from real imports (JS/TS and Python only; other languages get no computed edges). A Sonnet agent writes only the prose (summary, *In plain words*, *Walk-through*), treating wiki text and source as untrusted data. `wiki build --check` fails on drift of the structural blocks; `wiki status` lists `stale`, `missing`, `uncovered`, `generated`, `prose`, `invalid`; `wiki stamp` requires `path:line` citations and the two sections; `wiki search` is zero-token ranking; `/rig:ask` has a Haiku scout answer from the wiki. The manifest (`docs/wiki/manifest.json`: `pages`, `skip`, `notes`, `order`) is validated, and every read and write goes through symlink-safe paths.
-
-`templates/rig-wiki.yml` refreshes it through one PR in two jobs: `generate` (read-only token; the only job that runs a model, configured with no shell or network and edit rights only on `docs/wiki`) and `publish` (write token, no model; refuses symlinks, re-runs `build --check`, scans for credentials, rejects a manifest changed beyond `surface` stamps, pushes only `rig/wiki-refresh`). **Nothing in the workflow has run on GitHub**; its first-run checklist (the action's agent mode on `push`, whether `--allowedTools` confines the model headless, artifact semantics, token and PR-check behaviour) is open. Other open items: aliases and monorepo package names are not resolved; `wikiStatus()` costs about 1.3 s on 5,000 files at every commit and push; a decoy generated block planted in prose defeats `--check`.
-
-## 13. Open items
+## 11. Open items
 
 - The mod's interactive parts (band, `/rig-approve` dialog, impact dialog, `/rig-sensors` pane) have never been checked by a person; `/rig-approve` has not been tried in a cloud session.
-- The git hooks and the wiki have not been trialled live; the live trials predate both.
+- The git hooks have not been trialled live; the live trials predate them.
 - Confirm 0 permission prompts after plan approval (§8 trial re-run).
 - Usage capture in headless `-p`, so scorecard cost matches run totals.
 - Whether `autoCompactWindow` is honoured from project settings.

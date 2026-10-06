@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { globToRegex, WIKI_DOC, SECRET_PATTERNS } from './model.ts'
+import { globToRegex, SECRET_PATTERNS } from './model.ts'
 
 export { globToRegex }
 
@@ -249,7 +249,7 @@ export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '-
 
 // Evidence and gate state: written only by sdlc itself or the person's mod commands. Only paths under .sdlc/ count,
 // so a project's own results/runs.jsonl is not evidence; EVIDENCE_NAME_RE catches bare names once a command names .sdlc.
-export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|usage\.jsonl|\.baseline|\.gate|unresolved\.json|learn[\\/](?:proposals|auto)\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
+export const EVIDENCE_RE = /(?:^|[^\w.-])\.sdlc[\\/](?:approvals\.jsonl|waivers\.jsonl|usage\.jsonl|\.baseline|\.gate|unresolved\.json|changes[\\/][^\\/]+[\\/](?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))/
 export const EVIDENCE_NAME_RE = /approvals\.jsonl|waivers\.jsonl|usage\.jsonl|runs\.jsonl|ratchet\.json|events\.jsonl|ship\.json|proposals\.json/
 
 // The plan's ## Verification bullets, split into required commands and ignored bullets (never dropped silently).
@@ -297,7 +297,7 @@ export function relPosix(file: string): string {
 
 export function isPlanned(file: string, patterns: string[]): boolean {
   const rel = relPosix(file)
-  if (rel.startsWith('.sdlc/') || WIKI_DOC.test(rel)) return true
+  if (rel.startsWith('.sdlc/')) return true
   return patterns.some(p => globToRegex(p).test(rel))
 }
 
@@ -353,7 +353,7 @@ export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
 export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
 export const skillRef = (name: string): string => `/rig${IS_VENDORED ? '-' : ':'}${name}`
 export const agentRef = (name: string): string => `rig${IS_VENDORED ? '-' : ':'}${name}`
-const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json', 'learn/']
+const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json']
 
 // Parallel hooks (subagents) read-modify-write the same small state file: serialise them with a mkdir lock (stale after 10 s;
 // after 5 s of waiting, proceed rather than wedge the hook) and write by rename so a reader never sees half a file.

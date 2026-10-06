@@ -11,15 +11,13 @@ As of 2026-10-06. `.claude-plugin/plugin.json` says **0.4.1**, the last release 
 | Area | State | Evidence |
 |---|---|---|
 | Lifecycle: start, design or plan, build, test, sensors, PR, review; human gates; tiers | Shipped and trialled live with paid runs | [DESIGN.md](DESIGN.md) §§8 and 9 |
-| Autonomous ratchet (bounded build, quality and cost caps) and `rig learn` | Shipped | DESIGN §§9 and 10 |
-| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees, and the guard that stops the model bypassing them | Merged and covered by tests that drive real `git`. **Not yet trialled live.** The bypass guard is a best-effort text match: CI plus branch protection is the boundary, and the guard's open gaps are listed | DESIGN §11, [SECURITY.md](SECURITY.md) |
-| Code wiki: computed diagrams, tables and history, `wiki build/check/status/search`, `/rig:ask` | Merged and tested; run end to end on a sample app. **Not yet used on a large real repo.** Diagrams are computed for JS/TS and Python only | DESIGN §12 |
-| `rig-wiki` refresh workflow | **Never run on GitHub.** Its privilege split was reviewed and is linted, but the first-run checklist in DESIGN §12 is still open | DESIGN §12 |
+| Autonomous ratchet (bounded build, quality and cost caps) | Shipped | DESIGN §9 |
+| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees, and the guard that stops the model bypassing them | Merged and covered by tests that drive real `git`. **Not yet trialled live.** The bypass guard is a best-effort text match: CI plus branch protection is the boundary, and the guard's open gaps are listed | DESIGN §10, [SECURITY.md](SECURITY.md) |
 | Windows | **Not supported.** Its CI jobs are red, and the hook scripts are POSIX `sh` | SECURITY.md |
 
 **Quality gates on `main`:** the full suite (about 600 tests), `npm run typecheck` and `claude plugin validate` pass locally. In CI the Linux and macOS jobs and the dogfood check are the ones to trust; the Windows jobs fail for the reason above.
 
-**Known limits worth knowing before you adopt it:** the live trials predate the git hooks and the wiki; hooks only protect what is committed through git, so `--no-verify` by a person leaves CI as the only judge; the wiki's model-written prose is reviewed in a PR, not machine-checked beyond citations and section presence. The open items for each area are in DESIGN §§11 and 12.
+**Known limits worth knowing before you adopt it:** the live trials predate the git hooks; hooks only protect what is committed through git, so `--no-verify` by a person leaves CI as the only judge. The open items are in DESIGN §§9 and 10.
 
 ## How the harness is put together
 
@@ -37,7 +35,7 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
 | 6 | **Local equals CI** | One `check` entry point serves Stop, plan, ship and CI. CI judges a PR with the *base branch's* checker, so a PR cannot weaken its own judge. |
 | 7 | **Right model for the job** | Sonnet writes code, Opus designs and reviews, Haiku searches. No skill switches model mid-conversation (that re-reads the context uncached). |
 | 8 | **Bounded loops** | Review rounds, Stop blocks and spend are capped. Past a cap the finding goes to `unresolved.json` and ship refuses it. A loop cannot wedge a session. |
-| 9 | **Measure, then change** | Every release is trialled and its cost summarised in DESIGN.md. `/rig:learn` proposes harness edits and replays each against past diffs first. |
+| 9 | **Measure, then change** | Every release is trialled and its cost summarised in DESIGN.md. |
 | 10 | **Every step ends with the next command** | You never have to guess what to type. `/rig:next` is the one to remember. |
 
 ### The layers
@@ -46,10 +44,10 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
  ┌────────────────────────────────────────────────────────────────────────┐
  │ YOU            /rig:start  /rig:next  /rig-approve  /rig-waive         │  intent, approval
  ├────────────────────────────────────────────────────────────────────────┤
- │ SKILLS (18)    start design plan diagnose build test sensors pr ask …  │  the stages: prompts
+ │ SKILLS (15)    start design plan diagnose build test sensors pr ask …  │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
- │ AGENTS (6)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
- │                reviewer·opus  verifier·sonnet  wiki                    │  small fresh contexts
+ │ AGENTS (5)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
+ │                reviewer·opus  verifier·sonnet                         │  small fresh contexts
  ├────────────────────────────────────────────────────────────────────────┤
  │ HOOKS          session-start · pre-bash · pre-edit · post-edit ·       │  guardrails: run in
  │                stop · subagent-stop · prompt-submit                    │  -p and CI, zero tokens
@@ -133,7 +131,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 
 | Command | Use it when | Cost |
 |---|---|---|
-| `/rig:init` | First time in a repo. Writes CLAUDE.md, `.sdlc/`, the wiki, and vendors the harness. | tokens, once |
+| `/rig:init` | First time in a repo. Writes CLAUDE.md, `.sdlc/`, and vendors the harness. | tokens, once |
 | `/rig:start "<task>"` | Any new task, or to resume one by slug. | tokens |
 | `/rig:next` | You are not sure what is next. Runs the next node, stops at a human gate. | tokens |
 | `/rig:design` · `/rig:plan` · `/rig:spec` | Writing the design (feature, greenfield), plan (refactor, migration, L bugfix) or spec. | Opus architect |
@@ -162,19 +160,15 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig-approve <slug> budget` | A higher spend cap. |
 | `/rig-approve <slug> tier S\|M\|L [type]` | A tier or type edit. The recorded tier is a floor, so only a person lowers it. |
 | `/rig-waive <sensor> <file\|*> <reason>` | One sensor finding on the active change. |
-| `/rig-approve <learn-id> learn` | A rule that `/rig:learn` proved against past diffs. |
 
 **Improve the harness itself**
 
 | Command | Use it when |
 |---|---|
 | `/rig:rule "<what recurs>"` | The agent broke the same convention twice: promote it to a mechanical rule. |
-| `/rig:learn` | After a batch of changes ships: find recurring findings and waiver churn, propose edits, replay each. |
 | `/rig:metrics [days]` | You want the 12 playbook metrics plus cost per change, stage and agent. |
-| `/rig:wiki` | After init, or when pages go stale: regenerate the diagrams and tables (zero tokens) and rewrite stale prose. |
-| `/rig:ask "<question>"` | You want to know how something works: a Haiku scout answers from the wiki and the lines it cites. |
 
-**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `learn`, `wiki (status, build [--check], search, stamp)`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
+**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `vendor`, `hooks`, `hook <event>`. Skills and CI call these; so can you.
 
 ### What fires when (the automatic edges)
 
@@ -189,8 +183,6 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print with their fix text, blocks refuse the commit (during a merge or rebase only the fast commands are skipped). |
 | You push | git pre-push | The branch's commits (against its merge-base with the trunk, as CI) go through the ship checks and the quality ratchet; warnings print with their fix text; `githooks.prePush: "off"` disables it. |
 | A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
-| A change merges to main | CI `rig-wiki` | Regenerates `docs/wiki/` (zero tokens) and, with a model secret, rewrites stale prose; opens one PR, never pushes to main. Two jobs: `generate` (requests a read-only token; the model step is the only one that runs the model, and is configured, not yet verified, to have no shell or network, see DESIGN §12) and `publish` (write token, no model step). `RIG_WIKI_TOKEN` is optional so required checks start on the PR. |
-| A change ships | mod, weekly `learn.yml` | `/rig:learn` runs and toasts what is promotable. |
 
 ## Install
 
@@ -206,7 +198,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
    ```
 
    Or, for one session: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
-2. In the repo, make a first commit if it has none, then run `/rig:init`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and the code wiki, and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/rig-*`, agents to `.claude/agents/rig-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Sonnet subagents).
+2. In the repo, make a first commit if it has none, then run `/rig:init`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/rig-*`, agents to `.claude/agents/rig-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Sonnet subagents).
    Run `node .sdlc/bin/sdlc.ts hooks install` (or let the first Claude Code session do it) to wire the git hooks; they cover editors and other agents. `--no-verify` still works for a person; CI is the floor. To opt out, run `node .sdlc/bin/sdlc.ts hooks uninstall`: it sets `rig.githooks = off`, so session start no longer wires them, until `hooks install`.
 3. Commit `.sdlc/`, `.claude/` and `CLAUDE.md`. Anyone who clones the repo, and any cloud session, now runs the harness with no install. In the repo the commands are `/rig-start`, `/rig-next` and so on.
 
@@ -233,11 +225,8 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 | `/rig-metrics-pane` | A pane with the scorecard: cost, tokens and value per change and node. Zero tokens. |
 | `/rig-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
 | `/rig:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
-| `/rig:learn` | Reads every shipped change, finds recurring review findings and waiver churn, and proposes harness edits, each replayed against past diffs. Zero tokens. A person promotes a passing rule with `/rig-approve <id> learn`. With the mod it also runs by itself when a change ships and toasts what is promotable; a weekly CI job covers repos without the mod. |
 | `/rig-status` | Where every change stands. Zero tokens. |
 | `/rig:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
-| `/rig:wiki` | Builds or updates the code wiki in `docs/wiki/`: `sdlc.ts wiki build` regenerates the computed blocks (a module diagram from real imports, file, entry-point, dependency and test tables, a history) at zero tokens, and the agent writes only the plain-words prose. `wiki build --check` fails on drift of the structural blocks; `wiki status` lists `stale`, `missing`, `uncovered`, `generated`, `prose` and `invalid` (a broken manifest is reported, never a crash). |
-| `/rig:ask "<question>"` | Answers from the wiki and the source lines it cites; `sdlc.ts wiki search "<terms>"` is the zero-token ranked search underneath. Wiki text is treated as untrusted data. |
 | `/rig:metrics [days]` | The playbook's 12 metrics (leading and lagging per stage) plus cost per change, stage and agent. |
 
 ## Team install
@@ -276,20 +265,18 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 | Part | Role |
 |---|---|
-| `skills/` (18) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
+| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
 | `agents/scout.md` | Haiku, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md and plan.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
 | `agents/reviewer.md` | **Opus 5.5**, high effort. One independent review per change, keeping findings at confidence 80 or above. |
 | `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
-| `agents/wiki.md` | Writes the plain-words prose of one wiki page; scripts own the rest. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
-| `scripts/*.ts` (28, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `wikigraph`, `wikigen`, `wikisearch`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `wiki` (surface hash and stale pages), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
+| `scripts/*.ts` (22, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
 | `templates/rig-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 | `templates/rig-review.yml` | One background Claude review per PR, for tier S and M and as a second look on L. |
-| `templates/rig-wiki.yml` | Refreshes the wiki through one pull request. Optional secrets: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` (prose rewrite only), `RIG_WIKI_TOKEN` (so required checks start on the PR). Untested on GitHub so far. |
 
 Artifacts live in **`.sdlc/`** at the repo root and are committed; `usage.jsonl` is gitignored. They are not under `.claude/`, which Claude Code protects: writes there always prompt, or are denied in headless runs, and allow rules can't change that.
 

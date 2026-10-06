@@ -114,18 +114,6 @@ test('a merge or rebase is read from git state, not the environment; it skips on
   assert.equal(commit().code, 1, 'an empty rebase-apply directory (no rebasing marker) is not a rebase')
 })
 
-test('a stale wiki page warns at commit and does not block', () => {
-  write(repo, 'src/a.js', 'export const a = 1\n')
-  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/src.md': { globs: ['src/**'] } } }))
-  write(repo, 'docs/wiki/modules/src.md', '# src\n\nsee src/a.js:1\n')
-  gitIn(repo, 'add', '.')
-  gitIn(repo, 'commit', '-qm', 'base')
-  stage('src/clean.js', 'export const ok = 1\n')
-  const r = commit()
-  assert.equal(r.code, 0, r.stdout)
-  assert.match(r.stdout, /wiki-stale/)
-})
-
 test('hooks install needs the vendored checker, writes executable scripts and sets core.hooksPath', () => {
   const early = sdlc(repo, ['hooks', 'install'])
   assert.equal(early.code, 1)

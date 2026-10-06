@@ -5,7 +5,7 @@ import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
 import { writeHookScripts } from './githooks.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'quality', 'levels', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'wiki', 'pr', 'sdlc', 'shell', 'bypass', 'inert', 'learn', 'learncli', 'githooks', 'wikigraph', 'wikigen', 'wikisearch', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'quality', 'levels', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'shell', 'bypass', 'inert', 'githooks', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
 
@@ -15,8 +15,8 @@ export function forProject(text: string): string {
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('<plugin>/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.sdlc/templates/')
-    .replace(/\/rig:(?!gen(?![a-z-])|drawn(?![a-z-]))([a-z][a-z-]*)/g, '/rig-$1')
-    .replace(/\brig:(?!allow-secret|gen(?![a-z-])|drawn(?![a-z-]))([a-z][a-z-]*)/g, 'rig-$1')
+    .replace(/\/rig:([a-z][a-z-]*)/g, '/rig-$1')
+    .replace(/\brig:(?!allow-secret)([a-z][a-z-]*)/g, 'rig-$1')
     .replace(/^name: (?!rig-)(\S+)$/m, 'name: rig-$1')
 }
 
@@ -65,7 +65,7 @@ function vendorStandalone(written: string[], version: string): void {
     const src = path.join(PLUGIN_ROOT, 'skills', name, 'SKILL.md')
     if (fs.existsSync(src)) writeFile(`.claude/skills/rig-${name}/SKILL.md`, forProject(read(src)), written)
   }
-  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact|budget|tier S|M|L [type]|learn>', 'Approve a gated sdlc artifact.'), written)
+  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <spec|plan|impact|budget|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
   writeFile('.claude/skills/rig-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'agents')).filter(f => f.endsWith('.md'))) {
     writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)

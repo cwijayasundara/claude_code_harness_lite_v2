@@ -12,7 +12,6 @@ import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDif
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { loadChange, activeSlug } from './graph.ts'
-import { wikiFindings } from './wiki.ts'
 
 export type Point = 'stop' | 'commit' | 'ship' | 'ci'
 export type CheckInput = {
@@ -292,7 +291,7 @@ function tierFindings(slugs: string[], diffs: FileDiff[], config: SensorConfig):
 
 export function runChecks(i: CheckInput): CheckResult {
   const { diffs, config } = i
-  // A commit judges a partial diff, like Stop: same severities, same sensors. Only its wiki check and its text source differ.
+  // A commit judges a partial diff, like Stop: same severities, same sensors. Only its text source differs.
   const point = i.point === 'commit' ? 'stop' : i.point
   const after = i.after ?? ((f: string) => read(path.join(ROOT, f)))
   const pattern = withoutFixtures(diffs, config)
@@ -311,7 +310,6 @@ export function runChecks(i: CheckInput): CheckResult {
     for (const f of findings) if (f.sensor === 'size' && !f.file) f.severity = 'warn'
   }
   if (point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
-  if (i.point !== 'stop') findings.push(...wikiFindings())
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
   if (point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))

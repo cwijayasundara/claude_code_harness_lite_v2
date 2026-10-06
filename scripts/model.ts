@@ -6,7 +6,7 @@ export type Severity = 'block' | 'warn'
 // Every sensor name a Finding can carry; /rig-waive accepts exactly these (a test keeps this in step with the sources).
 export const SENSOR_NAMES = [
   'test-tamper', 'suppression', 'layering', 'size', 'secrets', 'rules', 'contract-impact', 'harness-tamper',
-  'traceability', 'red-proof', 'unscanned', 'adhoc', 'commands', 'config', 'tier', 'wiki-stale', 'wiki-generated', 'wiki-prose',
+  'traceability', 'red-proof', 'unscanned', 'adhoc', 'commands', 'config', 'tier',
 ]
 
 export type Finding = { sensor: string; severity: Severity; file?: string; line?: number; message: string; fix: string; labels?: string[] }
@@ -131,11 +131,9 @@ export function matchesAny(file: string, globs: string[]): boolean {
     return re.test(file)
   })
 }
-// The wiki's own pages are docs, not source: only its manifest and markdown pages.
-export const WIKI_DOC = /^docs\/wiki\/(?:.*\.md|manifest\.json)$/
 export const isTest = (file: string, cfg: SensorConfig): boolean => matchesAny(file, cfg.tests)
 export const isSource = (file: string, cfg: SensorConfig): boolean =>
-  !file.startsWith('.sdlc/') && !WIKI_DOC.test(file) && !matchesAny(file, cfg.ignore)
+  !file.startsWith('.sdlc/') && !matchesAny(file, cfg.ignore)
 
 // ---------- unified diff ----------
 

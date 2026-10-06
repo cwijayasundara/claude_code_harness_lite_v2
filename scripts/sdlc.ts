@@ -24,9 +24,7 @@ import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor } from './vendor.ts'
 import { cmdHooks, cmdCheckPush } from './githooks.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
-import { cmdLearn, approveLearn } from './learncli.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
-import { cmdWiki } from './wiki.ts'
 import { cmdQuality } from './quality.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { normCmd } from './shell.ts'
@@ -62,7 +60,7 @@ function declareStackLevels(opt: string | true): string {
 }
 
 function cmdInit(args: Args): void {
-  // Ship, the PR gate and the wiki's surface stamps all read git, so a directory outside any repo gets one.
+  // Ship and the PR gate read git, so a directory outside any repo gets one.
   const newRepo = git(['rev-parse', '--is-inside-work-tree']) !== 'true' && git(['init', '-q', '-b', 'main']) !== null
   fs.mkdirSync(CHANGES, { recursive: true })
   fs.mkdirSync(path.join(SDLC, 'incidents'), { recursive: true })
@@ -153,7 +151,6 @@ function cmdApprove(args: Args): void {
   if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /rig-approve <slug> <stage>', 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
-  if (stage === 'learn') return approveLearn(slug) // the id names a proposal, not a change
   checkSlug(slug)
   if (stage === 'budget') {
     const node = readRatchet(slug).blocked?.node.replace(/#.*/, '') ?? step(slug).node ?? 'build'
@@ -374,7 +371,6 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   hook: cmdHook,
   metrics: cmdMetrics,
   scorecard: cmdScorecard,
-  wiki: cmdWiki,
   diff: cmdDiff,
   quality: cmdQuality,
   check: args => (args.opt.at === 'push' ? cmdCheckPush(args) : cmdCheck(args)),
@@ -384,7 +380,6 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   ratchet: cmdRatchet,
   waive: cmdWaive,
   sensors: () => cmdSensors(),
-  learn: cmdLearn,
   'impact-status': cmdImpactStatus,
 }
 

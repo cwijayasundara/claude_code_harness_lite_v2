@@ -67,7 +67,6 @@ function hookSessionStart(input: HookInput): void {
   }
   const cfg = loadConfig().config
   const guides = listGuides(cfg).map(g => g.name)
-  const wikiMissing = !exists(path.join(ROOT, 'docs/wiki')) && (git(['ls-files']) ?? '').split('\n').some(f => isSource(f, cfg))
   const active = activeSlug()
   const c = active ? loadChange(active) : null
   const state = frontmatter(read(STATE)).body.trim().split('\n').slice(0, 15).join('\n')
@@ -76,7 +75,6 @@ function hookSessionStart(input: HookInput): void {
     ROUTING_LINE,
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : `No active change. Start one with ${skillRef('start')} "<request>".`,
     `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to ${agentRef('scout')} and slices to ${agentRef('implementer')}; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .sdlc/STATE.md). If an sdlc skill fails to load, run \`node "${SCRIPT()}" skill <stage> <slug>\` and follow it exactly.`,
-    wikiMissing ? `No code wiki yet: ${skillRef('wiki')} builds it.` : '',
     sessionNote(),
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
@@ -128,7 +126,7 @@ export function isSafeEvidenceCommand(cmd: string, ci = CASE_INSENSITIVE): boole
 
 // Edit/Write: the target's real path (symlinked parents resolved) must not be evidence inside the real .sdlc.
 // A project's own data/approvals.jsonl is fine.
-const EVIDENCE_IN_SDLC = /^(?:approvals\.jsonl|waivers\.jsonl|usage\.jsonl|\.baseline|\.gate|unresolved\.json|learn\/(?:proposals|auto)\.json|changes\/[^/]+\/(?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))$/
+const EVIDENCE_IN_SDLC = /^(?:approvals\.jsonl|waivers\.jsonl|usage\.jsonl|\.baseline|\.gate|unresolved\.json|changes\/[^/]+\/(?:runs\.jsonl|verification\.md|impact\.json|ratchet\.json|events\.jsonl|pr\.md|ship\.json))$/
 function realPath(p: string): string {
   let dir = p
   const rest: string[] = []

@@ -156,20 +156,3 @@ test('standalone vendoring installs the mod as a project plugin', () => {
   assert.ok(settings.extraKnownMarketplaces['rig-local'])
 })
 
-test('the vendored wiki agent keeps the real rig:gen and rig:drawn markers while other rig: names are rewritten', () => {
-  const repo = makeRepo()
-  sdlc(repo, ['init'])
-  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
-  const agent = fs.readFileSync(path.join(repo, '.claude/agents/rig-wiki.md'), 'utf8')
-  assert.ok(agent.includes('<!-- rig:gen:') && agent.includes('<!-- /rig:gen -->') && agent.includes('<!-- rig:drawn -->'))
-  assert.doesNotMatch(agent, /rig-gen|rig-drawn/)
-  const wikiSkill = fs.readFileSync(path.join(repo, '.claude/skills/rig-wiki/SKILL.md'), 'utf8')
-  assert.match(wikiSkill, /rig-wiki/)
-  assert.doesNotMatch(wikiSkill, /\brig:(?!gen|drawn)[a-z]/)
-})
-
-test('only the exact rig:gen and rig:drawn names are exempt from the rig: rewrite', async () => {
-  const { forProject } = await import('./vendor.ts')
-  assert.equal(forProject('rig:generate rig:gen-foo rig:drawn-x /rig:generate'), 'rig-generate rig-gen-foo rig-drawn-x /rig-generate')
-  assert.equal(forProject('<!-- rig:gen:NAME --> <!-- /rig:gen --> <!-- rig:drawn -->'), '<!-- rig:gen:NAME --> <!-- /rig:gen --> <!-- rig:drawn -->')
-})

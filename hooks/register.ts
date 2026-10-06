@@ -4,7 +4,6 @@
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
 //  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
-//  - rig learn on its own when a change ships (proposals only; promotion stays /rig-approve)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
 // Essential gates live in hooks.json settings hooks so they also hold in `claude -p` and CI.
 
@@ -103,15 +102,6 @@ async function offerDesignGate($: EngineInterface): Promise<void> {
   return advance($)
 }
 
-// Zero tokens and silent unless a change shipped since the last run; it only writes proposals, promotion stays /rig-approve <id> learn.
-async function autoLearn($: EngineInterface): Promise<void> {
-  try {
-    if (!(await isInitialised($))) return
-    const r = await $.process.run(sdlc($, ['learn', '--auto']))
-    if (r.exitCode === 0 && r.stdout.trim()) $.ui.toast(`rig: ${r.stdout.trim()}`)
-  } catch (err) { $.ui.log(`auto learn skipped: ${String(err)}`) }
-}
-
 // The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
 const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root.replace(/\\/g, '/'))
 
@@ -152,7 +142,6 @@ export const register: Register = on => {
       await $.command.register({ name: 'rig-run', description: 'rig: drive the active change node by node to the next gate (no model call to decide); /rig-run stop pauses', argumentHint: '[stop]', immediate: true })
       await $.command.register({ name: 'rig-metrics-pane', description: 'rig: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) { $.ui.log(`could not register commands: ${String(err)}`) }
-    await autoLearn($)
     return next(e)
   })
 
@@ -261,7 +250,6 @@ export const register: Register = on => {
     } catch (err) {
       $.ui.log(`usage capture skipped: ${String(err)}`)
     }
-    if (!e.agentId && !e.isAborted) await autoLearn($)
     // Only main turns drive: an aborted one (the person pressed Esc) pauses, a finished one advances.
     if (!e.agentId) {
       try {
