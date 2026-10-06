@@ -615,22 +615,26 @@ Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/
 
 **The decision.** Git is the common layer: every editor, agent and person ends in `git commit` and `git push`. The hooks call the same checker as Stop, ship and CI, so local equals CI. A hook that cannot run (no Node, no `.sdlc/bin`) warns and lets git continue, because a broken hook must not wedge a repo; a finding that blocks still blocks. The model is denied the bypasses; a person keeps `--no-verify`, and CI is the floor.
 
-- **`hooks install|uninstall|status`.** Sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh` scripts that run the vendored `.sdlc/bin/sdlc.ts`); `vendor` copies the checker. A foreign `core.hooksPath` is left alone unless `--force`. Session start wires a fresh clone (`core.hooksPath` is local git config) and tells the agent what it did.
-- **`check --at commit`.** The staged diff, read from the index, goes through the Stop sensors and the fast commands. Warnings print as counts plus the Stop and prompt carry-over text; blocks refuse the commit. A merge or rebase in progress is skipped.
-- **`check --at push`.** For each pushed branch, what the remote lacks goes through the ship checks and, when `quality` commands are declared, the quality ratchet against the base. The remote sha comes from git's pre-push stdin; a new branch uses the merge-base with the default branch. Deletes, tags and a new branch with no base are skipped. Config is `githooks: { prePush: "ship" | "off", budgetMs }` (default `ship`, 300000); running out of budget warns and allows.
-- **Warnings are visible.** Stop prints a `systemMessage` for a turn that passes with warnings, and the next prompt hands them to the agent once.
-- **The model cannot bypass the hooks.** `pre-bash` denies `git commit --no-verify`, `git push --no-verify` (and abbreviations), `-n` on commit, and any command naming `core.hooksPath`. Best-effort regex; CI is the floor.
+- **`hooks install|uninstall|status`.** Sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh` scripts that run the vendored `.sdlc/bin/sdlc.ts`); `vendor` copies the checker, and install refuses a `.sdlc/bin` without `githooks.ts` (an older checker would refuse every commit). A foreign `core.hooksPath`, at any config scope, is left alone unless `--force`. Session start wires a fresh clone (`core.hooksPath` is local git config) and names the opt-out: `hooks uninstall` sets `rig.githooks = off`, which session start respects and `hooks install` clears.
+- **`check --at commit`.** The staged diff, read from the index, goes through the Stop sensors and the fast commands. Warnings print with their fix text (five, then `+N more`); blocks refuse the commit. During a merge or rebase, read from git state only (`MERGE_HEAD`, `rebase-merge/head-name`, `rebase-apply/rebasing`), the sensors still run and only the fast commands are skipped.
+- **`check --at push`.** For each pushed branch, the commits go through the ship checks and, when `quality` commands are declared, the quality ratchet. The base is CI's: the merge-base of the pushed commit with the trunk (`origin/main`, `main`, `origin/master`, `master`), so merging or rebasing on the trunk never counts the trunk's work; a push to the trunk itself uses the remote sha from git's stdin when it is an ancestor. Deletes, tags and a push with no base are skipped and named. Config is `githooks: { prePush: "ship" | "off", budgetMs }` (default `ship`, 300000); running out of budget warns and allows, while a failing command still blocks. A checker crash at commit or push warns and allows (spec §2); stop, ship and CI fail closed.
+- **Warnings are visible.** Stop prints a `systemMessage` for a turn that passes with warnings, and the next prompt hands them to the agent once (five rows, then `+N more`). Only the main thread records them, so a subagent's Stop cannot hide them.
+- **The model cannot bypass the hooks.** `pre-bash` reads the command with the `scripts/shell.ts` tokenizer and denies `--no-verify` on commit or push (any prefix), `-n` on commit, `core.hooksPath` in any spelling or scope (env config included), an alias that would bypass, and rig's own `hooks uninstall` / `hooks install --force`. `sh -c` payloads and `eval` are read too, three layers deep; deeper nesting is denied. A command the tokenizer refuses (`$(...)`, redirects, braces) falls back to a regex. CI is the floor.
+- **`/rig:pr`** commits and pushes with `--no-verify`: its ship gate has just judged that tree with waivers applied. A follow-up has no gate, so it keeps the hooks and shows their reasons.
+
+**The five gaps are closed:** (1) outside a Claude turn, by the git hooks; (2) invisible warnings, by the Stop `systemMessage`, the prompt carry-over and the fix-text rows at commit and push; (3) wiki drift, by the wiki warnings at commit and push; (4) the soft Stop cap, by the push ship checks; (5) the ratchet only at `/rig:sensors`, by the quality ratchet at push.
 
 ### Deviations from the spec
 
-- Push diffs the remote sha from stdin, not `defaultBase()` (null on trunk), and filters on the destination ref, so `HEAD:main` and `<sha>:main` are judged.
+- Push filters on the destination ref, so `HEAD:main` and `<sha>:main` are judged, and takes its base as above rather than from `defaultBase()` (which keys on HEAD and is null on the trunk).
 - Ship verdicts apply only to `adhoc-*` changes; a push that carries a named change is left to that change's own ship.
 - At commit, `harness-tamper` only warns, because the commit point follows Stop semantics; push blocks it.
-- `formatFindings` prints warnings as counts only, so a budget warning at push adds a `warning: <message>` note.
-- The harness line cap moved from 6100 to the final value in `scripts/size.spec.ts`.
+- `formatFindings` prints warnings as counts, so commit and push add the warning rows with their fix text below it.
+- The harness line cap moved from 6100 to 6400 (`scripts/size.spec.ts`).
 
 ### Open items
 
 - The fast commands at commit see the working tree, not the index.
+- The full commands and the quality ratchet at push run against the working tree, not the pushed commits; push says so when the pushed commit is not HEAD or tracked files are dirty.
 - `--no-verify` by a person leaves CI as the only judge.
-- The bypass denial is a regex; a tokenizer from `scripts/shell.ts` would be sturdier.
+- The bypass guard cannot see what it cannot parse statically: `$(...)` (regex fallback only), scripts written and then run, and aliases defined elsewhere.
