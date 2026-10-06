@@ -1,0 +1,208 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
+
+const PROSE = '## In plain words\n\nIt checks keys.\n\n## Walk-through\n\nA request enters at `src/auth/key.js:1`.\n'
+const page = (repo: string, p: string): string => fs.readFileSync(path.join(repo, 'docs/wiki', p), 'utf8')
+
+function wikiRepo(extra: object = {}): string {
+  const repo = makeRepo()
+  write(repo, 'src/auth/key.js', "import { util } from '../core/util.js'\n// Checks API keys\nexport function check(k) {\n  return util(k)\n}\n")
+  write(repo, 'src/core/util.js', 'export const util = k => k\n')
+  write(repo, 'test/auth.test.js', "import { check } from '../src/auth/key.js'\ntest('check passes a key', () => check(1))\n")
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/auth.md': { globs: ['src/auth/**'] }, 'modules/core.md': { globs: ['src/core/**'] } }, ...extra }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'a')
+  return repo
+}
+const build = (repo: string, ...a: string[]) => sdlc(repo, ['wiki', 'build', ...a])
+
+test('build creates skeleton pages with every generated block, the edge, the symbols and the tests', () => {
+  const repo = wikiRepo()
+  const r = build(repo)
+  assert.equal(r.code, 0, r.stderr)
+  const auth = page(repo, 'modules/auth.md')
+  assert.match(auth, /^# auth\n/)
+  assert.match(auth, /flowchart LR[\s\S]*C -->\|1\| n_modules_core_md/)
+  assert.match(auth, /\| \[`src\/auth\/key\.js`\]\(\.\.\/\.\.\/\.\.\/src\/auth\/key\.js\) \| Checks API keys \| 5 \|/)
+  assert.match(auth, /export function check\(k\)/)
+  assert.match(auth, /\[core\]\(core\.md\) · 1 import/)
+  assert.match(auth, /test\/auth\.test\.js.*check passes a key/)
+  assert.match(page(repo, 'modules/core.md'), /\*\*Used by\*\*\n\n- \[auth\]\(auth\.md\) · 1 import/)
+  assert.match(page(repo, 'index.md'), /## System map[\s\S]*mermaid[\s\S]*## Start here[\s\S]*## Modules/)
+})
+
+test('build is idempotent and preserves prose outside the markers byte for byte', () => {
+  const repo = wikiRepo()
+  build(repo)
+  const authPath = path.join(repo, 'docs/wiki/modules/auth.md')
+  const written = fs.readFileSync(authPath, 'utf8').split('_pending: run /rig:wiki_').join('Hand-written prose here.')
+  fs.writeFileSync(authPath, written)
+  const again = build(repo)
+  assert.match(again.stdout, /wiki up to date/)
+  assert.equal(fs.readFileSync(authPath, 'utf8'), written)
+  write(repo, 'src/auth/extra.js', 'export const e = 1\n')
+  gitIn(repo, 'add', '.')
+  build(repo)
+  const after = fs.readFileSync(authPath, 'utf8')
+  assert.match(after, /extra\.js/)
+  assert.equal(after.replace(/<!-- rig:gen:[\s\S]*?<!-- \/rig:gen -->/g, 'B'), written.replace(/<!-- rig:gen:[\s\S]*?<!-- \/rig:gen -->/g, 'B'), 'only generated blocks changed')
+})
+
+test('build --check: 0 when fresh, 1 naming the page and block when a source file changes, 0 again after build', () => {
+  const repo = wikiRepo()
+  build(repo)
+  assert.equal(build(repo, '--check').code, 0)
+  write(repo, 'src/auth/extra.js', 'export const e = 1\n')
+  gitIn(repo, 'add', '.')
+  const stale = build(repo, '--check')
+  assert.equal(stale.code, 1)
+  assert.match(stale.stdout, /generated: docs\/wiki\/modules\/auth\.md \(files\)/)
+  build(repo)
+  assert.equal(build(repo, '--check').code, 0)
+})
+
+test('the why and recent blocks are refreshed by build but never enforced by --check', () => {
+  const repo = wikiRepo()
+  build(repo)
+  // a body-only edit: same line count, same role, same imports, same exported lines, so no structural block changes
+  write(repo, 'src/auth/key.js', "import { util } from '../core/util.js'\n// Checks API keys\nexport function check(k) {\n  return util(k) // ok\n}\n")
+  gitIn(repo, 'commit', '-qam', 'rename the parameter')
+  assert.equal(build(repo, '--check').code, 0)
+  build(repo)
+  assert.match(page(repo, 'modules/auth.md'), /rename the parameter/)
+})
+
+test('no manifest: build and --check say so and exit 0; an invalid manifest fails with the reason', () => {
+  const repo = makeRepo()
+  assert.equal(build(repo).code, 0)
+  assert.match(build(repo, '--check').stdout, /no code wiki here/)
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: {}, bogus: 1, notes: ['x'.repeat(10_001)], order: ['nope.md'] }))
+  const bad = build(repo)
+  assert.equal(bad.code, 1)
+  assert.match(bad.stderr, /unknown key "bogus"/)
+  assert.match(bad.stderr, /notes\[0\] is longer than 10000/)
+  assert.match(bad.stderr, /order: nope\.md is not a page/)
+})
+
+test('steering keys parse: notes and order are accepted, and order drives the start-here list', () => {
+  const repo = wikiRepo({ notes: ['Auth is the entry point.'], order: ['modules/core.md'] })
+  assert.equal(build(repo).code, 0)
+  const idx = page(repo, 'index.md')
+  assert.ok(idx.indexOf('[core](modules/core.md)') < idx.indexOf('[auth](modules/auth.md)'), 'manifest order first')
+})
+
+test('a language with no table row: the block says edges are not computed, and a drawn diagram outside the markers passes --check', () => {
+  const repo = wikiRepo()
+  write(repo, 'src/svc/main.go', 'package main\n')
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/svc.md': { globs: ['src/svc/**'] } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'go')
+  build(repo)
+  const svcPath = path.join(repo, 'docs/wiki/modules/svc.md')
+  assert.match(fs.readFileSync(svcPath, 'utf8'), /Edges not computed for \.go/)
+  fs.appendFileSync(svcPath, '\n<!-- rig:drawn -->\n```mermaid\nflowchart LR\n  a --> b\n```\n')
+  assert.equal(build(repo, '--check').code, 0)
+})
+
+test('a page that predates the markers keeps its text and gains the blocks; an empty module gets a skeleton', () => {
+  const repo = wikiRepo()
+  const legacy = '# auth\n- `src/auth/key.js:1` the old way\n'
+  write(repo, 'docs/wiki/modules/auth.md', legacy)
+  build(repo)
+  assert.ok(page(repo, 'modules/auth.md').startsWith(legacy.trimEnd()))
+  assert.match(page(repo, 'modules/auth.md'), /rig:gen:architecture/)
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/ghost.md': { globs: ['nothing/**'] } } }))
+  assert.equal(build(repo).code, 0)
+  assert.match(page(repo, 'modules/ghost.md'), /_No source files match the module globs\._/)
+})
+
+test('the why block lists a recorded change whose plan matches, and an ad-hoc commit by subject', () => {
+  const repo = wikiRepo()
+  write(repo, '.sdlc/changes/add-auth/intent.md', '---\nslug: add-auth\ntype: feature\ntier: M\ncreated: 2026-10-05T00:00:00.000Z\n---\n# add-auth\n\n## Problem\nKeys were never checked.\n')
+  write(repo, '.sdlc/changes/add-auth/plan.md', '# plan\n\n## Files\n- `src/auth/**`\n')
+  write(repo, 'src/auth/key.js', "import { util } from '../core/util.js'\n// Checks API keys\nexport function check(k) {\n  return util(k) // checked\n}\n")
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'tweak the auth check')
+  build(repo)
+  const auth = page(repo, 'modules/auth.md')
+  assert.match(auth, /\[add-auth\]\(\.\.\/\.\.\/\.\.\/\.sdlc\/changes\/add-auth\/intent\.md\) · feature · Keys were never checked\./)
+  assert.match(auth, /· commit · tweak the auth check/)
+})
+
+test('links are GitHub blob URLs when origin is on GitHub', () => {
+  const repo = wikiRepo()
+  gitIn(repo, 'remote', 'add', 'origin', 'https://github.com/o/r.git')
+  build(repo)
+  assert.match(page(repo, 'modules/auth.md'), /\]\(https:\/\/github\.com\/o\/r\/blob\/main\/src\/auth\/key\.js\)/)
+})
+
+test('two builds produce identical bytes', () => {
+  const repo = wikiRepo()
+  build(repo)
+  const first = ['index.md', 'modules/auth.md', 'modules/core.md'].map(p => page(repo, p))
+  fs.rmSync(path.join(repo, 'docs/wiki/index.md'))
+  build(repo)
+  assert.equal(page(repo, 'index.md'), first[0])
+})
+
+test('unsafe page keys fail the build and nothing is written outside docs/wiki', () => {
+  for (const key of ['../../escape.md', '/abs/x.md', 'modules/../../x.md', 'index.md', 'a\\b.md', 'x.txt', './x.md', 'a//b.md']) {
+    const repo = wikiRepo()
+    write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { [key]: { globs: ['src/**'] } } }))
+    const r = build(repo)
+    assert.equal(r.code, 1, key)
+    assert.ok(r.stderr.includes(`page "${key}": not a safe relative .md path`), `${key}: ${r.stderr}`)
+    assert.ok(!fs.existsSync(path.join(repo, '..', 'escape.md')))
+    assert.ok(!fs.existsSync(path.join(repo, 'escape.md')))
+    assert.ok(!fs.existsSync(path.join(repo, 'x.md')))
+    assert.ok(!fs.existsSync('/abs/x.md'))
+  }
+})
+
+test('a symlinked directory inside docs/wiki cannot redirect a write', () => {
+  const repo = wikiRepo()
+  fs.mkdirSync(path.join(repo, 'outside'))
+  fs.symlinkSync('../../outside', path.join(repo, 'docs/wiki/modules'))
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/x.md': { globs: ['src/**'] } } }))
+  const r = build(repo)
+  assert.equal(r.code, 1)
+  assert.match(r.stderr, /modules\/x\.md/)
+  assert.deepEqual(fs.readdirSync(path.join(repo, 'outside')), [])
+})
+
+test('a symlinked page file is refused', () => {
+  const repo = wikiRepo()
+  fs.mkdirSync(path.join(repo, 'docs/wiki/modules'), { recursive: true })
+  fs.writeFileSync(path.join(repo, 'outside.md'), 'keep')
+  fs.symlinkSync('../../../outside.md', path.join(repo, 'docs/wiki/modules/auth.md'))
+  assert.equal(build(repo).code, 1)
+  assert.equal(fs.readFileSync(path.join(repo, 'outside.md'), 'utf8'), 'keep')
+})
+
+test('docs/wiki itself a symlink out of the repo: refused, nothing written outside', () => {
+  const repo = wikiRepo()
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'wiki-out-'))
+  fs.cpSync(path.join(repo, 'docs/wiki'), outside, { recursive: true })
+  fs.rmSync(path.join(repo, 'docs/wiki'), { recursive: true })
+  fs.symlinkSync(outside, path.join(repo, 'docs/wiki'))
+  const r = build(repo)
+  assert.equal(r.code, 1)
+  assert.deepEqual(fs.readdirSync(outside), ['manifest.json'])
+})
+
+test('a symlinked index.md is refused and its target is unchanged', () => {
+  const repo = wikiRepo()
+  const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wiki-idx-')), 'victim.md')
+  fs.writeFileSync(target, 'keep')
+  fs.symlinkSync(target, path.join(repo, 'docs/wiki/index.md'))
+  assert.equal(build(repo).code, 1)
+  assert.equal(fs.readFileSync(target, 'utf8'), 'keep')
+})
+
+test('the first build creates docs/wiki/modules when it does not exist', () => {
+  const repo = wikiRepo()
+  assert.ok(!fs.existsSync(path.join(repo, 'docs/wiki/modules')))
+  assert.equal(build(repo).code, 0)
+  assert.ok(fs.existsSync(path.join(repo, 'docs/wiki/modules/auth.md')))
+})

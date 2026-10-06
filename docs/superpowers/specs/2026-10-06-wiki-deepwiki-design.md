@@ -63,6 +63,7 @@ Links are `https://github.com/<owner>/<repo>/blob/<default branch>/<path>#L<n>` 
 
 - `wikigen.ts` renders each block from the graph, the manifest, `git ls-files` and `.sdlc/changes/`, and splices it between its markers, creating a missing block at its place in the template. Prose outside markers is never touched, byte for byte.
 - `sdlc.ts wiki build` regenerates every generated block and `index.md` for every page in the manifest (no model, no tokens). `wiki build --check` regenerates in memory and exits 1 with a unified-diff summary if any committed generated block differs, like a formatter check.
+- `--check` and `status.generated` compare only the **structural** blocks (`architecture`, `files`, `entrypoints`, `deps`, `tests`, and the three index blocks). The `why` and `recent` blocks derive from git history and `.sdlc/changes/`; `build` refreshes them but nothing enforces them, because every code PR would otherwise fail the check.
 - `sdlc.ts wiki status` gains two finding kinds beside `stale`, `missing`, `uncovered`: `generated` (blocks differ from a rebuild) and `prose` (a required prose heading is missing or empty). `wikiFindings()` maps both to `warn`, as today.
 - `sdlc.ts wiki stamp` keeps its citation check and also requires the prose headings (`In plain words`, `Walk-through`); a page that lacks them stays unstamped, so it reads as stale.
 - **Steering** (`docs/wiki/manifest.json`, spec 5 style): new optional keys `notes: string[]` (free-text repo notes handed to the wiki agent, at most 10,000 characters each) and `order: string[]` (page order for "Start here"). Unknown keys are an error, as in `sensors.json`.
@@ -88,6 +89,7 @@ Nothing is pushed to the default branch directly. `rig-check` still judges the P
 |---|---|
 | `scripts/wikigraph.ts` (new) | `IMPORT_TABLE`, `buildGraph`, resolvers (about 170 lines) |
 | `scripts/wikigen.ts` (new) | block renderers, marker splice, link builder, Mermaid emit (about 220 lines) |
+| `scripts/wikisearch.ts` (new) | the pure ranking function (about 60 lines), kept apart so `wiki.ts` stays under the 500-line script cap |
 | `scripts/wiki.ts` | `build`, `build --check`, `search`, new status kinds, steering keys (about 140 lines added) |
 | `scripts/vendor.ts`, `scripts/sdlc.ts` | vendor the two modules; no new top-level command |
 | `agents/wiki.md`, `skills/wiki/SKILL.md`, `skills/ask/SKILL.md` (new) | prose-only agent; build-first skill; the ask skill |
