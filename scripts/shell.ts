@@ -213,7 +213,8 @@ export function readOnlyDenial(cmd: string, agent: string, declared: (slug: stri
 // -n on commit, core.hooksPath in any spelling or scope, an alias that adds either, or rig's own uninstall / install --force.
 // Read on dequoted words; a command tokenize refuses ($(...), redirects, braces) falls back to a regex.
 const RIG_HOOKS_OFF = /sdlc\.(?:m?js|ts)\b[^;&|\n]*\bhooks\s+(?:uninstall\b|install\b[^;&|\n]*--force)/
-const REGEX_BYPASS = [/\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*/i, /core\.hookspath/i, RIG_HOOKS_OFF]
+const NO_VERIFY_FLAGS = /\bgit\b[^;&|\n]*\bcommit\b[^;&|\n]*(?:--no-v\w*|\s-[a-zA-Z]*n[a-zA-Z]*(?=\s|$))|\bgit\b[^;&|\n]*\bpush\b[^;&|\n]*--no-v\w*/i
+const NO_VERIFY_CONFIG = /\bgit\b[^;&|\n]*core\.hookspath/i
 const GIT_GLOBAL_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix'])
 const COMMIT_VALUE = new Set(['-m', '-F', '-C', '-c', '-t', '--message', '--file', '--author', '--date', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--cleanup', '--trailer', '--template'])
 const MESSAGE = new Set(['-m', '-F', '--message', '--file'])
@@ -256,9 +257,15 @@ function aliasBypass(words: string[], depth: number): boolean {
 }
 
 const SHELLS = /^(?:sh|bash|zsh|dash|ksh)$/
-const regexBypass = (text: string): boolean => REGEX_BYPASS.some(re => re.test(text.replace(/["'\\]/g, '')))
-// A git command embedded in one word (an argument of another program) gets the regex.
-const embedded = (words: string[]): boolean => words.some(w => /\bgit\s/.test(w) && regexBypass(w))
+// The fallback for text the tokenizer refuses: quoted strings not starting with - are blanked for the flags (a message
+// that mentions --no-verify is fine), and core.hooksPath must share a line with git.
+function regexBypass(text: string): boolean {
+  const flags = text.replace(/"([^"]*)"|'([^']*)'/g, (_m, a?: string, b?: string) => ((a ?? b ?? '').startsWith('-') ? ` ${a ?? b} ` : '""'))
+  const plain = text.replace(/["'\\]/g, '')
+  return NO_VERIFY_FLAGS.test(flags) || NO_VERIFY_CONFIG.test(plain) || RIG_HOOKS_OFF.test(plain)
+}
+// A git command at the start of one word (an argument of another program, e.g. watch 'git ...') gets the regex.
+const embedded = (words: string[]): boolean => words.some(w => /^\s*git\s/.test(w) && regexBypass(w))
 
 function segmentBypasses(seg: string[], depth: number): boolean {
   // `sh -c '<payload>'` and `eval <words>` run a command of their own: read it the same way (bounded).

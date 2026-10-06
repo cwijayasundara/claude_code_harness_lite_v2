@@ -321,6 +321,16 @@ test('a shell -c or eval payload is read too; harmless payloads pass', () => {
   for (const cmd of [`sh -c 'git commit -m "docs -n"'`, `bash -c 'git status'`, `eval 'echo hi'`]) assert.notEqual(bash(cmd), 'deny', cmd)
 })
 
+test('commit and PR messages that only mention a bypass are not denied, also on the regex fallback', () => {
+  sdlc(repo, ['init'])
+  for (const cmd of [
+    "git commit -m \"$(cat <<'EOF'\nfix(hooks): deny core.hooksPath and --no-verify\n\nbody\nEOF\n)\"",
+    'node .sdlc/bin/sdlc.ts pr tiny --message "fix(hooks): deny git commit --no-verify"',
+    'gh pr create --title x --body "$(cat <<EOF\nthe model may not bypass the hooks\nwith core.hooksPath\nEOF\n)"',
+  ]) assert.notEqual(bash(cmd), 'deny', cmd)
+  for (const cmd of ['git commit --no-verify -m "$(date)"', "sh -c 'git commit -n'", 'node "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hooks uninstall', 'git -c core.hooksPath=/x commit -m "$(date)"']) assert.equal(bash(cmd), 'deny', cmd)
+})
+
 const nest = (inner: string, n: number): string => (n ? nest(`sh -c '${inner.replace(/'/g, `'\\''`)}'`, n - 1) : inner)
 test('shells nested deeper than three layers are denied, whatever they run; three layers are read as usual', () => {
   sdlc(repo, ['init'])
