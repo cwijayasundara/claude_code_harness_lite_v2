@@ -5,7 +5,7 @@ import { ROOT, read, exists, sha, out, fail, git, toPosix, sanctionWrites, listC
 import { matchesAny, isSource, isTest, type Finding } from './model.ts'
 import { loadConfig } from './check.ts'
 import { buildGraph, cmp } from './wikigraph.ts'
-import { BLOCKS, STRUCTURAL, INDEX_BLOCKS, SURFACE, spliceBlock, blockBody, pageSkeleton, indexSkeleton, pageSummary, label, linkBase, startOrder, renderBlock, renderSystem, renderStart, renderModules, type Ctx, type ChangeRow, type CommitRow } from './wikigen.ts'
+import { BLOCKS, STRUCTURAL, INDEX_BLOCKS, SURFACE, spliceBlock, blockBody, pageSkeleton, indexSkeleton, pageSummary, label, linkBase, startOrder, renderBlock, renderSystem, renderStart, renderModules, proseProblems, type Ctx, type ChangeRow, type CommitRow } from './wikigen.ts'
 
 export const WIKI_DIR = 'docs/wiki'
 const MANIFEST = path.join(ROOT, WIKI_DIR, 'manifest.json')
@@ -171,7 +171,8 @@ function cmdBuild(args: Args): void {
   out(changed.length ? `wrote ${changed.length} file(s):\n${changed.map(p => `  ${p.file}`).join('\n')}` : 'wiki up to date')
 }
 
-export function wikiStatus(): { stale: string[]; missing: string[]; uncovered: string[] } | null {
+type Status = { stale: string[]; missing: string[]; uncovered: string[]; generated: string[]; prose: string[] }
+export function wikiStatus(): Status | null {
   const m = readManifest()
   if (!m) return null
   const all = tracked()
@@ -187,18 +188,26 @@ export function wikiStatus(): { stale: string[]; missing: string[]; uncovered: s
   const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
   const skip = new Set(m.skip ?? [])
   const uncovered = [...dirs].filter(d => !skip.has(d) && !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
-  return { stale: stale.sort(), missing: missing.sort(), uncovered }
+  // The graph build (planBuild) is the costly part and runs at every commit and push: once per call, and never without a valid manifest
+  // (an invalid one is reported by `wiki build`, and planBuild would abort on an unsafe page key).
+  const valid = manifestErrors(readRaw()).length === 0 && safeWikiPath(INDEX) !== null
+  const generated = valid ? planBuild(m).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp) : []
+  // A page whose path is unsafe is never read: it counts as missing prose.
+  const prose = Object.keys(m.pages).filter(page => proseProblems(readRegular(safePagePath(page) ?? '')).length).sort(cmp)
+  return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose }
 }
 
 export function wikiFindings(): Finding[] {
   const s = wikiStatus()
   if (!s) return []
   const fix = 'run /rig:wiki update (it rewrites only these pages)'
-  const warn = (file: string, message: string): Finding => ({ sensor: 'wiki-stale', severity: 'warn', file, message, fix })
+  const warn = (sensor: string, file: string, message: string, how: string): Finding => ({ sensor, severity: 'warn', file, message, fix: how })
   return [
-    ...s.stale.map(p => warn(`${WIKI_DIR}/${p}`, 'the module\'s public surface changed since this page was written')),
-    ...s.missing.map(p => warn(`${WIKI_DIR}/${p}`, 'its globs match no files')),
-    ...s.uncovered.map(d => warn(d, 'no wiki page covers this directory')),
+    ...s.stale.map(p => warn('wiki-stale', `${WIKI_DIR}/${p}`, 'the module\'s public surface changed since this page was written', fix)),
+    ...s.missing.map(p => warn('wiki-stale', `${WIKI_DIR}/${p}`, 'its globs match no files', fix)),
+    ...s.uncovered.map(d => warn('wiki-stale', d, 'no wiki page covers this directory', fix)),
+    ...s.generated.map(p => warn('wiki-generated', `${WIKI_DIR}/${p}`, 'its generated blocks differ from a rebuild', 'run `sdlc.ts wiki build`')),
+    ...s.prose.map(p => warn('wiki-prose', `${WIKI_DIR}/${p}`, 'a required prose section (In plain words, Walk-through) is missing or empty', fix)),
   ]
 }
 
@@ -206,15 +215,17 @@ export function cmdWiki(args: Args): void {
   const [sub, ...pages] = args.pos
   if (sub === 'status') {
     const s = wikiStatus()
-    if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], none: true }))
+    if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], generated: [], prose: [], none: true }))
     if (!s) return out('no code wiki here: /rig:wiki builds it')
-    const rows = [...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`)]
+    const rows = [...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`), ...s.generated.map(p => `generated: ${p}`), ...s.prose.map(p => `prose: ${p}`)]
     return out(rows.length ? rows.join('\n') : 'wiki up to date')
   }
   if (sub === 'build') return cmdBuild(args)
   if (sub === 'stamp') {
     const m = readManifest()
     if (!m) return out('no docs/wiki/manifest.json to stamp')
+    const errors = manifestErrors(readRaw())
+    if (errors.length) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
     const unknown = pages.filter(n => !(n in m.pages))
     if (unknown.length) {
       process.stderr.write(`unknown page(s): ${unknown.join(', ')}\n`)
@@ -230,13 +241,17 @@ export function cmdWiki(args: Args): void {
     }
     let stamped = 0
     const uncited: string[] = []
+    const unwritten: string[] = []
     for (const [page, p] of Object.entries(m.pages)) {
       if (pages.length && !pages.includes(page)) continue
       // A page that cites no `path:line` is not a map an engineer can follow; it stays unstamped (stale) until fixed.
-      if (!CITATION.test(read(path.join(ROOT, WIKI_DIR, page)))) {
+      const text = readRegular(pagePath(page))
+      if (!CITATION.test(text)) {
         uncited.push(page)
         continue
       }
+      const gaps = proseProblems(text)
+      if (gaps.length) { unwritten.push(`${page} (${gaps.join(', ')})`); continue }
       p.surface = surfaceOf(filesFor(p.globs ?? [], all))
       stamped++
     }
@@ -244,6 +259,10 @@ export function cmdWiki(args: Args): void {
     sanctionWrites([toPosix(path.relative(ROOT, MANIFEST))])
     if (uncited.length) {
       process.stderr.write(`uncited page(s): ${uncited.join(', ')}: cite each claim as path:line, then stamp again\n`)
+      process.exitCode = 1
+    }
+    if (unwritten.length) {
+      process.stderr.write(`missing prose sections: ${unwritten.join('; ')}: have the wiki agent write them, then stamp again\n`)
       process.exitCode = 1
     }
     return out(`stamped ${stamped} page(s)`)

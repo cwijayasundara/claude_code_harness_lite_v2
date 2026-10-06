@@ -97,7 +97,7 @@ test('every sensor name emitted by the scripts is waivable', async () => {
   const { SENSOR_NAMES } = await import('./model.ts')
   const emitted = new Set<string>()
   for (const f of fs.readdirSync(import.meta.dirname).filter(n => n.endsWith('.ts') && !n.endsWith('.spec.ts') && n !== 'testkit.ts')) {
-    for (const m of fs.readFileSync(path.join(import.meta.dirname, f), 'utf8').matchAll(/sensor: '([a-z-]+)'/g)) emitted.add(m[1]!)
+    for (const m of fs.readFileSync(path.join(import.meta.dirname, f), 'utf8').matchAll(/(?:sensor: |\bwarn\()'([a-z-]+)'/g)) emitted.add(m[1]!)
   }
   emitted.delete('human-approval') // deliberately not waivable: it asks CI for an independent reviewer
   assert.deepEqual([...emitted].filter(n => !SENSOR_NAMES.includes(n)), [])

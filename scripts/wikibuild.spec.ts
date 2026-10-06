@@ -268,3 +268,59 @@ test('page keys that collide case-insensitively or hold control characters are r
     assert.match(r.stderr, re)
   }
 })
+
+type Status = { stale: string[]; missing: string[]; uncovered: string[]; generated: string[]; prose: string[] }
+const status = (repo: string) => JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as Status
+
+test('status: pending prose is a prose finding; real prose clears it; a changed import is a generated finding', () => {
+  const repo = wikiRepo()
+  build(repo)
+  assert.deepEqual(status(repo).prose, ['modules/auth.md', 'modules/core.md'])
+  assert.deepEqual(status(repo).generated, [])
+  for (const p of ['modules/auth.md', 'modules/core.md']) {
+    const f = path.join(repo, 'docs/wiki', p)
+    fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split('_pending: run /rig:wiki_').join('Real prose.'))
+  }
+  assert.deepEqual(status(repo).prose, [])
+  write(repo, 'src/auth/extra.js', 'export const e = 1\n')
+  gitIn(repo, 'add', '.')
+  assert.deepEqual(status(repo).generated, ['modules/auth.md'])
+  assert.match(sdlc(repo, ['wiki', 'status']).stdout, /generated: modules\/auth\.md/)
+})
+
+test('stamp refuses a page with pending prose, then stamps it once the prose is written', () => {
+  const repo = wikiRepo()
+  sdlc(repo, ['init'])
+  build(repo)
+  const refused = sdlc(repo, ['wiki', 'stamp', 'modules/auth.md'])
+  assert.equal(refused.code, 1)
+  assert.match(refused.stderr, /missing prose sections: modules\/auth\.md \(In plain words, Walk-through\)/)
+  const f = path.join(repo, 'docs/wiki/modules/auth.md')
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split('_pending: run /rig:wiki_').join('Real prose, see `src/auth/key.js:3`.'))
+  const ok = sdlc(repo, ['wiki', 'stamp', 'modules/auth.md'])
+  assert.equal(ok.code, 0, ok.stderr)
+  assert.match(ok.stdout, /stamped 1 page/)
+})
+
+test('wiki-generated and wiki-prose are warnings at ci, never blocks; wiki-stale is unchanged', () => {
+  const repo = wikiRepo()
+  sdlc(repo, ['init'])
+  build(repo)
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'wiki')
+  gitIn(repo, 'checkout', '-qb', 'f')
+  write(repo, 'src/auth/extra.js', 'export const e = 1\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'more')
+  const ci = JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json']).stdout) as { findings: { sensor: string; severity: string }[] }
+  const by = (s: string) => ci.findings.filter(f => f.sensor === s).map(f => f.severity)
+  assert.deepEqual(by('wiki-generated'), ['warn'])
+  assert.deepEqual(by('wiki-prose'), ['warn', 'warn'])
+  assert.equal(by('wiki-stale').every(s => s === 'warn'), true)
+})
+
+test('the new sensors can be waived by name', () => {
+  const repo = wikiRepo()
+  sdlc(repo, ['init'])
+  const r = sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  assert.equal(r.code, 0, r.stderr)
+  for (const s of ['wiki-generated', 'wiki-prose']) assert.equal(sdlc(repo, ['waive', s, '*', 'reason'], { env: { SDLC_HUMAN: '1' } }).code, 0, s)
+})
