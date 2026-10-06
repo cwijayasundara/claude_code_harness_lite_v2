@@ -365,6 +365,15 @@ test('the bypass guard reads git and the shells case-insensitively, as a case-in
   allows(['GIT status', 'Git log -n 5', `SH -c 'git status'`])
 })
 
+test('a shell -c payload is read behind any wrapper, and eval behind command or builtin', () => {
+  denies([`env sh -c 'true; git commit -n'`, `/usr/bin/env sh -c 'cd . && git commit --no-verify'`, `sudo -u me sh -c 'git commit -n'`,
+    `xargs sh -c 'git commit -n'`, `nohup sh -c 'git push --no-verify'`, `timeout 9 sh -c 'git commit -n'`, `sh -c -- 'git commit -n'`,
+    `command eval 'true; git commit -n'`, `builtin eval 'git commit -n'`, `nice -n 5 bash -ec 'git commit -n'`, `time sh -lc 'git commit -n'`,
+    'git commit -m eval -n', 'git commit -m sh -c x -n', `sudo -u git sh -c 'git commit -n'`])
+  allows([`env sh -c 'git status'`, 'xargs echo', 'sudo ls', `sh -c 'git commit -m "-n flag docs"'`, `env sh -c 'git commit -m x -- -n'`,
+    'git commit -m eval', 'grep -c bash notes.txt', 'echo eval hi'])
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {

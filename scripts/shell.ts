@@ -269,18 +269,39 @@ function regexBypass(text: string): boolean {
 // A git command at the start of one word (an argument of another program, e.g. watch 'git ...') gets the regex.
 const embedded = (words: string[]): boolean => words.some(w => /^\s*git(?:\.exe)?\s/i.test(w) && regexBypass(w))
 
+// Words a segment runs as a command of its own: the word after a shell's -c cluster (and an optional --), wherever the
+// shell stands, so env, sudo -u x, xargs, nohup, timeout N, nice or time cannot hide it; and the words after eval in
+// command position (after assignments, command or builtin; eval is a builtin, so no wrapper program can run it).
+function payloadSpans(seg: string[]): [number, number][] {
+  const spans: [number, number][] = []
+  seg.forEach((w, k) => {
+    if (!SHELLS.test(progName(w))) return
+    const c = seg.findIndex((x, i) => i > k && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(x))
+    const p = c > 0 && seg[c + 1] === '--' ? c + 2 : c + 1
+    if (c > 0 && p < seg.length && !spans.some(([f]) => f === p)) spans.push([p, p + 1])
+  })
+  let k = seg.findIndex(w => !/^\w+=/.test(w))
+  while (k >= 0 && (seg[k] === 'command' || seg[k] === 'builtin')) k++
+  if (k >= 0 && seg[k] === 'eval') spans.push([k + 1, seg.length])
+  return spans
+}
+
 function segmentBypasses(seg: string[], depth: number): boolean {
-  // `sh -c '<payload>'` and `eval <words>` run a command of their own: read it the same way (bounded).
-  const k = seg.findIndex(w => !/^\w+=/.test(w))
-  const word = progName(seg[k] ?? '')
-  const c = SHELLS.test(word) ? seg.findIndex((w, i) => i > k && /^-[a-z]*c[a-z]*$/.test(w)) : -1
-  const payload = c > 0 ? seg[c + 1] ?? '' : seg[k] === 'eval' ? seg.slice(k + 1).join(' ') : null
-  if (payload !== null) {
-    if (depth < 3) return bypassesGitHooks(payload, depth + 1)
-    if (!payload.trim() || regexBypass(payload)) return Boolean(payload.trim())
-    nestedTooDeep = true // past the bound and no visible bypass: deny anyway, never fail open
+  // A payload is read the same way, bounded; past the bound it is denied (nested), never passed unread.
+  const inPayload = new Set<number>()
+  for (const [from, to] of payloadSpans(seg)) {
+    for (let i = from; i < to; i++) inPayload.add(i)
+    const payload = seg.slice(from, to).join(' ')
+    if (!payload.trim()) continue
+    if (depth < 3) {
+      if (bypassesGitHooks(payload, depth + 1)) return true
+      continue
+    }
+    if (!regexBypass(payload)) nestedTooDeep = true // past the bound and no visible bypass: deny anyway, never fail open
     return true
   }
+  // The rest of the segment is read as usual, with each payload word held in place by an inert word.
+  seg = seg.map((w, i) => (inPayload.has(i) ? '_' : w))
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
   if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
