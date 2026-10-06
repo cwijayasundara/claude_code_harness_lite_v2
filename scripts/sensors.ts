@@ -221,7 +221,7 @@ export function contractsFromPlan(planText: string): string[] {
     .filter((id): id is string => Boolean(id))
 }
 
-export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
+export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.sdlc/githooks/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
 // ci: compare case-insensitively (macOS and Windows file systems treat CLAUDE.MD and CLAUDE.md as one file).
 export const isProtected = (file: string, ci = false): boolean => (ci ? matchesAny(file.toLowerCase(), PROTECTED.map(p => p.toLowerCase())) : matchesAny(file, PROTECTED))
 const SENSORS = '.sdlc/sensors.json'
@@ -254,6 +254,8 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
     if (a.ratchet.rounds[n] > b.ratchet.rounds[n]) reasons.push(`ratchet.${n} raised ${b.ratchet.rounds[n]} → ${a.ratchet.rounds[n]}`)
     if (a.ratchet.usd[n] > b.ratchet.usd[n]) reasons.push(`ratchet.usd.${n} raised ${b.ratchet.usd[n]} → ${a.ratchet.usd[n]}`)
   }
+  if (b.githooks.prePush === 'ship' && a.githooks.prePush === 'off') reasons.push('githooks.prePush turned off')
+  if (a.githooks.budgetMs > b.githooks.budgetMs) reasons.push(`githooks.budgetMs raised ${b.githooks.budgetMs} → ${a.githooks.budgetMs}`)
   for (const l of removedFrom(Object.keys(b.levels), Object.keys(a.levels))) reasons.push(`levels.${l} removed`)
   for (const q of removedFrom(Object.keys(b.quality), Object.keys(a.quality))) reasons.push(`quality.${q} removed`)
   for (const l of Object.keys(a.levels) as (keyof typeof a.levels)[]) {

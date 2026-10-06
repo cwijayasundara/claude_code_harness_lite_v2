@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule } from './model.ts'
+import { DEFAULT_CONFIG as CFG, type FileDiff, type SensorConfig, type Rule, parseConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, TAMPER_PATTERNS, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, weakensConfig, weakensRules, isProtected, onlyKnownRedRemoved, harnessTamper, behaviourIds, missingBehaviours } from './sensors.ts'
 
 export const fd = (file: string, added: string[] = [], removed: string[] = [], status: FileDiff['status'] = 'M'): FileDiff => ({
@@ -300,4 +300,23 @@ test('size: a file too large to scan is blocked, never silently skipped', () => 
   assert.equal(f.length, 1)
   assert.equal(f[0]?.sensor, 'unscanned', 'its own sensor name, so a size waiver cannot cover it')
   assert.match(f[0]?.message ?? '', /not scanned/)
+})
+
+test('githooks config defaults to ship, parses, and turning pre-push off counts as weakening', () => {
+  assert.deepEqual(parseConfig('').config.githooks, { prePush: 'ship', budgetMs: 300_000 })
+  const off = parseConfig('{"githooks":{"prePush":"off","budgetMs":1000}}')
+  assert.deepEqual(off.errors, [])
+  assert.deepEqual(off.config.githooks, { prePush: 'off', budgetMs: 1000 })
+  assert.match(parseConfig('{"githooks":{"prePush":"later"}}').errors.join(), /githooks\.prePush must be/)
+  assert.match(parseConfig('{"githooks":{"budgetMs":-1}}').errors.join(), /githooks\.budgetMs must be a positive number/)
+  assert.match(parseConfig('{"githooks":{"nope":1}}').errors.join(), /githooks: unknown key "nope"/)
+  assert.match(parseConfig('{"githooks":5}').errors.join(), /githooks must be/)
+  assert.ok(weakensConfig('{}', '{"githooks":{"prePush":"off"}}').some(r => /prePush/.test(r)))
+  assert.ok(weakensConfig('{}', '{"githooks":{"budgetMs":900000}}').some(r => /budgetMs/.test(r)))
+  assert.deepEqual(weakensConfig('{}', '{"githooks":{"budgetMs":1000}}'), [])
+})
+
+test('the git hook scripts are protected harness files', () => {
+  assert.ok(isProtected('.sdlc/githooks/pre-commit'))
+  assert.ok(isProtected('.sdlc/githooks/pre-push'))
 })

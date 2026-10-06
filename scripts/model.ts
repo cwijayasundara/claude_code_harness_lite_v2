@@ -34,6 +34,7 @@ export type SensorConfig = {
   limits: { fileLines: number; diffLines: number; lineChars: number }
   knownRed: string[]
   build: 'native' | 'sdd'
+  githooks: { prePush: 'ship' | 'off'; budgetMs: number }
   gates: Record<GateKey, ('spec' | 'plan' | 'design')[]>
   levels: Partial<Record<Level, string>>
   quality: Partial<Record<QualityCategory, QualityCmd>>
@@ -54,6 +55,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   limits: { fileLines: 400, diffLines: 500, lineChars: 160 },
   knownRed: [],
   build: 'native',
+  githooks: { prePush: 'ship', budgetMs: 300_000 },
   gates: { S: [], M: ['design'], L: ['spec', 'plan', 'design'], greenfield: ['spec', 'plan', 'design'] },
   levels: {},
   quality: {},
@@ -333,6 +335,21 @@ export function parseConfig(text: string): { config: SensorConfig; errors: strin
   if ('build' in value) {
     if (value.build === 'native' || value.build === 'sdd') config.build = value.build
     else errors.push('build must be "native" or "sdd"')
+  }
+  if ('githooks' in value) {
+    const g = isObject(value.githooks) ? value.githooks : null
+    if (!g) errors.push('githooks must be { prePush?: "ship" | "off", budgetMs?: number }')
+    else {
+      if ('prePush' in g) {
+        if (g.prePush === 'ship' || g.prePush === 'off') config.githooks.prePush = g.prePush
+        else errors.push('githooks.prePush must be "ship" or "off"')
+      }
+      if ('budgetMs' in g) {
+        if (typeof g.budgetMs === 'number' && g.budgetMs > 0) config.githooks.budgetMs = g.budgetMs
+        else errors.push('githooks.budgetMs must be a positive number')
+      }
+      for (const k of Object.keys(g)) if (k !== 'prePush' && k !== 'budgetMs') errors.push(`githooks: unknown key "${k}"`)
+    }
   }
   parseV4(value, config, errors)
   for (const k of Object.keys(value)) if (!(k in DEFAULT_CONFIG)) errors.push(`unknown key "${k}"`)
