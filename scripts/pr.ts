@@ -14,6 +14,7 @@ import { runCommand, recordRun } from './runs.ts'
 import { formatFindings, SENSOR_NAMES, type SensorConfig } from './model.ts'
 import { appendEvent, block, unblock, readRatchet } from './ratchet.ts'
 import { runQuality } from './quality.ts'
+import { verificationFresh, sensorsFresh } from './stamp.ts'
 import { renderScorecard } from './scorecard.ts'
 
 type ShippedRepo = { name: string; branch: string; commit: string }
@@ -99,11 +100,13 @@ export function cmdPr(args: Args): void {
   if (r.drift.length) fail(`scope drift, not shipping. Out-of-plan files:\n${r.drift.map(f => '  ' + f).join('\n')}\nAdd them to ${planName(slug)} ## Files (and re-approve if gated) or revert them.`)
   const { config, rules, errors } = loadConfig()
   const sensorsBefore = read(path.join(SDLC, 'sensors.json'))
-  const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })
+  // verify ran the declared full commands on this exact tree: judging the tree again would only repeat them.
+  const covered = verificationFresh(slug).fullCovered
+  const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: covered ? 'none' : 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })
   const ratcheted = read(path.join(SDLC, 'sensors.json')) !== sensorsBefore
-  // Defence in depth: re-run the quality comparison (the base counts are cached per base SHA) so a sensors round
-  // that was not really measured cannot let a lint or quality regression ship. No round is recorded.
-  if (Object.values(config.quality).some(Boolean)) {
+  // Defence in depth: when the tree changed after the sensors node, measure again (the base counts are cached per base SHA)
+  // so a lint or quality regression cannot ship. No round is recorded.
+  if (Object.values(config.quality).some(Boolean) && !sensorsFresh(slug)) {
     const q = runQuality(slug).blocks.filter(b => b.sensor.startsWith('quality.') || b.sensor === 'invariant')
     gate.blocks.push(...q)
     gate.findings.push(...q)

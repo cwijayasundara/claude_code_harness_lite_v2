@@ -4,7 +4,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { CHANGES, planPath, planVerificationBullets, planVerification, planApproved, checkSlug, exists, read, now, out, fail, type Args } from './core.ts'
 import { activeSlug, loadChange, nextCommand } from './graph.ts'
-import { loadConfig } from './check.ts'
+import { loadConfig, runDeclared } from './check.ts'
+import { formatFindings } from './model.ts'
+import { treeStamp } from './stamp.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest, normCmd } from './runs.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { recordRound, readRatchet, unblock, block } from './ratchet.ts'
@@ -23,7 +25,9 @@ function slugOf(args: Args, usage: string): string {
   return slug
 }
 
-function writeReport(slug: string): 'pass' | 'fail' {
+const FULL_BUDGET_MS = 1_800_000
+
+function writeReport(slug: string, full: 'pass' | 'fail' | 'none' = 'none'): 'pass' | 'fail' {
   const rows = readRuns(slug)
   const plan = planVerificationBullets(slug)
   const change = loadChange(slug)
@@ -34,7 +38,7 @@ function writeReport(slug: string): 'pass' | 'fail' {
   const planned = plan.commands.map(normCmd)
   const planPassed = planned.length ? planned.every(c => latest.get(c) === 0) : latest.size > 0 && [...latest.values()].every(e => e === 0)
   const levels = levelResults(slug, required, config, planPassed)
-  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels)
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels, { tree: treeStamp(), full })
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
   // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
   // The level kind clears first, so a cap reached in this same run is recorded rather than refused behind the old block.
@@ -75,5 +79,8 @@ export function cmdVerify(args: Args): void {
     out(`exit ${row.exit}${row.timedOut ? ' (timed out)' : ''} in ${row.ms} ms: ${cmd}`)
   }
   if (skipped.length) out(`not run (not declared in sensors.json and the plan is not approved): ${skipped.map(c => `\`${c}\``).join(', ')}. Run each with \`sdlc.ts run --slug ${slug} -- "<command>"\`, which asks the person, then \`verify-report ${slug}\`.`)
-  if (writeReport(slug) !== 'pass') process.exitCode = 1
+  // One authoritative run: the declared full commands run here too, so ship and push can check the stamp instead.
+  const failed = runDeclared('full', config, slug, FULL_BUDGET_MS).filter(f => f.severity === 'block')
+  if (failed.length) out(formatFindings(failed))
+  if (writeReport(slug, failed.length ? 'fail' : 'pass') !== 'pass') process.exitCode = 1
 }

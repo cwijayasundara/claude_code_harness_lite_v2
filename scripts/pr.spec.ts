@@ -479,3 +479,61 @@ test('the ship gate refuses a quality regression even when the sensors node was 
   write(repo, 'src/app.js', 'x\n')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
 })
+
+const marker = (): string => path.join(os.tmpdir(), `rig-mark-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
+const bump = (file: string): string => `node -e "require('fs').appendFileSync('${file}','x')"`
+const count = (file: string): number => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').length : 0)
+const OK = 'node -e "process.exit(0)"'
+function stamped(config: object) {
+  write(repo, '.sdlc/sensors.json', JSON.stringify(config))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, 'src/app.js', 'x\n')
+}
+function markDone(slug: string, nodes: string[]): void {
+  const file = path.join(repo, `.sdlc/changes/${slug}/ratchet.json`)
+  const r = JSON.parse(fs.readFileSync(file, 'utf8'))
+  for (const n of nodes) r.nodes[n] = { ...(r.nodes[n] ?? { rounds: 0, hashes: [] }), status: 'done' }
+  fs.writeFileSync(file, JSON.stringify(r))
+}
+
+test('ship does not run the declared full commands again when verify stamped this tree', () => {
+  const m = marker()
+  stamped({ fast: { test: OK }, full: { mark: bump(m) } })
+  assert.equal(sdlc(repo, ['verify', 'tiny']).code, 0)
+  assert.equal(count(m), 1, 'verify ran the full command once')
+  markDone('tiny', ['build', 'sensors'])
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(count(m), 1, 'ship reused the stamp')
+})
+
+test('ship runs the full commands as before when the tree changed after verify', () => {
+  const m = marker()
+  stamped({ fast: { test: OK }, full: { mark: bump(m) } })
+  sdlc(repo, ['verify', 'tiny'])
+  write(repo, 'src/app.js', 'changed\n')
+  markDone('tiny', ['build', 'sensors'])
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(count(m), 2)
+})
+
+test('ship does not re-measure quality when the sensors node was stamped on this tree', () => {
+  const m = marker()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: OK }, quality: { lint: { cmd: bump(m), count: 'exit' } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, 'src/app.js', 'x\n')
+  verified(repo, 'tiny')
+  assert.equal(sdlc(repo, ['quality', 'tiny']).code, 0)
+  const measured = count(m)
+  assert.equal(measured, 2, 'one run on the branch and one on the base')
+  markDone('tiny', ['build'])
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(count(m), measured)
+})

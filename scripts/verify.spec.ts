@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, write, buildDone } from './testkit.ts'
+import { makeRepo, sdlc, write, buildDone, gitIn } from './testkit.ts'
 
 const OK = 'node -e "process.exit(0)"'
 const BAD = 'node -e "process.exit(3)"'
@@ -49,4 +49,39 @@ test('a command listed twice runs once', () => {
   const repo = change({ fast: { test: OK } }, `- \`${OK}\`\n- \`${OK}\`\n`)
   sdlc(repo, ['verify', 'tiny'])
   assert.equal(rows(repo).length, 1)
+})
+
+const PASS = 'node -e "process.exit(0)"'
+function stampedChange(full: Record<string, string>) {
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: PASS }, full }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/a.js\n## Verification\n- \`${PASS}\`\n`)
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  return repo
+}
+
+test('verify stamps the tree and records that the declared full commands passed', () => {
+  const repo = stampedChange({ test: PASS })
+  const r = sdlc(repo, ['verify', 'tiny'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(report(repo), /^tree: [0-9a-f]{16}$/m)
+  assert.match(report(repo), /^full: pass$/m)
+  assert.equal(report(repo).match(/^tree: (\S+)$/m)?.[1], sdlc(repo, ['stamp']).stdout.trim())
+})
+
+test('a failing full command fails verification', () => {
+  const repo = stampedChange({ lint: 'node -e "process.exit(1)"' })
+  const r = sdlc(repo, ['verify', 'tiny'])
+  assert.equal(r.code, 1)
+  assert.match(report(repo), /^result: fail$/m)
+  assert.match(report(repo), /^full: fail$/m)
+})
+
+test('verify-report alone does not claim the full commands ran', () => {
+  const repo = stampedChange({ test: PASS })
+  sdlc(repo, ['run', '--slug', 'tiny', '--', PASS])
+  sdlc(repo, ['verify-report', 'tiny'])
+  assert.match(report(repo), /^full: none$/m)
 })

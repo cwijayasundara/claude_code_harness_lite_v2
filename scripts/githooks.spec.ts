@@ -527,3 +527,24 @@ test('a failing full command still blocks at push; only a budget overrun is soft
   assert.equal(r.code, 1, r.stdout)
   assert.match(r.stdout, /full\.test failed/)
 })
+
+test('pre-push skips the full commands and the quality ratchet for a change stamped on exactly this tree', () => {
+  const OK = 'node -e "process.exit(0)"'
+  const m = path.join(os.tmpdir(), `rig-push-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
+  const bump = `node -e "require('fs').appendFileSync('${m}','x')"`
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: OK }, full: { mark: bump }, quality: { lint: { cmd: bump, count: 'exit' } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, 'src/app.js', 'x\n')
+  assert.equal(sdlc(repo, ['verify', 'tiny']).code, 0)
+  assert.equal(sdlc(repo, ['quality', 'tiny']).code, 0)
+  const seen = fs.readFileSync(m, 'utf8').length
+  gitIn(repo, 'add', 'src/app.js'); gitIn(repo, 'commit', '-qm', 'work')
+  const head = gitIn(repo, 'rev-parse', 'HEAD')
+  const r = sdlc(repo, ['check', '--at', 'push'], { input: `refs/heads/sdlc/tiny ${head} refs/heads/sdlc/tiny ${base}\n` })
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.equal(fs.readFileSync(m, 'utf8').length, seen, 'nothing ran again')
+})

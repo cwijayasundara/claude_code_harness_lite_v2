@@ -29,6 +29,7 @@ import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unbloc
 import { cmdQuality } from './quality.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { normCmd } from './runs.ts'
+import { treeStamp } from './stamp.ts'
 
 // ---------- commands ----------
 
@@ -260,7 +261,9 @@ function cmdRun(): void {
   if (!slug || !exists(path.join(CHANGES, slug))) fail('no such change: run /rig:start first, or pass an existing --slug')
   const expectFail = Boolean(head.opt['expect-fail'])
   const row = runCommand(cmd)
-  recordRun(slug, expectFail ? { ...row, expectFail: true } : row)
+  const tree = treeStamp()
+  const stamped = tree ? { ...row, tree } : row
+  recordRun(slug, expectFail ? { ...stamped, expectFail: true } : stamped)
   if (row.tail) out(row.tail)
   out(`sdlc run: exit ${row.exit}${row.timedOut ? ' (timed out)' : ''} in ${row.ms} ms, recorded in ${slug}/runs.jsonl`)
   process.exitCode = expectFail ? (row.exit !== 0 ? 0 : 1) : row.exit
@@ -328,6 +331,7 @@ function cmdSensors(): void {
 }
 
 const COMMANDS: Record<string, (args: Args) => void> = {
+  stamp: () => out(treeStamp() ?? 'none'),
   init: cmdInit,
   new: cmdNew,
   activate: cmdActivate,

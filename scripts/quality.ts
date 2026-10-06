@@ -4,6 +4,7 @@ import path from 'node:path'
 import { ROOT, checkSlug, defaultBase, read, out, fail, type Args } from './core.ts'
 import { runCommand } from './runs.ts'
 import { withBaseTree } from './basetree.ts'
+import { treeStamp } from './stamp.ts'
 import { readRatchet, writeRatchet, recordRound, testCaseCount } from './ratchet.ts'
 import { loadConfig, runChecks } from './check.ts'
 import { branchDiff, showAt, showMany } from './diffs.ts'
@@ -105,6 +106,12 @@ export function cmdQuality(args: Args): void {
   const { categories, blocks } = runQuality(slug)
   const rows = categories.map(c => `${c.category.padEnd(11)} ${c.status === 'unmeasured' ? `unmeasured${c.note === 'no base' ? ' (no base)' : ''}` : c.status === 'fail' ? `fail (${c.note})` : `base ${c.base} → branch ${c.branch}  ${c.status}`}`)
   const v = recordRound(slug, 'sensors', blocks.map(b => ({ severity: 'high', category: b.sensor, text: `${b.file ?? ''} ${b.message}` })), { cap: config.ratchet.rounds.sensors })
+  if (v.verdict === 'done') {
+    const r = readRatchet(slug)
+    const node = r.nodes.sensors
+    const tree = treeStamp()
+    if (node && tree) { node.tree = tree; writeRatchet(slug, r) }
+  }
   out([...rows, ...(blocks.length ? ['', formatFindings(blocks)] : []), '', `sensors: ${v.verdict} (${v.reason})`].join('\n'))
   if (blocks.length) process.exitCode = 2
 }

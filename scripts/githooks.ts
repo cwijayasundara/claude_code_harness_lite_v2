@@ -6,6 +6,7 @@ import { loadConfig, runChecks } from './check.ts'
 import { rangeDiff, showAt } from './diffs.ts'
 import { activeSlug, createAdhoc } from './graph.ts'
 import { runQuality } from './quality.ts'
+import { verificationFresh, sensorsFresh } from './stamp.ts'
 import { tierFromDiff, isProtected } from './sensors.ts'
 import { formatFindings, warnLines, isSource, type Finding } from './model.ts'
 
@@ -152,12 +153,15 @@ export function cmdCheckPush(_args: Args): void {
     const slug = active ?? (touched ? createAdhoc(tierFromDiff(diffs, config)) : null)
     // A rig-managed change in flight is gated by /rig:pr; only ad-hoc work gets ship verdicts here.
     const shipSlugs = slug?.startsWith('adhoc-') ? [slug] : []
+    // A rig change verified and sensed on exactly this tree, pushed from a clean checkout of it, needs neither again.
+    const stamped = Boolean(slug) && !slug?.startsWith('adhoc-') && r.localSha === head && !git(['status', '--porcelain', '--', '.', ':(exclude).sdlc'])
+    const covered = stamped && verificationFresh(slug as string).fullCovered
     const result = runChecks({
-      point: 'ship', diffs, config, rules, slugs: shipSlugs, commands: 'full', budgetMs: config.githooks.budgetMs,
+      point: 'ship', diffs, config, rules, slugs: shipSlugs, commands: covered ? 'none' : 'full', budgetMs: config.githooks.budgetMs,
       before: f => showAt(base, f) ?? '', after: f => showAt(r.localSha, f) ?? '', base, ratchet: false,
     })
     findings.push(...result.findings.map(soften))
-    if (slug && Object.values(config.quality).some(Boolean)) {
+    if (slug && Object.values(config.quality).some(Boolean) && !(stamped && sensorsFresh(slug))) {
       if (Date.now() - t0 > config.githooks.budgetMs) notes.push('quality ratchet skipped: the push budget is used up')
       else findings.push(...runQuality(slug, base).blocks.filter(b => b.sensor.startsWith('quality.') || b.sensor === 'invariant'))
     }
