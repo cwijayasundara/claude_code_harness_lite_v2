@@ -6,7 +6,13 @@ import { matchesAny, isSource, isTest, type Finding } from './model.ts'
 import { loadConfig } from './check.ts'
 import { buildGraph, cmp } from './wikigraph.ts'
 import { searchDocs, type Doc } from './wikisearch.ts'
-import { BLOCKS, STRUCTURAL, INDEX_BLOCKS, SURFACE, spliceBlock, blockBody, pageSkeleton, indexSkeleton, pageSummary, label, linkBase, startOrder, renderBlock, renderSystem, renderStart, renderModules, proseProblems, type Ctx, type ChangeRow, type CommitRow } from './wikigen.ts'
+import { BLOCKS, STRUCTURAL, INDEX_BLOCKS, SURFACE, spliceBlock, blockBody, pageSkeleton, indexSkeleton, printable, pageSummary, label, linkBase, startOrder, renderBlock, renderSystem, renderStart, renderModules, proseProblems, type Ctx, type ChangeRow, type CommitRow } from './wikigen.ts'
+
+// Every human-readable line passes through here once (rows keep their newlines); --json output stays raw because JSON.stringify escapes it.
+const clean = (s: string): string => s.split('\n').map(printable).join('\n')
+const say = (s: string): void => out(clean(s))
+const die = (s: string): never => fail(clean(s))
+const warn = (s: string): void => { process.stderr.write(clean(s)) }
 
 export const WIKI_DIR = 'docs/wiki'
 const MANIFEST = path.join(ROOT, WIKI_DIR, 'manifest.json')
@@ -53,9 +59,9 @@ const safePagePath = (page: string): string | null => (safeKey(page) ? safeWikiP
 function writeSafe(rel: string, text: string): void {
   const file = `${WIKI_DIR}/${rel}`
   const target = safeWikiPath(rel)
-  if (!target) fail(`${file}: not a safe path under ${WIKI_DIR}/`)
+  if (!target) die(`${file}: not a safe path under ${WIKI_DIR}/`)
   fs.mkdirSync(path.dirname(target), { recursive: true })
-  if (safeWikiPath(rel) !== target) fail(`${file}: not a safe path under ${WIKI_DIR}/`)
+  if (safeWikiPath(rel) !== target) die(`${file}: not a safe path under ${WIKI_DIR}/`)
   const fd = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW ?? 0), 0o644)
   try {
     fs.writeSync(fd, text)
@@ -106,7 +112,7 @@ function loadManifest(): Loaded {
 const readManifest = (): Manifest | null => loadManifest().manifest
 
 const INDEX = 'index.md'
-// Throws, never exits: planBuild is reachable from the status sensor (see wikiStatus); CLI entry points turn the error into fail().
+// Throws, never exits: planBuild is reachable from the status sensor (see wikiStatus); CLI entry points turn the error into die().
 const pagePath = (page: string): string => safePagePath(page) ?? thrown(`page "${page}": not a safe relative .md path`)
 const thrown = (message: string): never => { throw new Error(message) }
 const commitRows = (files: string[], n: number): CommitRow[] => {
@@ -160,31 +166,31 @@ export function planBuild(m: Manifest): Planned[] {
 export const driftOf = (p: Planned): string[] => p.names.filter(n => blockBody(p.before, n) !== blockBody(p.text, n))
 
 function cmdBuild(args: Args): void {
-  if (!exists(MANIFEST)) return out(`no code wiki here: ${skillRef('wiki')} builds it`)
-  if (!safeWikiPath(INDEX) || !safeWikiPath('manifest.json')) fail(`${WIKI_DIR}: not a safe path (a symlink between the repo root and the wiki)`)
+  if (!exists(MANIFEST)) return say(`no code wiki here: ${skillRef('wiki')} builds it`)
+  if (!safeWikiPath(INDEX) || !safeWikiPath('manifest.json')) die(`${WIKI_DIR}: not a safe path (a symlink between the repo root and the wiki)`)
   const errors = manifestErrors(readRaw())
-  if (errors.length) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
+  if (errors.length) die(`docs/wiki/manifest.json: ${errors.join('; ')}`)
   const m = readManifest()
-  if (!m) return out(`no code wiki here: ${skillRef('wiki')} builds it`)
-  for (const page of Object.keys(m.pages)) if (!safePagePath(page)) fail(`docs/wiki/manifest.json: page "${page}": not a safe relative .md path`)
+  if (!m) return say(`no code wiki here: ${skillRef('wiki')} builds it`)
+  for (const page of Object.keys(m.pages)) if (!safePagePath(page)) die(`docs/wiki/manifest.json: page "${page}": not a safe relative .md path`)
   let plan: Planned[] = []
-  try { plan = planBuild(m) } catch (e) { fail(e instanceof Error ? e.message : String(e)) }
+  try { plan = planBuild(m) } catch (e) { die(e instanceof Error ? e.message : String(e)) }
   if (args.opt.check) {
     const rows = plan.flatMap(p => driftOf(p).map(n => `generated: ${p.file} (${n})`))
-    out(rows.length ? rows.join('\n') : 'wiki generated blocks up to date')
+    say(rows.length ? rows.join('\n') : 'wiki generated blocks up to date')
     if (rows.length) process.exitCode = 1
     return
   }
   const changed = plan.filter(p => p.text !== p.before)
   for (const p of changed) writeSafe(p.file.slice(WIKI_DIR.length + 1), p.text)
-  out(changed.length ? `wrote ${changed.length} file(s):\n${changed.map(p => `  ${p.file}`).join('\n')}` : 'wiki up to date')
+  say(changed.length ? `wrote ${changed.length} file(s):\n${changed.map(p => `  ${p.file}`).join('\n')}` : 'wiki up to date')
 }
 
 type Status = { stale: string[]; missing: string[]; uncovered: string[]; generated: string[]; prose: string[]; invalid: string[] }
 const wellFormed = (p: unknown): p is Page => !!p && typeof p === 'object' && isStrings((p as Page).globs)
 export function wikiStatus(): Status | null {
   const empty: Status = { stale: [], missing: [], uncovered: [], generated: [], prose: [], invalid: [] }
-  // Guarantee: nothing in this call graph exits the process (pagePath and planBuild throw rather than fail()), and this catch turns any throw into a finding.
+  // Guarantee: nothing in this call graph exits the process (pagePath and planBuild throw rather than die()), and this catch turns any throw into a finding.
   try {
     const { exists, manifest: m, errors } = loadManifest()
     if (!exists) return null
@@ -236,10 +242,10 @@ export function wikiFindings(): Finding[] {
 // Reads only through the symlink-safe helpers: an unsafe page has no text, and a tracked symlink or directory contributes nothing.
 function cmdSearch(args: Args): void {
   const { exists: has, manifest: m, errors } = loadManifest()
-  if (!has) return out(`no code wiki here: ${skillRef('wiki')} builds it`)
-  if (errors.length || !m) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
+  if (!has) return say(`no code wiki here: ${skillRef('wiki')} builds it`)
+  if (errors.length || !m) die(`docs/wiki/manifest.json: ${errors.join('; ')}`)
   const query = args.pos.slice(1).join(' ').trim()
-  if (!query) fail('usage: wiki search "<terms>" [--json] [--limit n]')
+  if (!query) die('usage: wiki search "<terms>" [--json] [--limit n]')
   const all = tracked()
   const docs: Doc[] = Object.entries(m.pages).filter((e): e is [string, Page] => wellFormed(e[1]) && !!safePagePath(e[0])).sort((a, b) => cmp(a[0], b[0])).map(([page, p]) => {
     const files = filesFor(p.globs, all).filter(f => isRegularFile(path.join(ROOT, f)))
@@ -250,8 +256,8 @@ function cmdSearch(args: Args): void {
   const limit = /^[1-9][0-9]{0,8}$/.test(raw) ? Math.min(50, Number(raw)) : 5
   const hits = searchDocs(docs, query, limit, WIKI_DIR)
   if (args.opt.json) return out(JSON.stringify(hits))
-  if (!hits.length) return out(`no wiki hits for "${query.slice(0, 80)}"`)
-  out(hits.map(h => [`${h.page}  (score ${h.score})`, ...h.hits.map(x => `  ${x.ref}  ${x.text}`)].join('\n')).join('\n'))
+  if (!hits.length) return say(`no wiki hits for "${query.slice(0, 80)}"`)
+  say(hits.map(h => [`${h.page}  (score ${h.score})`, ...h.hits.map(x => `  ${x.ref}  ${x.text}`)].join('\n')).join('\n'))
 }
 
 export function cmdWiki(args: Args): void {
@@ -259,26 +265,26 @@ export function cmdWiki(args: Args): void {
   if (sub === 'status') {
     const s = wikiStatus()
     if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], generated: [], prose: [], invalid: [], none: true }))
-    if (!s) return out('no code wiki here: /rig:wiki builds it')
+    if (!s) return say('no code wiki here: /rig:wiki builds it')
     const rows = [...s.invalid.map(e => `manifest: ${e}`), ...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`), ...s.generated.map(p => `generated: ${p}`), ...s.prose.map(p => `prose: ${p}`)]
-    return out(rows.length ? rows.join('\n') : 'wiki up to date')
+    return say(rows.length ? rows.join('\n') : 'wiki up to date')
   }
   if (sub === 'build') return cmdBuild(args)
   if (sub === 'search') return cmdSearch(args)
   if (sub === 'stamp') {
     const { exists, manifest: m, errors } = loadManifest()
-    if (!exists) return out('no docs/wiki/manifest.json to stamp')
-    if (errors.length || !m) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
+    if (!exists) return say('no docs/wiki/manifest.json to stamp')
+    if (errors.length || !m) die(`docs/wiki/manifest.json: ${errors.join('; ')}`)
     const unknown = pages.filter(n => !(n in m.pages))
     if (unknown.length) {
-      process.stderr.write(`unknown page(s): ${unknown.join(', ')}\n`)
+      warn(`unknown page(s): ${unknown.join(', ')}\n`)
       process.exitCode = 1
       return
     }
     const all = tracked()
     // Outside a repository there are no files to hash, so every page would be stamped with the empty-input hash.
     if (!all.length) {
-      process.stderr.write('no files to stamp against: this directory is not a git repository (or is empty); run git init first\n')
+      warn('no files to stamp against: this directory is not a git repository (or is empty); run git init first\n')
       process.exitCode = 1
       return
     }
@@ -289,7 +295,7 @@ export function cmdWiki(args: Args): void {
       if (pages.length && !pages.includes(page)) continue
       // A page that cites no `path:line` is not a map an engineer can follow; it stays unstamped (stale) until fixed.
       let text = ''
-      try { text = readRegular(pagePath(page)) } catch (e) { fail(e instanceof Error ? e.message : String(e)) }
+      try { text = readRegular(pagePath(page)) } catch (e) { die(e instanceof Error ? e.message : String(e)) }
       if (!CITATION.test(text)) {
         uncited.push(page)
         continue
@@ -302,14 +308,14 @@ export function cmdWiki(args: Args): void {
     fs.writeFileSync(MANIFEST, JSON.stringify(m, null, 2) + '\n')
     sanctionWrites([toPosix(path.relative(ROOT, MANIFEST))])
     if (uncited.length) {
-      process.stderr.write(`uncited page(s): ${uncited.join(', ')}: cite each claim as path:line, then stamp again\n`)
+      warn(`uncited page(s): ${uncited.join(', ')}: cite each claim as path:line, then stamp again\n`)
       process.exitCode = 1
     }
     if (unwritten.length) {
-      process.stderr.write(`missing prose sections: ${unwritten.join('; ')}: have the wiki agent write them, then stamp again\n`)
+      warn(`missing prose sections: ${unwritten.join('; ')}: have the wiki agent write them, then stamp again\n`)
       process.exitCode = 1
     }
-    return out(`stamped ${stamped} page(s)`)
+    return say(`stamped ${stamped} page(s)`)
   }
-  out('usage: wiki status [--json] | build [--check] | search "<terms>" [--json] [--limit n] | stamp [page...]')
+  say('usage: wiki status [--json] | build [--check] | search "<terms>" [--json] [--limit n] | stamp [page...]')
 }

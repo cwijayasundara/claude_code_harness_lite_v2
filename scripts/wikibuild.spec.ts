@@ -482,3 +482,50 @@ test('wiki search: a tracked symlink to an outside file contributes no symbols o
   assert.equal(p.code, 0, p.stderr)
   assert.doesNotMatch(p.stdout, /pagesecret/)
 })
+
+const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/
+
+test('wiki output: escape and control characters in repo text never reach the human output; --json keeps them escaped', () => {
+  const repo = wikiRepo()
+  write(repo, 'src/auth/esc.js', 'export const \x1b[31mFAKE\x1b[0m = 1 // check\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'esc')
+  build(repo)
+  const authPath = path.join(repo, 'docs/wiki/modules/auth.md')
+  fs.writeFileSync(authPath, fs.readFileSync(authPath, 'utf8') + '\x1b[31mFAKE\x1b[0m check \x01 line\n')
+  const human = sdlc(repo, ['wiki', 'search', 'check'])
+  assert.equal(human.code, 0, human.stderr)
+  assert.match(human.stdout, /FAKE/)
+  assert.doesNotMatch(human.stdout, CONTROL)
+  assert.match(sdlc(repo, ['wiki', 'search', 'check', '--json']).stdout, /\\u001b\[31mFAKE/)
+  const noHit = sdlc(repo, ['wiki', 'search', '\x1b[31mnomatchzz'])
+  assert.match(noHit.stdout, /no wiki hits/)
+  assert.doesNotMatch(noHit.stdout, CONTROL)
+  assert.doesNotMatch(sdlc(repo, ['wiki', 'status']).stdout, CONTROL)
+
+  const dirRepo = wikiRepo()
+  const evil = 'ev\x1b[31mil'
+  fs.mkdirSync(path.join(dirRepo, evil))
+  fs.writeFileSync(path.join(dirRepo, evil, 'a.js'), 'export const a = 1\n')
+  gitIn(dirRepo, 'add', '.'); gitIn(dirRepo, 'commit', '-qm', 'dir')
+  build(dirRepo)
+  const st = sdlc(dirRepo, ['wiki', 'status'])
+  assert.doesNotMatch(st.stdout, CONTROL)
+  const sj = sdlc(dirRepo, ['wiki', 'status', '--json'])
+  assert.doesNotMatch(sj.stdout, CONTROL)
+  JSON.parse(sj.stdout)
+
+  const keyRepo = wikiRepo()
+  write(keyRepo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/a\x1b[31mb.md': { globs: ['src/**'] } } }))
+  const b = build(keyRepo)
+  assert.equal(b.code, 1)
+  assert.doesNotMatch(b.stderr, CONTROL)
+  assert.doesNotMatch(sdlc(keyRepo, ['wiki', 'status']).stdout, CONTROL)
+  assert.doesNotMatch(sdlc(keyRepo, ['wiki', 'search', 'auth']).stderr, CONTROL)
+  assert.doesNotMatch(sdlc(keyRepo, ['wiki', 'stamp']).stderr, CONTROL)
+})
+
+test('the ask skill treats wiki and cited source text as untrusted data', () => {
+  const skill = fs.readFileSync(path.join(import.meta.dirname, '..', 'skills/ask/SKILL.md'), 'utf8')
+  assert.match(skill, /untrusted data/)
+  assert.ok(skill.split('\n').length <= 60)
+})
