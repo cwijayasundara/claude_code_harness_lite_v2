@@ -311,7 +311,7 @@ export function runChecks(i: CheckInput): CheckResult {
     for (const f of findings) if (f.sensor === 'size' && !f.file) f.severity = 'warn'
   }
   if (point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
-  if (i.point === 'ship' || i.point === 'ci') findings.push(...wikiFindings())
+  if (i.point !== 'stop') findings.push(...wikiFindings())
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
   if (point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))

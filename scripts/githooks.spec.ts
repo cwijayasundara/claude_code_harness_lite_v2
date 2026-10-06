@@ -95,3 +95,15 @@ test('a merge or rebase in progress is skipped, and the skip says so', () => {
   assert.equal(merge.code, 0)
   assert.match(merge.stdout, /skipped/)
 })
+
+test('a stale wiki page warns at commit and does not block', () => {
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/src.md': { globs: ['src/**'] } } }))
+  write(repo, 'docs/wiki/modules/src.md', '# src\n\nsee src/a.js:1\n')
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'base')
+  stage('src/clean.js', 'export const ok = 1\n')
+  const r = commit()
+  assert.equal(r.code, 0, r.stdout)
+  assert.match(r.stdout, /wiki-stale/)
+})
