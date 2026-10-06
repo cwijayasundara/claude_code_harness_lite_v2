@@ -19,7 +19,7 @@ const marker = (name: string): string => `${open(name)}\n${CLOSE}`
 export const blockBody = (page: string, name: string): string | null => blockRe(name).exec(page)?.[1]?.trim() ?? null
 
 // Repo text that spells a marker (a commit subject, a comment, a string) must not end or open a block: `<!--` before rig:gen becomes `&lt;!--`.
-const inert = (body: string): string => body.replace(/<!--(?=\s*\/?\s*rig:gen)/g, '&lt;!--')
+export const inert = (body: string): string => body.replace(/<!--(?=\s*\/?\s*rig:gen)/g, '&lt;!--')
 
 // Replace one generated block; a block the page lacks goes before the first later block of `order`, else at the end.
 export function spliceBlock(page: string, name: string, body: string, order: readonly string[] = BLOCKS): string {
@@ -44,7 +44,7 @@ export function pageSkeleton(title: string): string {
 }
 
 export function indexSkeleton(title: string): string {
-  return [`# ${title}`, '', '## What this is', '', pending(), '', marker('system'), '', marker('start'), '', marker('modules'), '', '## I want to…', '', pending(), ''].join('\n')
+  return [`# ${inert(title)}`, '', '## What this is', '', pending(), '', marker('system'), '', marker('start'), '', marker('modules'), '', '## I want to…', '', pending(), ''].join('\n')
 }
 
 // The prose headings a page must carry: missing, empty and pending ones are problems.

@@ -1,10 +1,10 @@
 # rig-wiki: keeps docs/wiki/ fresh. Copy to .github/workflows/ and list it in CODEOWNERS. Never pushes to the default branch:
 # every run opens or updates ONE pull request from rig/wiki-refresh, which a person reviews.
 # Two jobs split by privilege. `generate` (permissions: contents read only) runs `wiki build` (zero tokens), then, if a model secret exists, lets
-# Claude rewrite stale prose with no shell or network and write access to docs/wiki only. The model's action keeps the job token in .git/config,
+# Claude rewrite stale prose; the model is configured to run with no shell or network (not yet verified in headless mode; see DESIGN §17's first-run checklist) and write access to docs/wiki only. The model's action keeps the job token in .git/config,
 # which is harmless because that token is read-only. `publish` holds the write token and runs NO model: it takes docs/wiki from the artifact, refuses
 # symlinks and any manifest change other than page `surface` stamps, runs `wiki build --check` (the committed structural blocks equal a rebuild by
-# the repo's own code at the pinned commit using the artifact's manifest; generate already rebuilt after the model), scans for credentials, then
+# the repo's own code at the pinned commit using the artifact's manifest; generate already rebuilt after the model; known limit: a copy of a real generated block planted in the prose area, a decoy block, defeats --check and the rebuild would splice into the decoy; rejecting pages with duplicate block openers is a listed follow-up), scans for credentials, then
 # pushes and opens or updates the PR. A repo without docs/wiki/manifest.json skips both jobs cleanly.
 # Auth: ONE repository secret, CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`) or ANTHROPIC_API_KEY; without one the PR has the generated blocks only.
 # The push trigger is hardcoded to `main`: edit it for another default branch (the jobs run only on the default branch).

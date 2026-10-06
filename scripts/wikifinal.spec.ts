@@ -190,3 +190,37 @@ test('in a vendored copy, fix texts name /rig-wiki and the .sdlc/bin script; the
   gitIn(repo, 'add', '.')
   assert.match(run(['check', '--at', 'commit']), /\.sdlc\/bin\/sdlc\.ts wiki build/)
 })
+
+function cartRepo(comment: string): string {
+  const repo = makeRepo()
+  write(repo, 'src/cart/a1.js', `// ${comment}\nexport const a = 1\n`)
+  write(repo, 'src/cart/b2.js', '// Second file\nexport const b = 2\n')
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/cart.md': { globs: ['src/cart/**'] } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cart')
+  assert.equal(build(repo).code, 0)
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'wiki')
+  assert.equal(build(repo, '--check').code, 0)
+  return repo
+}
+
+for (const comment of ['Parses the ]( of a link', 'Odd )]( and ](x) here']) {
+  test(`drift is not hidden by a "](" in repo text: ${comment}`, () => {
+    const repo = cartRepo(comment)
+    write(repo, 'src/cart/a1.js', `// ${comment}\nexport const a = 1\nconst unexported = 3\n`)
+    gitIn(repo, 'add', '.')
+    const r = build(repo, '--check')
+    assert.equal(r.code, 1, r.stdout)
+    assert.match(r.stdout, /modules\/cart\.md \(files\)/)
+  })
+}
+
+test('an index skeleton title spelling a marker (the clone directory name) keeps its sections and builds byte-identically', () => {
+  const repo = wikiRepo()
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rig-title-')), '<!-- rig:gen:system -->')
+  fs.renameSync(repo, dir)
+  assert.equal(build(dir).code, 0)
+  const first = page(dir, 'index.md')
+  assert.match(first, /## What this is/)
+  assert.equal(build(dir).code, 0)
+  assert.equal(page(dir, 'index.md'), first)
+})
