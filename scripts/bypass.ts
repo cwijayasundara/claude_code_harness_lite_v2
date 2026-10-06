@@ -68,54 +68,66 @@ const WRAPPERS = new Map<string, string[]>([
   ['sudo', ['-u', '-g', '-h', '-p', '-C', '-D', '-r', '-t', '-U', '-T', '-R', '--user', '--group', '--host', '--prompt', '--chdir', '--role', '--type', '--other-user']],
   ['xargs', ['-I', '-L', '-n', '-P', '-s', '-d', '-E', '-a', '--arg-file', '--delimiter']],
   ['timeout', ['-s', '-k', '--signal', '--kill-after']], ['nice', ['-n', '--adjustment']], ['exec', ['-a']],
-  ['nohup', []], ['time', []], ['command', []], ['builtin', []],
+  ['nohup', []], ['time', []], ['command', []], ['builtin', []], ['setsid', []], ['stdbuf', ['-i', '-o', '-e']],
+  ['doas', ['-u', '-C']], ['caffeinate', ['-t', '-w']], ['arch', ['-e', '-d']], ['ionice', ['-c', '-n', '-p']], ['chroot', ['--userspec', '--groups']],
 ])
+// Wrapper options whose value is a whole command line (env -S), read as a payload.
+const LINE_VALUE = new Set(['-S', '--split-string'])
 const SHELL_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
 
-// Where the program a segment really runs stands: past assignments and the wrappers above with their options.
-function programAt(seg: string[]): number {
+// Where the program a segment really runs stands, past assignments and the wrappers above with their options; and
+// the wrapper option values that are command lines of their own.
+function programAt(seg: string[]): { k: number; lines: number[] } {
   let k = 0
+  const lines: number[] = []
   for (;;) {
     while (/^\w+=/.test(seg[k] ?? '')) k++
     const name = progName(seg[k] ?? '')
     const takes = WRAPPERS.get(name)
-    if (!takes) return k
+    if (!takes) return { k, lines }
     k++
     while ((seg[k] ?? '').startsWith('-')) {
       const o = seg[k++] ?? ''
       if (o === '--') break
+      if (LINE_VALUE.has(o) && name === 'env') lines.push(k)
       if (takes.includes(o)) k++
     }
-    if (name === 'timeout') k++ // the duration
+    if (name === 'timeout' || name === 'chroot') k++ // the duration, the new root
   }
 }
 
 // The words a segment runs as a command of its own, as [from, to): the word after the -c cluster (and an optional --)
 // of a shell that is the program really run (so env, sudo -u x, xargs, nohup, timeout N, nice or time cannot hide it,
-// and a word named sh among git's arguments is not one), or the words after eval (behind command or builtin).
-function payloadSpan(seg: string[]): [number, number] | null {
-  const k = programAt(seg)
+// and a word named sh among git's arguments is not one); su's -c value; env -S's value; or the words after eval
+// (behind command or builtin).
+function payloadSpans(seg: string[]): [number, number][] {
+  const { k, lines } = programAt(seg)
+  const spans = lines.filter(i => i < seg.length).map((i): [number, number] => [i, i + 1])
   const w = seg[k] ?? ''
-  if (w === 'eval') return [k + 1, seg.length]
-  if (!SHELLS.test(progName(w))) return null
-  for (let i = k + 1; i < seg.length && /^[-+]./.test(seg[i] ?? '') && seg[i] !== '--'; i++) {
-    if (SHELL_VALUE.has(seg[i] ?? '')) i++
-    else if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(seg[i] ?? '')) {
-      const p = seg[i + 1] === '--' ? i + 2 : i + 1
-      return p < seg.length ? [p, p + 1] : null
+  const one = (p: number): void => { if (p < seg.length) spans.push([p, p + 1]) }
+  if (w === 'eval') spans.push([k + 1, seg.length])
+  else if (progName(w) === 'su') {
+    const c = seg.findIndex((x, i) => i > k && (x === '-c' || x === '--command'))
+    if (c > 0) one(c + 1)
+  } else if (SHELLS.test(progName(w))) {
+    for (let i = k + 1; i < seg.length && /^[-+]./.test(seg[i] ?? '') && seg[i] !== '--'; i++) {
+      if (SHELL_VALUE.has(seg[i] ?? '')) i++
+      else if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(seg[i] ?? '')) {
+        one(seg[i + 1] === '--' ? i + 2 : i + 1)
+        break
+      }
     }
   }
-  return null
+  return spans
 }
 
 function segmentBypasses(seg: string[], depth: number): boolean {
   // A payload is read the same way, bounded; past the bound it is denied (nested), never passed unread.
-  const span = payloadSpan(seg)
-  const payload = span ? seg.slice(...span).join(' ') : ''
-  if (deeper(payload, depth)) return true
+  const spans = payloadSpans(seg)
+  if (spans.some(span => deeper(seg.slice(...span).join(' '), depth))) return true
   // The whole segment is read as usual too (never masked); only the embedded-git heuristic skips the payload words,
   // which were just read exactly.
-  const skip = new Set(span ? seg.slice(...span) : [])
+  const skip = new Set(spans.flatMap(span => seg.slice(...span)))
   const embedded = (words: string[]): boolean => embeddedGit(words.filter(w => !skip.has(w)))
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
@@ -154,21 +166,66 @@ type Inert = { text: string; runs: Run[]; end: number }
 const READS_SCRIPT = /(?:^|[\s/])(?:sh|bash|zsh|dash|ksh|eval)(?:\.exe)?(?:\s|$)/i
 const unquote = (w: string): string => w.replace(/'([^']*)'|"((?:[^"\\]|\\[^])*)"|\\([^])/g,
   (_m, a?: string, b?: string, c?: string) => a ?? (b === undefined ? c ?? '' : b.replace(/\\(["\\$`\n])/g, '$1')))
+// $'...' as bash decodes it (\xHH, \uHHHH, octal, \n \t ..., \c), so a flag spelled with escapes is still seen.
+const ANSI = new Map(Object.entries({ n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v' }))
+const ansiC = (body: string): string => body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|[0-7]{1,3}|c[^]|[^])/g, (_m, e: string) => {
+  const c = e[0] ?? ''
+  if ('xuU'.includes(c)) return String.fromCodePoint(Math.min(parseInt(e.slice(1), 16), 0x10ffff))
+  if (/[0-7]/.test(c)) return String.fromCharCode(parseInt(e, 8) & 255)
+  if (c === 'c') return String.fromCharCode(e.charCodeAt(1) & 31)
+  return `\\'"?`.includes(c) ? c : ANSI.get(c) ?? `\\${e}`
+})
+// Brace expansion: inert() marks an unquoted { , } with these, and each word is expanded after tokenize (a{b,c} is
+// ab ac; a brace with no comma, as in {} or @{u}, stays literal).
+const [BO, BC, BE] = ['\u0001', '\u0002', '\u0003']
+const literal = (w: string): string => w.replaceAll(BO, '{').replaceAll(BC, ',').replaceAll(BE, '}')
+function expandBraces(w: string): string[] {
+  const open = w.indexOf(BO)
+  if (open < 0) return [literal(w)]
+  const cuts: number[] = []
+  for (let i = open, depth = 0; i < w.length; i++) {
+    if (w[i] === BO) depth++
+    else if (w[i] === BC && depth === 1) cuts.push(i)
+    else if (w[i] === BE && --depth === 0) {
+      const head = w.slice(0, open)
+      const tail = w.slice(i + 1)
+      if (!cuts.length) return expandBraces(`${head}{${w.slice(open + 1, i)}}${tail}`)
+      const words = [open, ...cuts].flatMap((c, j) => expandBraces(head + w.slice(c + 1, cuts[j] ?? i) + tail))
+      return words.length > 256 ? [literal(w)] : words
+    }
+  }
+  return [literal(w)]
+}
+
 function inert(src: string, start = 0, close = ''): Inert | null {
   let out = ''
   let q = ''
   let parens = 0
+  let braces = 0
   const runs: Run[] = []
   const docs: { delim: string; tabs: boolean; run: boolean }[] = []
   const shellHere = (): boolean => READS_SCRIPT.test(out.split(/[;&|\n]/).pop() ?? '')
-  const wordEnd = (i: number): number => { // end of the shell word at i; -1 when it is empty, unterminated or substitutes
+  const wordEnd = (i: number): number => { // end of the shell word at i (its substitutions are run); -1 when empty or unterminated
     const from = i
     let wq = ''
     for (; i < src.length; i++) {
       const c = src[i] ?? ''
       if (wq === "'") { if (c === "'") wq = ''; continue }
       if (c === '\\') { i++; continue }
-      if (c === '`' || (c === '$' && src[i + 1] === '(')) return -1
+      if (c === '$' && src[i + 1] === '(') {
+        const r = inert(src, i + 2, ')')
+        if (!r) return -1
+        runs.push({ text: src.slice(i + 2, r.end), deeper: false })
+        i = r.end
+        continue
+      }
+      if (c === '`') {
+        const j = src.indexOf('`', i + 1)
+        if (j < 0) return -1
+        runs.push({ text: src.slice(i + 1, j), deeper: false })
+        i = j
+        continue
+      }
       if (wq) { if (c === '"') wq = ''; continue }
       if (c === "'" || c === '"') wq = c
       else if (/[\s;&|<>()]/.test(c)) break
@@ -211,6 +268,15 @@ function inert(src: string, start = 0, close = ''): Inert | null {
       continue
     }
     if (q === '"') { out += ch; continue }
+    if (ch === '$' && next === "'") {
+      let j = i + 2
+      while (j < src.length && src[j] !== "'") j += src[j] === '\\' ? 2 : 1
+      if (j >= src.length) return null
+      out += `'${ansiC(src.slice(i + 2, j)).replaceAll("'", `'\\''`)}'`
+      i = j
+      continue
+    }
+    if (ch === '$' && next === '"') continue // a locale string: the quotes that follow are read as usual
     if (ch === "'" || ch === '"') { q = ch; out += ch; continue }
     if (ch === '#' && /(?:^|[\s;&|()])$/.test(out)) {
       while (i + 1 < src.length && src[i + 1] !== '\n') i++
@@ -276,17 +342,44 @@ function inert(src: string, start = 0, close = ''): Inert | null {
       continue
     }
     if ((ch === '{' || ch === '}') && /(?:^|[\s;&|])$/.test(out) && /^(?:$|[\s;&|])/.test(next)) { out += ' ; '; continue }
+    if (ch === '{') { braces++; out += BO; continue }
+    if (ch === ',' && braces > 0) { out += BC; continue }
+    if (ch === '}' && braces > 0) { braces--; out += BE; continue }
+    if (/[\s;&|]/.test(ch)) braces = 0
     out += ch
   }
-  return q || close || docs.length ? null : { text: out, runs, end: src.length }
+  return q || close ? null : { text: out, runs, end: src.length } // a here-doc left open runs to the end, as in bash
 }
 
 // The last resort, for text even inert() cannot follow: the regex, and the words a shell -c or eval runs, unquoted
 // and read again one layer deeper (past the bound: denied).
 const SHELL_PAYLOAD = /(?:^|[\s;&|(`/])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?\s+(?:[-+]\S*\s+)*?-[a-zA-Z]*c[a-zA-Z]*\s+(?:--\s+)?((?:'[^']*'|"(?:[^"\\]|\\[^])*"|\\[^]|[^\s;&|'"\\])+)/gi
 const EVAL_PAYLOAD = /(?:^|[\s;&|(`])eval\s+([^;&|\n]+)/g
+// The top-level commands of text, split on unquoted ; & | and newlines outside parentheses.
+function topLevel(cmd: string): string[] {
+  const parts: string[] = []
+  let q = ''
+  let depth = 0
+  let from = 0
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i] ?? ''
+    if (q === "'") { if (c === "'") q = ''; continue }
+    if (c === '\\') { i++; continue }
+    if (q === '"') { if (c === '"') q = ''; continue }
+    if (c === '$' && cmd[i + 1] === "'") { for (i += 2; i < cmd.length && cmd[i] !== "'"; i++) if (cmd[i] === '\\') i++; continue }
+    if (c === "'" || c === '"') q = c
+    else if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (depth === 0 && /[;&|\n]/.test(c)) (parts.push(cmd.slice(from, i)), (from = i + 1))
+  }
+  parts.push(cmd.slice(from))
+  return parts.filter(p => p.trim())
+}
 function lastResort(cmd: string, depth: number): boolean {
   if (regexBypass(cmd)) return true
+  // One construct nothing can follow must not hide the other commands: each top-level command is read on its own.
+  const parts = topLevel(cmd)
+  if (parts.length > 1 && parts.some(p => bypassesGitHooks(p, depth))) return true
   const payloads = [...[...cmd.matchAll(SHELL_PAYLOAD)].map(m => unquote(m[1] ?? '')), ...[...cmd.matchAll(EVAL_PAYLOAD)].map(m => (m[1] ?? '').replace(/["'\\]/g, ''))]
   return payloads.some(p => deeper(p, depth))
 }
@@ -305,6 +398,7 @@ export function bypassesGitHooks(cmd: string, depth = 0): boolean {
     if (r?.runs.some(run => (run.deeper ? deeper(run.text, depth) : bypassesGitHooks(run.text, depth)))) return true
     if (r) ({ segs, bad } = tokenize(r.text))
     if (bad) return lastResort(cmd, depth)
+    segs = segs.map(seg => seg.flatMap(expandBraces))
   }
   return segs.some(seg => segmentBypasses(seg, depth))
 }

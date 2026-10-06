@@ -399,6 +399,15 @@ test('substitutions, redirects and comments do not drop the guard to the regex; 
     'echo $((1+2))', 'ls ${HOME} >/dev/null 2>&1', 'git commit -m "$MSG"', 'npm test > /tmp/out.txt 2>&1 < /dev/null', `echo $'x'; sh -c 'git status'`])
 })
 
+test('one construct the sanitizer cannot follow does not drop the whole command to the regex', () => {
+  denies([`echo $'x'; git commit -"n" -m x`, `git commit --no"-verify" -m $'msg'`, `git commit $'\\x2dn' -m x`, `git commit $'-\\156' -m x`,
+    `git add src/{a,b}.ts; git commit -"n" -m x`, 'git commit -{n,} -m x', `git commit -"n" -m x > "$(mktemp)"`, `git commit -"n" -m x; cat <<EOF`,
+    `stdbuf -oL sh -c 'true; git commit -n'`, `caffeinate -i sh -c 'true; git commit -n'`, `arch -arm64 sh -c 'true; git commit -n'`,
+    `setsid sh -c 'true; git commit -n'`, `doas -u me sh -c 'true; git commit -n'`, `env -S "sh -c 'true; git commit -n'"`, `su me -c 'true; git commit -n'`])
+  allows(['git add src/{a,b}.ts && git commit -m fix', `printf $'a\\tb\\n'`, 'git log > "$(mktemp)"', 'find . -name x -exec ls {} +', `echo $'it\\'s'`,
+    'stdbuf -oL git status', `su me -c 'git status'`])
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {
