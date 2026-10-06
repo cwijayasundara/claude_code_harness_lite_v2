@@ -12,7 +12,7 @@ As of 2026-10-06. `.claude-plugin/plugin.json` says **0.4.1**, the last release 
 |---|---|---|
 | Lifecycle: start, design or plan, build, test, sensors, PR, review; human gates; tiers | Shipped and trialled live with paid runs | [DESIGN.md](DESIGN.md) §§8 and 9 |
 | Autonomous ratchet (bounded build, quality and cost caps) | Shipped | DESIGN §9 |
-| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees, and the guard that stops the model bypassing them | Merged and covered by tests that drive real `git`. **Not yet trialled live.** The bypass guard is a best-effort text match: CI plus branch protection is the boundary, and the guard's open gaps are listed | DESIGN §10, [SECURITY.md](SECURITY.md) |
+| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees | Merged and covered by tests that drive real `git`. **Not yet trialled live.** There is no bypass guard: CI plus branch protection is the boundary | DESIGN §10, [SECURITY.md](SECURITY.md) |
 | Windows | **Not supported.** Its CI jobs are red, and the hook scripts are POSIX `sh` | SECURITY.md |
 
 **Quality gates on `main`:** the full suite (about 600 tests), `npm run typecheck` and `claude plugin validate` pass locally. In CI the Linux and macOS jobs and the dogfood check are the ones to trust; the Windows jobs fail for the reason above.
@@ -289,5 +289,4 @@ npm run typecheck:mod                        # the mod; needs generated types, s
 claude plugin test .                         # mod tests
 npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
-tests/trials/run-trials.sh [M|L|I|S] [outdir] # LIVE and PAID: M (about $1), L (three arms, about $8), I (integration, about $1), S (greenfield, bugfix and refactor scenarios, about $4)
 ```

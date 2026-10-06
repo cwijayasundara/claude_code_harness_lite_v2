@@ -11,7 +11,6 @@ import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensor
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, parseConfig, warnRow, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd } from './shell.ts'
-import { bypassesGitHooks, gitHooksBypass } from './bypass.ts'
 import { autoApprove } from './autoapprove.ts'
 import { sessionNote } from './githooks.ts'
 
@@ -215,8 +214,6 @@ function declaredCommands(slug: string | undefined): Set<string> {
   return new Set(cmds.map(normCmd))
 }
 
-export { bypassesGitHooks }
-
 function hookPreBash(input: HookInput): void {
   if (!exists(SDLC)) return
   const cmd = String(input.tool_input?.command ?? '')
@@ -225,12 +222,6 @@ function hookPreBash(input: HookInput): void {
   if (/SDLC_HUMAN/i.test(plain) || HUMAN_ONLY.test(plain) || OBFUSCATED_HUMAN.test(plain) || !isSafeEvidenceCommand(cmd)) {
     return decide('deny', 'Evidence is human- or rig-only: approvals and waivers come from the person (/rig-approve, /rig-waive); '
       + 'runs.jsonl only from `sdlc.ts run`. Read these files with the Read tool.')
-  }
-  const bypass = gitHooksBypass(cmd)
-  if (bypass === 'limit') return decide('deny', 'This command is too large or too deeply nested to check for a git-hook bypass (over 128 KB, 4096 brace-expanded words or 100 ms of checking); split it or write it to a script file, or ask the person to run it.')
-  if (bypass === 'nested') return decide('deny', 'Shells or evals nested more than three deep cannot be checked for a git-hook bypass; run the command directly.')
-  if (bypass) {
-    return decide('deny', 'The rig git hooks run the quality checks at commit and push. Only the person bypasses or switches them off (git commit --no-verify, hooks uninstall, hooks install --force); fix the findings instead. See their state with `sdlc.ts hooks status`.')
   }
   const agent = input.agent_type ?? ''
   const why = READ_ONLY_AGENT.test(agent) ? readOnlyDenial(cmd, agent, declaredCommands, input.cwd) : null

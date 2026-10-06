@@ -1,6 +1,6 @@
 # rig: design
 
-Why the harness is shaped the way it is, and what each part costs. Per-release changes are in [CHANGELOG.md](CHANGELOG.md); trial transcripts, plans and specs are in git history (before the commit that trimmed this file). Code is the reference for behaviour.
+Why the harness is shaped the way it is, and what each part costs. Per-release changes are in [CHANGELOG.md](CHANGELOG.md); the trial runner, trial transcripts, plans and specs are in git history (before the commit that trimmed this file). Code is the reference for behaviour.
 
 ## 1. Why: evidence from the last build
 
@@ -125,11 +125,11 @@ Live, paid, one run per arm: treat as directional.
 
 Known limits: quality is compared at ship, not in CI, and reads `unmeasured` with no base (on trunk). Run autonomous builds in Claude Code's sandbox: declared test commands run model-written code. Defaults leave tier S and M ungated, so auto-approval starts once `plan.md` exists.
 
-## 10. Git hooks and the bypass guard (spec 5)
+## 10. Git hooks (spec 5)
 
 Git is the common layer for every editor, agent and person, so `hooks install` sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh`, running the vendored checker). `check --at commit` runs the Stop sensors on the staged diff plus the fast commands; `check --at push` runs the ship checks and the quality ratchet against CI's base (merge-base with the trunk), within `githooks.budgetMs`. A hook that cannot run warns and lets git continue; a finding that blocks still blocks. Warnings are visible: Stop prints a `systemMessage` and the next prompt carries them over once. `/rig:pr` commits with `--no-verify` because its ship gate has just judged that tree. Opt out with `hooks uninstall` (`rig.githooks = off`).
 
-The model is denied the bypasses it can be seen to make (`--no-verify`, `core.hooksPath` overrides, `hooks uninstall`) by `bypass.ts`, reading dequoted words from the `shell.ts` tokenizer through wrappers, shell `-c` payloads, substitutions and here-docs, nested to three layers, failing closed past size, time or depth limits. **It is a best-effort text match.** It cannot see a flag produced by a substitution or variable, interpreters (`python3 -c`, `node -e`), pipes into a shell, scripts written then run, `.git/config` edits or `rm -rf .sdlc/githooks`. A person keeps `--no-verify`. CI plus branch protection is the boundary.
+There is no guard against the model passing `--no-verify` or running `hooks uninstall`: a text match over shell commands was removed as too leaky to be worth its size. A person keeps `--no-verify` too, so **CI plus branch protection is the boundary**; the hooks are a fast local signal.
 
 Open: fast and full commands at commit and push see the working tree rather than the index or pushed commits.
 

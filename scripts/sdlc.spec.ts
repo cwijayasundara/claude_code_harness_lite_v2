@@ -407,7 +407,7 @@ test('impact-status recognises a consumer declared with an absolute path', () =>
 })
 
 // Real artifacts from the 2026-10-03 live trial: the architect's labelled bullets and the runs the build agent recorded.
-const TRIAL = path.resolve(import.meta.dirname, '../tests/trials/live-2026-10-03')
+const TRIAL = path.resolve(import.meta.dirname, '../tests/fixtures/live-trial')
 const reportFor = (verification: string, rows: object[]) => {
   if (!fs.existsSync(path.join(repo, '.sdlc/changes/tiny'))) run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   write('.sdlc/changes/tiny/plan.md', `## Files\n- src/**\n${verification}`)
