@@ -408,15 +408,21 @@ test('one construct the sanitizer cannot follow does not drop the whole command 
     'stdbuf -oL git status', `su me -c 'git status'`])
 })
 
+// The guard's own wall-clock budget is 100 ms and it denies when that runs out (fails closed, by design), so a "must be allowed"
+// case must not depend on how fast the machine is: give it a generous explicit budget. The elapsed-time checks only exist to catch a
+// super-linear blow-up (the old regexes took seconds), so they allow a slow shared runner.
+const GENEROUS_BUDGET_MS = 5000
+const SLOW_RUNNER_MS = 1500
+
 test('every limit of the guard fails closed: a command too large, deep or slow to read is denied, never passed', () => {
   const timed = (c: string, budget?: number): [string | null, number] => {
     const t = performance.now()
     return [gitHooksBypass(c, budget), performance.now() - t]
   }
   const expect = (c: string, want: string | null): void => {
-    const [r, ms] = timed(c)
+    const [r, ms] = timed(c, GENEROUS_BUDGET_MS)
     assert.equal(r, want, c.slice(0, 40))
-    assert.ok(ms < 200, `${c.slice(0, 40)}: ${ms.toFixed(0)} ms`)
+    assert.ok(ms < SLOW_RUNNER_MS, `${c.slice(0, 40)}: ${ms.toFixed(0)} ms`)
   }
   expect('echo ' + 'a'.repeat(20000) + '; git commit --no-verify', 'bypass')
   expect('echo ' + 'a'.repeat(20000), null)
@@ -434,10 +440,10 @@ test('no regex in the guard backtracks on a long run of letters, and a scan that
     [`sh -${'c'.repeat(120000)}1 $'x'`, null], [`echo $'x'; sh -${'c'.repeat(120000)}1`, null], ['echo ' + '{}'.repeat(60000), null],
     ['echo ' + '{'.repeat(120000), null], ['echo ' + 'x'.repeat(100000) + '{a,b}'.repeat(12), 'limit']] as const) {
     const t = performance.now()
-    const r = gitHooksBypass(c)
+    const r = gitHooksBypass(c, GENEROUS_BUDGET_MS)
     const ms = performance.now() - t
     assert.ok(r === want || (want === null && r === 'limit' && c.startsWith('sh')), `${c.slice(0, 12)}…${c.slice(-30)}: ${r}`)
-    assert.ok(ms < 200, `${c.slice(-30)}: ${ms.toFixed(0)} ms`)
+    assert.ok(ms < SLOW_RUNNER_MS, `${c.slice(-30)}: ${ms.toFixed(0)} ms`)
   }
   // A clock that is never late while the scan runs, then late at the end: the result is checked against the deadline too.
   let calls = 0
