@@ -44,6 +44,8 @@ export function hooksState(): { state: HooksState; path: string } {
 
 export function installHooks(force = false): { ok: boolean; message: string } {
   if (!exists(path.join(SDLC, 'bin', 'sdlc.ts'))) return { ok: false, message: 'git hooks run the vendored checker: run `vendor` (or `vendor --standalone`) first so .sdlc/bin/sdlc.ts exists' }
+  // An older vendored checker does not know `check --at commit` and would refuse every commit.
+  if (!exists(path.join(SDLC, 'bin', 'githooks.ts'))) return { ok: false, message: '.sdlc/bin is older than the git hooks (no githooks.ts): re-run `vendor` to update it, then hooks install' }
   writeHookScripts()
   const { state, path: current } = hooksState()
   if (state === 'other' && !force) {

@@ -391,3 +391,36 @@ test('session-start installs the git hooks when they are committed but not wired
   assert.match(other, /Git hooks: core\.hooksPath is \.husky/)
   assert.match(other, /ask the person to run `node \.sdlc\/bin\/sdlc\.ts hooks install --force`/)
 })
+
+test('a checker crash inside a git hook warns and allows; stop, ship and ci still fail closed', () => {
+  assert.equal(sdlc(repo, ['vendor']).code, 0)
+  const bin = path.join(repo, '.sdlc/bin')
+  const boom = (file: string, fn: string) => {
+    const text = fs.readFileSync(path.join(bin, file), 'utf8')
+    fs.writeFileSync(path.join(bin, file), text.replace(new RegExp(`(export function ${fn}\\([^)]*\\): void \\{)`), "$1\n  throw new Error('boom')"))
+  }
+  boom('check.ts', 'cmdCheck')
+  boom('githooks.ts', 'cmdCheckPush')
+  const run = (...at: string[]) => spawnSync('node', ['--disable-warning=ExperimentalWarning', path.join(bin, 'sdlc.ts'), 'check', '--at', ...at], { cwd: repo, input: '', encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, NODE_TEST_CONTEXT: '' } })
+  for (const at of ['commit', 'push']) {
+    const r = run(at)
+    assert.equal(r.status, 0, `${at}: ${r.stderr}`)
+    assert.match(r.stderr, /rig: the checker crashed \(boom\); allowing — CI still checks/)
+  }
+  for (const at of [['stop'], ['ship'], ['ci', '--base', 'HEAD']]) {
+    const r = run(...at)
+    assert.equal(r.status, 1, `${at[0]}: ${r.stderr}`)
+    assert.match(r.stderr, /fails closed/)
+  }
+})
+
+test('an older vendored checker without githooks.ts is not wired: install and session start say to re-run vendor', () => {
+  sdlc(repo, ['vendor'])
+  fs.rmSync(path.join(repo, '.sdlc/bin/githooks.ts'))
+  const r = sdlc(repo, ['hooks', 'install'])
+  assert.equal(r.code, 1)
+  assert.match(r.stderr, /re-run `vendor`/)
+  const note = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
+  assert.match(note, /re-run `vendor`/)
+  assert.throws(() => gitIn(repo, 'config', '--local', 'core.hooksPath'))
+})

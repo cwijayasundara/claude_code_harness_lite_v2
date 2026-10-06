@@ -397,6 +397,10 @@ try {
   // Hooks must never wedge a session: a crashing hook reports and lets the action through.
   const message = err instanceof Error ? err.message : String(err)
   if (command === 'hook') process.stderr.write(`${SOFT_HOOK_FAILURE}: ${message}\n`)
-  else if (command === 'check') fail(`sdlc check crashed (fails closed): ${message}`)
+  else if (command === 'check' && /^(?:commit|push)$/.test(String(parseArgs(rest).opt.at))) {
+    // Inside a git hook (spec §2): a broken checker must not wedge the repo; CI judges the result.
+    process.stderr.write(`rig: the checker crashed (${message}); allowing — CI still checks\n`)
+    process.exitCode = 0
+  } else if (command === 'check') fail(`sdlc check crashed (fails closed): ${message}`)
   else fail(err instanceof Error ? err.stack ?? message : message)
 }

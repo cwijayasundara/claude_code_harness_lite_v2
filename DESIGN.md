@@ -634,4 +634,3 @@ Spec: [docs/superpowers/specs/2026-10-06-everywhere-enforcement-design.md](docs/
 - The fast commands at commit see the working tree, not the index.
 - `--no-verify` by a person leaves CI as the only judge.
 - The bypass denial is a regex; a tokenizer from `scripts/shell.ts` would be sturdier.
-- A checker crash inside a hook exits non-zero and blocks the commit; the hook script fails soft only when Node or `.sdlc/bin` is missing.
