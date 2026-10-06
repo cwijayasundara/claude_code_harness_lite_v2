@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { importsOf, resolveImport, buildGraph, dependents } from './wikigraph.ts'
+import { cmp, importsOf, resolveImport, buildGraph, dependents } from './wikigraph.ts'
 
 const src = (m: Record<string, string>) => ({ list: Object.keys(m), read: (f: string): string => m[f] ?? '' })
 
@@ -78,4 +78,11 @@ test('an empty repo or empty module yields an empty graph without throwing', () 
   const g = buildGraph({ 'm/a.md': { globs: ['nothing/**'] } }, [], () => '')
   assert.equal(g.moduleOf.size, 0)
   assert.equal(g.edges.size, 0)
+})
+
+test('cmp is code-unit order, and importsOf keeps its order', () => {
+  assert.ok(cmp('B', 'a') < 0)
+  assert.equal(cmp('a', 'a'), 0)
+  assert.deepEqual(importsOf('x.ts', "import 'b'\nimport 'a'").map(i => i.spec), ['b', 'a'])
+  assert.deepEqual(importsOf('x.ts', "import 'b'; import 'B'").map(i => i.spec), ['B', 'b'])
 })

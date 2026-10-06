@@ -49,8 +49,11 @@ export function importsOf(file: string, text: string): RawImport[] {
       if (spec) found.push({ spec, line: clean.slice(0, m.index ?? 0).split('\n').length })
     }
   }
-  return found.sort((a, b) => a.line - b.line || a.spec.localeCompare(b.spec))
+  return found.sort((a, b) => a.line - b.line || cmp(a.spec, b.spec))
 }
+
+// Plain code-unit order: localeCompare depends on the machine's locale and would make generated output differ between machines.
+export const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 const JS_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json']
 const JS_SWAP: Record<string, string[]> = { '.js': ['.ts', '.tsx'], '.jsx': ['.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts'] }
