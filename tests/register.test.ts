@@ -2,7 +2,8 @@
 import { describe, expect, test, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { storyText, storyPaneText } from '../hooks/band'
-import type { Story, StepInfo } from '../types'
+import type { Story, StepInfo, TurnPoint, FlowStep } from '../types'
+import { subway, spark, gauge, spendPerTurn, tokenMix, stack } from '../hooks/shared'
 
 const SESSION = { surface: 'terminal' as const, isInteractive: true, cwd: '/work' }
 
@@ -23,6 +24,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
     standalone: false,
+    noFlow: false,
     vendoredMod: false,
     logs: [] as string[],
     settings: '{"enabledPlugins":{"rig-mod@rig-local":true}}',
@@ -43,7 +45,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     const sub = e.argv[3]
     if (sub === 'quality' && world.afterQuality) world.step = world.afterQuality
     const stdout =
-      sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
+      sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', flow: world.noFlow ? undefined : [{ label: 'init', command: '', why: '', state: 'done' }, { label: 'start', command: '', why: '', state: 'done' }, { label: 'design', command: '', why: '', state: 'done' }, { label: 'build', command: '', why: '', state: 'current' }, { label: 'test', command: '', why: '', state: 'todo' }, { label: 'sensors', command: '', why: '', state: 'todo' }, { label: 'pr', command: '', why: '', state: 'todo' }], changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
         step: world.step })
       : sub === 'next' ? JSON.stringify(world.step)
@@ -75,6 +77,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     return { value: undefined }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
   on('ui.notice', ($, e) => {
     world.notices.push(String((e as { text?: string }).text))
     return { value: undefined }
@@ -86,7 +89,7 @@ describe('sdlc mod', () => {
   test('session start registers the zero-token commands', async ($, on) => {
     const world = worldOf(on)
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['rig-approve', 'rig-metrics-pane', 'rig-run', 'rig-sensors', 'rig-status', 'rig-story', 'rig-waive'])
+    expect(world.commands.sort()).toEqual(['rig-approve', 'rig-map', 'rig-metrics-pane', 'rig-run', 'rig-sensors', 'rig-status', 'rig-story', 'rig-waive'])
   })
 
   test('the global plugin steps aside only when the vendored mod is present and enabled', async ($, on) => {
@@ -134,7 +137,7 @@ describe('sdlc mod', () => {
     const world = worldOf(on)
     world.standalone = true
     await $.session.start(SESSION)
-    expect(world.commands.sort()).toEqual(['rig-metrics-pane', 'rig-run', 'rig-sensors', 'rig-status', 'rig-story'])
+    expect(world.commands.sort()).toEqual(['rig-map', 'rig-metrics-pane', 'rig-run', 'rig-sensors', 'rig-status', 'rig-story'])
   })
 
   test('approve runs the script as the human only when the person typed it', async ($, on) => {
@@ -299,6 +302,53 @@ describe('sdlc mod', () => {
     expect(text).toContain('auto-approved 14')
     expect(text).toContain('budget build $1.50/$6')
     await ui.unmount()
+  })
+
+  test('/rig-map draws the subway, the fix loop, spend by station and the fuel gauges', async ($, on) => {
+    const world = worldOf(on)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    expect(world.commands).toContain('rig-map')
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', usage: { model: 'm', input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 9000, cache_creation_input_tokens: 0 } })
+    await $.command.run(command('rig-map'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-map', props: paneProps, viewport: { columns: 120, rows: 40 } })
+    const text = JSON.stringify(await ui.drawn())
+    for (const part of ['MISSION CONTROL', 'add-login', '◉ build', 'you are here', '⟲ 1/2', 'SPEND BY STATION', '$2.16 / $6.00', 'context', 'TOKEN MIX', 'hit 90%', 'this change', 'dearest build']) expect(text).toContain(part)
+    await ui.unmount()
+  })
+
+  test('/rig-map before any change says so instead of drawing an empty map', async ($, on) => {
+    worldOf(on).noFlow = true
+    await $.session.start(SESSION)
+    await $.command.run(command('rig-map'))
+    const ui = await $.ui.mount({ plugin: 'sdlc', surface: 'terminal', component: 'Pane', requestId: 'rig-map', props: paneProps, viewport: { columns: 120, rows: 40 } })
+    expect(JSON.stringify(await ui.drawn())).toContain('no map yet')
+    await ui.unmount()
+  })
+
+  test('mission helpers are pure: subway, spark, gauge, spend per turn, token mix and stack', () => {
+    const flow: FlowStep[] = ['init', 'start', 'build', 'test', 'sensors', 'pr'].map((label, i) => ({ label, command: '', why: '', state: i < 2 ? 'done' : i === 2 ? 'current' : 'todo' }))
+    const story = { cap: 3, round: 3 } as Story
+    const wide = subway(flow, story, 200)
+    expect(wide.cells.map(c => c.text)).toEqual(['● init', '● start', '◉ build', '○ test', '○ sensors', '○ pr'])
+    expect(wide.marker.trimStart()).toBe('▲ you are here')
+    expect(wide.marker.length - wide.marker.trimStart().length).toBe(wide.cells.slice(0, 2).reduce((a, c) => a + c.text.length + 3, 0))
+    expect(wide.loop.trim()).toMatch(/^╰─* ⟲ 3\/3 ─*╯$/)
+    expect(wide.loopHot).toBe(true)
+    expect(subway(flow, null, 200).loop).toBe('')
+    expect(subway(flow, story, 20).cells.map(c => c.text)).toEqual(['●', '●', '◉ build', '○', '○', '○'])
+    expect(subway(flow.map(f => ({ ...f, state: f.label === 'build' ? 'gate' : f.state })), null, 200).marker).toContain('waiting for you')
+    expect(spark([0, 1, 2, 4])).toBe('▁▂▄█')
+    expect(spark([])).toBe('')
+    expect(gauge(0.5, 4)).toBe('▕██░░▏')
+    expect(gauge(9, 4)).toBe('▕████▏')
+    expect(gauge(Number.NaN, 4)).toBe('▕░░░░▏')
+    const pts: TurnPoint[] = [{ main: true, in: 1, out: 2, cr: 90, cw: 9, usd: 1 }, { main: false, in: 1, out: 1, cr: 0, cw: 0, usd: 0 }, { main: true, in: 0, out: 0, cr: 0, cw: 0, usd: 2 }, { main: true, in: 0, out: 0, cr: 0, cw: 0, usd: 0.5 }]
+    expect(spendPerTurn(pts)).toEqual([1, 2, 0.5])
+    expect(tokenMix(pts)).toMatchObject({ out: 3, fresh: 2, cr: 90, cw: 9 })
+    expect(tokenMix([]).hit).toBe(0)
+    expect(stack([1, 1000, 0, 5], 20).reduce((a, b) => a + b, 0)).toBe(20)
+    expect(stack([0, 0], 20)).toEqual([0, 0])
   })
 
   test('/rig-metrics-pane shows the metrics report', async ($, on) => {

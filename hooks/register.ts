@@ -2,6 +2,7 @@
 //  - /rig-status and /rig-approve: zero-token commands; approve runs only from the person's own prompt
 //  - /rig-waive and /rig-sensors (human-only, zero tokens)
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
+//  - /rig-map: mission control pane (mission.tsx): SDLC subway map, fix-loop arc, spend by station, fuel gauges
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
 //  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
@@ -9,10 +10,11 @@
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
-import type { Band, Status, StepInfo } from '../types'
-import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod } from './shared'
+import type { Band, Status, StepInfo, TurnPoint } from '../types'
+import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod, money, kilo, turnPoint, KEEP_TURNS } from './shared'
 import { PANE_ID, STORY_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
+import { registerMission } from './mission'
 import { promptFor, gateOf, stepKey } from './driver'
 
 const NUDGE_EVERY_PROMPTS = 5
@@ -20,6 +22,7 @@ const NUDGE_EVERY_PROMPTS = 5
 // Same plugin and key as band.tsx's atoms: the loader reads state refs only where they are declared, so each file declares its own.
 const band = atom({ plugin: 'rig', key: 'band' } as const, null as Band | null)
 
+const turns = atom({ plugin: 'rig', key: 'turns' } as const, [] as TurnPoint[])
 const driverRunning = atom({ plugin: 'rig', key: 'driverRunning' } as const, false)
 const driverLast = atom({ plugin: 'rig', key: 'driverLast' } as const, '')
 
@@ -49,6 +52,7 @@ async function refreshBand($: EngineInterface): Promise<void> {
   const session = await $.session.usage()
   const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow }
   await update($, band, () => value)
+  $.ui.status(`rig${stage ? ` · ${stage}` : ''} · ${money(value.sessionUsd)} · ${kilo(value.contextTokens)} ctx`)
 }
 
 async function stopDriver($: EngineInterface, why: string): Promise<void> {
@@ -140,8 +144,10 @@ export const register: Register = on => {
       await $.command.register({ name: 'rig-sensors', description: 'rig: what the sensors found, known-red and waivers (no model call)', immediate: true })
       await $.command.register({ name: 'rig-story', description: 'rig: the active story - node, rounds, cost by node (no model call)', immediate: true })
       await $.command.register({ name: 'rig-run', description: 'rig: drive the active change node by node to the next gate (no model call to decide); /rig-run stop pauses', argumentHint: '[stop]', immediate: true })
+      await $.command.register({ name: 'rig-map', description: 'rig: mission control - the SDLC map, where you are, tokens and dollars (no model call)', immediate: true })
       await $.command.register({ name: 'rig-metrics-pane', description: 'rig: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) { $.ui.log(`could not register commands: ${String(err)}`) }
+    await refreshBand($).catch(() => undefined)
     return next(e)
   })
 
@@ -246,6 +252,7 @@ export const register: Register = on => {
         }
       }
       await $.process.run(sdlc($, ['log-usage', JSON.stringify(row)]))
+      await update($, turns, h => [...h, turnPoint(usage, !!e.agentId, Number(row.usd ?? 0))].slice(-KEEP_TURNS))
       if (!e.agentId) await refreshBand($)
     } catch (err) {
       $.ui.log(`usage capture skipped: ${String(err)}`)
@@ -278,5 +285,6 @@ export const register: Register = on => {
   })
 
   registerBand(on)
+  registerMission(on)
   registerGates(on)
 }

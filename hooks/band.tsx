@@ -1,8 +1,8 @@
 // The band above the prompt and the /rig-sensors pane: what the sensors saw, at zero tokens.
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
-import type { Band, SensorBand, Story, StepInfo, FlowStep } from '../types'
-import { mod, sdlcArgv } from './shared'
+import type { Band, SensorBand, Story, StepInfo, FlowStep, TurnPoint } from '../types'
+import { mod, sdlcArgv, spark, spendPerTurn, subway, gauge, heat, tokenMix } from './shared'
 
 export const SOFT_CONTEXT = 120_000
 export const HARD_CONTEXT = 150_000
@@ -12,6 +12,7 @@ export const METRICS_PANE = 'rig-metrics'
 export const band = atom({ plugin: 'rig', key: 'band' } as const, null as Band | null)
 export const paneText = atom({ plugin: 'rig', key: 'paneText' } as const, '')
 export const metricsText = atom({ plugin: 'rig', key: 'metricsText' } as const, '')
+const turns = atom({ plugin: 'rig', key: 'turns' } as const, [] as TurnPoint[])
 const isHidden = atom({ plugin: 'rig', key: 'isHidden' } as const, false)
 
 export function sensorText(s: SensorBand | null): string {
@@ -71,19 +72,28 @@ export function registerBand(on: On): void {
     const current = await read($, band)
     if (mod.aside || e.props.hasSurvey || current === null || (await read($, isHidden))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const k = Math.round(current.contextTokens / 1000)
-    const color = current.contextTokens >= HARD_CONTEXT ? 'red' : current.contextTokens >= SOFT_CONTEXT ? 'yellow' : undefined
+    const history = await read($, turns)
+    const trail = spark(spendPerTurn(history).slice(-8))
+    const frac = current.contextTokens / HARD_CONTEXT
     const sensorColor = current.sensors?.blocks || current.sensors?.unresolved ? 'red' : undefined
+    const story = current.story
+    const line = current.flow?.length ? subway(current.flow, story, Math.max(40, e.props.bodyColumns - 2)) : null
+    const hit = Math.round(tokenMix(history).hit * 100)
+    // The fix-loop round rides on the current station, so the strip stays one row.
+    const loop = (story && story.cap > 0 ? ` ⟲${story.round}/${story.cap}` : '') + (story?.verdict === 'blocked' ? ' ⛔' : story?.verdict === 'ready' ? ' ✓ ready' : '')
     return (
       <Box flexDirection="column">
-        {current.flow?.length ? <Box>{current.flow.map((f, i) => <Text key={f.label + i} bold={f.state === 'current' || f.state === 'gate'} inverse={f.state !== 'done' && f.state !== 'todo'} dimColor={f.state === 'done' || f.state === 'todo'} color={f.state === 'done' ? 'green' : f.state === 'gate' ? 'yellow' : undefined}>{`${i ? ' → ' : ''}${f.state === 'current' || f.state === 'gate' ? ` ${f.label}${f.state === 'gate' ? ' ⏸' : ''} ` : f.state === 'done' ? f.label + ' ✓' : f.label}`}</Text>)}</Box> : null}
-      <Box>
-        <Text dimColor>sdlc · {current.change ?? 'no active change'}{current.story ? storyText(current.story) : current.stage ? ` · ${current.stage}` : ''} · </Text>
-        <Text color={color} dimColor={!color}>ctx {k}k</Text>
-        <Text dimColor> · ${current.sessionUsd.toFixed(2)} session{current.contextTokens >= HARD_CONTEXT ? ' · run /compact' : ''}</Text>
-        <Text color={sensorColor} dimColor={!sensorColor}>{sensorText(current.sensors)} </Text>
-        <Button key="hide" label="Hide" onPress={() => update($, isHidden, () => true)} />
-      </Box>
+        {line ? <Box>{line.cells.map((c, i) => {
+          const here = c.state === 'current' || c.state === 'gate'
+          return <Text key={c.text + i} bold={here} dimColor={c.state === 'todo'} color={here && (line.loopHot || story?.verdict === 'blocked') ? 'red' : here ? (c.state === 'gate' ? 'yellow' : 'cyan') : c.state === 'done' ? 'green' : undefined}>{`${i ? ' ─ ' : ''}${c.text}${here ? loop : ''}${c.state === 'gate' ? ' ⏸' : ''}`}</Text>
+        })}</Box> : null}
+        <Box>
+          <Text dimColor>{current.change ?? 'no active change'}{story ? ` · ${kilo(story.tokens)} tok · ${usd(story.usd)}` : ''} · ctx </Text>
+          <Text color={heat(frac)}>{gauge(frac, 8)} {kilo(current.contextTokens)}</Text>
+          <Text dimColor> · {usd(current.sessionUsd)}{trail ? ` ${trail}` : ''}{history.length ? ` · cache ${hit}%` : ''}{current.contextTokens >= HARD_CONTEXT ? ' · run /compact' : ''}</Text>
+          <Text color={sensorColor} dimColor={!sensorColor}>{sensorText(current.sensors)} </Text>
+          <Button key="hide" label="Hide" onPress={() => update($, isHidden, () => true)} />
+        </Box>
       </Box>
     )
   })

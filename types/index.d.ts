@@ -4,6 +4,9 @@ export type StepInfo = { slug: string; node: string | null; verdict: 'continue' 
 export type FlowStep = { label: string; command: string; why: string; state: 'done' | 'current' | 'gate' | 'todo' }
 export type Status = { initialised: boolean; flow?: FlowStep[]; active?: string | null; changes?: { slug: string; next?: { stage: string } | null }[]; sensors?: SensorBand | null; story?: Story | null; step?: StepInfo | null }
 
+// One captured turn: tokens by kind and the turn's dollars from the session ledger (main turns only; 0 for agents).
+export type TurnPoint = { main: boolean; in: number; out: number; cr: number; cw: number; usd: number }
+
 export type Band = {
   change: string | null
   stage: string | null
@@ -17,6 +20,6 @@ export type Band = {
 
 declare module 'claude-code' {
   interface PluginState {
-    rig: { band: Band | null; isHidden: boolean; paneText: string; metricsText: string; driverRunning: boolean; driverLast: string }
+    rig: { band: Band | null; isHidden: boolean; paneText: string; metricsText: string; driverRunning: boolean; driverLast: string; turns: TurnPoint[] }
   }
 }

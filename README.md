@@ -133,6 +133,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | Command | Shows |
 |---|---|
 | `/rig-status` | Where every change stands and the next command. |
+| `/rig-map` | Mission control: the SDLC as a subway map with where you are, the fix loop, spend per station, and token and dollar gauges. |
 | `/rig-story` | The active change's nodes, rounds and cost against budget. |
 | `/rig-sensors` | Findings, known-red items and waivers. |
 | `/rig-metrics-pane` | The scorecard: cost, tokens and value per change and node. |
