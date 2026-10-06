@@ -86,7 +86,9 @@ const publishProblems = (text: string): string[] => {
   if (/RIG_WIKI_TOKEN/.test(outsidePublish)) p.push('RIG_WIKI_TOKEN only in publish')
   if (/github_token:(?!\s*\$\{\{ github\.token \}\}\s*$)/m.test(outsidePublish)) p.push('a github_token other than github.token only in publish')
   if (/gh pr view/.test(code(text))) p.push('no gh pr view (it can return a merged PR)')
-  if (!/n=\$\(gh pr list --head rig\/wiki-refresh --state open --json number --jq '[^']*'\)/.test(pub)) p.push('the open refresh PR is looked up with gh pr list --state open')
+  const lookup = /n=\$\(gh pr list --head rig\/wiki-refresh[^\n]*\)/.exec(pub)?.[0] ?? ''
+  if (!/--state open/.test(lookup)) p.push('the open refresh PR is looked up with gh pr list --state open')
+  if (!/--json number,isCrossRepository/.test(lookup) || !/select\(\.isCrossRepository == false\)/.test(lookup)) p.push('the lookup keeps same-repository PRs only (a fork can name its branch rig/wiki-refresh)')
   const all = steps(gen)
   const gate = all.findIndex(b => /^ {8}id: wiki$/m.test(b))
   if (gate < 0 || !/docs\/wiki\/manifest\.json/.test(all[gate] ?? '') || !/has_wiki=/.test(all[gate] ?? '')) p.push('generate sets has_wiki from docs/wiki/manifest.json')
@@ -139,6 +141,7 @@ test('rig-wiki.yml: tokens stay in publish, the open PR is found by state, a rep
   assert.ok(publishProblems(mutate('github_token: ${{ github.token }}', 'github_token: ${{ secrets.OTHER }}')).length > 0, 'another token in generate')
   assert.ok(publishProblems(mutate(/n=\$\(gh pr list[^\n]*\)/, 'n=$(gh pr view rig/wiki-refresh --json number --jq .number)')).length > 0, 'gh pr view')
   assert.ok(publishProblems(mutate(/ --state open/, '')).length > 0, 'any-state lookup')
+  assert.ok(publishProblems(mutate(/\[\.\[\] \| select\(\.isCrossRepository == false\)\]\[0\]/, '.[0]')).length > 0, 'fork PRs not filtered out')
   assert.ok(publishProblems(mutate(/(id: stale\n) {8}if: [^\n]*\n/, '$1')).length > 0, 'an ungated step')
   assert.ok(publishProblems(mutate(/ {6}- name: Is there a wiki\?[\s\S]*?(?= {6}- )/, '')).length > 0, 'no gate')
   assert.ok(publishProblems(mutate(/delete ([^\n]*)surface/, 'drop $1surface')).length > 0, 'no manifest comparison')
