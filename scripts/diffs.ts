@@ -100,3 +100,6 @@ export function fileLines(files: string[], textOf: (rel: string) => string = rel
 }
 
 export const diffHash = (diffs: FileDiff[]): string => sha(JSON.stringify(diffs))
+
+// The commits a push would send: `head` against what the remote already has, never the working tree.
+export const rangeDiff = (base: string, head = 'HEAD'): FileDiff[] => parseUnifiedDiff(git([...DIFF, base, head]) ?? '')

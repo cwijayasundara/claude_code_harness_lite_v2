@@ -80,9 +80,9 @@ function testCount(ref: string | null): number {
   return testCaseCount(tests.map(f => (ref ? showAt(ref, f) ?? '' : read(path.join(ROOT, f)))))
 }
 
-export function runQuality(slug: string): { categories: CategoryResult[]; blocks: Finding[] } {
+export function runQuality(slug: string, baseRef: string | null = defaultBase()): { categories: CategoryResult[]; blocks: Finding[] } {
   const { config, rules } = loadConfig()
-  const base = defaultBase()
+  const base = baseRef
   const declared = Object.entries(config.quality).filter((e): e is [string, { cmd: string; count: string }] => Boolean(e[1]))
   const baseN = base && declared.length ? baseCounts(base, declared, slug) : {}
   const categories: CategoryResult[] = QUALITY_CATEGORIES.map(category => {

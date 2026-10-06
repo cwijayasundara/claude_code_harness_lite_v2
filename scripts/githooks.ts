@@ -1,7 +1,13 @@
 // Git hooks: the same checker as Stop, ship and CI, run at `git commit` and `git push`, so any editor, agent or person is judged.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, SDLC, git, exists, out, fail, type Args } from './core.ts'
+import { ROOT, SDLC, git, exists, out, fail, defaultBase, type Args } from './core.ts'
+import { loadConfig, runChecks } from './check.ts'
+import { rangeDiff, showAt } from './diffs.ts'
+import { activeSlug, createAdhoc } from './graph.ts'
+import { runQuality } from './quality.ts'
+import { tierFromDiff, isProtected } from './sensors.ts'
+import { formatFindings, isSource, type Finding } from './model.ts'
 
 export const HOOKS_DIR = '.sdlc/githooks'
 const NAMES = ['pre-commit', 'pre-push'] as const
@@ -66,4 +72,60 @@ export function cmdHooks(args: Args): void {
     return out(state === 'installed' ? `rig git hooks installed (${HOOKS_DIR})` : state === 'other' ? `rig git hooks not installed: core.hooksPath is ${p}` : 'rig git hooks not installed: run `sdlc.ts hooks install`')
   }
   out('usage: hooks install [--force] | uninstall | status')
+}
+
+const ZERO = /^0+$/
+export type PushRef = { localRef: string; localSha: string; remoteRef: string; remoteSha: string }
+
+// git feeds pre-push one line per ref: <local ref> <local sha> <remote ref> <remote sha>.
+export function parsePushRefs(stdin: string): PushRef[] {
+  return stdin.split('\n').filter(l => l.trim()).map(l => {
+    const [localRef = '', localSha = '', remoteRef = '', remoteSha = ''] = l.trim().split(/\s+/)
+    return { localRef, localSha, remoteRef, remoteSha }
+  })
+}
+
+const readStdin = (): string => { try { return fs.readFileSync(0, 'utf8') } catch { return '' } }
+// Running out of budget is a warning at push: CI still runs the commands.
+const soften = (f: Finding): Finding => (f.sensor === 'commands' && /budget ran out|timed out/.test(f.message) ? { ...f, severity: 'warn' } : f)
+
+export function cmdCheckPush(_args: Args): void {
+  const { config, rules, errors } = loadConfig()
+  if (config.githooks.prePush === 'off') return out('sdlc check push: off (githooks.prePush)')
+  const raw = readStdin()
+  const refs = raw.trim()
+    ? parsePushRefs(raw).filter(r => !ZERO.test(r.localSha) && r.localRef.startsWith('refs/heads/'))
+    : [{ localRef: 'refs/heads/HEAD', localSha: git(['rev-parse', 'HEAD']) ?? '', remoteRef: '', remoteSha: '0' }]
+  if (!refs.length) return out('sdlc check push: nothing to judge (a delete or tag push)')
+  const t0 = Date.now()
+  const findings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
+  const notes: string[] = []
+  for (const r of refs) {
+    const base = ZERO.test(r.remoteSha) ? defaultBase() : r.remoteSha
+    if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.localRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }
+    const diffs = rangeDiff(base, r.localSha)
+    if (!diffs.length) continue
+    const active = activeSlug()
+    const touched = diffs.some(d => isSource(d.file, config) && !isProtected(d.file))
+    const slug = active ?? (touched ? createAdhoc(tierFromDiff(diffs, config)) : null)
+    // A rig-managed change in flight is gated by /rig:pr; only ad-hoc work gets ship verdicts here.
+    const shipSlugs = slug?.startsWith('adhoc-') ? [slug] : []
+    const result = runChecks({
+      point: 'ship', diffs, config, rules, slugs: shipSlugs, commands: 'full', budgetMs: config.githooks.budgetMs,
+      before: f => showAt(base, f) ?? '', after: f => showAt(r.localSha, f) ?? '', base, ratchet: false,
+    })
+    for (const f of result.findings) {
+      const g = soften(f)
+      if (g !== f) notes.push(`warning: ${g.message}`)
+      findings.push(g)
+    }
+    if (slug && Object.values(config.quality).some(Boolean)) {
+      if (Date.now() - t0 > config.githooks.budgetMs) notes.push('quality ratchet skipped: the push budget is used up')
+      else findings.push(...runQuality(slug, base).blocks.filter(b => b.sensor.startsWith('quality.') || b.sensor === 'invariant'))
+    }
+  }
+  if (!Object.values(config.quality).some(Boolean)) notes.push('quality ratchet skipped: no quality commands declared in .sdlc/sensors.json')
+  const blocks = findings.filter(f => f.severity === 'block')
+  out([formatFindings(findings) || 'sdlc check push: pass', ...notes].join('\n'))
+  process.exitCode = blocks.length ? 1 : 0
 }
