@@ -4,6 +4,23 @@ This plugin turns Claude Code into a disciplined software engineer. It adds very
 
 It handles every kind of task: greenfield, brownfield, feature, bugfix, refactor, migration, chore, spike and incident. How much process a change goes through depends on its type and tier. See [DESIGN.md](DESIGN.md) for the evidence and the reasoning behind each choice.
 
+## Status
+
+As of 2026-10-06. `.claude-plugin/plugin.json` says **0.4.1**, the last release and tag; everything built since is on `main` and listed under *Unreleased* in [CHANGELOG.md](CHANGELOG.md). No later release has been cut.
+
+| Area | State | Evidence |
+|---|---|---|
+| Lifecycle: start, design or plan, build, test, sensors, PR, review; human gates; tiers | Shipped and trialled live with paid runs | [DESIGN.md](DESIGN.md) §§10 to 14 |
+| Autonomous ratchet (bounded build, quality and cost caps) and `rig learn` | Shipped | DESIGN §§14 and 15 |
+| Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees, and the guard that stops the model bypassing them | Merged and covered by tests that drive real `git`. **Not yet trialled live.** The bypass guard is a best-effort text match: CI plus branch protection is the boundary, and the guard's open gaps are listed | DESIGN §16, [SECURITY.md](SECURITY.md) |
+| Code wiki: computed diagrams, tables and history, `wiki build/check/status/search`, `/rig:ask` | Merged and tested; run end to end on a sample app. **Not yet used on a large real repo.** Diagrams are computed for JS/TS and Python only | DESIGN §17 |
+| `rig-wiki` refresh workflow | **Never run on GitHub.** Its privilege split was reviewed and is linted, but the first-run checklist in DESIGN §17 is still open | DESIGN §17 |
+| Windows | **Not supported.** Its CI jobs are red, and the hook scripts are POSIX `sh` | SECURITY.md |
+
+**Quality gates on `main`:** the full suite (about 600 tests), `npm run typecheck` and `claude plugin validate` pass locally. In CI the Linux and macOS jobs and the dogfood check are the ones to trust; the Windows jobs fail for the reason above.
+
+**Known limits worth knowing before you adopt it:** the live trials predate the git hooks and the wiki; hooks only protect what is committed through git, so `--no-verify` by a person leaves CI as the only judge; the wiki's model-written prose is reviewed in a PR, not machine-checked beyond citations and section presence. The open items for each area are in DESIGN §§16 and 17.
+
 ## How the harness is put together
 
 rig is a **thin control layer** around Claude Code. It owns five things (the artifact chain, human gates, guardrails, routing and budgets, measurement) and borrows everything else (plan mode, `/code-review`, `/security-review`, `/goal`, worktrees) from Claude Code itself.
@@ -36,6 +53,7 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
  ├────────────────────────────────────────────────────────────────────────┤
  │ HOOKS          session-start · pre-bash · pre-edit · post-edit ·       │  guardrails: run in
  │                stop · subagent-stop · prompt-submit                    │  -p and CI, zero tokens
+ │                + git: pre-commit · pre-push (any editor or agent)      │
  ├────────────────────────────────────────────────────────────────────────┤
  │ SCRIPTS        sdlc.ts → check · sensors · graph · ratchet · runs …    │  the deterministic brain
  ├────────────────────────────────────────────────────────────────────────┤
@@ -177,6 +195,8 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 ## Install
 
 The harness lives in each repo it runs on, so a repo never depends on the plugin. You need the plugin only to initialise a repo and to upgrade it.
+
+**Requirements:** Node 22.18 or later (the scripts run as plain TypeScript with no build step), `git`, a POSIX shell (the git hooks are `sh`) and Claude Code. macOS and Linux are supported; Windows is not (see Status). The GitHub CLI `gh` is used by `/rig:pr`, the PR metrics and the CI approval check, and is optional otherwise.
 
 1. Install the plugin for yourself (once per machine):
 
