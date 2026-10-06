@@ -1,7 +1,7 @@
 // The code wiki's zero-token staleness check: each page records a hash of its module's public surface.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, read, exists, sha, out, fail, git, toPosix, sanctionWrites, listChanges, frontmatter, planFiles, CHANGES, planPath, optString, skillRef, type Args } from './core.ts'
+import { ROOT, read, exists, sha, out, fail, git, toPosix, sanctionWrites, listChanges, frontmatter, planFiles, CHANGES, planPath, optString, skillRef, IS_VENDORED, type Args } from './core.ts'
 import { matchesAny, isSource, isTest, type Finding } from './model.ts'
 import { loadConfig } from './check.ts'
 import { buildGraph, cmp } from './wikigraph.ts'
@@ -21,6 +21,8 @@ type Page = { globs: string[]; surface?: string }
 type Manifest = { pages: Record<string, Page>; skip?: string[]; notes?: string[]; order?: string[] }
 const MANIFEST_KEYS = ['pages', 'skip', 'notes', 'order']
 const MAX_NOTE = 10_000
+// Fix texts name the script the repo actually runs: the project copy when vendored.
+const BUILD_CMD = `${IS_VENDORED ? 'node .sdlc/bin/sdlc.ts' : 'sdlc.ts'} wiki build`
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string')
 
 // NUL-separated with quotepath off, so non-ASCII and tab names arrive as they are, never C-quoted.
@@ -96,7 +98,7 @@ export function manifestErrors(raw: unknown): string[] {
   }
   for (const key of ['skip', 'notes', 'order'] as const) if (key in m && !isStrings(m[key])) errors.push(`${key} must be a list of strings`)
   if (isStrings(m.notes)) m.notes.forEach((n, i) => { if (n.length > MAX_NOTE) errors.push(`notes[${i}] is longer than ${MAX_NOTE} characters`) })
-  if (isStrings(m.order) && pages && typeof pages === 'object') for (const p of m.order) if (!(p in (pages as object))) errors.push(`order: ${p} is not a page`)
+  if (isStrings(m.order) && pages && typeof pages === 'object') for (const p of m.order) if (!Object.hasOwn(pages, p)) errors.push(`order: ${p} is not a page`)
   return errors
 }
 const readRaw = (): unknown => { try { return JSON.parse(read(MANIFEST)) } catch { return null } }
@@ -205,7 +207,9 @@ export function wikiStatus(): Status | null {
     const { exists, manifest: m, errors } = loadManifest()
     if (!exists) return null
     if (!m) return { ...empty, invalid: errors }
-    const entries = Object.entries(m.pages).filter((e): e is [string, Page] => wellFormed(e[1]))
+    const formed = Object.entries(m.pages).filter((e): e is [string, Page] => wellFormed(e[1]))
+    // An unsafe key is reported once under invalid (manifestErrors or the symlink check below), never as a stale, missing or prose page.
+    const entries = formed.filter(([page]) => safePagePath(page))
     const all = tracked()
     const { config } = loadConfig()
     const stale: string[] = []
@@ -215,16 +219,15 @@ export function wikiStatus(): Status | null {
       if (!files.length) missing.push(page)
       else if (p.surface !== surfaceOf(files)) stale.push(page)
     }
-    const globs = entries.flatMap(([, p]) => p.globs)
+    const globs = formed.flatMap(([, p]) => p.globs)
     const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
     const skip = new Set(isStrings(m.skip) ? m.skip : [])
     const uncovered = [...dirs].filter(d => !skip.has(d) && !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
     // Unsafe paths are reported, never dropped silently and never allowed to reach planBuild.
-    const unsafe = [...entries.map(([page]) => page).filter(page => !safePagePath(page)).map(page => `page "${page}": path is not safe under ${WIKI_DIR} (a symlink in the way?)`), ...(safeWikiPath(INDEX) ? [] : [`${WIKI_DIR}/${INDEX} is not a safe path`])]
+    const unsafe = [...formed.map(([page]) => page).filter(page => safeKey(page) && !safePagePath(page)).map(page => `page "${page}": path is not safe under ${WIKI_DIR} (a symlink in the way?)`), ...(safeWikiPath(INDEX) ? [] : [`${WIKI_DIR}/${INDEX} is not a safe path`])]
     // The graph build (planBuild) is the costly part and runs at every commit and push: once per call, and only for a valid manifest
     // (planBuild would abort on an unsafe page key; `wiki build` explains an invalid one).
-    const generated = errors.length || unsafe.length ? [] : planBuild(m, true).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
-    // A page whose path is unsafe is never read: it counts as missing prose.
+    const generated = errors.length || unsafe.length || entries.length < formed.length ? [] : planBuild(m, true).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
     const prose = entries.map(([page]) => page).filter(page => proseProblems(readRegular(safePagePath(page) ?? '')).length).sort(cmp)
     return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose, invalid: [...errors, ...unsafe] }
   } catch (e) {
@@ -235,16 +238,16 @@ export function wikiStatus(): Status | null {
 export function wikiFindings(): Finding[] {
   const s = wikiStatus()
   if (!s) return []
-  const fix = 'run /rig:wiki update (it rewrites only these pages)'
+  const fix = `run ${skillRef('wiki')} update (it rewrites only these pages)`
   const warn = (sensor: string, file: string, message: string, how: string): Finding => ({ sensor, severity: 'warn', file, message, fix: how })
-  const bad = s.invalid.slice(0, 5).map(e => warn('wiki-generated', `${WIKI_DIR}/manifest.json`, `invalid manifest: ${e}`, 'run `sdlc.ts wiki build` for the details'))
-  if (s.invalid.length > 5) bad.push(warn('wiki-generated', `${WIKI_DIR}/manifest.json`, `invalid manifest: +${s.invalid.length - 5} more`, 'run `sdlc.ts wiki build` for the details'))
+  const bad = s.invalid.slice(0, 5).map(e => warn('wiki-generated', `${WIKI_DIR}/manifest.json`, `invalid manifest: ${e}`, `run \`${BUILD_CMD}\` for the details`))
+  if (s.invalid.length > 5) bad.push(warn('wiki-generated', `${WIKI_DIR}/manifest.json`, `invalid manifest: +${s.invalid.length - 5} more`, `run \`${BUILD_CMD}\` for the details`))
   return [
     ...bad,
     ...s.stale.map(p => warn('wiki-stale', `${WIKI_DIR}/${p}`, 'the module\'s public surface changed since this page was written', fix)),
     ...s.missing.map(p => warn('wiki-stale', `${WIKI_DIR}/${p}`, 'its globs match no files', fix)),
     ...s.uncovered.map(d => warn('wiki-stale', d, 'no wiki page covers this directory', fix)),
-    ...s.generated.map(p => warn('wiki-generated', `${WIKI_DIR}/${p}`, 'its generated blocks differ from a rebuild', 'run `sdlc.ts wiki build`')),
+    ...s.generated.map(p => warn('wiki-generated', `${WIKI_DIR}/${p}`, 'its generated blocks differ from a rebuild', `run \`${BUILD_CMD}\``)),
     ...s.prose.map(p => warn('wiki-prose', `${WIKI_DIR}/${p}`, 'a required prose section (In plain words, Walk-through) is missing or empty', fix)),
   ]
 }
@@ -275,7 +278,7 @@ export function cmdWiki(args: Args): void {
   if (sub === 'status') {
     const s = wikiStatus()
     if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], generated: [], prose: [], invalid: [], none: true }))
-    if (!s) return say('no code wiki here: /rig:wiki builds it')
+    if (!s) return say(`no code wiki here: ${skillRef('wiki')} builds it`)
     const rows = [...s.invalid.map(e => `manifest: ${e}`), ...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`), ...s.generated.map(p => `generated: ${p}`), ...s.prose.map(p => `prose: ${p}`)]
     return say(rows.length ? rows.join('\n') : 'wiki up to date')
   }
@@ -285,7 +288,7 @@ export function cmdWiki(args: Args): void {
     const { exists, manifest: m, errors } = loadManifest()
     if (!exists) return say('no docs/wiki/manifest.json to stamp')
     if (errors.length || !m) die(`docs/wiki/manifest.json: ${errors.join('; ')}`)
-    const unknown = pages.filter(n => !(n in m.pages))
+    const unknown = pages.filter(n => !Object.hasOwn(m.pages, n))
     if (unknown.length) {
       warn(`unknown page(s): ${unknown.join(', ')}\n`)
       process.exitCode = 1
@@ -315,8 +318,10 @@ export function cmdWiki(args: Args): void {
       p.surface = surfaceOf(filesFor(p.globs ?? [], all))
       stamped++
     }
-    fs.writeFileSync(MANIFEST, JSON.stringify(m, null, 2) + '\n')
-    sanctionWrites([toPosix(path.relative(ROOT, MANIFEST))])
+    if (stamped) {
+      fs.writeFileSync(MANIFEST, JSON.stringify(m, null, 2) + '\n')
+      sanctionWrites([toPosix(path.relative(ROOT, MANIFEST))])
+    }
     if (uncited.length) {
       warn(`uncited page(s): ${uncited.join(', ')}: cite each claim as path:line, then stamp again\n`)
       process.exitCode = 1

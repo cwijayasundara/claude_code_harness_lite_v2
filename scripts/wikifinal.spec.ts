@@ -140,3 +140,53 @@ test('link targets follow the clone (no origin, another origin, another default 
   assert.equal(r.code, 1)
   assert.match(r.stdout, /modules\/auth\.md \(files\)/)
 })
+
+test('an unsafe page key is reported once and never listed as stale, missing or prose', () => {
+  const repo = wikiRepo({ 'modules/auth.md': { globs: ['src/auth/**'] }, '../../evil.md': { globs: ['src/core/**'] } })
+  const s = JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as Record<string, string[]>
+  assert.equal(s.invalid?.filter(e => e.includes('evil')).length, 1, JSON.stringify(s.invalid))
+  for (const k of ['stale', 'missing', 'prose']) assert.ok(!(s[k] ?? []).some(p => p.includes('evil')), `${k}: ${JSON.stringify(s[k])}`)
+})
+
+test('order and stamp look up pages as own keys only (constructor is not a page)', () => {
+  const repo = wikiRepo()
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/auth.md': { globs: ['src/auth/**'] } }, order: ['constructor'] }))
+  const b = build(repo)
+  assert.equal(b.code, 1)
+  assert.match(b.stderr, /order: constructor is not a page/)
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/auth.md': { globs: ['src/auth/**'] } } }))
+  const st = sdlc(repo, ['wiki', 'stamp', 'constructor'])
+  assert.equal(st.code, 1)
+  assert.match(st.stderr, /unknown page\(s\): constructor/)
+})
+
+test('wiki stamp leaves manifest.json untouched when it stamps no page', () => {
+  const repo = wikiRepo()
+  build(repo)
+  const file = path.join(repo, 'docs/wiki/manifest.json')
+  const before = fs.readFileSync(file, 'utf8')
+  const r = sdlc(repo, ['wiki', 'stamp'])
+  assert.match(r.stdout, /stamped 0 page/)
+  assert.equal(fs.readFileSync(file, 'utf8'), before)
+})
+
+test('in a vendored copy, fix texts name /rig-wiki and the .sdlc/bin script; the generated blocks are the same as the plugin build', () => {
+  const repo = wikiRepo()
+  sdlc(repo, ['init'])
+  assert.equal(sdlc(repo, ['vendor']).code, 0)
+  write(repo, 'src/other/x.js', 'export const x = 1\n')
+  write(repo, 'src/py/a.rb', "require_relative './b'\n")
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { 'modules/auth.md': { globs: ['src/auth/**'] }, 'modules/core.md': { globs: ['src/core/**', 'src/py/**'] } } }))
+  gitIn(repo, 'add', '.')
+  assert.equal(build(repo).code, 0)
+  const plugin = page(repo, 'modules/core.md')
+  assert.doesNotMatch(plugin, /scripts\/wikigraph\.ts/)
+  const run = (args: string[]) => execFileSync('node', ['--disable-warning=ExperimentalWarning', path.join(repo, '.sdlc/bin/sdlc.ts'), ...args], { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, NODE_TEST_CONTEXT: '' } })
+  assert.match(run(['wiki', 'build', '--check']), /up to date/)
+  const out = run(['check', '--at', 'commit'])
+  assert.match(out, /\/rig-wiki update/)
+  assert.doesNotMatch(out, /\/rig:wiki|`sdlc\.ts wiki build`/)
+  write(repo, 'docs/wiki/manifest.json', '{"pages": 1}')
+  gitIn(repo, 'add', '.')
+  assert.match(run(['check', '--at', 'commit']), /\.sdlc\/bin\/sdlc\.ts wiki build/)
+})

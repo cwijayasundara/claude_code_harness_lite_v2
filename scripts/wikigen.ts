@@ -95,7 +95,7 @@ export function architecture(g: Graph, page: string, max = 12): string {
     ...[...dependents(g, page)].map(([to, n]): Edge => ({ to, n, dir: 'in' })),
   ].sort((a, b) => b.n - a.n || cmp(a.to, b.to) || cmp(a.dir, b.dir))
   const uncomputed = g.uncomputed.get(page) ?? []
-  const note = uncomputed.length ? `_Edges not computed for ${uncomputed.join(', ')}: add a row to \`IMPORT_TABLE\` in \`scripts/wikigraph.ts\`, or draw them under \`<!-- rig:drawn -->\`._` : ''
+  const note = uncomputed.length ? `_Edges not computed for ${uncomputed.join(', ')}: add a row to \`IMPORT_TABLE\` in the harness's \`wikigraph.ts\`, or draw them under \`<!-- rig:drawn -->\`._` : ''
   if (!all.length) return ['## Architecture', '', uncomputed.length ? note : '_No imports to or from other modules._'].join('\n')
   const shown = all.slice(0, max)
   const ids = uniqueIds(shown.map(e => e.to), id)
