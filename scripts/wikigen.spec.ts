@@ -272,3 +272,8 @@ test('role: skips comment decoration, JSDoc openers, preprocessor lines and dire
   assert.equal(roleOf('# ====\n# Real line\n'), 'Real line')
   assert.equal(roleOf('#!/usr/bin/env node\n// eslint-disable\n// After\n'), 'After')
 })
+
+test('linkBase: only a github.com host is GitHub; a look-alike host stays relative', () => {
+  for (const r of ['https://github.com/o/r.git', 'git@github.com:o/r.git', 'ssh://git@github.com/o/r', 'https://x@github.com/o/r']) assert.equal(linkBase(r, 'main').kind, 'github', r)
+  for (const r of ['https://notgithub.com/o/r.git', 'git@evilgithub.com:o/r.git', 'https://github.com.evil.io/o/r']) assert.equal(linkBase(r, 'main').kind, 'relative', r)
+})

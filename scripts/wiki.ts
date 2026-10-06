@@ -171,7 +171,9 @@ export function planBuild(m: Manifest, structural = false): Planned[] {
   text = spliceBlock(text, 'modules', renderModules(pages, summaryOf), INDEX_BLOCKS)
   return [...planned, { file: `${WIKI_DIR}/${INDEX}`, before, text, names: INDEX_BLOCKS }]
 }
-export const driftOf = (p: Planned): string[] => p.names.filter(n => blockBody(p.before, n) !== blockBody(p.text, n))
+// Link targets follow the clone (origin URL, its default branch), so drift compares blocks with every `](target)` blanked: text, names and rows still count.
+const unlinked = (s: string | null): string | null => s?.replace(/\]\([^)]*\)/g, '](…)') ?? null
+export const driftOf = (p: Planned): string[] => p.names.filter(n => unlinked(blockBody(p.before, n)) !== unlinked(blockBody(p.text, n)))
 
 function cmdBuild(args: Args): void {
   if (!exists(MANIFEST)) return say(`no code wiki here: ${skillRef('wiki')} builds it`)

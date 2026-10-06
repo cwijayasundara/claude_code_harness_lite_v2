@@ -138,7 +138,7 @@ export function systemDiagram(g: Graph, pages: string[], groupOf: (page: string)
 
 export type LinkBase = { kind: 'github'; base: string } | { kind: 'relative' }
 export function linkBase(remote: string | null, branch: string): LinkBase {
-  const m = /github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(remote ?? '')
+  const m = /(?:^|[/@])github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(remote ?? '')
   return m ? { kind: 'github', base: `https://github.com/${m[1]}/${m[2]}/blob/${branch}` } : { kind: 'relative' }
 }
 const enc = (file: string): string => file.split('/').map(encodeURIComponent).join('/')
