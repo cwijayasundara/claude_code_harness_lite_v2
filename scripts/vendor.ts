@@ -15,8 +15,8 @@ export function forProject(text: string): string {
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('<plugin>/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.sdlc/templates/')
-    .replace(/\/rig:([a-z][a-z-]*)/g, '/rig-$1')
-    .replace(/\brig:(?!allow-secret)([a-z][a-z-]*)/g, 'rig-$1')
+    .replace(/\/rig:(?!gen\b|drawn\b)([a-z][a-z-]*)/g, '/rig-$1')
+    .replace(/\brig:(?!allow-secret|gen\b|drawn\b)([a-z][a-z-]*)/g, 'rig-$1')
     .replace(/^name: (?!rig-)(\S+)$/m, 'name: rig-$1')
 }
 

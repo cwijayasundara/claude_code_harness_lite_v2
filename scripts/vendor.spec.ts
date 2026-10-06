@@ -31,7 +31,7 @@ test('vendor --cloud writes project skills, agents and hooks with no plugin refe
   assert.ok(agents.some(f => f.endsWith('rig-scout.md')), 'scout agent')
   for (const f of [...skills, ...agents]) {
     const text = fs.readFileSync(f, 'utf8')
-    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/rig:[a-z]|\brig:(?!allow-secret)[a-z]/, path.relative(repo, f))
+    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/rig:(?!gen\b|drawn\b)[a-z]|\brig:(?!allow-secret|gen\b|drawn\b)[a-z]/, path.relative(repo, f))
     assert.match(text, /^name: rig-/m, path.relative(repo, f))
   }
   assert.ok(fs.existsSync(path.join(repo, '.sdlc/templates/rig-check.yml')), 'templates copied')
@@ -154,4 +154,16 @@ test('standalone vendoring installs the mod as a project plugin', () => {
   const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
   assert.equal(settings.enabledPlugins['rig-mod@rig-local'], true)
   assert.ok(settings.extraKnownMarketplaces['rig-local'])
+})
+
+test('the vendored wiki agent keeps the real rig:gen and rig:drawn markers while other rig: names are rewritten', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
+  const agent = fs.readFileSync(path.join(repo, '.claude/agents/rig-wiki.md'), 'utf8')
+  assert.ok(agent.includes('<!-- rig:gen:') && agent.includes('<!-- /rig:gen -->') && agent.includes('<!-- rig:drawn -->'))
+  assert.doesNotMatch(agent, /rig-gen|rig-drawn/)
+  const wikiSkill = fs.readFileSync(path.join(repo, '.claude/skills/rig-wiki/SKILL.md'), 'utf8')
+  assert.match(wikiSkill, /rig-wiki/)
+  assert.doesNotMatch(wikiSkill, /\brig:(?!gen|drawn)[a-z]/)
 })

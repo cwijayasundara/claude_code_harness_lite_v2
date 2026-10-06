@@ -27,17 +27,35 @@ const runBlocks = (text: string): string[] => {
   return out
 }
 
+
+const ALLOWED_PUSH =
+  /^\s*git -c "http\.https:\/\/github\.com\/\.extraheader=AUTHORIZATION: basic \$\(printf 'x-access-token:%s' "\$GH_TOKEN" \| base64 \| tr -d '\\n'\)" push --force origin rig\/wiki-refresh\s*$/
+
+/** Every non-comment line that runs `git ... push` and is not exactly the one allowed command. */
+const pushViolations = (text: string): string[] =>
+  text.split('\n').filter(l => !/^\s*#/.test(l) && /\bgit\b[^\n]*\bpush\b/.test(l) && !ALLOWED_PUSH.test(l))
+
+/** The workflow's steps, each as its own text block. */
+const steps = (text: string): string[] => text.split(/\n(?=\s+- (?:name|uses):)/)
+
+const headerOk = (text: string): string[] => {
+  const problems: string[] = []
+  const checkout = steps(text).find(b => /uses:\s*actions\/checkout/.test(b)) ?? ''
+  if (!/persist-credentials:\s*false/.test(checkout)) problems.push('checkout must set persist-credentials: false')
+  const withHeader = steps(text).filter(b => b.includes('extraheader'))
+  if (withHeader.length !== 1 || !/name: Open or update the refresh PR/.test(withHeader[0] ?? '')) problems.push('extraheader only in the PR step')
+  return problems
+}
+
 test('rig-wiki.yml: the zero-token step comes first and holds no secret; a PR is opened, never a push to the default branch', () => {
   const zero = yml.slice(yml.indexOf('name: Regenerate'), yml.indexOf('name: Is a model secret'))
   assert.ok(zero.includes('wiki build') && !zero.includes('secrets.'), 'the regeneration step uses no secret')
   assert.ok(yml.indexOf('wiki build') < yml.indexOf('claude-code-action'))
   assert.match(yml, /gh pr create/)
   assert.doesNotMatch(yml, /git push[^\n]*\b(main|master)\b/)
-  assert.match(yml, /git push[^\n]*rig\/wiki-refresh/)
+  assert.match(yml, /\bpush --force origin rig\/wiki-refresh/)
   assert.match(yml, /pull-requests: write/)
-  for (const m of yml.matchAll(/git push[^\n]*/g)) {
-    if (/--force|-f\b/.test(m[0])) assert.match(m[0], /origin rig\/wiki-refresh\s*$/, 'force only to rig/wiki-refresh')
-  }
+  assert.deepEqual(pushViolations(yml), [], 'every push line is the one allowed command')
 })
 
 test('rig-wiki.yml: third-party actions are pinned to a commit, and the model gets no shell or network and may edit only docs/wiki', () => {
@@ -61,6 +79,23 @@ test('rig-wiki.yml: repository text never reaches a shell by interpolation, and 
   }
   assert.doesNotMatch(yml, /^\s*pull_request_target\s*:/m)
   assert.doesNotMatch(yml, /^\s*workflow_run\s*:/m)
+})
+
+test('rig-wiki.yml: the model never sees the write token, and the push check rejects any other push', () => {
+  assert.deepEqual(headerOk(yml), [])
+  assert.match(yml, /find docs\/wiki -type l/)
+  assert.match(yml, /GH_TOKEN: \$\{\{ secrets\.RIG_WIKI_TOKEN \|\| github\.token \}\}/)
+  assert.match(yml, /sk-ant-\[A-Za-z0-9_-\]\{20,\}\|gh\[pousr\]/)
+  assert.match(yml, /if: github\.ref_name == github\.event\.repository\.default_branch/)
+  assert.match(yml, /id: model\b[\s\S]*continue-on-error: true/)
+  assert.match(yml, /if: \$\{\{ !cancelled\(\)/)
+  assert.match(yml, /gh pr view rig\/wiki-refresh/)
+  const injected = (line: string) => yml.replace('      - name: Open or update the refresh PR', `      - run: ${line}\n      - name: Open or update the refresh PR`)
+  for (const bad of ['git push origin HEAD:main', 'git push --force origin +HEAD:main', 'git push --force origin HEAD:"$BASE"', 'git push --force origin rig/wiki-refresh main']) {
+    assert.equal(pushViolations(injected(bad)).length, 1, bad)
+  }
+  assert.ok(headerOk(yml.replace('persist-credentials: false', 'persist-credentials: true')).length > 0)
+  assert.ok(headerOk(yml.replace('name: Regenerate', 'run: echo extraheader\n      - name: Regenerate')).length > 0)
 })
 
 test('the wiki agent writes prose only, and the skills point at build and the new flows', () => {
