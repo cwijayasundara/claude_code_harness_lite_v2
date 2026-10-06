@@ -340,7 +340,7 @@ test('an overrun push budget warns and lets the push through', () => {
   gitIn(repo, 'commit', '-qm', 'x')
   const r = push(head(), base)
   assert.equal(r.code, 0, r.stdout)
-  assert.match(r.stdout, /budget|timed out/)
+  assert.match(r.stdout, /^  ! commands: .*(?:budget|timed out).* → /m)
   assert.match(r.stdout, /quality ratchet skipped/)
 })
 
@@ -423,4 +423,17 @@ test('an older vendored checker without githooks.ts is not wired: install and se
   const note = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
   assert.match(note, /re-run `vendor`/)
   assert.throws(() => gitIn(repo, 'config', '--local', 'core.hooksPath'))
+})
+
+test('warnings at commit print with their fix text, five at most plus a count', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 5 } }))
+  const big = Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n'
+  stage('src/big.js', big)
+  const one = commit()
+  assert.equal(one.code, 0, one.stdout)
+  assert.match(one.stdout, /^  ! size src\/big\.js: .+ → .+$/m)
+  for (const n of [1, 2, 3, 4, 5, 6]) stage(`src/big${n}.js`, big)
+  const many = commit()
+  assert.equal(many.stdout.split('\n').filter(l => l.startsWith('  ! ')).length, 5, many.stdout)
+  assert.match(many.stdout, /^  \+2 more$/m)
 })

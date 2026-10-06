@@ -382,6 +382,13 @@ export function parseRules(text: string): { rules: Rule[]; errors: string[] } {
 
 // ---------- findings ----------
 
+export const warnRow = (f: Finding): string => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message} → ${f.fix}`.replace(/\s+/g, ' ').slice(0, 200)
+// The warnings a hook shows with their fix text (formatFindings counts them): five rows, then how many more.
+export function warnLines(findings: Finding[], max = 5): string[] {
+  const rows = [...new Set(findings.filter(f => f.severity === 'warn').map(warnRow))]
+  return [...rows.slice(0, max).map(r => `  ! ${r}`), ...(rows.length > max ? [`  +${rows.length - max} more`] : [])]
+}
+
 // Silent success, verbose failure: nothing when clean; blocks first, grouped by sensor, deduplicated, capped.
 export function formatFindings(findings: Finding[], max = 40): string {
   const seen = new Set<string>()

@@ -9,7 +9,7 @@ import { activeSlug, loadChange, nextCommand, createAdhoc } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, weakensConfig, weakensRules, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings, consumerFor } from './check.ts'
-import { formatFindings, isSource, isTest, matchesAny, parseConfig, type FileDiff, type Finding, type SensorConfig } from './model.ts'
+import { formatFindings, isSource, isTest, matchesAny, parseConfig, warnRow, type Finding, type SensorConfig } from './model.ts'
 import { readOnlyDenial, normCmd, bypassesGitHooks } from './shell.ts'
 import { autoApprove } from './autoapprove.ts'
 import { sessionNote } from './githooks.ts'
@@ -352,8 +352,6 @@ export function readGate(): Gate {
 const writeGate = (g: Gate): void => writeAtomic(GATE, JSON.stringify(g))
 const updateGate = (fn: (g: Gate) => void): void => withLock(GATE, () => { const g = readGate(); fn(g); writeGate(g) })
 const pushUnique = (list: string[], item: string): string[] => (list.includes(item) ? list : [...list, item])
-
-const warnRow = (f: Finding): string => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message} → ${f.fix}`.slice(0, 200)
 
 function summarize(findings: Finding[]): GateSummary {
   const bySensor: Record<string, number> = {}

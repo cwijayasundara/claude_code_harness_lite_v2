@@ -7,7 +7,7 @@ import {
   ROOT, SDLC, CHANGES, WAIVERS, planFiles, isPlanned, exists, read, out, fail, git, gitIn, approvalOf, planApproved, planPath, readImpact, needsImpact, toPosix, optString, readJsonl, defaultBase, checkSlug,
   type Args, type Waiver, type ImpactHit,
 } from './core.ts'
-import { parseConfig, parseRules, formatFindings, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
+import { parseConfig, parseRules, formatFindings, warnLines, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
@@ -371,7 +371,7 @@ export function independentApproval(): string | null {
 
 function report(point: string, result: CheckResult, count: number, json: boolean, humanRows: string[] = []): void {
   if (json) return out(JSON.stringify({ ...result, humanRows }))
-  const text = formatFindings(result.findings)
+  const text = [formatFindings(result.findings), ...(point === 'commit' ? warnLines(result.findings) : [])].filter(Boolean).join('\n')
   const human = humanRows.length ? `needs human review: ${humanRows.length} waiver/approval row(s) added by this PR\n${humanRows.map(r => `  - ${r}`).join('\n')}` : ''
   out([text || `sdlc check ${point}: pass (${count} file(s) checked${result.waived ? `, ${result.waived} waived` : ''})`, human].filter(Boolean).join('\n'))
   const summary = process.env.GITHUB_STEP_SUMMARY
