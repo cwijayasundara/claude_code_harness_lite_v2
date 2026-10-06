@@ -324,3 +324,52 @@ test('the new sensors can be waived by name', () => {
   assert.equal(r.code, 0, r.stderr)
   for (const s of ['wiki-generated', 'wiki-prose']) assert.equal(sdlc(repo, ['waive', s, '*', 'reason'], { env: { SDLC_HUMAN: '1' } }).code, 0, s)
 })
+
+const manifestPath = (repo: string): string => path.join(repo, 'docs/wiki/manifest.json')
+const checkCommit = (repo: string) => { write(repo, 'unrelated.txt', 'x\n'); gitIn(repo, 'add', 'unrelated.txt'); return sdlc(repo, ['check', '--at', 'commit', '--json']) }
+
+test('a broken manifest is reported, not hidden: status names the error and ci warns on manifest.json', () => {
+  const repo = wikiRepo()
+  sdlc(repo, ['init'])
+  build(repo)
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'wiki')
+  gitIn(repo, 'checkout', '-qb', 'f')
+  const m = JSON.parse(fs.readFileSync(manifestPath(repo), 'utf8')) as object
+  fs.writeFileSync(manifestPath(repo), JSON.stringify({ ...m, bogus: 1 }))
+  write(repo, 'src/auth/extra.js', 'export const e = 1\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'more')
+  const s = sdlc(repo, ['wiki', 'status', '--json'])
+  assert.equal(s.code, 0, s.stderr)
+  assert.match((JSON.parse(s.stdout) as Status & { invalid: string[] }).invalid.join('\n'), /unknown key "bogus"/)
+  assert.match(sdlc(repo, ['wiki', 'status']).stdout, /^manifest: .*unknown key "bogus"/m)
+  const ci = sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json'])
+  assert.doesNotMatch(ci.stderr, /crashed/)
+  const hit = (JSON.parse(ci.stdout) as { findings: { sensor: string; severity: string; file?: string; message: string }[] }).findings.filter(f => f.sensor === 'wiki-generated' && f.file === 'docs/wiki/manifest.json')
+  assert.equal(hit.length > 0 && hit.every(f => f.severity === 'warn' && /^invalid manifest: /.test(f.message)), true)
+})
+
+for (const bad of ['{"pages":null}', '{"pages":{"a.md":null}}', '{"pages":{"a.md":{"globs":5}}}', '[]', '5', '"x"', '{not json']) {
+  test(`a manifest of ${bad} never crashes status or the commit check`, () => {
+    const repo = wikiRepo()
+    sdlc(repo, ['init'])
+    fs.writeFileSync(manifestPath(repo), bad)
+    const s = sdlc(repo, ['wiki', 'status', '--json'])
+    assert.equal(s.code, 0, s.stderr)
+    assert.doesNotMatch(s.stderr, /at |Error/)
+    assert.equal((JSON.parse(s.stdout) as { invalid: string[] }).invalid.length > 0, true)
+    const c = checkCommit(repo)
+    assert.doesNotMatch(c.stderr, /the checker crashed/)
+    assert.equal((JSON.parse(c.stdout) as { findings: { sensor: string }[] }).findings.some(f => f.sensor === 'wiki-generated'), true)
+  })
+}
+
+test('a symlinked manifest.json is invalid and its pages are not used; a valid one has invalid: []', () => {
+  const repo = wikiRepo()
+  assert.deepEqual((JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as { invalid: string[] }).invalid, [])
+  const outside = path.join(repo, 'elsewhere.json')
+  fs.renameSync(manifestPath(repo), outside)
+  fs.symlinkSync(outside, manifestPath(repo))
+  const s = JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as Status & { invalid: string[] }
+  assert.match(s.invalid.join('\n'), /not a regular file/)
+  assert.deepEqual([s.stale, s.missing, s.generated, s.prose], [[], [], [], []])
+})

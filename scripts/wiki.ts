@@ -16,16 +16,6 @@ const MANIFEST_KEYS = ['pages', 'skip', 'notes', 'order']
 const MAX_NOTE = 10_000
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string')
 
-function readManifest(): Manifest | null {
-  if (!exists(MANIFEST)) return null
-  try {
-    const m = JSON.parse(read(MANIFEST)) as Manifest
-    return m && typeof m.pages === 'object' ? m : null
-  } catch {
-    return null
-  }
-}
-
 const tracked = (): string[] => (git(['ls-files', '--cached', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean)
 const filesFor = (globs: string[], all: string[]): string[] => all.filter(f => matchesAny(f, globs)).sort(cmp)
 
@@ -99,6 +89,21 @@ export function manifestErrors(raw: unknown): string[] {
 }
 const readRaw = (): unknown => { try { return JSON.parse(read(MANIFEST)) } catch { return null } }
 
+// A missing manifest means no wiki; one that exists but cannot be trusted (symlink, not a file, bad JSON, wrong shape) is reported as broken.
+// `manifest` is set whenever the pages object is usable, so status can still look at the well-formed pages.
+type Loaded = { exists: boolean; manifest: Manifest | null; errors: string[] }
+function loadManifest(): Loaded {
+  if (!fs.lstatSync(MANIFEST, { throwIfNoEntry: false })) return { exists: false, manifest: null, errors: [] }
+  if (!safeWikiPath('manifest.json') || !isRegularFile(MANIFEST)) return { exists: true, manifest: null, errors: ['manifest.json is not a regular file (or sits behind a symlink)'] }
+  let raw: unknown
+  try { raw = JSON.parse(read(MANIFEST)) } catch { return { exists: true, manifest: null, errors: ['manifest.json is not valid JSON'] } }
+  const errors = manifestErrors(raw)
+  const pages = (raw as { pages?: unknown } | null)?.pages
+  const usable = !!raw && typeof raw === 'object' && !Array.isArray(raw) && !!pages && typeof pages === 'object' && !Array.isArray(pages)
+  return { exists: true, manifest: usable ? (raw as Manifest) : null, errors }
+}
+const readManifest = (): Manifest | null => loadManifest().manifest
+
 const INDEX = 'index.md'
 const pagePath = (page: string): string => safePagePath(page) ?? fail(`page "${page}": not a safe relative .md path`)
 const commitRows = (files: string[], n: number): CommitRow[] => {
@@ -171,30 +176,38 @@ function cmdBuild(args: Args): void {
   out(changed.length ? `wrote ${changed.length} file(s):\n${changed.map(p => `  ${p.file}`).join('\n')}` : 'wiki up to date')
 }
 
-type Status = { stale: string[]; missing: string[]; uncovered: string[]; generated: string[]; prose: string[] }
+type Status = { stale: string[]; missing: string[]; uncovered: string[]; generated: string[]; prose: string[]; invalid: string[] }
+const wellFormed = (p: unknown): p is Page => !!p && typeof p === 'object' && isStrings((p as Page).globs)
 export function wikiStatus(): Status | null {
-  const m = readManifest()
-  if (!m) return null
-  const all = tracked()
-  const { config } = loadConfig()
-  const stale: string[] = []
-  const missing: string[] = []
-  for (const [page, p] of Object.entries(m.pages)) {
-    const files = filesFor(p.globs ?? [], all)
-    if (!files.length) missing.push(page)
-    else if (p.surface !== surfaceOf(files)) stale.push(page)
+  const empty: Status = { stale: [], missing: [], uncovered: [], generated: [], prose: [], invalid: [] }
+  // A sensor must never throw: any failure becomes a finding.
+  try {
+    const { exists, manifest: m, errors } = loadManifest()
+    if (!exists) return null
+    if (!m) return { ...empty, invalid: errors }
+    const entries = Object.entries(m.pages).filter((e): e is [string, Page] => wellFormed(e[1]))
+    const all = tracked()
+    const { config } = loadConfig()
+    const stale: string[] = []
+    const missing: string[] = []
+    for (const [page, p] of entries) {
+      const files = filesFor(p.globs, all)
+      if (!files.length) missing.push(page)
+      else if (p.surface !== surfaceOf(files)) stale.push(page)
+    }
+    const globs = entries.flatMap(([, p]) => p.globs)
+    const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
+    const skip = new Set(isStrings(m.skip) ? m.skip : [])
+    const uncovered = [...dirs].filter(d => !skip.has(d) && !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
+    // The graph build (planBuild) is the costly part and runs at every commit and push: once per call, and only for a valid manifest
+    // (planBuild would abort on an unsafe page key; `wiki build` explains an invalid one).
+    const generated = errors.length || !safeWikiPath(INDEX) ? [] : planBuild(m).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
+    // A page whose path is unsafe is never read: it counts as missing prose.
+    const prose = entries.map(([page]) => page).filter(page => proseProblems(readRegular(safePagePath(page) ?? '')).length).sort(cmp)
+    return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose, invalid: errors }
+  } catch (e) {
+    return { ...empty, invalid: [`could not read the wiki: ${e instanceof Error ? e.message : String(e)}`] }
   }
-  const globs = Object.values(m.pages).flatMap(p => p.globs ?? [])
-  const dirs = new Set(all.filter(f => f.includes('/') && isSource(f, config) && !isTest(f, config) && !f.startsWith('.')).map(f => f.split('/')[0] ?? ''))
-  const skip = new Set(m.skip ?? [])
-  const uncovered = [...dirs].filter(d => !skip.has(d) && !all.some(f => f.startsWith(`${d}/`) && matchesAny(f, globs))).sort()
-  // The graph build (planBuild) is the costly part and runs at every commit and push: once per call, and never without a valid manifest
-  // (an invalid one is reported by `wiki build`, and planBuild would abort on an unsafe page key).
-  const valid = manifestErrors(readRaw()).length === 0 && safeWikiPath(INDEX) !== null
-  const generated = valid ? planBuild(m).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp) : []
-  // A page whose path is unsafe is never read: it counts as missing prose.
-  const prose = Object.keys(m.pages).filter(page => proseProblems(readRegular(safePagePath(page) ?? '')).length).sort(cmp)
-  return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose }
 }
 
 export function wikiFindings(): Finding[] {
@@ -202,7 +215,10 @@ export function wikiFindings(): Finding[] {
   if (!s) return []
   const fix = 'run /rig:wiki update (it rewrites only these pages)'
   const warn = (sensor: string, file: string, message: string, how: string): Finding => ({ sensor, severity: 'warn', file, message, fix: how })
+  const bad = s.invalid.slice(0, 5).map(e => warn('wiki-generated', `${WIKI_DIR}/manifest.json`, `invalid manifest: ${e}`, 'run `sdlc.ts wiki build` for the details'))
+  if (s.invalid.length > 5) bad.push(warn('wiki-generated', `${WIKI_DIR}/manifest.json`, `invalid manifest: +${s.invalid.length - 5} more`, 'run `sdlc.ts wiki build` for the details'))
   return [
+    ...bad,
     ...s.stale.map(p => warn('wiki-stale', `${WIKI_DIR}/${p}`, 'the module\'s public surface changed since this page was written', fix)),
     ...s.missing.map(p => warn('wiki-stale', `${WIKI_DIR}/${p}`, 'its globs match no files', fix)),
     ...s.uncovered.map(d => warn('wiki-stale', d, 'no wiki page covers this directory', fix)),
@@ -215,17 +231,16 @@ export function cmdWiki(args: Args): void {
   const [sub, ...pages] = args.pos
   if (sub === 'status') {
     const s = wikiStatus()
-    if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], generated: [], prose: [], none: true }))
+    if (args.opt.json) return out(JSON.stringify(s ?? { stale: [], missing: [], uncovered: [], generated: [], prose: [], invalid: [], none: true }))
     if (!s) return out('no code wiki here: /rig:wiki builds it')
-    const rows = [...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`), ...s.generated.map(p => `generated: ${p}`), ...s.prose.map(p => `prose: ${p}`)]
+    const rows = [...s.invalid.map(e => `manifest: ${e}`), ...s.stale.map(p => `stale: ${p}`), ...s.missing.map(p => `missing files: ${p}`), ...s.uncovered.map(d => `uncovered: ${d}/`), ...s.generated.map(p => `generated: ${p}`), ...s.prose.map(p => `prose: ${p}`)]
     return out(rows.length ? rows.join('\n') : 'wiki up to date')
   }
   if (sub === 'build') return cmdBuild(args)
   if (sub === 'stamp') {
-    const m = readManifest()
-    if (!m) return out('no docs/wiki/manifest.json to stamp')
-    const errors = manifestErrors(readRaw())
-    if (errors.length) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
+    const { exists, manifest: m, errors } = loadManifest()
+    if (!exists) return out('no docs/wiki/manifest.json to stamp')
+    if (errors.length || !m) fail(`docs/wiki/manifest.json: ${errors.join('; ')}`)
     const unknown = pages.filter(n => !(n in m.pages))
     if (unknown.length) {
       process.stderr.write(`unknown page(s): ${unknown.join(', ')}\n`)
