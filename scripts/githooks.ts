@@ -1,7 +1,7 @@
 // Git hooks: the same checker as Stop, ship and CI, run at `git commit` and `git push`, so any editor, agent or person is judged.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ROOT, SDLC, git, exists, out, fail, defaultBase, type Args } from './core.ts'
+import { ROOT, SDLC, git, exists, out, fail, type Args } from './core.ts'
 import { loadConfig, runChecks } from './check.ts'
 import { rangeDiff, showAt } from './diffs.ts'
 import { activeSlug, createAdhoc } from './graph.ts'
@@ -95,6 +95,19 @@ export function parsePushRefs(stdin: string): PushRef[] {
   })
 }
 
+const TRUNKS = ['origin/main', 'main', 'origin/master', 'master']
+// The base CI would use (the merge-base with the trunk, for the pushed commit, not HEAD), so merging or rebasing on
+// the trunk never counts the trunk's own work. A push to the trunk itself judges what the remote lacks.
+export function pushBase(r: PushRef): string | null {
+  const trunk = TRUNKS.find(t => git(['rev-parse', '--verify', '--quiet', `${t}^{commit}`]))
+  const mb = trunk ? git(['merge-base', r.localSha, trunk]) : null
+  const tb = mb && mb !== r.localSha ? mb : null // already on the trunk: nothing of its own to compare
+  const toTrunk = Boolean(trunk) && r.remoteRef === `refs/heads/${trunk?.replace('origin/', '')}`
+  if (tb && !toTrunk) return tb
+  const remote = ZERO.test(r.remoteSha) ? null : r.remoteSha
+  return remote && git(['merge-base', '--is-ancestor', remote, r.localSha]) !== null ? remote : tb
+}
+
 const readStdin = (): string => { try { return fs.readFileSync(0, 'utf8') } catch { return '' } }
 // Running out of budget is a warning at push: CI still runs the commands.
 const soften = (f: Finding): Finding => (f.sensor === 'commands' && /budget ran out|timed out/.test(f.message) ? { ...f, severity: 'warn' } : f)
@@ -111,7 +124,7 @@ export function cmdCheckPush(_args: Args): void {
   const findings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
   const notes: string[] = []
   for (const r of refs) {
-    const base = ZERO.test(r.remoteSha) ? defaultBase() : r.remoteSha
+    const base = pushBase(r)
     if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.remoteRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }
     const diffs = rangeDiff(base, r.localSha)
     if (!diffs.length) continue

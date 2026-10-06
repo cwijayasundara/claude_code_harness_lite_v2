@@ -216,6 +216,57 @@ test('an unplanned tier M ad-hoc change is refused at push; prePush off skips; a
   assert.match(off.stdout, /off/)
 })
 
+// main gains four source files (already judged there): a tier M ad-hoc change if a push wrongly counts them.
+const mainGainsFour = () => {
+  gitIn(repo, 'checkout', '-q', 'main')
+  for (const n of ['a', 'b', 'c', 'd']) stage(`src/${n}.js`, `export const ${n} = 1\n`)
+  gitIn(repo, 'commit', '-qm', 'main work')
+}
+const featBranch = () => {
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-q', '-b', 'feat')
+  stage('src/f.js', 'export const f = 1\n')
+  gitIn(repo, 'commit', '-qm', 'f')
+  return head()
+}
+
+test('push after merging main judges only the branch work, as CI does', () => {
+  const remoteSha = featBranch()
+  mainGainsFour()
+  gitIn(repo, 'checkout', '-q', 'feat')
+  gitIn(repo, 'merge', '-q', '--no-edit', 'main')
+  const r = push(head(), remoteSha, 'refs/heads/feat')
+  assert.equal(r.code, 0, r.stdout)
+  assert.doesNotMatch(r.stdout, /adhoc/)
+})
+
+test('a rebase and force-push judges only the branch work', () => {
+  const remoteSha = featBranch()
+  mainGainsFour()
+  gitIn(repo, 'checkout', '-q', 'feat')
+  gitIn(repo, 'rebase', '-q', 'main')
+  const r = push(head(), remoteSha, 'refs/heads/feat')
+  assert.equal(r.code, 0, r.stdout)
+  assert.doesNotMatch(r.stdout, /adhoc/)
+})
+
+test('pushing another branch than HEAD uses that branch\'s merge-base, not HEAD\'s', () => {
+  const other = featBranch()
+  mainGainsFour()
+  gitIn(repo, 'checkout', '-q', '-b', 'third')
+  const r = pushRaw('refs/heads/feat', other, 'refs/heads/feat', ZERO)
+  assert.equal(r.code, 0, r.stdout)
+  assert.doesNotMatch(r.stdout, /adhoc/)
+  stage('src/s.js', SECRET)
+  gitIn(repo, 'commit', '-qm', 'bad', '--no-verify')
+  const bad = head()
+  gitIn(repo, 'checkout', '-q', 'feat')
+  const refused = pushRaw('refs/heads/third', bad, 'refs/heads/third', ZERO)
+  assert.equal(refused.code, 1, refused.stdout)
+  assert.match(refused.stdout, /secrets/)
+})
+
 const bash = (command: string) => {
   const r = hook(repo, 'pre-bash', { tool_input: { command } })
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
