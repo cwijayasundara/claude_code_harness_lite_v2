@@ -157,12 +157,13 @@ export function cmdPr(args: Args): void {
   const extras = ['.sdlc/approvals.jsonl', '.sdlc/waivers.jsonl', '.sdlc/.gitignore', '.sdlc/STATE.md', '.sdlc/guides', ...(ratcheted ? ['.sdlc/sensors.json'] : [])].filter(f => exists(path.join(ROOT, f)))
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', changeDir, ...extras, ...code]) === null) fail('git add failed')
-  if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')
+  // The ship gate just judged this tree with waivers applied: the git hooks would only re-run it (and could time out).
+  if (git(['commit', '-q', '--no-verify', '-m', message]) === null) fail('git commit failed (nothing staged)')
   let target = 'local-only'
   if (remote) {
     // Only sdlc/<slug> is ever pushed: never the trunk, never forced.
     if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) { block(slug, 'pr', `HEAD is not ${branch}; not pushing`); fail(`not pushing: HEAD is not ${branch} (blocked)`) }
-    if (git(['push', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('pushed nothing: git push failed (blocked)') }
+    if (git(['push', '--no-verify', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('pushed nothing: git push failed (blocked)') }
     target = openPr(slug, title)
   }
   out(`pr ${slug} on ${git(['rev-parse', '--abbrev-ref', 'HEAD'])} at ${git(['rev-parse', '--short', 'HEAD'])}: ${code.length} code file(s) + artifacts; ${remote ? `PR ${target}` : 'no origin remote, local only'}. The change stays active for pr-review.`)
@@ -194,7 +195,7 @@ function resume(slug: string, message: string): void {
   const branch = `sdlc/${slug}`
   if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) fail(`resuming ${slug} needs HEAD on ${branch}`)
   if (git(['remote', 'get-url', 'origin']) === null) fail(`cannot resume ${slug}: no origin remote`)
-  if (git(['push', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('git push failed (blocked)') }
+  if (git(['push', '--no-verify', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('git push failed (blocked)') }
   const url = openPr(slug, (message.split('\n')[0] ?? slug).slice(0, 200))
   unblock(slug, 'pr created', 'other')
   out(`resumed ${slug}: PR ${url}`)
@@ -208,6 +209,14 @@ function ghRun(argv: string[], keepStdoutOnFailure = false): string | null {
   }
 }
 
+// No gate ran before a follow-up, so the git hooks judge it: their reasons reach the person, within the push budget.
+function gitLoud(argv: string[]): boolean {
+  try {
+    execFileSync('git', argv, { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'], timeout: loadConfig().config.githooks.budgetMs + 60_000 })
+    return true
+  } catch { return false }
+}
+
 function followup(slug: string, message: string): void {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (!prDone(slug)) fail(`no follow-up yet: the pr node of ${slug} is not done (run pr ${slug} --message ... first)`)
@@ -216,8 +225,8 @@ function followup(slug: string, message: string): void {
   if (r.drift.length) fail(`scope drift, not committing: ${r.drift.join(', ')}`)
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug))), ...code]) === null) fail('git add failed')
-  if (git(['commit', '-q', '-m', message]) === null) fail('git commit failed (nothing staged, or a commit hook refused it)')
-  if (git(['remote', 'get-url', 'origin']) !== null && git(['push', 'origin', `sdlc/${slug}`]) === null) { block(slug, 'pr-review', 'git push of the follow-up failed'); fail('push failed (blocked)') }
+  if (!gitLoud(['commit', '-q', '-m', message])) fail('git commit failed (nothing staged, or a commit hook refused it)')
+  if (git(['remote', 'get-url', 'origin']) !== null && !gitLoud(['push', 'origin', `sdlc/${slug}`])) { block(slug, 'pr-review', 'git push of the follow-up failed'); fail('push failed (blocked)') }
   out(`follow-up committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
 }
 
@@ -235,7 +244,7 @@ function commitReviewEvidence(slug: string): void {
   const dir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
   if (!git(['status', '--porcelain', '--', dir])) return
   if (git(['add', '--', dir]) === null) return
-  if (git(['commit', '-q', '-m', `chore(sdlc): pr-review evidence for ${slug}`, '--', dir]) === null) return
+  if (git(['commit', '-q', '--no-verify', '-m', `chore(sdlc): pr-review evidence for ${slug}`, '--', dir]) === null) return
   out(`pr-review evidence committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
 }
 

@@ -126,6 +126,39 @@ test('a follow-up pushes to the same branch when there is a remote', () => {
   assert.equal(gitIn(bare, 'log', '-1', '--format=%s', 'sdlc/tiny'), 'fix: review findings')
 })
 
+// The git hooks wired: a full command that fails on its second run shows whether pr re-ran the checks through pre-push.
+const withHooks = (): string => {
+  const counter = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rig-count-')), 'runs')
+  const once = `node -e "const fs=require('fs');const f=${JSON.stringify(counter).replace(/"/g, "'")};const again=fs.existsSync(f);fs.writeFileSync(f,'x');process.exit(again?1:0)"`
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { once } }))
+  assert.equal(sdlc(repo, ['vendor']).code, 0)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'harness')
+  assert.equal(sdlc(repo, ['hooks', 'install']).code, 0)
+  return counter
+}
+
+test('with the git hooks installed, pr commits and pushes without re-running the checks the ship gate just ran', () => {
+  const counter = withHooks()
+  ready('tiny')
+  const bare = withRemote()
+  const gh = fakeGh('echo https://github.com/o/r/pull/11')
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
+  assert.equal(r.code, 0, r.stderr + r.stdout)
+  assert.ok(fs.existsSync(counter), 'the ship gate ran the full command')
+  assert.ok(gitIn(bare, 'branch', '--list', 'sdlc/tiny').includes('sdlc/tiny'))
+})
+
+test('a follow-up keeps the git hooks and shows why one refused', () => {
+  withHooks()
+  ready('tiny')
+  assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
+  write(repo, 'src/app.js', 'const apikey = "abcdefghijklmnop12345678"\n')
+  const r = sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: review findings'])
+  assert.equal(r.code, 1)
+  assert.match(r.stderr, /secrets/, 'the hook says why')
+})
+
 test('pr-checks commits the pr-review evidence written after ship, leaving a clean tree', () => {
   ready('tiny')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
