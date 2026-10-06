@@ -2,7 +2,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
 const page = (repo: string, p: string): string => fs.readFileSync(path.join(repo, 'docs/wiki', p), 'utf8')
@@ -78,4 +80,32 @@ test('file names git would C-quote (non-ASCII, tab) are listed and covered; an u
   const s = JSON.parse(sdlc(repo, ['wiki', 'status', '--json']).stdout) as { uncovered: string[] }
   assert.deepEqual(s.uncovered, [])
   assert.doesNotMatch(sdlc(repo, ['wiki', 'status']).stdout, /uncovered/)
+})
+
+// A git on PATH that records each call, then runs the real one.
+function gitSpy(): { env: Record<string, string>; calls: () => string[] } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-gitspy-'))
+  const log = path.join(dir, 'calls.log')
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
+  return { env: { PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}` }, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : []) }
+}
+
+test('status (the commit check) and --check render only the structural blocks (no git log); build still refreshes why and recent', () => {
+  const repo = wikiRepo()
+  assert.equal(build(repo).code, 0)
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'wiki')
+  for (const args of [['wiki', 'status', '--json'], ['wiki', 'build', '--check']]) {
+    const spy = gitSpy()
+    const r = sdlc(repo, args, { env: spy.env })
+    assert.equal(r.code, 0, r.stdout + r.stderr)
+    assert.ok(spy.calls().length > 0, 'the spy saw git')
+    assert.deepEqual(spy.calls().filter(c => /\blog\b/.test(c)), [], args.join(' '))
+  }
+  write(repo, 'src/auth/key.js', "import { util } from '../core/util.js'\n// Checks API keys\nexport function check(k) {\n  return util(k) // why\n}\n")
+  gitIn(repo, 'commit', '-qam', 'explain the check')
+  const spy = gitSpy()
+  assert.equal(sdlc(repo, ['wiki', 'build'], { env: spy.env }).code, 0)
+  assert.ok(spy.calls().some(c => /\blog\b/.test(c)))
+  assert.match(page(repo, 'modules/auth.md'), /explain the check/)
 })

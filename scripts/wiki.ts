@@ -143,20 +143,23 @@ function makeCtx(m: Manifest): Ctx {
   const cache = new Map<string, string>()
   const readFile = (f: string): string => { let t = cache.get(f); if (t === undefined) cache.set(f, (t = readRegular(path.join(ROOT, f)))); return t }
   const branch = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])?.replace(/^origin\//, '') ?? 'main'
+  let changes: ChangeRow[] | undefined
   return {
     pages: m.pages, files, graph: buildGraph(m.pages, files, readFile), link: linkBase(git(['remote', 'get-url', 'origin']), branch),
-    config: loadConfig().config, read: readFile, changes: changeRows(), commits: commitRows,
+    config: loadConfig().config, read: readFile, get changes() { return (changes ??= changeRows()) }, commits: commitRows,
   }
 }
 
 export type Planned = { file: string; before: string; text: string; names: readonly string[] }
-export function planBuild(m: Manifest): Planned[] {
+// `structural` (status, the commit check, --check) renders only the enforced blocks: why and recent cost two git log calls
+// per page and are never compared, so their text is left as it is. Only `wiki build` (the writing path) renders them.
+export function planBuild(m: Manifest, structural = false): Planned[] {
   const ctx = makeCtx(m)
   const pages = Object.keys(m.pages).sort(cmp)
   const planned: Planned[] = pages.map(page => {
     const before = read(pagePath(page))
     let text = before || pageSkeleton(label(page))
-    for (const name of BLOCKS) text = spliceBlock(text, name, renderBlock(ctx, page, name))
+    for (const name of structural ? STRUCTURAL : BLOCKS) text = spliceBlock(text, name, renderBlock(ctx, page, name))
     return { file: `${WIKI_DIR}/${page}`, before, text, names: STRUCTURAL }
   })
   const groupOf = (p: string): string => (m.pages[p]?.globs[0] ?? p).replace(/^\.\//, '').split('/')[0] ?? p
@@ -179,7 +182,7 @@ function cmdBuild(args: Args): void {
   if (!m) return say(`no code wiki here: ${skillRef('wiki')} builds it`)
   for (const page of Object.keys(m.pages)) if (!safePagePath(page)) die(`docs/wiki/manifest.json: page "${page}": not a safe relative .md path`)
   let plan: Planned[] = []
-  try { plan = planBuild(m) } catch (e) { die(e instanceof Error ? e.message : String(e)) }
+  try { plan = planBuild(m, !!args.opt.check) } catch (e) { die(e instanceof Error ? e.message : String(e)) }
   if (args.opt.check) {
     const rows = plan.flatMap(p => driftOf(p).map(n => `generated: ${p.file} (${n})`))
     say(rows.length ? rows.join('\n') : 'wiki generated blocks up to date')
@@ -218,7 +221,7 @@ export function wikiStatus(): Status | null {
     const unsafe = [...entries.map(([page]) => page).filter(page => !safePagePath(page)).map(page => `page "${page}": path is not safe under ${WIKI_DIR} (a symlink in the way?)`), ...(safeWikiPath(INDEX) ? [] : [`${WIKI_DIR}/${INDEX} is not a safe path`])]
     // The graph build (planBuild) is the costly part and runs at every commit and push: once per call, and only for a valid manifest
     // (planBuild would abort on an unsafe page key; `wiki build` explains an invalid one).
-    const generated = errors.length || unsafe.length ? [] : planBuild(m).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
+    const generated = errors.length || unsafe.length ? [] : planBuild(m, true).filter(p => driftOf(p).length).map(p => p.file.slice(WIKI_DIR.length + 1)).sort(cmp)
     // A page whose path is unsafe is never read: it counts as missing prose.
     const prose = entries.map(([page]) => page).filter(page => proseProblems(readRegular(safePagePath(page) ?? '')).length).sort(cmp)
     return { stale: stale.sort(), missing: missing.sort(), uncovered, generated, prose, invalid: [...errors, ...unsafe] }
