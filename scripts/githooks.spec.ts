@@ -374,6 +374,17 @@ test('a shell -c payload is read behind any wrapper, and eval behind command or 
     'git commit -m eval', 'grep -c bash notes.txt', 'echo eval hi'])
 })
 
+test('only the program a segment really runs is read as a shell; a word named sh in git arguments hides no git flag', () => {
+  denies(['git commit sh -c HEAD --no-verify', 'git commit -F sh -c x --no-verify', 'git push sh -c x --no-verify', 'git commit bash -c HEAD -n',
+    'git push origin sh -c --no-verify', 'git commit -m x eval -n', 'git push sh -c -n --no-verify', 'git commit -m y sh -c x -n',
+    'git -c core.hooksPath=/dev/null commit sh -c x -m y', 'git commit sh -c core.hooksPath=/x', 'git config sh -c core.hooksPath /x',
+    'env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null sh -c \'git commit -m x\'',
+    `env -i -u X FOO=1 sh -c 'git commit -n'`, `sudo -u me -g staff bash -c 'git commit -n'`, `xargs -I x -n 1 sh -c 'git commit -n'`,
+    `timeout -s KILL 9 sh -c 'git commit -n'`, `exec sh -c 'git commit -n'`, `command -p sh -c 'git commit -n'`, `nice -5 sh -c 'git commit -n'`,
+    `bash -o pipefail -c 'git commit -n'`])
+  allows(['git commit sh -c HEAD -m ok', 'git log sh -c', `sh -c 'git commit -m ok'`, 'git commit sh -c -m ok', 'git commit -m x sh -c --no-verify', 'sh script.sh -c x', 'echo sh -c x'])
+})
+
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {

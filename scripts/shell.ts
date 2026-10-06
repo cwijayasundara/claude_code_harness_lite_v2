@@ -267,41 +267,69 @@ function regexBypass(text: string): boolean {
   return NO_VERIFY_FLAGS.test(flags) || NO_VERIFY_CONFIG.test(plain) || RIG_HOOKS_OFF.test(plain)
 }
 // A git command at the start of one word (an argument of another program, e.g. watch 'git ...') gets the regex.
-const embedded = (words: string[]): boolean => words.some(w => /^\s*git(?:\.exe)?\s/i.test(w) && regexBypass(w))
+const embeddedGit = (words: string[]): boolean => words.some(w => /^\s*git(?:\.exe)?\s/i.test(w) && regexBypass(w))
 
-// Words a segment runs as a command of its own: the word after a shell's -c cluster (and an optional --), wherever the
-// shell stands, so env, sudo -u x, xargs, nohup, timeout N, nice or time cannot hide it; and the words after eval in
-// command position (after assignments, command or builtin; eval is a builtin, so no wrapper program can run it).
-function payloadSpans(seg: string[]): [number, number][] {
-  const spans: [number, number][] = []
-  seg.forEach((w, k) => {
-    if (!SHELLS.test(progName(w))) return
-    const c = seg.findIndex((x, i) => i > k && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(x))
-    const p = c > 0 && seg[c + 1] === '--' ? c + 2 : c + 1
-    if (c > 0 && p < seg.length && !spans.some(([f]) => f === p)) spans.push([p, p + 1])
-  })
-  let k = seg.findIndex(w => !/^\w+=/.test(w))
-  while (k >= 0 && (seg[k] === 'command' || seg[k] === 'builtin')) k++
-  if (k >= 0 && seg[k] === 'eval') spans.push([k + 1, seg.length])
-  return spans
+// Programs that run their first operand as the command, with the options that take a separate value.
+const WRAPPERS = new Map<string, string[]>([
+  ['env', ['-u', '-C', '-S', '--unset', '--chdir', '--split-string']],
+  ['sudo', ['-u', '-g', '-h', '-p', '-C', '-D', '-r', '-t', '-U', '-T', '-R', '--user', '--group', '--host', '--prompt', '--chdir', '--role', '--type', '--other-user']],
+  ['xargs', ['-I', '-L', '-n', '-P', '-s', '-d', '-E', '-a', '--arg-file', '--delimiter']],
+  ['timeout', ['-s', '-k', '--signal', '--kill-after']], ['nice', ['-n', '--adjustment']], ['exec', ['-a']],
+  ['nohup', []], ['time', []], ['command', []], ['builtin', []],
+])
+const SHELL_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file'])
+
+// Where the program a segment really runs stands: past assignments and the wrappers above with their options.
+function programAt(seg: string[]): number {
+  let k = 0
+  for (;;) {
+    while (/^\w+=/.test(seg[k] ?? '')) k++
+    const name = progName(seg[k] ?? '')
+    const takes = WRAPPERS.get(name)
+    if (!takes) return k
+    k++
+    while ((seg[k] ?? '').startsWith('-')) {
+      const o = seg[k++] ?? ''
+      if (o === '--') break
+      if (takes.includes(o)) k++
+    }
+    if (name === 'timeout') k++ // the duration
+  }
+}
+
+// The words a segment runs as a command of its own, as [from, to): the word after the -c cluster (and an optional --)
+// of a shell that is the program really run (so env, sudo -u x, xargs, nohup, timeout N, nice or time cannot hide it,
+// and a word named sh among git's arguments is not one), or the words after eval (behind command or builtin).
+function payloadSpan(seg: string[]): [number, number] | null {
+  const k = programAt(seg)
+  const w = seg[k] ?? ''
+  if (w === 'eval') return [k + 1, seg.length]
+  if (!SHELLS.test(progName(w))) return null
+  for (let i = k + 1; i < seg.length && /^[-+]./.test(seg[i] ?? '') && seg[i] !== '--'; i++) {
+    if (SHELL_VALUE.has(seg[i] ?? '')) i++
+    else if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(seg[i] ?? '')) {
+      const p = seg[i + 1] === '--' ? i + 2 : i + 1
+      return p < seg.length ? [p, p + 1] : null
+    }
+  }
+  return null
 }
 
 function segmentBypasses(seg: string[], depth: number): boolean {
   // A payload is read the same way, bounded; past the bound it is denied (nested), never passed unread.
-  const inPayload = new Set<number>()
-  for (const [from, to] of payloadSpans(seg)) {
-    for (let i = from; i < to; i++) inPayload.add(i)
-    const payload = seg.slice(from, to).join(' ')
-    if (!payload.trim()) continue
-    if (depth < 3) {
-      if (bypassesGitHooks(payload, depth + 1)) return true
-      continue
+  const span = payloadSpan(seg)
+  const payload = span ? seg.slice(...span).join(' ') : ''
+  if (payload.trim()) {
+    if (depth >= 3) {
+      if (!regexBypass(payload)) nestedTooDeep = true // past the bound and no visible bypass: deny anyway, never fail open
+      return true
     }
-    if (!regexBypass(payload)) nestedTooDeep = true // past the bound and no visible bypass: deny anyway, never fail open
-    return true
+    if (bypassesGitHooks(payload, depth + 1)) return true
   }
-  // The rest of the segment is read as usual, with each payload word held in place by an inert word.
-  seg = seg.map((w, i) => (inPayload.has(i) ? '_' : w))
+  // The whole segment is read as usual too (never masked); only the embedded-git heuristic skips the payload words,
+  // which were just read exactly.
+  const skip = new Set(span ? seg.slice(...span) : [])
+  const embedded = (words: string[]): boolean => embeddedGit(words.filter(w => !skip.has(w)))
   const s = seg.findIndex(w => /sdlc\.(?:m?js|ts)$/.test(w))
   const h = seg.indexOf('hooks', s + 1)
   if (s >= 0 && h > s && (seg[h + 1] === 'uninstall' || (seg[h + 1] === 'install' && seg.includes('--force')))) return true
