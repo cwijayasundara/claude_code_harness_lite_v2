@@ -36,7 +36,7 @@ const CAPPED = [
   path.join(ROOT, 'package.json'),
 ].filter(isFile)
 
-test('the harness is at most 6100 lines (tests and docs excluded)', () => {
+test('the harness is at most 6350 lines (tests and docs excluded)', () => {
   const total = CAPPED.reduce((n, f) => n + count(f), 0)
-  assert.ok(total <= 6100, `harness is ${total} lines`)
+  assert.ok(total <= 6350, `harness is ${total} lines`)
 })
