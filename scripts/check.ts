@@ -390,12 +390,15 @@ export function cmdCheck(args: Args): void {
   let diffs: FileDiff[]
   let before: (f: string) => string
   let after: ((f: string) => string) | undefined
+  let replaying = false
   if (at === 'commit') {
-    // A merge replays other people's commits and a rebase replays your own: CI judges the result.
-    const rebasing = ['rebase-merge', 'rebase-apply'].some(d => { const p = git(['rev-parse', '--git-path', d]); return p !== null && exists(path.resolve(ROOT, p)) })
-    if (rebasing || git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']) || /^(?:rebase|merge|pull)/.test(process.env.GIT_REFLOG_ACTION ?? '')) return out('sdlc check commit: skipped (merge or rebase in progress; CI judges the result)')
     diffs = stagedDiff()
     if (!diffs.length) return out('sdlc check commit: nothing staged')
+    // A merge or rebase replays commits: the sensors still judge them, but the fast commands are left to CI.
+    // Read from git state only (an environment variable is the model's to set).
+    const marker = (p: string): boolean => { const f = git(['rev-parse', '--git-path', p]); return f !== null && exists(path.resolve(ROOT, f)) }
+    replaying = marker('rebase-merge/head-name') || marker('rebase-apply/rebasing') || git(['rev-parse', '-q', '--verify', 'MERGE_HEAD^{commit}']) !== null
+    if (replaying) out('sdlc check commit: merge/rebase in progress, fast commands skipped; CI judges the result')
     before = f => showAt('HEAD', f) ?? ''
     after = f => showStaged(f) ?? ''
     if (git(['diff', '--name-only'])) process.stderr.write('rig: the fast commands run against your working tree, which has unstaged changes\n')
@@ -415,7 +418,7 @@ export function cmdCheck(args: Args): void {
   if (!Number.isFinite(budgetMs) || budgetMs <= 0) fail('--budget-ms must be a positive number')
   const humanRows = at === 'ci' && base ? humanRowsAdded(base) : []
   const why = humanRows.length ? independentApproval() : null // before runChecks: the PR's test commands could rewrite the event file or shadow gh
-  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: partial ? 'fast' : 'full', budgetMs, before, after, base, ratchet: !optString(args, 'config-from') && at !== 'commit' })
+  const result = runChecks({ point: at, diffs, config, rules, slugs, commands: replaying ? 'none' : partial ? 'fast' : 'full', budgetMs, before, after, base, ratchet: !optString(args, 'config-from') && at !== 'commit' })
   const configFindings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: SENSORS_JSON, message: e, fix: 'fix the file; see the sdlc README for its format' }))
   const humanFindings: Finding[] = why ? [{ sensor: 'human-approval', severity: 'block', message: `this PR adds ${humanRows.length} approval/waiver row(s): ${why}`, fix: 'a code owner other than the PR author reviews the rows below and approves the current head commit; pushing again needs a fresh approval' }] : []
   const all = { ...result, findings: [...humanFindings, ...configFindings, ...result.findings], blocks: [...humanFindings, ...configFindings, ...result.blocks] }

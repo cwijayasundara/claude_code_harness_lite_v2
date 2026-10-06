@@ -85,15 +85,32 @@ test('a repo with no commits yet is judged against nothing, not a crash', () => 
   assert.match(r.stdout, /secrets/)
 })
 
-test('a merge or rebase in progress is skipped, and the skip says so', () => {
+test('a merge or rebase is read from git state, not the environment; it skips only the fast commands', () => {
   stage('src/a.js', SECRET)
-  const rebase = sdlc(repo, ['check', '--at', 'commit'], { env: { GIT_REFLOG_ACTION: 'rebase (pick)' } })
-  assert.equal(rebase.code, 0)
-  assert.match(rebase.stdout, /skipped/)
+  const spoof = sdlc(repo, ['check', '--at', 'commit'], { env: { GIT_REFLOG_ACTION: 'rebase (pick)' } })
+  assert.equal(spoof.code, 1, 'the env var alone skips nothing')
+  assert.match(spoof.stdout, /secrets/)
+  fs.writeFileSync(path.join(repo, '.git/MERGE_HEAD'), gitIn(repo, 'rev-parse', 'HEAD') + '\n')
+  const merging = commit()
+  assert.equal(merging.code, 1, 'the sensors still run during a merge')
+  assert.match(merging.stdout, /secrets/)
+  gitIn(repo, 'reset', '-q')
+  fs.rmSync(path.join(repo, '.git/MERGE_HEAD'), { force: true })
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' } }))
+  stage('src/b.js', 'export const b = 1\n')
+  assert.equal(commit().code, 1, 'no merge: the failing fast command blocks')
   fs.writeFileSync(path.join(repo, '.git/MERGE_HEAD'), gitIn(repo, 'rev-parse', 'HEAD') + '\n')
   const merge = commit()
-  assert.equal(merge.code, 0)
-  assert.match(merge.stdout, /skipped/)
+  assert.equal(merge.code, 0, merge.stdout)
+  assert.match(merge.stdout, /merge\/rebase in progress, fast commands skipped/)
+  fs.rmSync(path.join(repo, '.git/MERGE_HEAD'))
+  write(repo, '.git/rebase-merge/head-name', 'refs/heads/main\n')
+  const rebase = commit()
+  assert.equal(rebase.code, 0, rebase.stdout)
+  assert.match(rebase.stdout, /fast commands skipped/)
+  fs.rmSync(path.join(repo, '.git/rebase-merge'), { recursive: true })
+  fs.mkdirSync(path.join(repo, '.git/rebase-apply'))
+  assert.equal(commit().code, 1, 'an empty rebase-apply directory (no rebasing marker) is not a rebase')
 })
 
 test('a stale wiki page warns at commit and does not block', () => {
@@ -526,20 +543,6 @@ test('push says when the commands judge the working tree, and names refs it skip
   assert.match(push(head(), base).stdout, /working tree/, 'a dirty tree')
   const mixed = sdlc(repo, ['check', '--at', 'push'], { input: `refs/tags/v1 ${head()} refs/tags/v1 ${ZERO}\nrefs/heads/main ${head()} refs/heads/main ${base}\n` })
   assert.match(mixed.stdout, /refs\/tags\/v1: skipped \(a delete or tag\)/)
-})
-
-test('a pull --rebase or a rebase directory skips the commit check', () => {
-  stage('src/a.js', SECRET)
-  const pull = sdlc(repo, ['check', '--at', 'commit'], { env: { GIT_REFLOG_ACTION: 'pull --rebase origin main' } })
-  assert.equal(pull.code, 0)
-  assert.match(pull.stdout, /skipped/)
-  for (const dir of ['rebase-merge', 'rebase-apply']) {
-    fs.mkdirSync(path.join(repo, '.git', dir))
-    const r = commit()
-    assert.equal(r.code, 0, dir)
-    assert.match(r.stdout, /skipped/)
-    fs.rmSync(path.join(repo, '.git', dir), { recursive: true })
-  }
 })
 
 const bigFile = Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n'
