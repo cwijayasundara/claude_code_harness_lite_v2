@@ -7,18 +7,13 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 ---
 # Spec for $0
 
-Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running, because the work is lost if the session ends.
+**Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
-1. **Find the relevant code.** Launch one or two `rig:scout` agents to find the existing code and contracts the change touches.
-2. **Draft.** Launch `rig:architect`, which runs on Opus, with a brief of 40 lines or fewer:
-   - the change folder `.sdlc/changes/$0/`
-   - "write spec.md"
-   - the scout findings, as `path:line` entries with one line each
-
-   Do not draft the spec yourself.
-3. **Resolve questions.** Put the architect's open questions to the person with AskUserQuestion, at most 4 and only ones that change behaviour. Fold the answers into `spec.md` with small edits. Ask with AskUserQuestion. If you get no answer (a headless run, or the person defers), take your recommended option. Either way, record each as `- Q<n>: <question> → <answer> (person|default)` under `## Decisions`, and leave `## Open questions` as `none`: approval is refused while any question is open, so a build never stalls on one.
+1. **Find the relevant code** with one or two `rig:scout` agents (existing code and contracts the change touches).
+2. **Draft.** Launch `rig:architect` (Opus) with a brief of at most 40 lines: the change folder `.sdlc/changes/$0/`, "write spec.md", the format file `${CLAUDE_PLUGIN_ROOT}/templates/design-format.md` and the scout findings as `path:line` entries. Do not draft the spec yourself.
+3. **Resolve questions** the architect raised (at most 4). Record each answer as `- Q<n>: <question> → <answer> (person|default)` under `## Decisions` and leave `## Open questions` as `none`: approval is refused while one is open. Ask with AskUserQuestion only when the answer changes behaviour; with no answer (headless, or the person defers) take your recommended option.
 
 Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`. For tier L and greenfield this stage is gated: ask the person to review `spec.md` and run `/rig-approve $0 spec`.
 

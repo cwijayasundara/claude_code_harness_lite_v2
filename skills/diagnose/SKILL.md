@@ -7,9 +7,9 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 ---
 # Diagnose $0
 
-Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Subagents:** run every subagent this skill launches in the foreground and wait for its result. Never end your turn while one is still running, because the work is lost if the session ends.
+**Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
 1. **Reproduce.**
    - Read `intent.md`.

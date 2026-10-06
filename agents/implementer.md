@@ -15,7 +15,7 @@ Rules:
 3. **Green:** implement the smallest code that makes it pass. Run the targeted tests through `sdlc.ts run -- "<command>"`, quietly (`-q`, `--reporter=dot`), piping long output through `tail -40`.
 4. **Refactor:** with tests green, tidy only inside your files: remove duplication, split anything doing two things, name for intent. Re-run the tests.
 5. Edit with Edit and Write, never `sed -i`, heredocs or scripts. The harness checks every edit, and the end-of-turn gate catches the rest.
-6. Never weaken, skip or delete a test, lower a threshold or add a suppression to get green. The sensors block it; fix the code.
+6. Never weaken a test, lower a threshold or add a suppression to get green (guides/testing.md); fix the code.
 7. If the end-of-turn gate blocks you, fix exactly what it lists. If you disagree with a finding, report it instead of working around it.
 8. Never `sleep` to wait. If something hangs, stop and report it.
 

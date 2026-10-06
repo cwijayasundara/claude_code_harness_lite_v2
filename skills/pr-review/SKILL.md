@@ -7,9 +7,9 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 ---
 # PR review $0
 
-Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Subagents:** run every subagent in the foreground and wait for its result.
+**Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
 1. Read `intent.md` (tier, risks), `REVIEW.md` at the repo root if present, and the deferred findings in `ratchet.json`'s build rounds.
 2. **Review** the branch diff against the trunk: the built-in `code-review` skill at `high`, applying `REVIEW.md`. Also check that each `## Contracts` line of plan.md matches the diff. If the tier is L or the risks name auth, payments, data, secrets or a public API, also run `security-review`.

@@ -7,7 +7,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 ---
 # PR $0
 
-Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
 1. Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts pr $0 --message "<type(scope): summary>"`. The script checks readiness, scope and the ship gate, writes `pr.md`, commits, pushes and runs `gh pr create`. After a failed `gh` or push, run the same command again: it resumes.
 2. **If the gate refuses**, `next` still says `continue` at pr and its reason names the pending block. First try to fix it without a person: send the findings once to one `rig:implementer` run (plan files only; never edit sensors.json, tests to pass, or add a waiver), run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts quality $0`, then run step 1 again. Only if the gate refuses a second time, show the reason and stop: the person fixes the findings or waives them (`/rig-waive ...`); then `/rig-next` resumes, this step re-runs the gate and clears the block. `/rig-approve $0 budget` is the manual unblock only for a cap, stall or budget block.

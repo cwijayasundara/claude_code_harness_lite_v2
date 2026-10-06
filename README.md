@@ -15,9 +15,7 @@ As of 2026-10-06. `.claude-plugin/plugin.json` says **0.4.1**, the last release 
 | Git hooks: `pre-commit`, `pre-push`, session-start wiring, warnings the agent sees | Merged and covered by tests that drive real `git`. **Not yet trialled live.** There is no bypass guard: CI plus branch protection is the boundary | DESIGN §10, [SECURITY.md](SECURITY.md) |
 | Windows | **Not supported.** Its CI jobs are red, and the hook scripts are POSIX `sh` | SECURITY.md |
 
-**Quality gates on `main`:** the full suite (about 600 tests), `npm run typecheck` and `claude plugin validate` pass locally. In CI the Linux and macOS jobs and the dogfood check are the ones to trust; the Windows jobs fail for the reason above.
-
-**Known limits worth knowing before you adopt it:** the live trials predate the git hooks; hooks only protect what is committed through git, so `--no-verify` by a person leaves CI as the only judge. The open items are in DESIGN §§9 and 10.
+**Quality gates on `main`:** the full suite (about 600 tests), `npm run typecheck` and `claude plugin validate` pass locally. In CI trust the Linux and macOS jobs and the dogfood check; the Windows jobs fail for the reason above. Open items are in [DESIGN.md](DESIGN.md) §§9-11.
 
 ## How the harness is put together
 
@@ -25,18 +23,7 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
 
 ### Core design principles
 
-| # | Principle | What it means in practice |
-|---|---|---|
-| 1 | **Thin layer, built-ins first** | Own only the five things above. Do not rebuild what Claude Code ships. |
-| 2 | **Ceremony scales with risk** | Routing is type × tier. A tier S chore never pays for a design gate; auth, payments and public contracts always do. |
-| 3 | **State lives in files, not chat** | `.sdlc/changes/<slug>/` is the memory. Any session, local or cloud, resumes from it. Status is derived from which files exist. |
-| 4 | **Humans gate, models never self-approve** | `/rig-approve` and `/rig-waive` are human-only. Approvals go stale when the artifact changes. |
-| 5 | **Deterministic checks decide, models advise** | Sensors, red-proof, scope and secrets are computed by scripts at zero tokens. One inferential review runs per change. |
-| 6 | **Local equals CI** | One `check` entry point serves Stop, plan, ship and CI. CI judges a PR with the *base branch's* checker, so a PR cannot weaken its own judge. |
-| 7 | **Right model for the job** | Sonnet writes code, Opus designs and reviews, Haiku searches. No skill switches model mid-conversation (that re-reads the context uncached). |
-| 8 | **Bounded loops** | Review rounds, Stop blocks and spend are capped. Past a cap the finding goes to `unresolved.json` and ship refuses it. A loop cannot wedge a session. |
-| 9 | **Measure, then change** | Every release is trialled and its cost summarised in DESIGN.md. |
-| 10 | **Every step ends with the next command** | You never have to guess what to type. `/rig:next` is the one to remember. |
+Thin layer with built-ins first; ceremony scales with risk; state lives in files; humans gate and models never self-approve; deterministic checks decide and models advise; local equals CI; the right model per job; bounded loops; every step ends with the next command. [DESIGN.md](DESIGN.md) §2 gives each one and its reason.
 
 ### The layers
 
@@ -44,7 +31,7 @@ rig is a **thin control layer** around Claude Code. It owns five things (the art
  ┌────────────────────────────────────────────────────────────────────────┐
  │ YOU            /rig:start  /rig:next  /rig-approve  /rig-waive         │  intent, approval
  ├────────────────────────────────────────────────────────────────────────┤
- │ SKILLS (15)    start design plan diagnose build test sensors pr ask …  │  the stages: prompts
+ │ SKILLS (14)    start design plan diagnose build test sensors pr …      │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
  │ AGENTS (5)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
  │                reviewer·opus  verifier·sonnet                         │  small fresh contexts
@@ -132,7 +119,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | Command | Use it when | Cost |
 |---|---|---|
 | `/rig:init` | First time in a repo. Writes CLAUDE.md, `.sdlc/`, and vendors the harness. | tokens, once |
-| `/rig:start "<task>"` | Any new task, or to resume one by slug. | tokens |
+| `/rig:start "<task>"` | Any new task, or to resume one by slug. Classifies type and tier, writes `intent.md`; tier S is built in the same turn. | tokens |
 | `/rig:next` | You are not sure what is next. Runs the next node, stops at a human gate. | tokens |
 | `/rig:design` · `/rig:plan` · `/rig:spec` | Writing the design (feature, greenfield), plan (refactor, migration, L bugfix) or spec. | Opus architect |
 | `/rig:diagnose` | Bugfix or incident: reproduce with a failing test, then the smallest fix. | tokens |
@@ -208,27 +195,6 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 
 **With and without the plugin.** A standalone repo has everything that decides what may happen: skills, agents, hooks, sensors, gates and the CI check. `/rig-approve` and `/rig-waive` are skills only the person can invoke: the model cannot call them, and it cannot set `SDLC_HUMAN` itself. Installing the plugin as well adds the mod: the band, the `/rig-sensors` pane, the impact dialog, `/rig-status` with no model call, and per-stage cost capture for `/rig:metrics`. The plugin's own hooks step aside in a standalone repo, so none runs twice. The mod needs Claude Code 2.1.287 or later.
 
-## Use
-
-| You type | What happens |
-|---|---|
-| `/rig:start "add CSV export to reports"` | Classifies type and tier, writes `.sdlc/changes/<slug>/intent.md`, and prints the path and the next command. Tier S is built in the same turn. |
-| `/rig:next` | Runs whatever comes next for the active change, and stops only at human gates. The one command to remember. |
-| `/rig:design`, `/rig:spec`, `/rig:plan`, `/rig:build`, `/rig:diagnose`, `/rig:test`, `/rig:pr-review`, `/rig:pr` | One stage each (`ship` stays a CLI alias of `pr`). Every stage ends with the exact next command. |
-| `/rig-approve <slug> <spec\|plan\|impact\|tier>` | **Human gate.** A mod command: costs zero tokens, the model cannot invoke it, and the approval goes stale if the artifact changes afterwards. |
-| `/rig-waive <sensor> <file\|*> <reason>` | **Human only.** Records a waiver for a sensor finding on the active change (the sensor name is validated). Zero tokens, and the model cannot invoke it. |
-| `/rig-approve <slug> budget` | **Human gate.** Raises a change's spend cap; the model cannot. |
-| `/rig-approve <slug> tier` | **Human gate.** Accepts a tier or type edited in `intent.md`; the recorded tier is the floor, so only a person can lower it. |
-| `/rig:sensors` | Runs the sensors on the active change and prints what they found. |
-| `/rig-run` | The driver: submits one node per turn and stops at a human gate, a block or a turn with no progress. |
-| `/rig-story` | A pane with the change's nodes, rounds and cost against budget. Zero tokens. |
-| `/rig-metrics-pane` | A pane with the scorecard: cost, tokens and value per change and node. Zero tokens. |
-| `/rig-sensors` | A pane with what the sensors found, known-red items and waivers. Zero tokens. |
-| `/rig:rule "<what keeps recurring>"` | Promotes a convention the agent keeps breaking into a mechanical rule in `.sdlc/rules.json`, once there are two real occurrences. |
-| `/rig-status` | Where every change stands. Zero tokens. |
-| `/rig:incident "<what broke>"` | Maintain stage: records the incident and opens a bugfix-path change. |
-| `/rig:metrics [days]` | The playbook's 12 metrics (leading and lagging per stage) plus cost per change, stage and agent. |
-
 ## Team install
 
 1. Onboard as above and commit; teammates need nothing else. To upgrade a repo, run `claude plugin marketplace update rig`, re-run `vendor --standalone` and commit. Releases are tagged (`v0.3.7`), and CHANGELOG.md records what each one changed.
@@ -265,15 +231,15 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 | Part | Role |
 |---|---|
-| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
+| `skills/` (14) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. Opus comes in through the architect and reviewer agents, which start with their own small contexts. |
 | `agents/scout.md` | Haiku, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
-| `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md and plan.md, the design-heavy steps. |
+| `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md, plan.md and design.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
 | `agents/reviewer.md` | **Opus 5.5**, high effort. One independent review per change, keeping findings at confidence 80 or above. |
 | `agents/verifier.md` | Sonnet 5.5. Runs the verification commands and writes the report. Never repairs. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
-| `scripts/*.ts` (22, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
+| `scripts/*.ts` (20, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
 | `templates/rig-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 | `templates/rig-review.yml` | One background Claude review per PR, for tier S and M and as a second look on L. |

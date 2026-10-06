@@ -15,8 +15,7 @@ why: agent-written tests often pass without proving anything, and tests are the 
 7. **Deterministic.** No sleeps, wall-clock time, network or test-order dependence; inject the clock and seeds.
 8. **Readable as a spec.** Arrange, act, assert; literal inputs and expected values; no logic in tests.
 9. **API tests use the real surface.** Call the handler or HTTP endpoint and assert on status and body, including the error statuses the spec names.
-10. **Smoke tests prove it runs.** Start the app, hit a health check, stop it, all under a timeout. Declared as `smoke` in `.sdlc/sensors.json` `full`.
-11. **Performance is a threshold, not a feeling.** A `bench` command exits non-zero when it misses the number in the spec's `## Non-functional`.
+10. **Smoke and performance are declared commands.** `smoke` and `bench` in `.sdlc/sensors.json` `full`: smoke starts the app, hits a health check and stops under a timeout; bench exits non-zero when it misses the spec's `## Non-functional` number.
 
 ## Rationalizations
 | Thought | Reality |

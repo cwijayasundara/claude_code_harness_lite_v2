@@ -7,16 +7,16 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 ---
 # Build $0
 
-Run each sdlc.ts command as its own Bash call: no `cd`, pipes, redirects, `&&` or shell variables; use the Read and Grep tools to read files; commit messages are one line.
+Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Subagents:** run every subagent in the foreground and wait for its result. Never end your turn while one is still running.
+**Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
 Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json`. Continue only if `verdict` is `continue` and `node` is `build`; otherwise show the reason and stop.
 
 1. If on the trunk: `git checkout -b sdlc/$0`. If `status` warns that HEAD is on another change's branch, run the command it prints first.
 2. Read `design.md` (or `plan.md` when there is no design.md). Slices are its `### Task N:` headings; a plan without them is one slice, `1`. `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet show $0` lists the slices already done; skip those.
 3. **For each remaining slice, in order** (parallel, at most 3, only when their `Files:` do not overlap):
-   1. **Implement.** Tier S, and tier M with ≤ 3 slices and ≤ 8 files: do it yourself. Otherwise launch one `rig:implementer` with a brief of ≤ 60 lines: slice goal, owned files, interface sketch, acceptance tests with B-numbers, the fast test command, the guides that apply, and "red runs go through `sdlc.ts run --expect-fail`".
+   1. **Implement.** Tier S, and tier M with ≤ 3 slices and ≤ 8 files: do it yourself, test first: write the failing test, record the red run with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --expect-fail -- "<test command>"`, implement inside `## Files`, run the targeted tests quietly. Otherwise launch one `rig:implementer` with a brief of ≤ 60 lines: slice goal, owned files, interface sketch, acceptance tests with B-numbers, the fast test command and the guides that apply.
    2. **Review the slice.** Tier L: launch `rig:reviewer` with `mode: slice`, the change folder, the slice number and the diff range for that slice. Tier S and M: run the built-in `code-review` skill at `medium` on the slice's diff and restate each finding in the reviewer's line format.
    3. **Record.** Write the reviewer's reply (it must hold a `verdict:` line and any findings in the line format) to `.sdlc/changes/$0/review-slice-N.md` with the Write tool, then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record $0 build --slice N --from .sdlc/changes/$0/review-slice-N.md`. `--slice` is required when plan.md has more than one slice. It refuses a reply without an explicit verdict; `changes-needed` needs at least one critical or high finding. It prints `continue`, `done` or `blocked`:
       - `done`: next slice.
