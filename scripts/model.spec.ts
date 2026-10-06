@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { parseUnifiedDiff, globToRegex, matchesAny, parseConfig, parseRules, formatFindings, DEFAULT_CONFIG, type Finding } from './model.ts'
+import { parseUnifiedDiff, globToRegex, matchesAny, parseConfig, parseRules, formatFindings, warnRow, printable, DEFAULT_CONFIG, type Finding } from './model.ts'
 
 test('parses a modified file with added and removed line numbers', () => {
   const d = parseUnifiedDiff('diff --git a/src/a.js b/src/a.js\nindex 1..2 100644\n--- a/src/a.js\n+++ b/src/a.js\n@@ -3 +3,2 @@\n-old\n+new\n+more\n')
@@ -185,4 +185,20 @@ test('every starter stack in templates/stacks.json is a valid sensors.json fragm
 test('every starter stack declares unit and integration levels', () => {
   const stacks = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../templates/stacks.json'), 'utf8')) as Record<string, { levels?: Record<string, string> }>
   for (const [name, s] of Object.entries(stacks)) assert.ok(s.levels?.unit && s.levels.integration, `${name} needs unit and integration`)
+})
+
+const SPOOF = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/
+test('printable strips control, bidi-override and zero-width characters', () => {
+  assert.equal(printable('a\x1b[31mb\u202Ec\u2066d\u200Be\u200Ff\u2069g\u202Ah'), 'a [31mb c d e f g h')
+  assert.equal(printable('plain café → ok'), 'plain café → ok')
+})
+
+test('warn rows and block rows never carry control or bidi characters from file names, messages or fixes', () => {
+  const evil = 'a\x1b[31mRED\u202Eb'
+  const f = (severity: 'warn' | 'block'): Finding => ({ sensor: 's', severity, file: `x/${evil}.md`, line: 2, message: `bad ${evil}\nsecond ${evil}`, fix: `fix ${evil}`, labels: [evil] })
+  assert.doesNotMatch(warnRow(f('warn')), SPOOF)
+  const text = formatFindings([f('block'), f('block'), { ...f('warn'), line: 3 }])
+  assert.doesNotMatch(text, SPOOF)
+  assert.equal(text.split('\n').length, 4, 'a block message keeps its line breaks')
+  assert.match(text, /RED/)
 })

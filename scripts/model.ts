@@ -382,7 +382,9 @@ export function parseRules(text: string): { rules: Rule[]; errors: string[] } {
 
 // ---------- findings ----------
 
-export const warnRow = (f: Finding): string => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message} → ${f.fix}`.replace(/\s+/g, ' ').slice(0, 200)
+// Repo-controlled text never reaches a terminal with control, bidi-override or zero-width characters in it (they could recolour, reorder or hide output).
+export const printable = (s: string): string => s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, ' ')
+export const warnRow = (f: Finding): string => printable(`${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message} → ${f.fix}`).replace(/\s+/g, ' ').slice(0, 200)
 // The warnings a hook shows with their fix text (formatFindings counts them): five rows, then how many more.
 export function warnLines(findings: Finding[], max = 5): string[] {
   const rows = [...new Set(findings.filter(f => f.severity === 'warn').map(warnRow))]
@@ -407,7 +409,7 @@ export function formatFindings(findings: Finding[], max = 40): string {
       const where = f.file ? `${f.file}${f.line ? ':' + f.line : ''}: ` : ''
       const labels = f.labels?.length ? ` (${f.labels.join(', ')})` : ''
       const [first = '', ...rest] = f.message.split('\n')
-      rows.push([`  ✗ ${where}${first}${labels} → ${f.fix}`, ...rest])
+      rows.push([`  ✗ ${where}${first}${labels} → ${f.fix}`, ...rest].map(printable))
     }
   }
   const tail = warns.length ? [`warn: ${warns.length} (${[...new Set(warns.map(w => w.sensor))].map(s => `${s} ${warns.filter(w => w.sensor === s).length}`).join(', ')})`] : []

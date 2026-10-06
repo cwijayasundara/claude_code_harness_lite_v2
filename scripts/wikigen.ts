@@ -65,8 +65,7 @@ export function pageSummary(text: string): string {
   return ''
 }
 
-// Repo-controlled and user-supplied text never reaches a terminal with control characters in it (escape sequences could recolour or hide output).
-export const printable = (s: string): string => s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+export { printable } from './model.ts'
 export const label = (page: string): string => path.posix.basename(page, '.md')
 const id = (s: string): string => `n_${s.replace(/[^A-Za-z0-9]+/g, '_')}`
 const q = (s: string): string => `"${s.replace(/"/g, "'")}"`

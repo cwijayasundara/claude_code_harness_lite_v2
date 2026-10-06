@@ -45,3 +45,21 @@ test('marker text inside repo content (commit subjects, role comments, exported 
   gitIn(repo, 'add', '.')
   assert.equal(build(repo, '--check').code, 1, '--check still sees real drift')
 })
+
+const SPOOF = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/
+test('check --at commit prints no escape or bidi character from a hostile manifest key; --json keeps the raw text', () => {
+  const repo = wikiRepo()
+  const key = 'modules/a\x1b[31mRED\u202Eb.md'
+  write(repo, 'docs/wiki/manifest.json', JSON.stringify({ pages: { [key]: { globs: ['src/**'] } } }))
+  gitIn(repo, 'add', '.')
+  const human = sdlc(repo, ['check', '--at', 'commit'])
+  assert.match(human.stdout, /RED/, human.stdout + human.stderr)
+  assert.doesNotMatch(human.stdout, SPOOF)
+  const json = JSON.parse(sdlc(repo, ['check', '--at', 'commit', '--json']).stdout) as { findings: { message: string }[] }
+  assert.ok(json.findings.some(f => f.message.includes('\x1b[31mRED\u202E')))
+  const dirRepo = wikiRepo()
+  write(dirRepo, 'ev\u202Eil/a.js', 'export const a = 1\n')
+  gitIn(dirRepo, 'add', '.')
+  assert.doesNotMatch(sdlc(dirRepo, ['wiki', 'status']).stdout, SPOOF)
+  assert.doesNotMatch(sdlc(dirRepo, ['check', '--at', 'commit']).stdout, SPOOF)
+})
