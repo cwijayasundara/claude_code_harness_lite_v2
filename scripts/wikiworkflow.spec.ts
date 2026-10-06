@@ -75,6 +75,29 @@ const privilegeProblems = (text: string): string[] => {
   return p
 }
 
+const code = (text: string): string => text.split('\n').filter(l => !/^\s*#/.test(l)).join('\n')
+
+/** Where tokens live, how the open refresh PR is found, the no-wiki gate, and the manifest comparison. */
+const publishProblems = (text: string): string[] => {
+  const p: string[] = []
+  const gen = job(text, 'generate')
+  const pub = job(text, 'publish')
+  const outsidePublish = code(text.replace(pub, ''))
+  if (/RIG_WIKI_TOKEN/.test(outsidePublish)) p.push('RIG_WIKI_TOKEN only in publish')
+  if (/github_token:(?!\s*\$\{\{ github\.token \}\}\s*$)/m.test(outsidePublish)) p.push('a github_token other than github.token only in publish')
+  if (/gh pr view/.test(code(text))) p.push('no gh pr view (it can return a merged PR)')
+  if (!/n=\$\(gh pr list --head rig\/wiki-refresh --state open --json number --jq '[^']*'\)/.test(pub)) p.push('the open refresh PR is looked up with gh pr list --state open')
+  const all = steps(gen)
+  const gate = all.findIndex(b => /^ {8}id: wiki$/m.test(b))
+  if (gate < 0 || !/docs\/wiki\/manifest\.json/.test(all[gate] ?? '') || !/has_wiki=/.test(all[gate] ?? '')) p.push('generate sets has_wiki from docs/wiki/manifest.json')
+  else for (const b of all.slice(gate + 1)) if (!/^ {8}if: [^\n]*steps\.wiki\.outputs\.has_wiki == 'true'/m.test(b)) p.push(`a generate step after the gate is not gated on has_wiki: ${(b.split('\n')[0] ?? '').trim()}`)
+  if (!/has_wiki: \$\{\{ steps\.wiki\.outputs\.has_wiki \}\}/.test(gen)) p.push('generate exports has_wiki')
+  const compare = steps(pub).findIndex(b => /delete [^\n]*surface/.test(b) && /manifest\.json/.test(b))
+  const at = (re: RegExp): number => steps(pub).findIndex(b => re.test(b))
+  if (compare < 0 || compare > at(/rm -rf docs\/wiki/) || compare > at(/wiki build --check/) || compare > at(/git add/)) p.push('publish compares the manifests before replacing docs/wiki, --check and git add')
+  return p
+}
+
 /** Failure-handling rules, checked on the specific steps and jobs. */
 const failureProblems = (text: string): string[] => {
   const p: string[] = []
@@ -87,7 +110,7 @@ const failureProblems = (text: string): string[] => {
   const build = byId(gen, 'build')
   if (!build || /continue-on-error/.test(build)) p.push('the first build fails the job loudly')
   const head = pub.split('\n    steps:')[0] ?? ''
-  if (!/if: \$\{\{ !cancelled\(\) && needs\.generate\.result == 'success' \}\}/.test(head)) p.push('publish runs only after a successful generate')
+  if (!/if: \$\{\{ !cancelled\(\) && needs\.generate\.result == 'success' && needs\.generate\.outputs\.has_wiki == 'true' \}\}/.test(head)) p.push('publish runs only after a successful generate of a repo with a wiki')
   if (!/needs: generate/.test(head)) p.push('publish needs generate')
   if (!/if: github\.ref_name == github\.event\.repository\.default_branch/.test(gen.split('\n    steps:')[0] ?? '')) p.push('generate runs only on the default branch')
   return p
@@ -103,7 +126,31 @@ test('rig-wiki.yml: the model runs in a read-only job; the write token exists on
   assert.match(yml, /sk-ant-\[A-Za-z0-9_-\]\{20,\}\|gh\[pousr\]/)
   assert.match(job(yml, 'publish'), /find [^\n]*-type l/)
   assert.match(job(yml, 'generate'), /find docs\/wiki -type l/)
-  assert.match(yml, /gh pr view rig\/wiki-refresh/)
+})
+
+test('rig-wiki.yml: tokens stay in publish, the open PR is found by state, a repo with no wiki is skipped, the manifest is compared', () => {
+  assert.deepEqual(publishProblems(yml), [])
+  const mutate = (from: string | RegExp, to: string): string => {
+    const out = yml.replace(from, to)
+    assert.ok(out !== yml, `mutation did not apply: ${String(from)}`)
+    return out
+  }
+  assert.ok(publishProblems(mutate(/(id: model\n[\s\S]*?with:\n)/, '$1          github_token: ${{ secrets.RIG_WIKI_TOKEN }}\n')).length > 0, 'RIG_WIKI_TOKEN in generate')
+  assert.ok(publishProblems(mutate('github_token: ${{ github.token }}', 'github_token: ${{ secrets.OTHER }}')).length > 0, 'another token in generate')
+  assert.ok(publishProblems(mutate(/n=\$\(gh pr list[^\n]*\)/, 'n=$(gh pr view rig/wiki-refresh --json number --jq .number)')).length > 0, 'gh pr view')
+  assert.ok(publishProblems(mutate(/ --state open/, '')).length > 0, 'any-state lookup')
+  assert.ok(publishProblems(mutate(/(id: stale\n) {8}if: [^\n]*\n/, '$1')).length > 0, 'an ungated step')
+  assert.ok(publishProblems(mutate(/ {6}- name: Is there a wiki\?[\s\S]*?(?= {6}- )/, '')).length > 0, 'no gate')
+  assert.ok(publishProblems(mutate(/delete ([^\n]*)surface/, 'drop $1surface')).length > 0, 'no manifest comparison')
+  assert.ok(failureProblems(mutate(" && needs.generate.outputs.has_wiki == 'true'", '')).length > 0, 'publish not gated on has_wiki')
+})
+
+test('rig-wiki.yml: the CI prompt carries the agent rules on drawn diagrams and earlier prose; the header states what --check proves', () => {
+  assert.match(yml, /<!-- rig:drawn -->/)
+  assert.match(yml, /edges are not computed/)
+  assert.match(yml, /keep earlier prose/i)
+  assert.doesNotMatch(yml, /no generated block changed/)
+  assert.match(yml, /the repo's own code at the pinned commit/)
 })
 
 test('rig-wiki.yml: the zero-token step comes first and holds no secret', () => {
