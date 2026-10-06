@@ -429,6 +429,24 @@ test('every limit of the guard fails closed: a command too large, deep or slow t
   assert.equal(timed('git status', 0)[0], 'limit', 'out of time is denied')
 })
 
+test('no regex in the guard backtracks on a long run of letters, and a scan that overruns its budget is denied', () => {
+  for (const [c, want] of [['sh -' + 'c'.repeat(120000) + '1', null], ['sh -' + 'c'.repeat(120000) + `1; sh -c 'true; git commit -n'`, 'bypass'],
+    [`sh -${'c'.repeat(120000)}1 $'x'`, null], [`echo $'x'; sh -${'c'.repeat(120000)}1`, null], ['echo ' + '{}'.repeat(60000), null],
+    ['echo ' + '{'.repeat(120000), null], ['echo ' + 'x'.repeat(100000) + '{a,b}'.repeat(12), 'limit']] as const) {
+    const t = performance.now()
+    const r = gitHooksBypass(c)
+    const ms = performance.now() - t
+    assert.ok(r === want || (want === null && r === 'limit' && c.startsWith('sh')), `${c.slice(0, 12)}…${c.slice(-30)}: ${r}`)
+    assert.ok(ms < 200, `${c.slice(-30)}: ${ms.toFixed(0)} ms`)
+  }
+  // A clock that is never late while the scan runs, then late at the end: the result is checked against the deadline too.
+  let calls = 0
+  assert.equal(gitHooksBypass('git status', 1e9, () => (calls++, 0)), null)
+  const total = calls
+  calls = 0
+  assert.equal(gitHooksBypass('git status', 100, () => (++calls < total ? 0 : 1e9)), 'limit')
+})
+
 const pre = (command: string) => JSON.parse(hook(repo, 'pre-bash', { tool_input: { command } }).stdout || '{}').hookSpecificOutput
 test('pre-bash denies a command past the guard limits and says to ask the person', () => {
   sdlc(repo, ['init'])

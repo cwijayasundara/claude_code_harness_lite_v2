@@ -133,7 +133,7 @@ function payloadSpans(seg: string[]): [number, number][] {
   } else if (SHELLS.test(progName(w))) {
     for (let i = k + 1; i < seg.length && /^[-+]./.test(seg[i] ?? '') && seg[i] !== '--'; i++) {
       if (SHELL_VALUE.has(seg[i] ?? '')) i++
-      else if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(seg[i] ?? '')) {
+      else if (/^-[a-zA-Z]+$/.test(seg[i] ?? '') && (seg[i] ?? '').includes('c')) {
         one(seg[i + 1] === '--' ? i + 2 : i + 1)
         break
       }
@@ -172,29 +172,38 @@ function segmentBypasses(seg: string[], depth: number): boolean {
 }
 
 // Limits, each failing closed (the command is denied as 'limit', never passed): a command over MAX_COMMAND characters;
-// more than BUDGET_MS of work (checked as it goes); more than MAX_WORDS words from brace expansion; and anything that
-// throws, such as nesting deeper than the stack. The depth bound for shells and evals is 'nested' (also denied).
+// more than BUDGET_MS of work (checked as it goes, and again at the end); more than MAX_WORDS words or MAX_EXPANDED
+// characters from brace expansion; and anything that throws, such as nesting deeper than the stack. The depth bound for shells and evals is 'nested' (also denied).
 const MAX_COMMAND = 128 * 1024
 const BUDGET_MS = 100
 const MAX_WORDS = 4096
+const MAX_EXPANDED = 1 << 20 // characters brace expansion may produce
 let deadline = Infinity
 let braceWords = 0
-const tick = (): void => { if (performance.now() >= deadline) throw new Error('out of time') }
+let braceChars = 0
+let clock = (): number => performance.now()
+const tick = (): void => { if (clock() >= deadline) throw new Error('out of time') }
 
 let nestedTooDeep = false
 // Why the model may not run cmd: 'bypass', 'nested' (shells or evals more than three deep), 'limit' (too large, deep or
 // slow to read), or null.
-export function gitHooksBypass(cmd: string, budgetMs = BUDGET_MS): 'bypass' | 'nested' | 'limit' | null {
+// budgetMs and now are for tests; a scan that ends past the deadline (a step tick() could not interrupt) is denied too.
+export function gitHooksBypass(cmd: string, budgetMs = BUDGET_MS, now = (): number => performance.now()): 'bypass' | 'nested' | 'limit' | null {
   nestedTooDeep = false
   braceWords = 0
+  braceChars = 0
   if (cmd.length > MAX_COMMAND) return 'limit'
-  deadline = performance.now() + budgetMs
+  clock = now
+  deadline = clock() + budgetMs
   try {
-    return reads(cmd) ? (nestedTooDeep ? 'nested' : 'bypass') : null
+    const bypass = reads(cmd)
+    if (clock() >= deadline) return 'limit'
+    return bypass ? (nestedTooDeep ? 'nested' : 'bypass') : null
   } catch {
     return 'limit'
   } finally {
     deadline = Infinity
+    clock = () => performance.now()
   }
 }
 export const bypassesGitHooks = (cmd: string): boolean => gitHooksBypass(cmd) !== null
@@ -222,10 +231,27 @@ const ansiC = (body: string): string => body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9
 // ab ac; a brace with no comma, as in {} or @{u}, stays literal).
 const [BO, BC, BE] = ['\u0001', '\u0002', '\u0003']
 const literal = (w: string): string => w.replaceAll(BO, '{').replaceAll(BC, ',').replaceAll(BE, '}')
+// One linear pass first: a brace with no comma of its own, or with no partner, is literal, so only real groups recurse.
+function realGroups(w: string): string {
+  const chars = w.split('')
+  const open: { at: number; comma: boolean }[] = []
+  chars.forEach((c, i) => {
+    if (c === BO) open.push({ at: i, comma: false })
+    else if (c === BC) { const top = open.at(-1); if (top) top.comma = true; else chars[i] = ',' }
+    else if (c === BE) {
+      const top = open.pop()
+      if (!top || !top.comma) (chars[i] = '}'), top && (chars[top.at] = '{')
+    }
+  })
+  for (const o of open) chars[o.at] = '{'
+  return chars.join('')
+}
 function expandBraces(w: string): string[] {
+  tick()
   const open = w.indexOf(BO)
   if (open < 0) {
-    if (++braceWords > MAX_WORDS) throw new Error('too many words')
+    braceChars += w.length
+    if (++braceWords > MAX_WORDS || braceChars > MAX_EXPANDED) throw new Error('too many words')
     return [literal(w)]
   }
   const cuts: number[] = []
@@ -235,7 +261,6 @@ function expandBraces(w: string): string[] {
     else if (w[i] === BE && --depth === 0) {
       const head = w.slice(0, open)
       const tail = w.slice(i + 1)
-      if (!cuts.length) return expandBraces(`${head}{${w.slice(open + 1, i)}}${tail}`)
       const words = [open, ...cuts].flatMap((c, j) => expandBraces(head + w.slice(c + 1, cuts[j] ?? i) + tail))
       return words
     }
@@ -244,18 +269,21 @@ function expandBraces(w: string): string[] {
 }
 
 function inert(src: string, start = 0, close = ''): Inert | null {
-  let out = ''
+  const buf: string[] = [] // the output, in chunks; last is its last character (reading a growing string is quadratic)
+  let last = ''
+  const put = (t: string): void => { if (t) (buf.push(t), (last = t.at(-1) ?? '')) }
   let q = ''
   let parens = 0
   let braces = 0
   const runs: Run[] = []
   const docs: { delim: string; tabs: boolean; run: boolean }[] = []
   const shellHere = (): boolean => { // a shell or eval earlier in the current command
-    let j = out.length
-    while (j > 0 && !';&|\n'.includes(out[j - 1] ?? '')) j--
-    return READS_SCRIPT.test(out.slice(j))
+    let j = buf.length
+    while (j > 0 && !/[;&|\n]/.test(buf[j - 1] ?? '')) j--
+    const head = buf[j - 1] ?? ''
+    return READS_SCRIPT.test(head.slice(Math.max(...[';', '&', '|', '\n'].map(c => head.lastIndexOf(c))) + 1) + buf.slice(j).join(''))
   }
-  const endsIn = (set: string): boolean => out === '' || set.includes(out.at(-1) ?? '') // set: characters, \s as space/tab/newline
+  const endsIn = (set: string): boolean => last === '' || set.includes(last)
   const wordEnd = (i: number): number => { // end of the shell word at i (its substitutions are run); -1 when empty or unterminated
     const from = i
     let wq = ''
@@ -287,14 +315,14 @@ function inert(src: string, start = 0, close = ''): Inert | null {
     if ((i & 1023) === 0) tick()
     const ch = src[i] ?? ''
     const next = src[i + 1] ?? ''
-    if (q === "'") { out += ch; if (ch === "'") q = ''; continue }
-    if (ch === '\\') { out += ch + next; i++; continue }
-    if (q === '"' && ch === '"') { out += ch; q = ''; continue }
+    if (q === "'") { put(ch); if (ch === "'") q = ''; continue }
+    if (ch === '\\') { put(ch + next); i++; continue }
+    if (q === '"' && ch === '"') { put(ch); q = ''; continue }
     if ((ch === '$' || (!q && (ch === '<' || ch === '>'))) && next === '(') {
       const r = inert(src, i + 2, ')')
       if (!r) return null
       runs.push({ text: src.slice(i + 2, r.end), deeper: false })
-      out += '_'
+      put('_')
       i = r.end
       continue
     }
@@ -303,33 +331,33 @@ function inert(src: string, start = 0, close = ''): Inert | null {
       while (j < src.length && src[j] !== '`') j += src[j] === '\\' ? 2 : 1
       if (j >= src.length) return null
       runs.push({ text: src.slice(i + 1, j).replace(/\\([`\\$])/g, '$1'), deeper: false })
-      out += '_'
+      put('_')
       i = j
       continue
     }
     if (ch === '$' && next === '{') {
       const j = src.indexOf('}', i)
       if (j < 0 || /\$\(|`/.test(src.slice(i, j))) return null
-      out += '_'
+      put('_')
       i = j
       continue
     }
     if (ch === '$' && /[\w@*#?$!-]/.test(next)) {
       i += /[A-Za-z_]/.test(next) ? (/^\w+/.exec(src.slice(i + 1))?.[0].length ?? 1) : 1
-      out += '_'
+      put('_')
       continue
     }
-    if (q === '"') { out += ch; continue }
+    if (q === '"') { put(ch); continue }
     if (ch === '$' && next === "'") {
       let j = i + 2
       while (j < src.length && src[j] !== "'") j += src[j] === '\\' ? 2 : 1
       if (j >= src.length) return null
-      out += `'${ansiC(src.slice(i + 2, j)).replaceAll("'", `'\\''`)}'`
+      put(`'${ansiC(src.slice(i + 2, j)).replaceAll("'", `'\\''`)}'`)
       i = j
       continue
     }
     if (ch === '$' && next === '"') continue // a locale string: the quotes that follow are read as usual
-    if (ch === "'" || ch === '"') { q = ch; out += ch; continue }
+    if (ch === "'" || ch === '"') { q = ch; put(ch); continue }
     if (ch === '#' && endsIn(' \t\n;&|()')) {
       while (i + 1 < src.length && src[i + 1] !== '\n') i++
       continue
@@ -343,25 +371,28 @@ function inert(src: string, start = 0, close = ''): Inert | null {
       if (e < 0) return null
       if (here && shellHere()) runs.push({ text: unquote(src.slice(j, e)), deeper: true })
       if (!here) docs.push({ delim: unquote(src.slice(j, e)), tabs, run: shellHere() })
-      out += ' '
+      put(' ')
       i = e - 1
       continue
     }
     if (ch === '<' || ch === '>' || (ch === '&' && next === '>')) {
-      let d = out.length
-      while (d > 0 && /\d/.test(out[d - 1] ?? '')) d--
-      if (d < out.length && (d === 0 || ' \t\n;&|()'.includes(out[d - 1] ?? ''))) out = out.slice(0, d) // an fd number before it
+      let d = buf.length // an fd number before it (digits arrive one per chunk) goes with it
+      while (d > 0 && /^\d$/.test(buf[d - 1] ?? '')) d--
+      if (d < buf.length && (d === 0 || ' \t\n;&|()'.includes((buf[d - 1] ?? '').at(-1) ?? ''))) {
+        buf.length = d
+        last = buf[d - 1]?.at(-1) ?? ''
+      }
       let j = ch === '&' ? i + 2 : i + 1
       if (src[j] === '>' || (ch === '>' && src[j] === '|')) j++
       else if (ch !== '&' && src[j] === '&') {
         const fd = /^(?:\d+|-)(?=$|[\s;&|)])/.exec(src.slice(j + 1))?.[0]
-        if (fd) { out += ' '; i = j + fd.length; continue }
+        if (fd) { put(' '); i = j + fd.length; continue }
         j++
       }
       while (src[j] === ' ' || src[j] === '\t') j++
       const e = wordEnd(j)
       if (e < 0) return null
-      out += ' '
+      put(' ')
       i = e - 1
       continue
     }
@@ -384,30 +415,50 @@ function inert(src: string, start = 0, close = ''): Inert | null {
         if (d.run) runs.push({ text: body, deeper: true })
       }
       docs.length = 0
-      out += '\n'
+      put('\n')
       i = j - 1
       continue
     }
-    if (ch === '(') { parens++; out += ' ; '; continue }
+    if (ch === '(') { parens++; put(' ; '); continue }
     if (ch === ')') {
-      if (close && parens === 0) return { text: out, runs, end: i }
+      if (close && parens === 0) return { text: buf.join(''), runs, end: i }
       if (--parens < 0) return null
-      out += ' ; '
+      put(' ; ')
       continue
     }
-    if ((ch === '{' || ch === '}') && endsIn(' \t\n;&|') && (next === '' || ' \t\n;&|'.includes(next))) { out += ' ; '; continue }
-    if (ch === '{') { braces++; out += BO; continue }
-    if (ch === ',' && braces > 0) { out += BC; continue }
-    if (ch === '}' && braces > 0) { braces--; out += BE; continue }
+    if ((ch === '{' || ch === '}') && endsIn(' \t\n;&|') && (next === '' || ' \t\n;&|'.includes(next))) { put(' ; '); continue }
+    if (ch === '{') { braces++; put(BO); continue }
+    if (ch === ',' && braces > 0) { put(BC); continue }
+    if (ch === '}' && braces > 0) { braces--; put(BE); continue }
     if (/[\s;&|]/.test(ch)) braces = 0
-    out += ch
+    put(ch)
   }
-  return q || close ? null : { text: out, runs, end: src.length } // a here-doc left open runs to the end, as in bash
+  return q || close ? null : { text: buf.join(''), runs, end: src.length } // a here-doc left open runs to the end, as in bash
 }
 
 // The last resort, for text even inert() cannot follow: the regex, and the words a shell -c or eval runs, unquoted
 // and read again one layer deeper (past the bound: denied).
-const SHELL_PAYLOAD = /(?:^|[\s;&|(`/])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?\s+(?:[-+]\S*\s+)*?-[a-zA-Z]*c[a-zA-Z]*\s+(?:--\s+)?((?:'[^']*'|"(?:[^"\\]|\\[^])*"|\\[^]|[^\s;&|'"\\])+)/gi
+// Linear by construction: the shell word is found once, then its words are read one at a time (no nested quantifiers).
+const SHELL_AT = /(?:^|[\s;&|(`/])(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?=\s)/gi
+const NEXT_WORD = /[ \t]+((?:'[^']*'|"(?:[^"\\]|\\[^])*"|\\[^]|[^\s;&|'"\\])+)/y
+function shellPayloads(cmd: string): string[] {
+  const found: string[] = []
+  for (const m of cmd.matchAll(SHELL_AT)) {
+    NEXT_WORD.lastIndex = m.index + m[0].length
+    for (let w = NEXT_WORD.exec(cmd); w; w = NEXT_WORD.exec(cmd)) {
+      tick()
+      const word = w[1] ?? ''
+      if (!/^[-+]/.test(word)) break
+      if (/^-[a-zA-Z]+$/.test(word) && word.includes('c')) {
+        let p = NEXT_WORD.exec(cmd)
+        if (p?.[1] === '--') p = NEXT_WORD.exec(cmd)
+        if (p) found.push(unquote(p[1] ?? ''))
+        break
+      }
+    }
+  }
+  return found
+}
 const EVAL_PAYLOAD = /(?:^|[\s;&|(`])eval\s+([^;&|\n]+)/g
 // The top-level commands of text, split on unquoted ; & | and newlines outside parentheses.
 function topLevel(cmd: string): string[] {
@@ -435,7 +486,7 @@ function lastResort(cmd: string, depth: number): boolean {
   // One construct nothing can follow must not hide the other commands: each top-level command is read on its own.
   const parts = topLevel(cmd)
   if (parts.length > 1 && parts.some(p => reads(p, depth))) return true
-  const payloads = [...[...cmd.matchAll(SHELL_PAYLOAD)].map(m => unquote(m[1] ?? '')), ...[...cmd.matchAll(EVAL_PAYLOAD)].map(m => (m[1] ?? '').replace(/["'\\]/g, ''))]
+  const payloads = [...shellPayloads(cmd), ...[...cmd.matchAll(EVAL_PAYLOAD)].map(m => (m[1] ?? '').replace(/["'\\]/g, ''))]
   return payloads.some(p => deeper(p, depth))
 }
 // A payload one layer deeper: read as usual within the bound; past it, denied (nested) unless the regex sees a bypass.
@@ -454,7 +505,7 @@ function reads(cmd: string, depth = 0): boolean {
     if (r?.runs.some(run => (run.deeper ? deeper(run.text, depth) : reads(run.text, depth)))) return true
     if (r) ({ segs, bad } = tokenize(r.text))
     if (bad) return lastResort(cmd, depth)
-    segs = segs.map(seg => seg.flatMap(w => (w.includes(BO) ? expandBraces(w) : [w])))
+    segs = segs.map(seg => seg.flatMap(w => (w.includes(BO) ? expandBraces(realGroups(w)) : [literal(w)])))
   }
   return segs.some(seg => segmentBypasses(seg, depth))
 }
