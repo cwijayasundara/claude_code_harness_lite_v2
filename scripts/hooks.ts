@@ -355,6 +355,8 @@ const writeGate = (g: Gate): void => writeAtomic(GATE, JSON.stringify(g))
 const updateGate = (fn: (g: Gate) => void): void => withLock(GATE, () => { const g = readGate(); fn(g); writeGate(g) })
 const pushUnique = (list: string[], item: string): string[] => (list.includes(item) ? list : [...list, item])
 
+const more = (s: GateSummary | undefined): string[] => (s && s.warns > (s.warnRows?.length ?? 0) ? [`+${s.warns - (s.warnRows?.length ?? 0)} more`] : [])
+
 function summarize(findings: Finding[]): GateSummary {
   const bySensor: Record<string, number> = {}
   for (const f of findings) bySensor[f.sensor] = (bySensor[f.sensor] ?? 0) + 1
@@ -375,7 +377,7 @@ function hookPromptSubmit(): void {
     if (carry && g.last) g.last.shown = true
   })
   if (carry) {
-    out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `sdlc: the last turn left ${carry.length} warning(s) that did not block. Fix them if they are yours:\n${carry.map(r => `- ${r}`).join('\n')}` } }))
+    out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `sdlc: the last turn left ${last?.warns} warning(s) that did not block. Fix them if they are yours:\n${[...carry, ...more(last)].map(r => `- ${r}`).join('\n')}` } }))
   }
 }
 
@@ -413,13 +415,14 @@ function hookStop(input: HookInput, sub: boolean): void {
   const blocks = findings.filter(f => f.severity === 'block')
   gate.last = summarize(findings)
   // Write back only what this hook owns: edits recorded while the checks ran must survive.
-  const save = (): void => updateGate(g => { g.last = gate.last; if (gate.passed[key]) g.passed[key] = gate.passed[key]; if (gate.blocks[key]) g.blocks[key] = gate.blocks[key] })
+  // Only the main thread records `last`: a subagent's Stop must not replace warnings the person and agent have not seen.
+  const save = (): void => updateGate(g => { if (!sub) g.last = gate.last; if (gate.passed[key]) g.passed[key] = gate.passed[key]; if (gate.blocks[key]) g.blocks[key] = gate.blocks[key] })
   if (!blocks.length) {
     gate.passed[key] = hash
     save()
     if (!sub && exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
     const warns = gate.last?.warnRows ?? []
-    if (!sub && warns.length) out(JSON.stringify({ systemMessage: `sdlc: ${gate.last?.warns} warning(s), not blocking: ${warns.join(' | ')}` }))
+    if (!sub && warns.length) out(JSON.stringify({ systemMessage: `sdlc: ${gate.last?.warns} warning(s), not blocking: ${[...warns, ...more(gate.last)].join(' | ')}` }))
     return
   }
   if (!sub) fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
