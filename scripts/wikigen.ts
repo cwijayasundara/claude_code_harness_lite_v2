@@ -12,7 +12,7 @@ export type BlockName = (typeof BLOCKS)[number]
 
 const open = (name: string): string => `<!-- rig:gen:${name} -->`
 const CLOSE = '<!-- /rig:gen -->'
-const blockRe = (name: string): RegExp => new RegExp(`${open(name)}\\n([\\s\\S]*?)\\n?${CLOSE}`)
+const blockRe = (name: string): RegExp => new RegExp(`${open(name)}\\r?\\n([\\s\\S]*?)\\r?\\n?${CLOSE}`)
 const marker = (name: string): string => `${open(name)}\n${CLOSE}`
 
 export const blockBody = (page: string, name: string): string | null => blockRe(name).exec(page)?.[1]?.trim() ?? null
@@ -64,6 +64,23 @@ export function pageSummary(text: string): string {
 export const label = (page: string): string => path.posix.basename(page, '.md')
 const id = (s: string): string => `n_${s.replace(/[^A-Za-z0-9]+/g, '_')}`
 const q = (s: string): string => `"${s.replace(/"/g, "'")}"`
+// Readable ids can collide ("é.md" and "é!.md" both lose their letters); the first key in cmp order keeps the plain id, later ones get _2, _3, skipping any id another key's plain id owns.
+export function uniqueIds(keys: string[], base: (k: string) => string): Map<string, string> {
+  const sorted = [...new Set(keys)].sort(cmp)
+  const taken = new Set(sorted.map(base))
+  const owned = new Set<string>()
+  const out = new Map<string, string>()
+  for (const k of sorted) {
+    let v = base(k)
+    for (let n = 2; owned.has(v); n++) {
+      v = `${base(k)}_${n}`
+      while (taken.has(v)) v = `${base(k)}_${++n}`
+    }
+    owned.add(v)
+    out.set(k, v)
+  }
+  return out
+}
 const fence = (lines: string[]): string => ['```mermaid', 'flowchart LR', ...lines, '```'].join('\n')
 
 type Edge = { to: string; n: number; dir: 'in' | 'out' }
@@ -76,12 +93,13 @@ export function architecture(g: Graph, page: string, max = 12): string {
   const note = uncomputed.length ? `_Edges not computed for ${uncomputed.join(', ')}: add a row to \`IMPORT_TABLE\` in \`scripts/wikigraph.ts\`, or draw them under \`<!-- rig:drawn -->\`._` : ''
   if (!all.length) return ['## Architecture', '', uncomputed.length ? note : '_No imports to or from other modules._'].join('\n')
   const shown = all.slice(0, max)
+  const ids = uniqueIds(shown.map(e => e.to), id)
   const lines = [`  C[${q(label(page))}]`]
   const declared = new Set<string>()
   for (const e of shown) {
-    if (!declared.has(e.to)) lines.push(`  ${id(e.to)}[${q(label(e.to))}]`)
+    if (!declared.has(e.to)) lines.push(`  ${ids.get(e.to)}[${q(label(e.to))}]`)
     declared.add(e.to)
-    lines.push(e.dir === 'out' ? `  C -->|${e.n}| ${id(e.to)}` : `  ${id(e.to)} -->|${e.n}| C`)
+    lines.push(e.dir === 'out' ? `  C -->|${e.n}| ${ids.get(e.to)}` : `  ${ids.get(e.to)} -->|${e.n}| C`)
   }
   if (all.length > max) lines.push(`  more[${q(`+${all.length - max} more`)}]`, '  C -.- more')
   return ['## Architecture', '', fence(lines), ...(note ? ['', note] : [])].join('\n')
@@ -91,9 +109,10 @@ export function architecture(g: Graph, page: string, max = 12): string {
 export function systemDiagram(g: Graph, pages: string[], groupOf: (page: string) => string, above = 30): string {
   const grouped = pages.length > above
   const key = (p: string): string => (grouped ? groupOf(p) : p)
-  const nodeId = (k: string): string => (grouped ? `g_${k.replace(/[^A-Za-z0-9]+/g, '_')}` : id(k))
   const nodeLabel = (k: string): string => (grouped ? k : label(k))
   const keys = [...new Set(pages.map(key))].sort()
+  const ids = uniqueIds(keys, k => (grouped ? `g_${k.replace(/[^A-Za-z0-9]+/g, '_')}` : id(k)))
+  const nodeId = (k: string): string => ids.get(k) ?? id(k)
   const counts = new Map<string, number>()
   for (const [from, row] of g.edges) {
     if (!pages.includes(from)) continue

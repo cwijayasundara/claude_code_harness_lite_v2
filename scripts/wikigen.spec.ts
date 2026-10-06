@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spliceBlock, blockBody, pageSkeleton, proseProblems, pageSummary, architecture, systemDiagram, linkBase, fileLink, startOrder, BLOCKS } from './wikigen.ts'
+import { spliceBlock, blockBody, pageSkeleton, proseProblems, pageSummary, architecture, systemDiagram, linkBase, fileLink, startOrder, uniqueIds, BLOCKS } from './wikigen.ts'
 import type { Graph } from './wikigraph.ts'
 
 const graph = (edges: Record<string, Record<string, number>>, extra: Partial<Graph> = {}): Graph => ({
@@ -95,4 +95,38 @@ test('startOrder: manifest order first, then most depended on, then name', () =>
   const pages = ['m/a.md', 'm/b.md', 'm/c.md']
   assert.deepEqual(startOrder(g, pages, []), ['m/c.md', 'm/a.md', 'm/b.md'])
   assert.deepEqual(startOrder(g, pages, ['m/b.md']), ['m/b.md', 'm/c.md', 'm/a.md'])
+})
+
+test('uniqueIds keeps readable ids, suffixes only collisions in cmp order, and skips taken ids', () => {
+  const base = (k: string): string => k.replace(/[^a-z]/g, '')
+  assert.deepEqual([...uniqueIds(['b!', 'b', 'c'], base)], [['b', 'b'], ['b!', 'b_2'], ['c', 'c']])
+  assert.deepEqual([...uniqueIds(['x1', 'x', 'x!', 'x_2'], k => (k === 'x1' ? 'x_2' : k.replace(/[^a-z]/g, '')))].map(([, v]) => v).sort(), ['x', 'x_2', 'x_3', 'x_4'])
+})
+
+test('colliding names stay distinct nodes with their own labels and edges', () => {
+  const ids = (t: string): string[] => [...t.matchAll(/^ {2}(\w+)\["[^"]*"\]$/gm)].map(m => m[1] ?? '')
+  for (const [a, b] of [['m/\u00e9.md', 'm/\u00e9!.md'], ['m/x y.md', 'm/x_y.md']] as const) {
+    const t = architecture(graph({ 'm/c.md': { [a]: 1, [b]: 2 } }), 'm/c.md')
+    const nodes = ids(t).filter(i => i !== 'C')
+    assert.equal(new Set(nodes).size, 2, t)
+    assert.equal((t.match(new RegExp(`\\["${a.slice(2, -3)}"\\]`, 'g')) ?? []).length, 1)
+    assert.equal((t.match(/-->\|[12]\|/g) ?? []).length, 2)
+    assert.equal(architecture(graph({ 'm/c.md': { [a]: 1, [b]: 2 } }), 'm/c.md'), t)
+  }
+  const pages = Array.from({ length: 31 }, (_, i) => `${i % 2 ? 'a-b' : 'a_b'}/p${i}.md`)
+  const big = systemDiagram(graph({ 'a-b/p1.md': { 'a_b/p0.md': 1 } }), pages, p => p.split('/')[0] ?? p, 30)
+  const gids = ids(big)
+  assert.equal(new Set(gids).size, 2, big)
+  assert.equal((big.match(/\["a-b"\]/g) ?? []).length, 1)
+  assert.equal((big.match(/\["a_b"\]/g) ?? []).length, 1)
+  assert.equal((big.match(/-->\|1\|/g) ?? []).length, 1)
+  assert.equal(systemDiagram(graph({ 'a-b/p1.md': { 'a_b/p0.md': 1 } }), pages, p => p.split('/')[0] ?? p, 30), big)
+})
+
+test('CRLF pages: spliceBlock replaces the existing block, blockBody reads it', () => {
+  const page = 'a\r\n<!-- rig:gen:files -->\r\nx\r\n<!-- /rig:gen -->\r\n'
+  const out = spliceBlock(page, 'files', 'N')
+  assert.equal((out.match(/rig:gen:files/g) ?? []).length, 1)
+  assert.equal(blockBody(out, 'files'), 'N')
+  assert.equal(blockBody(page, 'files'), 'x')
 })
