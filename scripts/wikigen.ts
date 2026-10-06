@@ -171,11 +171,18 @@ const pageDir = (page: string): string => path.posix.join('docs/wiki', path.posi
 const linkTo = (ctx: Ctx, page: string, file: string, line?: number): string => fileLink(ctx.link, file, line, pageDir(page))
 const lineCount = (text: string): number => (text ? text.replace(/\n$/, '').split('\n').length : 0)
 
-// The first line of a leading comment, as the file's one-line role.
+// The first line of real descriptive text in a leading comment, as the file's one-line role.
+const NOT_COMMENT = /^#\s*(?:!|include\b|define\b|pragma\b|if|else|endif|undef\b|error\b)/
+const DIRECTIVE = /^(?:eslint|@ts-|prettier|istanbul|-\*-|@(?:param|returns?|type|typedef|license|fileoverview)\b|(?:copyright|license)\b)/i
 function role(text: string): string {
-  for (const line of text.split('\n').slice(0, 6)) {
-    const m = /^\s*(?:\/\/+|#(?!!)|\/\*+|\*)\s*(.+?)\s*(?:\*\/)?$/.exec(line)
-    if (m?.[1] && !/^(?:eslint|@ts-|prettier|istanbul|-\*-)/.test(m[1])) return m[1]
+  for (const line of text.split('\n').slice(0, 8)) {
+    const t = line.trim()
+    if (NOT_COMMENT.test(t)) continue
+    const marker = /^(?:\/\/+|\/\*+|#+|--|;;|\*+(?!\/))/.exec(t)
+    if (!marker) continue
+    const body = t.slice(marker[0].length).replace(/\*+\/\s*$/, '').trim()
+    if (!body || !/[\p{L}\p{N}]/u.test(body) || DIRECTIVE.test(body)) continue
+    return body
   }
   return ''
 }

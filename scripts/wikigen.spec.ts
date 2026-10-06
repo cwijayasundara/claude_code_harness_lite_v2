@@ -246,3 +246,17 @@ test('index renderers: a numbered start-here list and a module table', () => {
   assert.equal(renderModules(['m/a.md'], () => ''), ['## Modules', '', '| Module | What it does | Page |', '|---|---|---|', '| a | — | [m/a.md](m/a.md) |'].join('\n'))
   assert.equal(renderStart(['m/b.md', 'm/a.md'], p => (p === 'm/a.md' ? 'A' : '')), ['## Start here', '', '1. [b](m/b.md)', '2. [a](m/a.md): A'].join('\n'))
 })
+
+test('role: skips comment decoration, JSDoc openers, preprocessor lines and directives', () => {
+  const roleOf = (text: string): string => {
+    const out = renderFiles(mk({ 'src/a/x.js': text }, A), 'm/a.md')
+    return /^\| \[[^\n]*?\]\([^)]*\) \| (.*) \| \d+ \|$/m.exec(out)?.[1] ?? 'NOROW'
+  }
+  assert.equal(roleOf('/**\n * Real doc\n */\nexport const x = 1\n'), 'Real doc')
+  assert.equal(roleOf('///\n/// Parses it\nx\n'), 'Parses it')
+  assert.equal(roleOf('/\nx\n'), '')
+  assert.equal(roleOf('*/\nx\n'), '')
+  assert.equal(roleOf('#include <stdio.h>\n// Parses headers\n'), 'Parses headers')
+  assert.equal(roleOf('# ====\n# Real line\n'), 'Real line')
+  assert.equal(roleOf('#!/usr/bin/env node\n// eslint-disable\n// After\n'), 'After')
+})
