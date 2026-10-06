@@ -511,3 +511,33 @@ test('install rewrites a hook script only when its content or mode differs', () 
   sdlc(repo, ['hooks', 'install'])
   assert.ok(fs.statSync(file).mode & 0o111)
 })
+
+test('push says when the commands judge the working tree, and names refs it skipped in a mixed push', () => {
+  const base = head()
+  stage('src/a.js', 'export const a = 1\n')
+  gitIn(repo, 'commit', '-qm', 'a')
+  const a = head()
+  const clean = push(a, base)
+  assert.doesNotMatch(clean.stdout, /working tree/)
+  stage('src/b.js', 'export const b = 1\n')
+  gitIn(repo, 'commit', '-qm', 'b')
+  assert.match(push(a, base).stdout, /the full commands and quality ratchet run against your working tree/, 'pushing a commit that is not HEAD')
+  write(repo, 'src/b.js', 'export const b = 2\n')
+  assert.match(push(head(), base).stdout, /working tree/, 'a dirty tree')
+  const mixed = sdlc(repo, ['check', '--at', 'push'], { input: `refs/tags/v1 ${head()} refs/tags/v1 ${ZERO}\nrefs/heads/main ${head()} refs/heads/main ${base}\n` })
+  assert.match(mixed.stdout, /refs\/tags\/v1: skipped \(a delete or tag\)/)
+})
+
+test('a pull --rebase or a rebase directory skips the commit check', () => {
+  stage('src/a.js', SECRET)
+  const pull = sdlc(repo, ['check', '--at', 'commit'], { env: { GIT_REFLOG_ACTION: 'pull --rebase origin main' } })
+  assert.equal(pull.code, 0)
+  assert.match(pull.stdout, /skipped/)
+  for (const dir of ['rebase-merge', 'rebase-apply']) {
+    fs.mkdirSync(path.join(repo, '.git', dir))
+    const r = commit()
+    assert.equal(r.code, 0, dir)
+    assert.match(r.stdout, /skipped/)
+    fs.rmSync(path.join(repo, '.git', dir), { recursive: true })
+  }
+})

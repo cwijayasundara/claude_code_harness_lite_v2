@@ -133,13 +133,15 @@ export function cmdCheckPush(_args: Args): void {
   const { config, rules, errors } = loadConfig()
   if (config.githooks.prePush === 'off') return out('sdlc check push: off (githooks.prePush)')
   const raw = readStdin()
-  const refs = raw.trim()
-    ? parsePushRefs(raw).filter(r => !ZERO.test(r.localSha) && r.remoteRef.startsWith('refs/heads/'))
-    : [{ localRef: 'refs/heads/HEAD', localSha: git(['rev-parse', 'HEAD']) ?? '', remoteRef: 'refs/heads/HEAD', remoteSha: '0' }]
+  const judged = (r: PushRef): boolean => !ZERO.test(r.localSha) && r.remoteRef.startsWith('refs/heads/')
+  const all = raw.trim() ? parsePushRefs(raw) : [{ localRef: 'refs/heads/HEAD', localSha: git(['rev-parse', 'HEAD']) ?? '', remoteRef: 'refs/heads/HEAD', remoteSha: '0' }]
+  const refs = all.filter(judged)
   if (!refs.length) return out('sdlc check push: nothing to judge (a delete or tag push)')
   const t0 = Date.now()
   const findings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
-  const notes: string[] = []
+  const notes = all.filter(r => !judged(r)).map(r => `${r.remoteRef}: skipped (a delete or tag)`)
+  const head = git(['rev-parse', 'HEAD'])
+  if (refs.some(r => r.localSha !== head) || git(['status', '--porcelain', '--untracked-files=no'])) notes.push('note: the full commands and quality ratchet run against your working tree, not the pushed commits')
   for (const r of refs) {
     const base = pushBase(r)
     if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.remoteRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }

@@ -392,7 +392,8 @@ export function cmdCheck(args: Args): void {
   let after: ((f: string) => string) | undefined
   if (at === 'commit') {
     // A merge replays other people's commits and a rebase replays your own: CI judges the result.
-    if (git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']) || /^(?:rebase|merge)/.test(process.env.GIT_REFLOG_ACTION ?? '')) return out('sdlc check commit: skipped (merge or rebase in progress; CI judges the result)')
+    const rebasing = ['rebase-merge', 'rebase-apply'].some(d => { const p = git(['rev-parse', '--git-path', d]); return p !== null && exists(path.resolve(ROOT, p)) })
+    if (rebasing || git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']) || /^(?:rebase|merge|pull)/.test(process.env.GIT_REFLOG_ACTION ?? '')) return out('sdlc check commit: skipped (merge or rebase in progress; CI judges the result)')
     diffs = stagedDiff()
     if (!diffs.length) return out('sdlc check commit: nothing staged')
     before = f => showAt('HEAD', f) ?? ''
