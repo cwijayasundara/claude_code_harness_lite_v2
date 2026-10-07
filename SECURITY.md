@@ -29,6 +29,7 @@ rig makes a coding agent follow a process. It is not a sandbox. Read this before
 
 - Permission rules cover the file tools only. A model that writes and runs a script can touch evidence files locally; CI catches forged approvals and waivers, not forged `runs.jsonl` rows on a branch nobody reviews.
 - The secrets sensor is pattern based. It misses unusual token formats and skips files over 2 MB or detected as binary.
+- `sdlc.ts evals` runs `claude -p` with the tools an eval definition allows (`allowedTools`) and runs its `command` checks as shell. Eval definitions (`.sdlc/evals/*.json`) are therefore protected harness files: a person approves edits, harness-tamper flags them and CI review applies. Run evals in Claude Code's sandbox, like autonomous builds. `GH_TOKEN` and `GITHUB_TOKEN` are stripped from the environment `claude` gets, but other credentials in your shell are not.
 - Windows is not supported yet: its CI job is red (about ten tests in the `pr` flows use POSIX shell fakes for `gh`), and the end-to-end check runs on Linux. Do not require the Windows job in branch protection until it is fixed.
 
 ## Reporting

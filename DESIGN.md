@@ -28,7 +28,7 @@ The biggest lever is **bounded context**. Everything below follows from that.
 4. **Humans gate; models never self-approve.** Approval and waiver are human-only skills; approvals go stale when the artifact changes.
 5. **Deterministic checks decide; models advise.** Sensors, red-proof, scope and secrets are scripts at zero tokens; one inferential review per change.
 6. **Local equals CI.** One `check` entry point serves Stop, plan, ship, git hooks and CI. CI judges a PR with the base branch's checker and config, so a PR cannot weaken its own judge.
-7. **Right model for the job, pinned.** Sonnet main thread and implementer, Opus architect and reviewer, Haiku scout. No skill sets `model:` (a switch re-reads the context uncached).
+7. **Right model for the job, pinned.** Sonnet main thread; the tier picks the subagents' model (S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5), passed per Agent call from `next --json`; Haiku scout. No skill sets `model:` (a switch re-reads the context uncached).
 8. **Bounded loops.** Review rounds, Stop blocks and spend are capped; past a cap the finding goes to `unresolved.json` and ship refuses it.
 9. **Every step ends with the next command.**
 
@@ -111,7 +111,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 
 ## 7. Measurement
 
-`metrics` reports the playbook's 12 leading and lagging metrics (from git, `gh`, approvals and incidents; `unmeasured` when n < 5) plus cost per change, stage and agent. Dollars come from the delta of the session cost ledger, which includes advisor and classifier calls; the scorecard adds spend against budget and an estimated value (`value` hours × rate). Cost capture needs the mod: headless `-p` runs record usd 0.
+`metrics` reports the playbook's 12 leading and lagging metrics (from git, `gh`, approvals and incidents; `unmeasured` when n < 5) plus cost per change, stage and agent. Dollars come from the delta of the session cost ledger, which includes advisor and classifier calls; the scorecard adds spend against budget and an estimated value (`value` hours × rate). Cost capture needs the mod: headless `-p` runs record usd 0. Evals (`sdlc.ts evals`) are run by a person, never by CI: `eval_pass_rate` is the last run's pass share, and `incident_to_eval_hours` is how long an incident takes to become an eval. Eval definitions (`.sdlc/evals/*.json`) are protected harness files, since one can grant `claude -p` tools and run shell checks; `--seed` sanctions its own writes, and `/rig:diagnose` writes an incident eval with the person's approval.
 
 ## 8. What the trials showed
 
