@@ -56,10 +56,14 @@ function pickModel(setup: (repo: string) => void): string {
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'pr', '--allow-empty')
   const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rig-gh-')), 'out')
-  execFileSync('bash', ['-c', script], { cwd: repo, env: { ...process.env, BASE: 'main', GITHUB_OUTPUT: outFile } })
+  execFileSync('bash', ['-e', '-c', script], { cwd: repo, env: { ...process.env, BASE: 'main', GITHUB_OUTPUT: outFile } })
   return fs.readFileSync(outFile, 'utf8').trim()
 }
-const change = (slug: string, ratchet: string) => (repo: string) => write(repo, `.sdlc/changes/${slug}/ratchet.json`, ratchet)
+// intent.md defaults to the floor (S feature), so the ratchet decides unless a case raises the intent.
+const change = (slug: string, ratchet: string, intent = '---\nslug: x\ntype: feature\ntier: S\n---\n# x\n') => (repo: string) => {
+  write(repo, `.sdlc/changes/${slug}/ratchet.json`, ratchet)
+  if (intent) write(repo, `.sdlc/changes/${slug}/intent.md`, intent)
+}
 
 test('CI review model: S haiku, M sonnet, L opus', () => {
   assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}')), 'model=claude-haiku-5-5')
@@ -72,6 +76,19 @@ test('CI review model fails closed to Opus: greenfield, no change folder, two fo
   assert.equal(pickModel(repo => write(repo, 'src/x.js', 'x\n')), 'model=claude-opus-5-5')
   assert.equal(pickModel(repo => { change('a', '{"tier":"S"}')(repo); change('b', '{"tier":"S"}')(repo) }), 'model=claude-opus-5-5')
   assert.equal(pickModel(change('a', 'not json')), 'model=claude-opus-5-5')
+})
+
+test('CI review model takes the stricter of intent.md and ratchet.json, as effective() does', () => {
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: L\n---\n')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: greenfield\ntier: S\n---\n')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: S\n---\n')), 'model=claude-haiku-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: "M"\n---\n')), 'model=claude-sonnet-5-5')
+})
+
+test('CI review model fails closed on the intent: missing intent.md, no tier line, or a tier only in the body', () => {
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\n---\n')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '# no frontmatter\ntier: S\n')), 'model=claude-opus-5-5')
 })
 
 test('the CI review passes the picked model to Claude', () => {

@@ -8,7 +8,8 @@
 # the checkout (pr.diff included) and writes only review.md and the verdict. A separate step posts the comment after a credential check.
 # In-session tier L reviews use the built-in /code-review; here the model has no shell, so it follows a short rubric.
 # Residual risk: a determined injection could still encode a secret into review.md; run it on trusted-team repos.
-# The review model follows the change's tier (S Haiku 5.5, M Sonnet 5.5, L Opus 5.5) and is Opus whenever the tier is in doubt.
+# The review model follows the change's tier, the stricter of intent.md and ratchet.json (S Haiku 5.5, M Sonnet 5.5, L Opus 5.5),
+# and is Opus whenever the tier is in doubt.
 # Actions are pinned to commit SHAs; bump them with Dependabot or Renovate.
 name: rig-review
 on:
@@ -49,12 +50,23 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           # model-by-tier:start
-          # S Haiku, M Sonnet, L or greenfield Opus. ratchet.json comes from the PR head, which the PR controls, so any doubt
-          # is Opus; rig-check's tier sensor still re-tiers a diff that reaches auth, payments, data or contracts to L.
+          # S Haiku, M Sonnet, L or greenfield Opus, from the stricter of intent.md and ratchet.json (rig raises the tier by
+          # editing intent.md). Both come from the PR head, which the PR controls, so any doubt is Opus. rig-check's tier sensor
+          # blocks a tier S or M change that reaches auth, payments, data or contracts until it is re-tiered; it does not pick this model.
           model=claude-opus-5-5
           slugs=$(git diff --name-only "origin/$BASE...HEAD" -- .sdlc/changes | cut -d/ -f3 | sort -u)
           if [ -n "$slugs" ] && [ "$(printf '%s\n' "$slugs" | wc -l | tr -d ' ')" = 1 ]; then
-            tier=$(node -e 'try { const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(r.type === "greenfield" ? "L" : String(r.tier || "L")) } catch { process.stdout.write("L") }' ".sdlc/changes/$slugs/ratchet.json")
+            tier=$(node -e '
+              const fs = require("fs"), dir = process.argv[1], rank = { S: 0, M: 1, L: 2 }
+              let t = "L"
+              try {
+                const r = JSON.parse(fs.readFileSync(dir + "/ratchet.json", "utf8"))
+                const fm = fs.readFileSync(dir + "/intent.md", "utf8").replace(/\r/g, "").match(/^---\n([\s\S]*?)\n---/)[1]
+                const it = (fm.match(/^tier:[ \t]*["\x27]?([SML])["\x27]?[ \t]*$/m) || [])[1]
+                const ity = (fm.match(/^type:[ \t]*["\x27]?([a-z-]+)["\x27]?[ \t]*$/m) || [])[1]
+                if (it && r.tier in rank && r.type !== "greenfield" && ity !== "greenfield") t = rank[it] > rank[r.tier] ? it : r.tier
+              } catch {}
+              process.stdout.write(t)' ".sdlc/changes/$slugs")
             case "$tier" in S) model=claude-haiku-5-5 ;; M) model=claude-sonnet-5-5 ;; esac
           fi
           echo "model=$model" >> "$GITHUB_OUTPUT"
