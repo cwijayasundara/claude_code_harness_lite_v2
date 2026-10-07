@@ -48,7 +48,7 @@ function onboard(sb, claudeMd) {
   sb.commitAll('chore: preflight report')
 }
 
-const ROUTING = 'sdlc routes all work in this repo: start with /rig:start; use superpowers skills only when an sdlc skill names one.'
+const ROUTING = 'sdlc routes all work in this repo: start with /rig-start; use superpowers skills only when an sdlc skill names one.'
 const claudeMd = (title, map) => `# ${title}\n\n${ROUTING}\n\n## Map\n${map.map(m => `- src/${m}/`).join('\n')}\n`
 
 // Marks HEAD as `branch`, then runs fn, so a seeded case can be undone with a hard reset to it.

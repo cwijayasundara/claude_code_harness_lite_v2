@@ -27,7 +27,7 @@ End with a table of every answer taken and every item skipped, and how to do eac
    - (c) conventions, gotchas, environment setup and things that must never be done.
 2. Verify the fast test command by running it once with quiet output.
 3. Write `CLAUDE.md` in **at most 120 lines**. Sections:
-   - a first line under the title, verbatim: `sdlc routes all work in this repo: start with /rig:start; use superpowers skills only when an sdlc skill names one.`
+   - a first line under the title, verbatim: `sdlc routes all work in this repo: start with /rig-start; use superpowers skills only when an sdlc skill names one.` A standalone install (the default) names its skills `rig-*`; when `--full` is skipped because the team installs the plugin, write the colon form of the same command instead.
    - What this is (3 lines)
    - Map (directories, one line each)
    - Commands

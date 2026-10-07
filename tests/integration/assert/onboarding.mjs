@@ -13,7 +13,9 @@ const names = (dir, ext = '') => fs.readdirSync(path.join(PLUGIN, dir)).filter(f
 export async function assertOnboarding(c, sb, { lane, modules = [] }) {
   const claudeMd = sb.read('CLAUDE.md')
   await c.check('CLAUDE.md exists, at most 120 lines', () => (claudeMd !== '' && claudeMd.split('\n').length <= 120) || `${claudeMd.split('\n').length} lines`)
-  await c.check('CLAUDE.md carries the rig routing line', () => /sdlc routes all work in this repo/.test(claudeMd) || 'routing line missing')
+  // A standalone repo's skills are rig-*, so its CLAUDE.md must name /rig-start, not the plugin's /rig:start.
+  await c.check('CLAUDE.md routes work to the standalone /rig-start', () =>
+    /sdlc routes all work in this repo: start with \/rig-start;/.test(claudeMd) || 'routing line missing or names another start command')
 
   const cfg = configOf(sb.dir)
   await c.check('sensors.json parses with no config errors', () => cfg.errors.length === 0 || cfg.errors.join('; '))
