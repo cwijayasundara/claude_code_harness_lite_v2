@@ -67,14 +67,17 @@ function itemDir(top: string, it: QualityItem): { dir: string; error?: string } 
 }
 
 // The base runs once per base SHA in a throwaway worktree (basetree.ts), sparse over `sparse` when given. Counts are cached
-// in ratchet.json per key with the command and counting mode they were measured with; a changed command is measured again.
+// in ratchet.json per key with the command, counting mode, directory and checkout (full, or sparse over which roots) they
+// were measured with; a change to any of them is measured again. Entries from before cwd/mode were kept read as root/full.
 function baseCounts(base: string, items: QualityItem[], slug: string, sparse?: string[]): Record<string, number | null> {
   const r = readRatchet(slug)
   const cached = r.baseline.base === base ? r.baseline.quality ?? {} : {}
   const counts: Record<string, number | null> = {}
+  const want = sparse ? `sparse:${sparse.join(',')}` : 'full'
+  let mode = want
   const todo = items.filter(it => {
     const h = cached[it.key]
-    if (h && h.cmd === it.q.cmd && h.count === it.q.count && typeof h.n === 'number') { counts[it.key] = h.n; return false }
+    if (h && h.cmd === it.q.cmd && h.count === it.q.count && (h.cwd ?? '.') === it.cwd && (h.mode ?? 'full') === want && typeof h.n === 'number') { counts[it.key] = h.n; return false }
     return true
   })
   if (todo.length) {
@@ -85,9 +88,16 @@ function baseCounts(base: string, items: QualityItem[], slug: string, sparse?: s
       }
     }, { sparse })
     if (!tree.ok) for (const it of todo) counts[it.key] = null
+    else if (tree.sparse === false) mode = 'full'
   }
   const store: NonNullable<typeof r.baseline.quality> = {}
-  for (const it of items) { const n = counts[it.key]; if (typeof n === 'number') store[it.key] = { cmd: it.q.cmd, count: it.q.count, n } }
+  for (const it of items) {
+    const n = counts[it.key]
+    // A new count records the checkout it actually ran in (a sparse base that fell back to full is 'full'); the defaults
+    // (root, full) are left out, so an unscoped repository's entries keep their shape.
+    const m = todo.includes(it) ? mode : want
+    if (typeof n === 'number') store[it.key] = { cmd: it.q.cmd, count: it.q.count, n, ...(it.cwd !== '.' ? { cwd: it.cwd } : {}), ...(m !== 'full' ? { mode: m } : {}) }
+  }
   r.baseline = { ...r.baseline, base, quality: store }
   writeRatchet(slug, r)
   return counts

@@ -268,3 +268,21 @@ test('scoped quality: a scope root that resolves outside the repository fails in
   assert.equal(r.code, 2)
   assert.match(r.stdout, /api:lint\s+fail \(its scope root link resolves outside the repository\)/)
 })
+
+test('a cached base count is reused only for the same scope root and checkout', () => {
+  const list = 'node -e "for(const f of require(\'fs\').readdirSync(\'.\'))console.log(f)"'
+  const cfg = (root: string) => JSON.stringify({ scopes: { 'api/**': { name: 'api', root, quality: { lint: { cmd: list, count: 'lines' } } } } })
+  write(repo, '.sdlc/sensors.json', cfg('api'))
+  write(repo, 'api/a.js', 'export {}\n'); write(repo, 'api2/a.js', 'export {}\n'); write(repo, 'api2/c.js', 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, 'api/b.js', 'export {}\n')
+  sdlc(repo, ['quality', 'tiny'])
+  const cache = () => JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
+  assert.equal(cache()['api:lint'].n, 1)
+  write(repo, '.sdlc/sensors.json', cfg('api2'))
+  sdlc(repo, ['quality', 'tiny'])
+  assert.equal(cache()['api:lint'].n, 2, 'same key, command and base, another root: measured again')
+  assert.equal(cache()['api:lint'].cwd, 'api2')
+})
