@@ -201,6 +201,16 @@ test('the SSH probe never runs a repo-local core.sshCommand; the user\'s global 
   assert.ok(fs.existsSync(globalMarker), 'the user\'s global core.sshCommand is kept')
 })
 
+test('the base check never runs a repo-configured fsmonitor', () => {
+  const dir = tmp()
+  const marker = path.join(dir, 'fsmonitor-ran')
+  fs.writeFileSync(path.join(dir, 'fsmonitor.sh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 })
+  gitIn(repo, 'config', 'core.fsmonitor', path.join(dir, 'fsmonitor.sh'))
+  write(repo, 'dirty.txt', 'x\n')
+  assert.match(sdlc(repo, ['preflight']).stdout, /base \| warn/)
+  assert.ok(!fs.existsSync(marker), 'the clone\'s own config must not choose what runs')
+})
+
 test('a host older than the build requires fails with the exact fix; a newer host passes', () => {
   const bin = tmp()
   fs.writeFileSync(path.join(bin, 'java'), '#!/bin/sh\necho \'openjdk version "17.0.9" 2023-10-17\' >&2\n', { mode: 0o755 })

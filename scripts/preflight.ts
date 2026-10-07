@@ -154,7 +154,8 @@ function commands(o: Opts, config: SensorConfig, errors: string[]): Check {
 function baseCheck(): Check {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   const hasBase = ['origin/main', 'main', 'origin/master', 'master'].some(r => git(['rev-parse', '--verify', '--quiet', r]))
-  const dirty = (git(['status', '--porcelain', '--', '.', ':(exclude).sdlc']) ?? '').split('\n').filter(Boolean).length
+  // core.fsmonitor off: status would otherwise run a command the clone's own .git/config names.
+  const dirty = (git(['-c', 'core.fsmonitor=false', 'status', '--porcelain', '--', '.', ':(exclude).sdlc']) ?? '').split('\n').filter(Boolean).length
   const notes = [head === 'HEAD' ? 'HEAD is detached' : '', hasBase ? '' : 'no main or master branch to compare against', dirty ? `${dirty} uncommitted file(s) outside .sdlc/` : ''].filter(Boolean)
   return notes.length ? { id: 'base', status: 'warn', line: notes.join('; '), fix: 'ship and the quality ratchet compare against the trunk: commit or stash, and work on a branch' } : { id: 'base', status: 'pass', line: `on ${head}, trunk found, tree clean` }
 }
