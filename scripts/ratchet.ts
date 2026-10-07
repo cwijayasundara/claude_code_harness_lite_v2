@@ -176,7 +176,7 @@ export function cmdRatchet(args: Args): void {
   const result = recordRound(slug, n, findings, { cap: config.ratchet.rounds[n], slice })
   if (n === 'build' && result.verdict === 'done') {
     const cp = commitSlice(slug, slice ?? '1')
-    if (!cp.ok) { reopenSlice(slug, slice ?? '1'); fail(`could not commit slice ${slice}: ${cp.why}; the slice is reopened`) }
+    if (!cp.ok) { reopenSlice(slug, slice ?? '1'); appendEvent(slug, { node: `build#${slice ?? '1'}`, verdict: 'reopened', reason: 'checkpoint commit failed' }); fail(`could not commit slice ${slice}: ${cp.why}; the slice is reopened`) }
     return out(JSON.stringify({ ...result, commit: cp.sha }))
   }
   out(JSON.stringify(result))

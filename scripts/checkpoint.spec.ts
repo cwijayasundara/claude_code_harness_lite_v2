@@ -1,6 +1,8 @@
 // Each recorded build slice is committed by the script on sdlc/<slug>: only that slice's planned files, never the trunk, never a push.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
 const GREEN = 'node -e "process.exit(0)"'
@@ -75,4 +77,70 @@ test('a slice with no changed planned files records without a commit', () => {
   const r = record('1')
   assert.equal(r.code, 0, r.stderr)
   assert.equal(JSON.parse(r.stdout).commit, null)
+})
+
+const files = (rev = 'HEAD') => gitIn(repo, 'show', '--name-status', '--format=', rev).split('\n').sort()
+function plan(list: string[]) {
+  fs.rmSync(path.join(repo, 'src/b.js')); fs.rmSync(path.join(repo, 'test/a.test.js'))
+  write(repo, '.sdlc/changes/feat/plan.md', `## Files\n${list.map(f => `- ${f}`).join('\n')}\n## Slices\n### Task 1: a\n`)
+}
+
+test('planned deletions (git rm and unstaged) are committed with the slice', () => {
+  setup()
+  write(repo, 'src/x.js', 'x\n'); write(repo, 'src/y.js', 'y\n')
+  gitIn(repo, 'add', 'src/x.js', 'src/y.js'); gitIn(repo, 'commit', '-qm', 'old')
+  plan(['src/a.js', 'src/x.js', 'src/y.js'])
+  gitIn(repo, 'rm', '-q', 'src/x.js'); fs.rmSync(path.join(repo, 'src/y.js'))
+  const r = record('1')
+  assert.equal(r.code, 0, r.stderr)
+  assert.deepEqual(files(), ['A\tsrc/a.js', 'D\tsrc/x.js', 'D\tsrc/y.js'])
+})
+
+test('pathspec magic in a planned name stays literal', () => {
+  setup()
+  plan(['src/a.js', 'src/a[y].js', 'src/ay.js'])
+  write(repo, '.sdlc/changes/feat/plan.md', '## Files\n- src/a.js\n- src/a[y].js\n- src/ay.js\n## Slices\n### Task 1: lit\nFiles: `src/a.js` `src/a[y].js`\n### Task 2: other\nFiles: `src/ay.js`\n')
+  write(repo, 'src/a[y].js', 'lit\n'); write(repo, 'src/ay.js', 'other\n')
+  { const r = record('1'); assert.equal(r.code, 0, r.stderr) }
+  assert.deepEqual(files(), ['A\tsrc/a.js', 'A\tsrc/a[y].js'])
+  assert.match(gitIn(repo, 'status', '--porcelain'), /src\/ay\.js/)
+})
+
+test('a renamed planned file commits the deletion of the old path too', () => {
+  setup()
+  write(repo, 'src/old.js', 'o\n'); gitIn(repo, 'add', 'src/old.js'); gitIn(repo, 'commit', '-qm', 'old')
+  plan(['src/a.js', 'src/new.js', 'src/old.js'])
+  gitIn(repo, 'mv', 'src/old.js', 'src/new.js')
+  { const r = record('1'); assert.equal(r.code, 0, r.stderr) }
+  assert.deepEqual(files(), ['A\tsrc/a.js', 'R100\tsrc/old.js\tsrc/new.js'])
+})
+
+test('a commit failure names git, not signing', () => {
+  setup()
+  gitIn(repo, 'config', 'commit.gpgsign', 'true'); gitIn(repo, 'config', 'gpg.program', 'false')
+  assert.match(record('1').stderr, /git commit failed: .+/)
+})
+
+test('detached HEAD commits nothing', () => {
+  setup()
+  gitIn(repo, 'checkout', '-q', '--detach')
+  const r = record('1')
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(JSON.parse(r.stdout).commit, null)
+})
+
+test('tier L: a passing reply commits the slice; a failed commit reopens it and logs it', () => {
+  setup()
+  const reply = () => sdlc(repo, ['ratchet', 'record', 'feat', 'build', '--slice', '1'], { input: 'verdict: pass\n' })
+  gitIn(repo, 'config', 'commit.gpgsign', 'true'); gitIn(repo, 'config', 'gpg.program', 'false')
+  const bad = reply()
+  assert.notEqual(bad.code, 0)
+  assert.match(bad.stderr, /the slice is reopened/)
+  assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'feat']).stdout).slices['1'].status, 'open')
+  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/feat/events.jsonl'), 'utf8'), /"node":"build#1","verdict":"reopened","reason":"checkpoint commit failed"/)
+  gitIn(repo, 'config', 'commit.gpgsign', 'false')
+  const ok = reply()
+  assert.equal(ok.code, 0, ok.stderr)
+  assert.match(JSON.parse(ok.stdout).commit, /^[0-9a-f]{7,}$/)
+  assert.deepEqual(subjects(), ['sdlc/feat: slice 1'])
 })
