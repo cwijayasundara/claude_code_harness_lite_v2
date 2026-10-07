@@ -148,8 +148,7 @@ export function cmdCheckPush(_args: Args): void {
     if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.remoteRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }
     const diffs = rangeDiff(base, r.localSha)
     if (!diffs.length) continue
-    // A finished change is no longer active, but its branch still carries its folder: judge the push as that change
-    // (the branch's own first), as CI does, rather than minting an ad-hoc change for work that was planned.
+    // A finished change is not active, but its branch carries its folder: judge the push as that change (its branch's first), as CI does.
     const owned = slugsIn(diffs).filter(s => exists(path.join(SDLC, 'changes', s)))
     const own = owned.find(s => r.remoteRef === `refs/heads/sdlc/${s}`) ?? owned[0]
     const touched = diffs.some(d => isSource(d.file, config) && !isProtected(d.file))

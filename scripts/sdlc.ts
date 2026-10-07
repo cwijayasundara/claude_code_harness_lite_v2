@@ -40,8 +40,7 @@ const STACK_MARKERS: [string, string][] = [['package.json', 'node'], ['go.mod', 
 // without a person's yes, because it takes commands only from that shipped template and never from arguments. The write guard
 // asks a person before a model adds a level (declared commands run unprompted). Onboarding only: it declares only while `levels`
 // is empty, no change exists yet and sensors.json is not committed, so it cannot launder an edit to a reviewed config.
-// acceptance and api are not in the template: both default to the unit command until a person points them at a real e2e or
-// HTTP test, so a change that requires them (tier L, greenfield, an endpoint) never blocks on an undeclared level mid-change.
+// acceptance and api are not in the template: both default to the unit command, so a change never blocks on an undeclared level.
 function declareStackLevels(opt: string | true): string {
   const stacks = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'stacks.json'))) as Record<string, { levels: Record<string, string> }>
   const name = typeof opt === 'string' ? opt : STACK_MARKERS.find(([f]) => exists(path.join(ROOT, f)))?.[1]
