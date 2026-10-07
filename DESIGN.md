@@ -38,7 +38,7 @@ The biggest lever is **bounded context**. Everything below follows from that.
 skills/      the stages, /rig:* (start design spec plan diagnose build test sensors pr pr-review
              incident next init rule metrics), prompts only
 agents/      scout (haiku, read-only) · architect (opus) · implementer (sonnet) · reviewer (opus)
-hooks/       hooks.json = five settings hooks, none on Bash (work in -p and CI) · register.ts = the optional mod
+hooks/       hooks.json = five settings hooks plus two async lane hooks (`SubagentStart`, `SubagentStop`, observational), none on Bash (work in -p and CI) · register.ts = the optional mod
 scripts/     zero-dependency Node, no build step; sdlc.ts is the CLI; check.ts is the one checker
 templates/   CI workflows (rig-check, rig-review), settings.json, stacks.json, REVIEW.md
 guides/      contracts, engineering, testing: injected on first touch of a matching path
@@ -77,7 +77,8 @@ Gates are configured in `gates` in `.sdlc/sensors.json`. A `tier` sensor blocks 
 ├── changes/<slug>/  intent.md  spec.md  design.md/plan.md (## Files, ## Slices, ## Verification; no code)
 │                    verification.md (generated)  review*.md  runs.jsonl  ratchet.json  events.jsonl
 │                    pr.md  ship.json  approvals/waivers rows
-├── sensors.json     fast/full commands, tests, gates, levels, quality, limits, layers, contracts, ratchet, value
+├── PREFLIGHT.md     advisory readiness report, written only by `sdlc.ts preflight` (per host; consider gitignoring)
+├── sensors.json     fast/full commands, tests, gates, levels, quality, limits, layers, contracts, ratchet, value, scopes, points
 ├── rules.json       regex rules          guides/   bin/ (vendored checker)   STATE.md
 └── (gitignored)     .gate  .baseline  usage.jsonl  unresolved.json
 ```
@@ -94,9 +95,19 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 | One review per change | Findings below confidence 80 dropped; bounded fix rounds |
 | No "continue" prompting | `build` ends with a ready `/goal` line; `/rig-run` drives one node per turn |
 | Stamp, don't re-run | `verify` runs the plan's commands and the declared `full` commands once against the current tree and stamps `verification.md` with a tree stamp; ship and pre-push compare the stamp instead of re-running, and a stale stamp re-runs as before. CI reads no stamp |
+| Scopes | With `scopes`, a diff runs only the touched scopes and their declared `deps` dependents, each in its root; the same command text in the same resolved directory runs once; shards group by scope; more than `scopeLimit` scopes re-tiers to L |
+| Story points | S 5, M 7, L 11 (or an explicit number) kept in `ratchet.json`; `metrics` reports velocity per week and cost per point, unmeasured below five shipped changes |
 | Lean plans | No code in plans; `status` warns past 120 lines |
 | Plugin diet | Project `enabledPlugins` turns off unrelated plugins |
 | Cloud for long builds | A cloud session keeps running while the laptop sleeps |
+
+### Scopes, sparse base and preflight (v0.6)
+
+- **Fail closed.** The optional `affected` command may only add scopes; if it fails or times out every declared scope is treated as affected, with an `unscoped` warning. `verify` with no resolvable base ref runs every scope, so a clean tree cannot stamp `full: pass` with nothing run. Scope roots must be relative and resolve inside the repo, else the scope is `not run`. `weakensConfig` flags removed scopes or `deps`, a raised `scopeLimit`, `ci.scope` moving to `affected`, a changed, removed or emptied scope command, a changed root, and a new scope glob without `fast` or `full` once the base declared scopes.
+- **Sparse base is opt-in and trusts `deps`.** The base is measured in a throwaway worktree with a cone sparse checkout of the affected scopes plus their `deps` closure; the patterns go to that worktree's own `info/sparse-checkout` and the user's `.git/config` is never modified; invalid roots or any sparse failure fall back to a full checkout. A scope tool that reads paths outside its declared closure can fail or over-count on the sparse base and hide a regression, so declare `deps` completely or leave `sparseBase` off. The base-count cache is keyed on scope root and sparse or full mode.
+- **Preflight is advisory.** `.sdlc/PREFLIGHT.md` is denied to Edit and Write, but a Bash redirect could forge it, so no verdict trusts its `result:` line; only `status` staleness and the start skill read it. It checks the repo root only. Threat model for host probes: `java`, `go` and `python3` version probes run in the project root with `GOTOOLCHAIN=local`, so `go` never downloads a toolchain; a repo's version-manager config (`.tool-versions`, `.python-version`) could still point a shim at a repo-supplied binary, accepted as marginal because the harness already runs the repo's declared commands. SSH reachability reads `core.sshCommand` only from the user's global or system git config and runs `ls-remote` outside the repo, so a clone's own config never runs; the base-state check disables `core.fsmonitor`. A relative-path local origin reports not reachable. A repo set up before 0.6.0 fails the protection check until `init --full` is rerun.
+- **Checkpoints.** The script commits a done slice with `commit --only` and literal pathspecs (deletions and renames handled), never pushes, never on the trunk; a failed commit reopens the slice and appends a `reopened` event.
+- **Known limits.** `declaredCommandSet` omits scoped commands, so a scoped command is not recognised as declared by that check. When two scope keys dedup to one run, only the first key gets a finding. Scopes' own toolchains are not preflighted.
 
 ## 7. Measurement
 
