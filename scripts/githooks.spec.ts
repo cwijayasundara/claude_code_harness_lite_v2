@@ -50,7 +50,7 @@ test('staged assertion removal blocks as test-tamper', () => {
   assert.match(r.stdout, /test-tamper/)
 })
 
-test('a failing fast command blocks; a size warning prints but does not block', () => {
+test('a failing fast command blocks; a long-line warning prints but does not block', () => {
   write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' }, limits: { lineChars: 10 } }))
   stage('src/a.js', 'export const a = 1\n')
   const red = commit()
@@ -61,6 +61,24 @@ test('a failing fast command blocks; a size warning prints but does not block', 
   const warn = commit()
   assert.equal(warn.code, 0)
   assert.match(warn.stdout, /size/)
+})
+
+test('a staged file that crosses the line limit blocks at commit; one already over the limit does not', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 10 } }))
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n'
+  stage('src/a.js', lines(8))
+  stage('src/over.js', lines(30))
+  gitIn(repo, 'commit', '-qm', 'base')
+  stage('src/a.js', lines(15))
+  const crossed = commit()
+  assert.equal(crossed.code, 1, crossed.stdout)
+  assert.match(crossed.stdout, /size/)
+  assert.match(crossed.stdout, /grew to 15 lines/)
+  gitIn(repo, 'reset', '-q')
+  gitIn(repo, 'checkout', '--', 'src/a.js')
+  stage('src/over.js', lines(32))
+  const already = commit()
+  assert.equal(already.code, 0, already.stdout)
 })
 
 test('file names with spaces are judged; a binary file is skipped without a crash', () => {
