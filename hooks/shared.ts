@@ -20,9 +20,10 @@ export function parseStatus(stdout: string): Status | null {
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
 export const NODES: ReadonlySet<string> = new Set(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review', 'intent', 'spec', 'plan', 'design', 'notes'])
 
-// The change STATE.md names, read as core.ts's activeSlug does: undefined with no `change:` key (the script then guesses), else the slug or null.
+// The change STATE.md names, read as core.ts's frontmatter does (the last `change:` row wins): undefined with no such row (the
+// script then guesses), else the slug or null.
 export function stateChange(text: string): string | null | undefined {
-  const row = /^change:[ \t]*(.*)$/m.exec(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? '')
+  const row = [...(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? '').matchAll(/^change:\s*(.*)$/gm)].at(-1)
   const slug = row?.[1]?.replace(/^["']|["']$/g, '').trim() ?? ''
   return row ? (SLUG_RE.test(slug) ? slug : null) : undefined
 }

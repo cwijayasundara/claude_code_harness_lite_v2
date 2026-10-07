@@ -46,7 +46,8 @@ test('status --band carries only the active change and skips the per-change warn
   assert.ok(!('warnings' in band) && !('stale' in band) && 'step' in band && 'sensors' in band && 'flow' in band)
 })
 
-test('Stop does not re-run a fast command the recorder ran green on this exact tree, and does once the tree moves', () => {
+// runs.jsonl is only Edit-protected: a shell append could forge a green row, so Stop runs its fast commands itself, always.
+test('Stop runs its fast commands even when a green run is recorded on this exact tree', () => {
   const cmd = `node -e "require('fs').appendFileSync('.sdlc/count.txt','x')"`
   write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: cmd } }))
   gitIn(repo, 'add', '.')
@@ -58,8 +59,5 @@ test('Stop does not re-run a fast command the recorder ran green on this exact t
   const count = (): number => fs.readFileSync(path.join(repo, '.sdlc/count.txt'), 'utf8').length
   assert.equal(count(), 1)
   hook(repo, 'stop', { session_id: 's1' })
-  assert.equal(count(), 1, 'the recorded green run covers this tree')
-  write(repo, 'src/a.js', 'export const a = 2\n')
-  hook(repo, 'stop', { session_id: 's1' })
-  assert.equal(count(), 2, 'a changed tree runs the command again')
+  assert.equal(count(), 2, 'a recorded run never stands in for the gate')
 })

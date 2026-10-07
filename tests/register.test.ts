@@ -3,7 +3,7 @@ import { describe, expect, test, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { storyText, storyPaneText } from '../hooks/band'
 import type { Story, StepInfo, TurnPoint, FlowStep } from '../types'
-import { subway, spark, gauge, spendPerTurn, tokenMix, stack } from '../hooks/shared'
+import { subway, spark, gauge, spendPerTurn, tokenMix, stack, stateChange } from '../hooks/shared'
 
 const SESSION = { surface: 'terminal' as const, isInteractive: true, cwd: '/work' }
 
@@ -223,6 +223,18 @@ describe('sdlc mod', () => {
     expect(result.result).toBe('edited')
     expect(world.runs.slice(before)).toEqual([])
     expect(world.notices).toEqual([])
+  })
+
+  test('a second change: row in STATE.md wins, as in the script, so it cannot hide a hold', async ($, on) => {
+    const world = worldOf(on)
+    world.state = '---\nchange: ghost\nchange: add-login\n---\n'
+    on('tool.call', () => ({ result: 'edited' }))
+    await $.session.start(SESSION)
+    await $.tool.call({ tool: 'Edit', tool_use_id: 'tu1', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
+    expect(world.runs.some(r => r.argv.includes('impact-status'))).toBe(true)
+    expect(stateChange('---\nchange: ghost\nchange: add-login\n---\n')).toBe('add-login')
+    expect(stateChange('---\nchange:\n---\n')).toBe(null)
+    expect(stateChange('---\nother: x\n---\n')).toBe(undefined)
   })
 
   test('an edit with impact.json, or no change named in STATE.md, asks the script about a hold', async ($, on) => {
