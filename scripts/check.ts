@@ -315,7 +315,7 @@ export function editFindings(rel: string): Finding[] {
   const diffs = fileDiff(snap, rel)
   const pattern = withoutFixtures(diffs, config)
   const slug = activeSlug()
-  return applyWaivers([...testTamper(pattern, config), ...suppressions(pattern, config), ...size(diffs, config, fileLines([rel]), 'edit'), ...secretsInDiff(pattern), ...rulesSensor(pattern, rules)], slug ? [slug] : []).findings
+  return applyWaivers([...testTamper(pattern, config), ...suppressions(pattern, config), ...layering(pattern, config), ...size(diffs, config, fileLines([rel]), 'edit'), ...secretsInDiff(pattern), ...rulesSensor(pattern, rules)], slug ? [slug] : []).findings
 }
 
 const slugsIn = (diffs: FileDiff[]): string[] => [...new Set(diffs.map(d => /^\.sdlc\/changes\/([^/]+)\//.exec(d.file)?.[1]).filter((s): s is string => Boolean(s)))]
