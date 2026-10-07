@@ -9,8 +9,8 @@ import {
 import { parseConfig, parseRules, formatFindings, warnLines, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
-import { runCommand, recordRun, normCmd } from './runs.ts'
-import { selectScopes, scopeCommands, extraScopes } from './scopes.ts'
+import { runCommand, recordRun } from './runs.ts'
+import { selectScopes, resolveCommands } from './scopes.ts'
 import { withBaseTree } from './basetree.ts'
 import { loadChange, activeSlug } from './graph.ts'
 
@@ -58,20 +58,20 @@ export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug:
   const findings: Finding[] = []
   const cleared: string[] = []
   let left = budgetMs
-  const extra = Array.isArray(files) && Object.keys(config.scopes).length ? extraScopes(config) : []
-  if (extra === null) findings.push({ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .sdlc/sensors.json and fix it' })
-  for (const { key, cmd, cwd } of scopeCommands(prefix, config, files, extra)) {
-    if (!cwd && skip?.has(normCmd(cmd))) continue // a scoped command runs in its root: a same-text run at the repo root is not it
+  const plan = resolveCommands(prefix, config, files, budgetMs, skip)
+  left -= plan.ms
+  if (plan.affectedFailed) findings.push({ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .sdlc/sensors.json and fix it' })
+  for (const { key, cmd, dir, error } of plan.commands) {
     const known = config.knownRed.includes(key)
-    if (cwd && !fs.statSync(path.join(ROOT, cwd), { throwIfNoEntry: false })?.isDirectory()) {
-      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: its scope root ${cwd} is not a directory`, fix: `fix the scope's root in .sdlc/sensors.json` })
+    if (error) {
+      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: ${error}`, fix: `fix the scope's root in .sdlc/sensors.json` })
       continue
     }
     if (left <= 0) {
       findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: the ${Math.round(budgetMs / 1000)} s budget ran out`, fix: `make the ${prefix} commands in .sdlc/sensors.json faster` })
       continue
     }
-    const row = runCommand(cmd, { timeoutMs: left, cwd: cwd ? path.join(ROOT, cwd) : undefined })
+    const row = runCommand(cmd, { timeoutMs: left, cwd: dir })
     left -= row.ms
     if (slug) recordRun(slug, { ...row, source: prefix === 'fast' ? 'gate' : 'ship' })
     if (row.exit === 0) {

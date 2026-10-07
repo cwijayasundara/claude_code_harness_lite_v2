@@ -1,7 +1,9 @@
 // Scopes: which parts of a monorepo a diff touches, from globs and declared dependency edges only (no import parsing).
+import fs from 'node:fs'
+import path from 'node:path'
 import { ROOT } from './core.ts'
 import { matchesAny, type SensorConfig } from './model.ts'
-import { runCommand } from './runs.ts'
+import { runCommand, normCmd } from './runs.ts'
 
 export function scopeOf(file: string, config: SensorConfig): string | null {
   let best: string | null = null
@@ -71,4 +73,36 @@ export function scopeCommands(prefix: 'fast' | 'full', config: SensorConfig, fil
     for (const [name, cmd] of Object.entries(s[prefix] ?? {})) out.push({ key: `${s.name}:${prefix}.${name}`, cmd, cwd: s.root })
   }
   return out
+}
+
+// dir: the absolute directory to run in, absent for the repo root (so run rows look as before).
+export type ResolvedCommand = { key: string; cmd: string; dir?: string; error?: string }
+
+// A scope root must be a directory whose real path stays inside the repository (a symlink out of it is refused).
+function rootError(cwd: string): string | undefined {
+  const dir = path.join(ROOT, cwd)
+  if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return `its scope root ${cwd} is not a directory`
+  const rel = path.relative(fs.realpathSync(ROOT), fs.realpathSync(dir))
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return `its scope root ${cwd} resolves outside the repository`
+}
+
+// What runDeclared runs: each command with its resolved directory, once per (command, directory). A command in the repo root
+// (top-level, or a scope whose root is '.') is skipped when `skip` already ran it there. The `affected` command runs only when
+// there are changed files and scoped commands to choose between; its time comes out of the budget (ms).
+export function resolveCommands(prefix: 'fast' | 'full', config: SensorConfig, files: string[] | 'all' | undefined, budgetMs: number, skip?: Set<string>): { commands: ResolvedCommand[]; ms: number; affectedFailed: boolean } {
+  const scoped = Object.values(config.scopes).some(s => Object.keys(s[prefix] ?? {}).length)
+  const started = Date.now()
+  const extra = Array.isArray(files) && files.length && scoped ? extraScopes(config, Math.min(60_000, budgetMs)) : []
+  const ms = Date.now() - started
+  const top = path.join(ROOT, '')
+  const seen = new Set<string>()
+  const commands: ResolvedCommand[] = []
+  for (const { key, cmd, cwd } of scopeCommands(prefix, config, files, extra)) {
+    const dir = path.join(ROOT, cwd ?? '')
+    const id = `${normCmd(cmd)}\0${dir}`
+    if (seen.has(id) || (dir === top && skip?.has(normCmd(cmd)))) continue
+    seen.add(id)
+    commands.push(dir === top ? { key, cmd } : { key, cmd, dir, error: rootError(cwd ?? '') })
+  }
+  return { commands, ms, affectedFailed: extra === null }
 }

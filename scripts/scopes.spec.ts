@@ -238,3 +238,80 @@ test('a scope whose root is not a directory blocks instead of running its comman
   assert.match(out.reason, /pkg:fast\.t not run: its scope root nowhere is not a directory/)
   assert.equal(ran(m), 0)
 })
+
+// Fix round 1
+const stopAfterEdits = (repo: string, rels: string[]) => {
+  hook(repo, 'prompt-submit', {})
+  for (const rel of rels) write(repo, rel, 'export const x = 1\n')
+  return hook(repo, 'stop', { session_id: 's' })
+}
+const scoped = (scopes: object, extra: object = {}) => {
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes, ...extra }))
+  for (const d of ['a', 'b', 'shared', 'pkg']) write(repo, `${d}/index.js`, 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  return repo
+}
+
+test('verify with no base to diff against runs every scope\'s full commands rather than none', () => {
+  const m = mark('nobase')
+  const repo = makeRepo()
+  gitIn(repo, 'branch', '-m', 'trunk')
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: m.cmd } } } }))
+  write(repo, 'pkg/a.js', 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/nb')
+  sdlc(repo, ['new', 'nb', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/nb/plan.md', '## Files\n- pkg/a.js\n## Verification\n- `node -e "process.exit(0)"`\n')
+  sdlc(repo, ['verify', 'nb'])
+  assert.equal(ran(m), 1)
+})
+
+test('the same command in the same resolved directory runs once, even across two scopes', () => {
+  const m = mark('same')
+  const repo = scoped({ 'a/**': { name: 'a', root: 'shared', fast: { t: m.cmd } }, 'b/**': { name: 'b', root: 'shared/', fast: { t: m.cmd } } })
+  stopAfterEdits(repo, ['a/x.js', 'b/x.js'])
+  assert.equal(ran(m), 1)
+})
+
+test('the same command in different scope roots runs in each', () => {
+  const m = mark('diff')
+  const repo = scoped({ 'a/**': { name: 'a', root: 'a', fast: { t: m.cmd } }, 'b/**': { name: 'b', root: 'b', fast: { t: m.cmd } } })
+  stopAfterEdits(repo, ['a/x.js', 'b/x.js'])
+  assert.equal(ran(m), 2)
+})
+
+test('a scope rooted at . is the repo root: verify does not rerun a command its plan loop already ran there', () => {
+  const m = mark('dot')
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { unit: m.cmd }, scopes: { 'pkg/**': { name: 'pkg', root: '.', full: { t: m.cmd } } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/dot')
+  sdlc(repo, ['new', 'dot', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/dot/plan.md', `## Files\n- pkg/a.js\n## Verification\n- \`${m.cmd}\`\n`)
+  write(repo, 'pkg/a.js', 'export {}\n')
+  sdlc(repo, ['verify', 'dot'])
+  assert.equal(ran(m), 1)
+})
+
+test('the affected command is not run with no changed files, nor when the prefix has no scoped commands', () => {
+  const m = mark('affected')
+  const noFiles = scoped({ 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: 'node -e "0"' } } }, { affected: m.cmd })
+  stopAfterEdits(noFiles, [])
+  const fullOnly = scoped({ 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: 'node -e "0"' } } }, { affected: m.cmd })
+  stopAfterEdits(fullOnly, ['pkg/x.js'])
+  assert.equal(ran(m), 0)
+  const used = scoped({ 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: 'node -e "0"' } } }, { affected: m.cmd })
+  stopAfterEdits(used, ['pkg/x.js'])
+  assert.equal(ran(m), 1, 'it does run when there are files and scoped commands')
+})
+
+test('a scope root symlinked outside the repository blocks and does not run', () => {
+  const m = mark('link')
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-outside-'))
+  const repo = scoped({ 'pkg/**': { name: 'pkg', root: 'link', fast: { t: m.cmd } } })
+  fs.symlinkSync(outside, path.join(repo, 'link'))
+  const out = JSON.parse(stopAfterEdits(repo, ['pkg/x.js']).stdout)
+  assert.match(out.reason, /pkg:fast\.t not run: its scope root link resolves outside the repository/)
+  assert.equal(ran(m), 0)
+})
