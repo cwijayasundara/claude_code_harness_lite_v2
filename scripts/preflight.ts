@@ -3,6 +3,7 @@
 // Repo contents are data: manifests and config are read, never run; every repo-derived string is flattened before it reaches the report,
 // and a suggested fix only names a value that passed a plain-charset check. The only file written is .sdlc/PREFLIGHT.md.
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { ROOT, SDLC, git, read, exists, now, out, fail, type Args } from './core.ts'
@@ -85,17 +86,28 @@ export function checkRemote(url: string | null, reach: (u: string) => boolean): 
   return { id: 'remote', status: 'fail', line: `origin ${shown} is not reachable`, fix: 'check your network and credentials, then rerun preflight' }
 }
 
-// SSH in batch mode without losing the user's own ssh setup: an explicit GIT_SSH_COMMAND or GIT_SSH is left alone; a configured
-// core.sshCommand is carried into the env var (which git prefers over it) with BatchMode appended.
+// SSH in batch mode without losing the user's own ssh setup: an explicit GIT_SSH_COMMAND or GIT_SSH is left alone; the user's
+// core.sshCommand is carried into the env var (which git prefers over any config) with BatchMode appended.
 export function sshEnv(env: NodeJS.ProcessEnv, coreSshCommand: string | null): NodeJS.ProcessEnv {
   if (env.GIT_SSH_COMMAND || env.GIT_SSH) return { ...env }
   return { ...env, GIT_SSH_COMMAND: `${coreSshCommand || 'ssh'} -o BatchMode=yes` }
 }
 
-// One bounded, prompt-free probe: no shell, `--` before the URL, SSH in batch mode, the ext transport off.
+// The user's core.sshCommand from the global, else the system, config only: a clone's own .git/config is untrusted and never consulted.
+const OUTSIDE = { cwd: os.tmpdir(), timeout: 5_000, encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'] }
+function userSshCommand(): string | null {
+  for (const scope of ['--global', '--system']) {
+    const v = spawnSync('git', ['config', scope, '--get', 'core.sshCommand'], OUTSIDE).stdout?.trim()
+    if (v) return v
+  }
+  return null
+}
+
+// One bounded, prompt-free probe: no shell, `--` before the URL, SSH in batch mode, the ext transport off, and run outside the repo so
+// none of its local config (sshCommand, gitProxy, insteadOf) applies; the URL itself was read as data.
 const reachReal = (u: string): boolean => spawnSync('git', ['-c', 'protocol.ext.allow=never', 'ls-remote', '--heads', '--', u], {
-  cwd: ROOT, timeout: 10_000, stdio: 'ignore',
-  env: { ...sshEnv(process.env, git(['config', 'core.sshCommand'])), GIT_TERMINAL_PROMPT: '0' },
+  cwd: os.tmpdir(), timeout: 10_000, stdio: 'ignore',
+  env: { ...sshEnv(process.env, userSshCommand()), GIT_TERMINAL_PROMPT: '0' },
 }).status === 0
 
 type Opts = { root: string; run: Runner; reach: (u: string) => boolean; answers: Record<string, string> }

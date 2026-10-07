@@ -186,6 +186,21 @@ test('pre-v0.6.0 settings (approvals denied, PREFLIGHT.md not) fail protection; 
   assert.match(sdlc(repo, ['preflight']).stdout, /protection \| pass/)
 })
 
+test('the SSH probe never runs a repo-local core.sshCommand; the user\'s global one is used', () => {
+  const dir = tmp()
+  const localMarker = path.join(dir, 'local-ran')
+  const globalMarker = path.join(dir, 'global-ran')
+  for (const [name, marker] of [['local.sh', localMarker], ['global.sh', globalMarker]] as const) fs.writeFileSync(path.join(dir, name), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 })
+  gitIn(repo, 'config', 'core.sshCommand', path.join(dir, 'local.sh'))
+  gitIn(repo, 'remote', 'add', 'origin', 'ssh://git@localhost:1/o/r')
+  const globalConfig = path.join(dir, 'gitconfig')
+  fs.writeFileSync(globalConfig, `[core]\n\tsshCommand = ${path.join(dir, 'global.sh')}\n`)
+  const r = sdlc(repo, ['preflight'], { env: { GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: '1', GIT_SSH_COMMAND: '', GIT_SSH: '' } })
+  assert.match(r.stdout, /remote \| fail/)
+  assert.ok(!fs.existsSync(localMarker), 'the clone\'s own config must not choose what runs')
+  assert.ok(fs.existsSync(globalMarker), 'the user\'s global core.sshCommand is kept')
+})
+
 test('a host older than the build requires fails with the exact fix; a newer host passes', () => {
   const bin = tmp()
   fs.writeFileSync(path.join(bin, 'java'), '#!/bin/sh\necho \'openjdk version "17.0.9" 2023-10-17\' >&2\n', { mode: 0o755 })
