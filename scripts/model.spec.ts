@@ -202,3 +202,52 @@ test('warn rows and block rows never carry control or bidi characters from file 
   assert.equal(text.split('\n').length, 4, 'a block message keeps its line breaks')
   assert.match(text, /RED/)
 })
+
+test('v0.6 keys default and parse: points, idleGapMs, scopeLimit, ci, affected, sparseBase', () => {
+  const d = parseConfig('').config
+  assert.deepEqual(d.points, { S: 5, M: 7, L: 11 })
+  assert.equal(d.idleGapMs, 900_000)
+  assert.equal(d.scopeLimit, 3)
+  assert.deepEqual(d.ci, { scope: 'affected' })
+  assert.equal(d.affected, '')
+  assert.equal(d.sparseBase, false)
+  assert.deepEqual(d.scopes, {})
+  const c = parseConfig(JSON.stringify({ points: { S: 2, L: 13 }, idleGapMs: 60000, scopeLimit: 2, ci: { scope: 'all' }, affected: 'echo api', sparseBase: true }))
+  assert.deepEqual(c.errors, [])
+  assert.deepEqual(c.config.points, { S: 2, M: 7, L: 13 })
+  assert.equal(c.config.idleGapMs, 60000)
+  assert.equal(c.config.scopeLimit, 2)
+  assert.equal(c.config.ci.scope, 'all')
+  assert.equal(c.config.affected, 'echo api')
+  assert.equal(c.config.sparseBase, true)
+})
+
+test('v0.6 keys reject bad values with a precise error', () => {
+  const errs = (cfg: object): string[] => parseConfig(JSON.stringify(cfg)).errors
+  assert.match(errs({ points: { S: 0 } }).join(), /points\.S must be a positive integer/)
+  assert.match(errs({ points: { S: 1.5 } }).join(), /points\.S must be a positive integer/)
+  assert.match(errs({ points: { XL: 3 } }).join(), /points: unknown tier "XL"/)
+  assert.match(errs({ idleGapMs: -1 }).join(), /idleGapMs must be a positive integer/)
+  assert.match(errs({ scopeLimit: 0 }).join(), /scopeLimit must be a positive integer/)
+  assert.match(errs({ ci: { scope: 'some' } }).join(), /ci\.scope must be "affected" or "all"/)
+  assert.match(errs({ sparseBase: 'yes' }).join(), /sparseBase must be true or false/)
+})
+
+test('scopes parse: name, root, command maps, deps; every mistake is named', () => {
+  const ok = parseConfig(JSON.stringify({ scopes: {
+    'packages/api/**': { name: 'api', root: 'packages/api', fast: { test: 'npm test' }, quality: { lint: { cmd: 'npx eslint .', count: 'lines' } }, deps: ['packages/shared/**'] },
+    'packages/shared/**': { name: 'shared', root: 'packages/shared', full: { test: 'npm test' } },
+  } }))
+  assert.deepEqual(ok.errors, [])
+  assert.equal(ok.config.scopes['packages/api/**']?.name, 'api')
+  assert.deepEqual(ok.config.scopes['packages/api/**']?.deps, ['packages/shared/**'])
+  const errs = (scopes: object): string => parseConfig(JSON.stringify({ scopes })).errors.join('; ')
+  assert.match(errs({ 'a/**': { name: 'a', root: '../escape' } }), /root must be a relative path inside the repo/)
+  assert.match(errs({ 'a/**': { name: 'a', root: '/abs' } }), /root must be a relative path inside the repo/)
+  assert.match(errs({ 'a/**': { root: 'a' } }), /name must be a non-empty string/)
+  assert.match(errs({ 'a/**': { name: 'x', root: 'a' }, 'b/**': { name: 'x', root: 'b' } }), /scope name "x" is used twice/)
+  assert.match(errs({ 'a/**': { name: 'a', root: 'a', deps: ['nope/**'] } }), /deps entry "nope\/\*\*" is not a declared scope glob/)
+  assert.match(errs({ 'a/**': { name: 'a', root: 'a', levels: { unit: 'x' } } }), /levels is not supported yet/)
+  assert.match(errs({ 'a/**': { name: 'a', root: 'a', fast: 'npm test' } }), /fast must map names to command strings/)
+  assert.match(errs({ 'a/**': { name: 'a', root: 'a', bogus: 1 } }), /unknown key "bogus"/)
+})
