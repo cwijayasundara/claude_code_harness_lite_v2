@@ -79,10 +79,11 @@ export function scopeCommands(prefix: 'fast' | 'full', config: SensorConfig, fil
 export type ResolvedCommand = { key: string; cmd: string; dir?: string; error?: string }
 
 // A scope root must be a directory whose real path stays inside the repository (a symlink out of it is refused).
-function rootError(cwd: string): string | undefined {
-  const dir = path.join(ROOT, cwd)
+// top: the checkout it is resolved in (the working tree, or a base worktree).
+export function rootError(cwd: string, top = ROOT): string | undefined {
+  const dir = path.join(top, cwd)
   if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return `its scope root ${cwd} is not a directory`
-  const rel = path.relative(fs.realpathSync(ROOT), fs.realpathSync(dir))
+  const rel = path.relative(fs.realpathSync(top), fs.realpathSync(dir))
   if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return `its scope root ${cwd} resolves outside the repository`
 }
 

@@ -53,3 +53,23 @@ test('shard order is locale-independent: plain code-point order, uppercase befor
   const s = makeShards(['b.ts', 'B.ts', 'é.ts', 'a.ts', 'Z.ts'].map(file => ({ file, lines: 1 })))
   assert.deepEqual(s[0]?.files, ['B.ts', 'Z.ts', 'a.ts', 'b.ts', 'é.ts'])
 })
+
+test('shards group by the key the caller gives, so a scope stays together', () => {
+  const key = (f: string): string => (f.startsWith('api/') ? 'api' : 'web')
+  const s = makeShards([{ file: 'web/a.ts', lines: 1 }, { file: 'api/b.ts', lines: 1 }, { file: 'web/c.ts', lines: 1 }], 25, 5000, key)
+  assert.deepEqual(s.map(x => x.files), [['api/b.ts', 'web/a.ts', 'web/c.ts']])
+  assert.equal(s[0]?.name, '01-api+web')
+  const split = makeShards([{ file: 'api/b.ts', lines: 1 }, { file: 'web/a.ts', lines: 1 }], 1, 5000, key)
+  assert.deepEqual(split.map(x => x.name), ['01-api', '02-web'])
+})
+
+test('the shards command uses scope names when scopes are declared and (unscoped) for the rest', () => {
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'api/**': { name: 'api', root: 'api' } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/big')
+  sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
+  write(repo, 'api/a.ts', 'export {}\n'); write(repo, 'loose/b.ts', 'export {}\n')
+  const out = JSON.parse(sdlc(repo, ['shards', 'big', '--json']).stdout) as { shards: { name: string; files: string[] }[] }
+  assert.deepEqual(out.shards.map(s => s.name), ['01-(unscoped)+api'])
+})
