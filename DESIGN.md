@@ -38,14 +38,14 @@ The biggest lever is **bounded context**. Everything below follows from that.
 skills/      the stages, /rig:* (start design spec plan diagnose build test sensors pr pr-review
              incident next init rule metrics), prompts only
 agents/      scout (haiku, read-only) · architect (opus) · implementer (sonnet) · reviewer (opus)
-hooks/       hooks.json = settings hooks (work in -p and CI) · register.ts = the optional mod
+hooks/       hooks.json = five settings hooks, none on Bash (work in -p and CI) · register.ts = the optional mod
 scripts/     zero-dependency Node, no build step; sdlc.ts is the CLI; check.ts is the one checker
 templates/   CI workflows (rig-check, rig-review), settings.json, stacks.json, REVIEW.md
 guides/      contracts, engineering, testing: injected on first touch of a matching path
 .sdlc/       the consumer repo's committed evidence (see §5)
 ```
 
-- **Skills, not commands; agents for model routing.** Plugin agents ignore `hooks`, `mcpServers` and `permissionMode`, so per-agent guards live in plugin-level hooks.
+- **Skills, not commands; agents for model routing.** Plugin agents ignore `hooks`, `mcpServers` and `permissionMode`, so an agent's limits are its `tools:` list; there are no per-agent gates.
 - **Settings hooks vs the mod.** Settings hooks are portable and run in `-p` and CI, so every essential gate is one. The mod (band, panes, impact dialog, cost capture) is in-process and optional; nothing essential depends on it.
 - **Standalone by default.** `vendor --standalone` copies skills, agents, hooks and scripts into the repo (`.claude/skills/rig-*`, `.claude/agents/rig-*`, `.sdlc/bin`), so a repo never depends on the plugin and a cloud session runs it as is. `/rig-approve` and `/rig-waive` are vendored skills with `disable-model-invocation` and a pinned `!` command; `$ARGUMENTS` is single-quoted because it is substituted raw.
 - **Artifacts live in `.sdlc/`, not `.claude/`.** Claude Code protects `.claude/`: writes there prompt, or are denied in `-p`, and allow rules cannot change that.
@@ -82,7 +82,7 @@ Gates are configured in `gates` in `.sdlc/sensors.json`. A `tier` sensor blocks 
 └── (gitignored)     .gate  .baseline  usage.jsonl  unresolved.json
 ```
 
-Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.json`, `events.jsonl`, `pr.md`, `ship.json`, `.gate`) are written only by sdlc, enforced by the pre-bash and pre-edit guards. Plans must not contain code (this alone would have removed the 880 KB of plan text).
+Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.json`, `events.jsonl`, `pr.md`, `ship.json`, `.gate`) are written only by sdlc. The template's `permissions` deny rules keep the Edit and Write tools off them and CI recomputes every verdict; a shell script can still write a file locally, so CI plus branch protection is the boundary. Plans must not contain code (this alone would have removed the 880 KB of plan text).
 
 ## 6. Token and time policy
 
@@ -93,6 +93,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 | Cheap subagents | implementer on Sonnet, scout on Haiku; Opus only for architect and reviewer |
 | One review per change | Findings below confidence 80 dropped; bounded fix rounds |
 | No "continue" prompting | `build` ends with a ready `/goal` line; `/rig-run` drives one node per turn |
+| Stamp, don't re-run | `verify` runs the plan's commands and the declared `full` commands once from a clean tree and stamps `verification.md` with a tree stamp; ship and pre-push compare the stamp instead of re-running, and a stale stamp re-runs as before. CI reads no stamp |
 | Lean plans | No code in plans; `status` warns past 120 lines |
 | Plugin diet | Project `enabledPlugins` turns off unrelated plugins |
 | Cloud for long builds | A cloud session keeps running while the laptop sleeps |
@@ -116,19 +117,19 @@ Live, paid, one run per arm: treat as directional.
 
 `graph.ts` holds the per-type paths, per-tier gates and `step()`, which says continue, stop for a human, or block, and why. State is `ratchet.json` plus `events.jsonl` per change (evidence, sdlc-written). Build runs slice by slice with a bounded review loop; `levels` (unit, integration, acceptance, api) and `quality` commands (lint and similar, run on the branch and a base worktree, only a worsening blocks, else `unmeasured`) feed the test and sensors nodes; `/rig:pr` commits, pushes and opens the PR; `/rig:pr-review` reads it fail-closed. `/rig-approve <slug> budget` is the only way to raise a cap.
 
-**Auto-approval** (only when `step()` says continue at an autonomous node, and the plan is approved for gated tiers): commands declared in `sensors.json` (exact match, never a prefix), the pinned harness script's deterministic subcommands, read-only git, `git checkout -b sdlc/<slug>`, `gh pr view|checks|comment` for the change's own branch, and edits inside the plan's `## Files` (no dot-segment paths). **Never auto-approved:** approvals, waivers, budget raises, edits to `sensors.json`, `.claude/settings.json` and other protected files.
+**No auto-approval and no Bash hook.** The guard layer (the `PreToolUse` hooks for Bash and Edit, the `SubagentStart` and `SubagentStop` gates, auto-approval and the read-only Bash allowlist) was removed in v0.5.0. `permissions` deny rules in `templates/settings.json` keep the Edit and Write tools off pure evidence; `ask` rules make a person confirm edits to `sensors.json`, `rules.json`, `.claude/settings.json`, `.sdlc/bin`, the git hooks, the mod, the guides, the `rig-check` workflow and CODEOWNERS. `CLAUDE.md` is deliberately not on the list (`init` writes it with the Write tool). Rules are evaluated deny, then ask, then allow; case-folded paths on case-insensitive file systems are not covered. The model can still run `SDLC_HUMAN=1 ... approve` through Bash; CI refuses approval rows a PR adds unless an independent reviewer approves the head commit. **Never self-approved:** approvals, waivers, budget raises.
 
 **Sensors and test are never self-certified.** `ratchet record` refuses those nodes; `quality` and `verify-report` record them because they measure. The ship gate re-runs the quality comparison. A slice review is model-self-certified and only paces the build; test levels, sensors, the ship gate and CI are what a change must pass.
 
 **CI never accepts a harness waiver from the PR**: a `harness-tamper` finding cannot be waived at CI, so a harness change lands on the trunk first as its own reviewed change.
 
-Known limits: quality is compared at ship, not in CI, and reads `unmeasured` with no base (on trunk). Run autonomous builds in Claude Code's sandbox: declared test commands run model-written code. Defaults leave tier S and M ungated, so auto-approval starts once `plan.md` exists.
+Known limits: quality is compared at ship, not in CI, and reads `unmeasured` with no base (on trunk). Run autonomous builds in Claude Code's sandbox: declared test commands run model-written code. Defaults leave tier S and M ungated, so an autonomous build starts once `plan.md` exists.
 
 ## 10. Git hooks (spec 5)
 
-Git is the common layer for every editor, agent and person, so `hooks install` sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh`, running the vendored checker). `check --at commit` runs the Stop sensors on the staged diff plus the fast commands; `check --at push` runs the ship checks and the quality ratchet against CI's base (merge-base with the trunk), within `githooks.budgetMs`. A hook that cannot run warns and lets git continue; a finding that blocks still blocks. Warnings are visible: Stop prints a `systemMessage` and the next prompt carries them over once. `/rig:pr` commits with `--no-verify` because its ship gate has just judged that tree. Opt out with `hooks uninstall` (`rig.githooks = off`).
+Git is the common layer for every editor, agent and person, so `hooks install` sets `core.hooksPath` to the committed `.sdlc/githooks/` (POSIX `sh`, running the vendored checker). `check --at commit` runs the Stop sensors on the staged diff plus the fast commands; `check --at push` runs the ship checks and the quality ratchet against CI's base (merge-base with the trunk), within `githooks.budgetMs`; for a non-ad-hoc change pushed from a clean checkout whose tree stamp matches `verification.md` and the sensors node, it skips the full commands and the quality comparison (a stale stamp re-runs them). A hook that cannot run warns and lets git continue; a finding that blocks still blocks. Warnings are visible: Stop prints a `systemMessage` and the next prompt carries them over once. `/rig:pr` commits with `--no-verify` because its ship gate has just judged that tree. Opt out with `hooks uninstall` (`rig.githooks = off`).
 
-There is no guard against the model passing `--no-verify` or running `hooks uninstall`: a text match over shell commands was removed as too leaky to be worth its size. A person keeps `--no-verify` too, so **CI plus branch protection is the boundary**; the hooks are a fast local signal.
+There is no guard against the model passing `--no-verify` or running `hooks uninstall`: no hook runs on Bash, because a text match over shell commands was too leaky to be worth its size. A person keeps `--no-verify` too, so **CI plus branch protection is the boundary**; the hooks are a fast local signal.
 
 Open: fast and full commands at commit and push see the working tree rather than the index or pushed commits.
 

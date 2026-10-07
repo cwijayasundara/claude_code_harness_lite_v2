@@ -4,6 +4,6 @@
   "description": "Marketplace for the rig harness plugin",
   "owner": { "name": "Chaminda Wijayasundara" },
   "plugins": [
-    { "name": "rig", "source": "./", "description": "Thin AI-native SDLC harness for Claude Code", "version": "0.4.1" }
+    { "name": "rig", "source": "./", "description": "Thin AI-native SDLC harness for Claude Code", "version": "0.5.0" }
   ]
 }

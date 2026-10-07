@@ -146,7 +146,7 @@ export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason:
 export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
 const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
 
-// The transition function: never asks a model. /rig-next (skill and mod), status and auto-approval all read it.
+// The transition function: never asks a model. /rig-next (skill and mod), status and the autonomous run all read it.
 export function step(slug: string): Step {
   const change = loadChange(slug)
   const node = change.next?.stage ?? null

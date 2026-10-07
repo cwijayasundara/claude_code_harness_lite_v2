@@ -1,6 +1,6 @@
 {
   "name": "rig",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Thin AI-native SDLC harness: type x tier routing, file-based artifacts, human gates, cheap-by-default model routing, context budgets and playbook + cost metrics.",
   "author": { "name": "Chaminda Wijayasundara" },
   "license": "MIT",
