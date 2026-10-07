@@ -18,7 +18,7 @@ import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig } from './check.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
-import { cmdEvals } from './evals.ts'
+import { cmdEvals, lastRun } from './evals.ts'
 import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
@@ -157,7 +157,9 @@ function cmdStatus(args: Args): void {
   const act = active ? loadChange(active) : null
   const st = active ? step(active) : null
   const where = act ? `${act.slug} is at ${act.next ? (act.next.kind === 'approve' ? act.next.gate : act.next.stage) : 'done'}` : 'no active change'
-  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, `where: ${where}`, `stale: ${stale.length ? stale.join('; ') : 'nothing'}`, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`), ...open.map(o => `open: ${o}`)].filter(Boolean).join('\n'))
+  const ev = lastRun()
+  const evalLine = ev ? `evals: ${ev.passed}/${ev.total} pass (${ev.rate.toFixed(2)}) → ${ev.verdict}, last run ${ev.run.slice(0, 10)}` : ''
+  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, `where: ${where}`, `stale: ${stale.length ? stale.join('; ') : 'nothing'}`, evalLine, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`), ...open.map(o => `open: ${o}`)].filter(Boolean).join('\n'))
 }
 
 // A standalone repo's /rig-approve and /rig-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.

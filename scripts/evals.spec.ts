@@ -199,3 +199,18 @@ test('--seed drafts one eval per shipped change from its intent, base, tests and
   assert.match(evals(['--seed']).stdout, /nothing to seed/)
   assert.equal(fs.readFileSync(path.join(repo, '.sdlc/evals/change-demo.json'), 'utf8'), '{"kept":true}')
 })
+
+test('status shows the last eval run', () => {
+  sdlc(repo, ['new', 'demo', '--type', 'chore', '--tier', 'S'])
+  defineEval('fine', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  evals([])
+  assert.match(sdlc(repo, ['status']).stdout, /^evals: 1\/1 pass \(1\.00\) → pass, last run \d{4}-\d{2}-\d{2}$/m)
+})
+
+test('metrics: eval pass rate from the last run, incident-to-eval hours from git', () => {
+  for (const id of ['a', 'b', 'c', 'd', 'e']) defineEval(id, { prompt: 'p', checks: [{ kind: 'command', cmd: id === 'e' ? 'false' : 'true' }] })
+  evals([])
+  const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
+  assert.deepEqual({ value: m.eval_pass_rate.value, n: m.eval_pass_rate.n }, { value: 0.8, n: 5 })
+  assert.equal(m.incident_to_eval_hours.value, null, 'unmeasured below five incidents with an eval')
+})
