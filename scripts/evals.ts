@@ -79,6 +79,7 @@ function scoreChecks(checks: Check[], dir: string, stream: string, timeoutMs: nu
 
 // The code under test is the eval's base; the agent configuration and the eval's own files come from HEAD.
 function overlay(dir: string, head: string, files: string[]): void {
+  gitIn(dir, ['rm', '-rqf', '--ignore-unmatch', '--', ...CONFIG_PATHS])
   for (const p of [...CONFIG_PATHS, ...files]) if (gitIn(dir, ['cat-file', '-e', `${head}:${p}`]) !== null) gitIn(dir, ['checkout', head, '--', p])
 }
 
@@ -87,11 +88,15 @@ function runEval(e: Eval, run: string, cfg: { maxTurns: number; timeoutMs: numbe
   const head = git(['rev-parse', 'HEAD']) ?? 'HEAD'
   const done = (pass: boolean, checks: CheckResult[], error?: string): EvalResult => ({ at: now(), run, id: e.id, pass, ...(error ? { error } : {}), checks, ms: Date.now() - started })
   const bin = process.env.RIG_CLAUDE || 'claude'
+  const missing = (e.files ?? []).filter(p => gitIn(process.cwd(), ['cat-file', '-e', `${head}:${p}`]) === null)
+  if (missing.length) return done(false, [], `files not in HEAD: ${missing.join(', ')}; commit them first`)
   const r = withBaseTree(e.base ?? head, dir => {
     overlay(dir, head, e.files ?? [])
     const args = ['-p', e.prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', String(cfg.maxTurns), ...(e.allowedTools ? ['--allowedTools', e.allowedTools] : []), ...(model ? ['--model', model] : [])]
     const env = { ...process.env }
     delete env.NODE_TEST_CONTEXT
+    delete env.GH_TOKEN
+    delete env.GITHUB_TOKEN
     const c = spawnSync(bin, args, { cwd: dir, env, encoding: 'utf8', timeout: cfg.timeoutMs, maxBuffer: 256 * 1024 * 1024 })
     const code = (c.error as NodeJS.ErrnoException | undefined)?.code
     if (code === 'ENOENT') return done(false, [], `${bin} not found: install Claude Code`)

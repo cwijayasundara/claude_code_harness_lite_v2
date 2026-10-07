@@ -194,7 +194,7 @@ test('the settings template protects evidence with deny rules and the harness co
   for (const f of ['runs.jsonl', 'verification.md', 'impact.json', 'ratchet.json', 'events.jsonl', 'pr.md', 'ship.json']) assert.ok(deny.has(`Edit(/.sdlc/changes/*/${f})`), f)
   assert.ok(deny.has('Read(.env)') && deny.has('Edit(.env)'), 'the .env rules stay')
   assert.deepEqual(settings.permissions.ask, [
-    'Edit(/.sdlc/sensors.json)', 'Edit(/.sdlc/rules.json)', 'Edit(/.claude/settings.json)',
+    'Edit(/.sdlc/sensors.json)', 'Edit(/.sdlc/rules.json)', 'Edit(/.sdlc/evals/*.json)', 'Edit(/.claude/settings.json)',
     'Edit(/.sdlc/bin/**)', 'Edit(/.sdlc/githooks/**)', 'Edit(/.sdlc/mod/**)', 'Edit(/.sdlc/guides/**)',
     'Edit(/.github/workflows/rig-check.yml)', 'Edit(/CODEOWNERS)', 'Edit(/.github/CODEOWNERS)',
   ])

@@ -13,6 +13,7 @@
     "ask": [
       "Edit(/.sdlc/sensors.json)",
       "Edit(/.sdlc/rules.json)",
+      "Edit(/.sdlc/evals/*.json)",
       "Edit(/.claude/settings.json)",
       "Edit(/.sdlc/bin/**)",
       "Edit(/.sdlc/githooks/**)",
