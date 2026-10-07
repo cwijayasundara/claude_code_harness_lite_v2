@@ -17,7 +17,7 @@ const turns = atom({ plugin: 'rig', key: 'turns' } as const, [] as TurnPoint[])
 const STATE_COLOR = { done: 'green', current: 'cyan', gate: 'yellow', todo: undefined } as const
 
 async function refresh($: EngineInterface): Promise<void> {
-  const status: Status | null = parseStatus((await $.process.run(sdlcArgv($.plugin.root, 'status', '--json'))).stdout)
+  const status: Status | null = parseStatus((await $.process.run(sdlcArgv($.plugin.root, 'status', '--json', '--band'))).stdout)
   const change = status?.active ?? null
   const stage = status?.changes?.find(c => c.slug === change)?.next?.stage ?? (change ? 'done' : null)
   const session = await $.session.usage()

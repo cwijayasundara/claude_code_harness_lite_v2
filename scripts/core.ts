@@ -242,8 +242,14 @@ export function listChanges(): string[] {
     .map(d => d.name)
 }
 
-// Shipped means the scope record was committed with the change, which git can prove. v0.1 changes count too.
-export const isShipped = (slug: string): boolean => Boolean(git(['log', '-1', '--format=%H', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug, 'ship.json')))]))
+// Shipped means the scope record is committed with the change, which git can prove. v0.1 changes count too. One ls-tree of HEAD
+// per (short-lived) process: status asks for every change each turn, and `git log -- <path>` for an unshipped one walks all history.
+let committed: Set<string> | null = null
+export function isShipped(slug: string): boolean {
+  const dir = toPosix(path.relative(ROOT, CHANGES))
+  committed ??= new Set((git(['ls-tree', '-r', '--name-only', '-z', 'HEAD', '--', dir]) ?? '').split('\0'))
+  return committed.has(`${dir}/${slug}/ship.json`)
+}
 
 // ---------- plan parsing & scope drift ----------
 

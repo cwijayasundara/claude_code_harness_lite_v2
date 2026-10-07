@@ -48,6 +48,15 @@ export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number
 export const runsFile = (slug: string): string => path.join(CHANGES, slug, 'runs.jsonl')
 export const readRuns = (slug: string): RunRow[] => readJsonl<RunRow>(runsFile(slug))
 
+// Repo-root commands whose latest recorded run on exactly this tree passed, so the Stop gate need not run them again. The tree
+// is stamped only when a stamped green run exists, so a gate with nothing recorded pays nothing.
+export function greenOnTree(slug: string, stamp: () => string | null): Set<string> {
+  const rows = readRuns(slug).filter(r => r.tree && !r.cwd && !r.expectFail)
+  const tree = rows.some(r => r.exit === 0) ? stamp() : null
+  const latest = new Map(rows.filter(r => tree && r.tree === tree).map(r => [normCmd(r.cmd), r] as const))
+  return new Set([...latest].filter(([, r]) => r.exit === 0 && !r.timedOut).map(([cmd]) => cmd))
+}
+
 export function recordRun(slug: string, row: RunRow): void {
   fs.mkdirSync(path.dirname(runsFile(slug)), { recursive: true })
   fs.appendFileSync(runsFile(slug), JSON.stringify(row) + '\n')

@@ -8,9 +8,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, APPROVALS, STATE, USAGE, LIMITS, SOFT_HOOK_FAILURE, APPROVAL_ARTIFACTS, approvalDigest,
-  exists, read, lines, sha, now, toPosix, out, fail, git, gitIn, planFiles, planPath, planName, approvalFile, isPlanned, frontmatter, parseArgs, optString,
-  listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems, checkSlug, SLUG_RE,
-  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, planVerificationBullets, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type Stage, type UsageRow,
+  exists, read, lines, now, toPosix, out, fail, git, planPath, planName, approvalFile, frontmatter, parseArgs, optString, listChanges, defaultBase, isShipped, scopeDrift, scanSecrets, planProblems, checkSlug, SLUG_RE,
+  WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type UsageRow,
 } from './core.ts'
 import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step, tierDrift } from './graph.ts'
 import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
@@ -29,8 +28,6 @@ import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
 import { cmdShards } from './shards.ts'
-import { requiredLevels, levelResults } from './levels.ts'
-import { normCmd } from './runs.ts'
 import { treeStamp } from './stamp.ts'
 import { stalenessAll, openItems, sliceWarnings, repoStale } from './stale.ts'
 import { cmdPreflight } from './preflight.ts'
@@ -124,6 +121,9 @@ function cmdStatus(args: Args): void {
   const named = frontmatter(read(STATE)).data.change
   if (named && exists(path.join(CHANGES, named)) && step(named).verdict === 'ready') clearReady(named)
   const active = activeSlug()
+  // --band, the mod's every-turn read: the active change only, without the warnings and staleness that walk every change and stamp the tree.
+  const lean = json && args.opt.band ? (active ? loadChange(active) : null) : undefined
+  if (lean !== undefined) return out(JSON.stringify({ initialised: true, active, changes: lean ? [{ slug: lean.slug, next: lean.next }] : [], sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, lean) }))
   const changes = listChanges().map(loadChange)
   const warnings: string[] = []
   for (const c of changes) {
