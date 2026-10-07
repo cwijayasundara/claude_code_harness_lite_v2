@@ -5,6 +5,7 @@ import path from 'node:path'
 import { CHANGES, EVIDENCE_NAME_RE, planPath, SLUG_RE, checkSlug, USAGE, now, read, sha, readJsonl, out, fail, type Args, type UsageRow } from './core.ts'
 import { loadConfig } from './check.ts'
 import { checkSlice } from './slicecheck.ts'
+import { commitSlice } from './checkpoint.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done'; tree?: string }
@@ -123,6 +124,14 @@ function readFrom(slug: string, from: string): string {
   return fs.readFileSync(real, 'utf8')
 }
 
+export function reopenSlice(slug: string, slice: string): void {
+  const r = readRatchet(slug)
+  const s = r.slices[slice]
+  if (s) s.status = 'open'
+  if (r.nodes.build) r.nodes.build.status = 'open'
+  writeRatchet(slug, r)
+}
+
 export function cmdRatchet(args: Args): void {
   const [sub, slug, node] = args.pos
   if (!sub || !slug) fail('usage: ratchet (record <slug> <node> [--slice N] | show <slug> | spend <slug>)')
@@ -151,7 +160,9 @@ export function cmdRatchet(args: Args): void {
     if (n !== 'build') fail('--checks applies to the build node only')
     const c = checkSlice(slug)
     if (!c.ok) fail(`slice ${slice} not recorded: ${c.why}`)
-    return out(JSON.stringify(recordRound(slug, 'build', [], { cap: config.ratchet.rounds.build, slice })))
+    const cp = commitSlice(slug, slice ?? '1')
+    if (!cp.ok) fail(`could not commit slice ${slice}: ${cp.why}; the slice is not recorded`)
+    return out(JSON.stringify({ ...recordRound(slug, 'build', [], { cap: config.ratchet.rounds.build, slice }), commit: cp.sha }))
   }
   const from = args.opt.from
   if (from === true) fail('--from needs a file path')
@@ -162,5 +173,11 @@ export function cmdRatchet(args: Args): void {
   const verdictLine = /^\s*verdict:\s*(pass|changes-needed)\b/im.exec(text)?.[1]?.toLowerCase()
   if (!verdictLine && !findings.length) fail('no reviewer verdict: expected a "verdict: pass|changes-needed" line or finding lines in the reply; nothing recorded')
   if (verdictLine === 'changes-needed' && !findings.some(f => BLOCKING.has(f.severity))) fail('changes-needed but no critical or high finding lines parsed: restate findings in the reviewer line format; nothing recorded')
-  out(JSON.stringify(recordRound(slug, n, findings, { cap: config.ratchet.rounds[n], slice })))
+  const result = recordRound(slug, n, findings, { cap: config.ratchet.rounds[n], slice })
+  if (n === 'build' && result.verdict === 'done') {
+    const cp = commitSlice(slug, slice ?? '1')
+    if (!cp.ok) { reopenSlice(slug, slice ?? '1'); fail(`could not commit slice ${slice}: ${cp.why}; the slice is reopened`) }
+    return out(JSON.stringify({ ...result, commit: cp.sha }))
+  }
+  out(JSON.stringify(result))
 }
