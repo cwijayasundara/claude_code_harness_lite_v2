@@ -7,7 +7,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && npm run typecheck:mod && claude plugin test .",
     "typecheck": "tsc -p scripts/tsconfig.json",
     "typecheck:mod": "tsc -p tsconfig.json",
-    "validate": "claude plugin validate .claude-plugin/plugin.json"
+    "validate": "claude plugin validate .claude-plugin/plugin.json",
+    "test:integration:self": "node tests/integration/selftest.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
