@@ -5,8 +5,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
-import { isProtected } from './sensors.ts'
+import { isProtected, harnessTamper } from './sensors.ts'
 import { parseEval, skillsLoaded, summarize, type EvalResult } from './evals.ts'
+import type { FileDiff } from './model.ts'
 
 const STUB = `#!/usr/bin/env node
 const fs = require('fs')
@@ -227,4 +228,16 @@ test('metrics: incident_to_eval_hours is the median over incidents that have an 
   const h = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics.incident_to_eval_hours
   assert.equal(h.n, 5, 'the incident with no eval is not a sample')
   assert.ok(typeof h.value === 'number' && h.value > 1.5 && h.value < 3, `hours ${h.value}`)
+})
+
+test('a harness change outside the weakening rules asks for an eval run', () => {
+  const [f] = harnessTamper([{ file: 'CLAUDE.md', status: 'M' } as FileDiff], { point: 'ship', before: () => '', after: () => '' })
+  assert.equal(f?.severity, 'warn')
+  assert.match(f?.fix ?? '', /sdlc\.ts evals/)
+})
+
+test('diagnose turns an incident fix into an eval named for its class', () => {
+  const text = fs.readFileSync(path.join(import.meta.dirname, '..', 'skills/diagnose/SKILL.md'), 'utf8')
+  assert.match(text, /\.sdlc\/evals\/incident-<yyyymmdd>-<class>\.json/)
+  assert.match(text, /"source": "incident:<incident file>"/)
 })

@@ -26,7 +26,8 @@ Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` o
    - If the fix touches more than 3 files or a contract, stop: it is a feature or refactor, so tell the person.
 4. **Tier L: stop for approval before fixing.** After steps 1–2 (the failing test and the root cause), write `.sdlc/changes/$0/plan.md` (≤ 30 lines, no code): `## Root cause` (`path:line`, one paragraph), `## Fix` (the smallest change, in words), `## Files`, `## Verification`. Then stop and tell the person: review plan.md and run `/rig-approve $0 plan`. When run again after approval, go straight to step 3.
 5. **Record (tier S and M).** Write `## Files` (touched files) and `## Verification` (test commands) into `.sdlc/changes/$0/plan.md`, using 15 lines or fewer and no code.
-6. **Verify.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts verify $0` (Bash timeout 600000): it runs the plan's commands through the recorder and writes `.sdlc/changes/$0/verification.md`.
+6. **Incident changes only** (`type: incident` in intent.md): write `.sdlc/evals/incident-<yyyymmdd>-<class>.json` with the Write tool: `{"prompt": "<the incident's symptoms, one paragraph>", "base": "<git rev-parse HEAD before the fix>", "files": ["<the regression test file>"], "checks": [{"kind": "command", "cmd": "<the regression test command>"}], "source": "incident:<incident file>"}`. It keeps the incident in the eval suite after it ships. The write asks you to approve it: eval definitions are protected.
+7. **Verify.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts verify $0` (Bash timeout 600000): it runs the plan's commands through the recorder and writes `.sdlc/changes/$0/verification.md`.
 
 Three failed hypotheses means consult the advisor or the person. Do not keep guessing.
 
