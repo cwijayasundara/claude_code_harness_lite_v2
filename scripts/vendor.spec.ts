@@ -184,7 +184,7 @@ test('standalone vendoring copies the review workflow and points the skills at i
 test('the settings template protects evidence with deny rules and the harness config with ask rules', () => {
   const settings = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'settings.json'), 'utf8')) as { permissions: { allow: string[]; ask: string[]; deny: string[] } }
   const deny = new Set(settings.permissions.deny)
-  for (const f of ['approvals.jsonl', 'waivers.jsonl', 'usage.jsonl', '.gate', '.baseline', 'unresolved.json']) assert.ok(deny.has(`Edit(/.sdlc/${f})`), f)
+  for (const f of ['approvals.jsonl', 'waivers.jsonl', 'usage.jsonl', '.gate', '.baseline', 'unresolved.json', 'PREFLIGHT.md']) assert.ok(deny.has(`Edit(/.sdlc/${f})`), f)
   for (const f of ['runs.jsonl', 'verification.md', 'impact.json', 'ratchet.json', 'events.jsonl', 'pr.md', 'ship.json']) assert.ok(deny.has(`Edit(/.sdlc/changes/*/${f})`), f)
   assert.ok(deny.has('Read(.env)') && deny.has('Edit(.env)'), 'the .env rules stay')
   assert.deepEqual(settings.permissions.ask, [
@@ -206,7 +206,7 @@ test('init --full merges the evidence rules into an existing settings file witho
   assert.ok(merged.permissions.deny.includes('Edit(/.sdlc/approvals.jsonl)'))
 })
 
-test('re-vendoring over an older standalone install drops the retired sdlc hooks and keeps the project\'s own', () => {
+test('re-vendoring over an older standalone install drops the retired sdlc hooks, keeps the async lane hooks once, and keeps the project\'s own', () => {
   const repo = makeRepo()
   const cmd = (name: string) => `node --disable-warning=ExperimentalWarning "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hook ${name}`
   const group = (name: string, matcher?: string) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command: cmd(name), timeout: 10 }] })
@@ -224,10 +224,14 @@ test('re-vendoring over an older standalone install drops the retired sdlc hooks
   const once = fs.readFileSync(file, 'utf8')
   const hooks = JSON.parse(once).hooks as Record<string, { matcher?: string; hooks: { command: string }[] }[]>
   const commands = Object.values(hooks).flat().flatMap(g => g.hooks.map(h => h.command))
-  for (const gone of ['pre-bash', 'pre-edit', 'subagent-start', 'subagent-stop']) assert.ok(!commands.some(c => c.endsWith(`hook ${gone}`)), gone)
+  for (const gone of ['pre-bash', 'pre-edit']) assert.ok(!commands.some(c => c.endsWith(`hook ${gone}`)), gone)
   assert.deepEqual(hooks.PreToolUse, [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] }], 'the project\'s own hook is kept untouched')
-  assert.equal(hooks.SubagentStart, undefined)
-  assert.equal(hooks.SubagentStop, undefined)
+  for (const [event, name] of [['SubagentStart', 'subagent-start'], ['SubagentStop', 'subagent-stop']] as const) {
+    const lane = hooks[event]?.flatMap(g => g.hooks) as { command: string; async?: boolean }[] | undefined
+    assert.equal(lane?.length, 1, `${event} registered exactly once`)
+    assert.equal(lane?.[0]?.async, true, `${event} is async`)
+    assert.ok(lane?.[0]?.command.endsWith(`hook ${name}`), `${event} runs hook ${name}`)
+  }
   for (const [event, name] of [['UserPromptSubmit', 'prompt-submit'], ['Stop', 'stop'], ['SessionStart', 'session-start'], ['PostToolUse', 'post-edit'], ['PostToolUseFailure', 'skill-failed']]) {
     assert.equal(hooks[event as string]?.filter(g => g.hooks.some(h => h.command.endsWith(`hook ${name}`))).length, 1, `${event} registered once`)
   }

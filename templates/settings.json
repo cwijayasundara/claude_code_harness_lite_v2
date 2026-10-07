@@ -32,6 +32,7 @@
       "Edit(/.sdlc/.gate)",
       "Edit(/.sdlc/.baseline)",
       "Edit(/.sdlc/unresolved.json)",
+      "Edit(/.sdlc/PREFLIGHT.md)",
       "Edit(/.sdlc/changes/*/runs.jsonl)",
       "Edit(/.sdlc/changes/*/verification.md)",
       "Edit(/.sdlc/changes/*/impact.json)",

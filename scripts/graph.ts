@@ -179,6 +179,6 @@ export function createAdhoc(tier: Tier): string {
   const stamp = now().replace(/[-:T]/g, '').slice(0, 12)
   let slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}`
   for (let n = 2; exists(path.join(CHANGES, slug)); n++) slug = `adhoc-${stamp.slice(0, 8)}-${stamp.slice(8)}-${n}`
-  createChange(slug, 'chore', tier, 'Ad-hoc change made without /rig:start')
+  createChange(slug, 'chore', tier, 'Ad-hoc change made without /rig:start', { value: loadConfig().config.points[tier], set: false })
   return slug
 }

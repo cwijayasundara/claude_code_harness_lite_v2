@@ -10,6 +10,7 @@ import {
 import { loadChange } from './graph.ts'
 import { loadConfig } from './check.ts'
 import { valueHoursFor } from './scorecard.ts'
+import { pointsMetrics } from './points.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -170,6 +171,7 @@ export function cmdMetrics(args: Args): void {
     n: changes.length,
     value_is_estimate: true,
   }
+  const pointsM = pointsMetrics(changes.map(c => c.slug), days)
 
   const events = readJsonl<UsageRow>(USAGE).filter(r => r.kind === 'event')
   const fired = events.filter(e => e.event === 'rule-fired')
@@ -197,8 +199,8 @@ export function cmdMetrics(args: Args): void {
     })(),
   }
 
-  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, harness, autonomy, ratchet: ratchetM, economics } }, null, 2))
+  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, harness, autonomy, ratchet: ratchetM, economics, points: pointsM } }, null, 2))
   const fmt = (v: Metric): string => (v.value === null ? `unmeasured (n=${v.n}${v.note ? ', ' + v.note : ''})` : `${Number(v.value.toFixed(2))} (n=${v.n})`)
   const rows = Object.entries(m).map(([k, v]) => `${k.padEnd(30)} ${fmt(v)}`)
-  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2)].join('\n'))
+  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2), '', 'points (shipped in the window; unmeasured below 5 shipped changes)', JSON.stringify(pointsM, null, 2)].join('\n'))
 }

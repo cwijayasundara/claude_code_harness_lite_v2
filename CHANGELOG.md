@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0
+
+Scale: monorepos, large repos and a cleaner view of where work stands.
+
+- **Scopes.** `sensors.json` gains `scopes` (glob to `{ name, root, fast, full, quality, deps }`), `scopeLimit`, `ci.scope` (`affected` or `all`), an optional `affected` command and `sparseBase`. A diff selects the scopes it touches plus their dependents (declared `deps` edges only, no import parsing); `fast` and `full` run per scope in its root, quality is measured per scope on both sides, shards group by scope, and a diff spanning more than `scopeLimit` scopes is re-tiered to L. Files outside every scope run the top-level commands and raise an `unscoped` warning. CI selects from the diff and the base branch's config, and `ci.scope: "all"` runs everything. A repo with no `scopes` behaves exactly as 0.5.0. A scope's `levels` and the red-proof test command stay top-level until 0.7.
+  - Scope roots must be relative and inside the repo; a root whose real path resolves outside it blocks (`not run`). The same command text in the same resolved directory runs once.
+  - The `affected` command fails closed: if it fails or times out, every declared scope is treated as affected and an `unscoped` warning says so. Its stdout is read in full.
+  - `verify` with no resolvable base ref runs every scope's commands, so a clean tree can never stamp `full: pass` with nothing run.
+  - With scopes declared, a source-less diff (docs or harness only) runs no scoped or top-level commands at edit, commit and CI, while `verify` (which gates the ship stamp) runs the top-level commands.
+  - Weakening edits (blocked unless a person approves) include: removing a scope or a `deps` edge, raising `scopeLimit`, switching CI from `all` to `affected`, changing, removing or emptying a scope's `fast`, `full` or `quality` command, changing a scope root, and, when the base already declared scopes, adding a scope glob that lacks a `fast`, `full` or `quality` command of a kind the base runs (top-level or in any scope).
+  - `sparseBase` (opt-in) measures the base in a throwaway worktree with a cone sparse checkout of the affected scopes and their `deps` closure. The patterns go to that worktree's own `info/sparse-checkout`; your `.git/config` is never modified. Roots are validated, and an invalid root or any sparse failure falls back to a full checkout. It relies on correct `deps`: a scope tool that reads paths outside its declared closure can fail or over-count on the sparse base and hide a regression, so declare `deps` completely or leave `sparseBase` off. The base-count cache is keyed on scope root and sparse or full mode.
+- **Preflight.** `/rig:init` runs `sdlc.ts preflight`: every check runs and one report is written to `.sdlc/PREFLIGHT.md` (stack, toolchain against the build's own source of truth such as the Maven parent chain, `.nvmrc`, `go.mod`, `pyproject`, whether declared commands resolve, base and tree state, remote reachability with one HTTPS retry, consumer clones, the evidence deny rules). The suite is never run by it. `status` flags a missing or older report.
+  - The report is advisory. Only the script writes it (`templates/settings.json` denies Edit and Write on it), but a Bash redirect could still forge it, so nothing trusts its `result:` line: only `status` staleness and the start skill read it.
+  - It checks the repo root only; the toolchains of individual scopes are not checked.
+  - Host probes: `java`, `go` and `python3` version probes run in the project root with `GOTOOLCHAIN=local`, so `go` never downloads a toolchain. SSH reachability takes `core.sshCommand` only from your global or system git config and runs `ls-remote` outside the repo, so a clone's own config never runs; the base-state check runs with `core.fsmonitor` off. A relative-path local `origin` reports not reachable.
+  - A repo set up before 0.6.0 fails the protection check until `init --full` is rerun (it adds the `PREFLIGHT.md` deny rule). `PREFLIGHT.md` holds host versions, so it is a per-host artifact: consider gitignoring it.
+- **`status`.** It now shows `where:` and `stale:` lines, lists open questions from intent, design and plan, and warns when a slice lists more than five files. Stale means: design older than intent, plan older than design, a verification made on another tree, or a preflight older than the config or a manifest. `approve design` refuses open questions in `intent.md` too.
+- **Slice checkpoints.** A recorded build slice is committed on `sdlc/<slug>` by the script (`commit --only` with literal pathspecs for that slice's planned files, deletions and renames included; `--no-verify`; never a push; never on the trunk). A failed commit reopens the slice and appends a `reopened` event.
+- **CI report.** `check.ts` at the CI point lists up to five warnings, also in the step summary (backticks neutralised).
+- **Lane events.** `SubagentStart` and `SubagentStop` are registered again as `async` observational hooks that append lane events; the scorecard shows work, span and idle (gaps over `idleGapMs`, 15 minutes by default).
+- **Size at write time.** A file that crosses `limits.fileLines` is blocked at edit, Stop and commit (it still warns at ship and CI).
+- **Story points.** Every change has points: S 5, M 7, L 11 by default (`points` in `sensors.json`), or an explicit number set with `new --points N` or `sdlc.ts points <slug> <N>`, kept in `ratchet.json` (not in the model-writable `intent.md`). Status and the scorecard show them; `metrics` reports shipped points, velocity per week and cost per point (unmeasured below five shipped changes).
+- **Size.** The harness line cap is now 6900 (it was 5910): this release adds features, so it is not a net reduction.
+
+
 ## 0.5.0
 
 Do each thing once, and follow the official plugin pattern. This release also carries everything that was listed as unreleased after 0.4.1 (the last section below).

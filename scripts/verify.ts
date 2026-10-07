@@ -2,10 +2,11 @@
 // only writes the report from runs already recorded. Verdicts come from captured exit codes, never from a model.
 import fs from 'node:fs'
 import path from 'node:path'
-import { CHANGES, planPath, planVerificationBullets, planVerification, planApproved, checkSlug, exists, read, now, out, fail, type Args } from './core.ts'
+import { CHANGES, planPath, planVerificationBullets, planVerification, planApproved, checkSlug, exists, read, now, out, fail, defaultBase, type Args } from './core.ts'
 import { activeSlug, loadChange, nextCommand } from './graph.ts'
 import { loadConfig, runDeclared } from './check.ts'
-import { formatFindings } from './model.ts'
+import { formatFindings, isSource } from './model.ts'
+import { branchDiff } from './diffs.ts'
 import { treeStamp } from './stamp.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest, normCmd } from './runs.ts'
 import { requiredLevels, levelResults } from './levels.ts'
@@ -88,7 +89,13 @@ export function cmdVerify(args: Args): void {
   }
   if (skipped.length) out(`not run (not declared in sensors.json and the plan is not approved): ${skipped.map(c => `\`${c}\``).join(', ')}. Run each with \`sdlc.ts run --slug ${slug} -- "<command>"\`, which asks the person, then \`verify-report ${slug}\`.`)
   // One authoritative run: the declared full commands run here too, so ship and push can check the stamp instead.
-  const failed = runDeclared('full', { ...config, full: Object.fromEntries(Object.entries(config.full).filter(([, c]) => !ran.has(normCmd(c)))) }, slug, FULL_BUDGET_MS).filter(f => f.severity === 'block')
+  // The full commands of the scopes the branch touches (source files only), skipping any the loop above already ran.
+  // With no base to diff against, every scope's: an empty selection must never stamp `full: pass`. A source-less branch (docs
+  // or harness only) runs the top-level ones (undefined), for the same reason.
+  const base = defaultBase()
+  const changed = base ? branchDiff(base).map(d => d.file).filter(f => isSource(f, config)) : 'all'
+  const files = changed.length ? changed : undefined
+  const failed = runDeclared('full', config, slug, FULL_BUDGET_MS, false, files, ran).filter(f => f.severity === 'block')
   if (failed.length) out(formatFindings(failed))
   if (writeReport(slug, failed.length ? 'fail' : 'pass', before) !== 'pass') process.exitCode = 1
 }

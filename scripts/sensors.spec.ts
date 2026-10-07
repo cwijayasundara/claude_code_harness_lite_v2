@@ -110,9 +110,9 @@ test('layering blocks forbidden imports in any import syntax, and nothing else',
   assert.equal(layering([fd('src/app/main.ts', ["import { db } from '../infra/db'"])], withLayers).length, 0)
 })
 
-test('size warns when a file crosses the line limit, and the diff limit blocks only from ship on', () => {
+test('size blocks when a file crosses the line limit at stop, and the diff limit blocks only from ship on', () => {
   const big = fd('src/a.ts', Array.from({ length: 30 }, () => 'x'))
-  assert.equal(size([big], CFG, { 'src/a.ts': 410 }, 'stop')[0]?.severity, 'warn')
+  assert.equal(size([big], CFG, { 'src/a.ts': 410 }, 'stop')[0]?.severity, 'block')
   assert.equal(size([big], CFG, { 'src/a.ts': 900 }, 'stop').length, 0, 'already over before this diff: no news')
   const huge = fd('src/b.ts', Array.from({ length: 600 }, () => 'y'), [], 'A')
   assert.equal(size([huge], CFG, { 'src/b.ts': 600 }, 'stop').find(f => !f.file)?.severity, 'warn')
@@ -319,4 +319,21 @@ test('githooks config defaults to ship, parses, and turning pre-push off counts 
 test('the git hook scripts are protected harness files', () => {
   assert.ok(isProtected('.sdlc/githooks/pre-commit'))
   assert.ok(isProtected('.sdlc/githooks/pre-push'))
+})
+
+test('a file crossing the line limit blocks at edit and stop, and only warns at ship and ci', () => {
+  const cfg = parseConfig(JSON.stringify({ limits: { fileLines: 10 } })).config
+  const crossing: FileDiff = { file: 'src/a.ts', status: 'M', added: Array.from({ length: 5 }, (_, i) => ({ n: i + 1, text: 'x' })), removed: [] } // 12 lines now, 7 before: crossed
+  for (const point of ['edit', 'stop'] as const) {
+    const f = size([crossing], cfg, { 'src/a.ts': 12 }, point).find(x => x.sensor === 'size')
+    assert.equal(f?.severity, 'block', point)
+    assert.match(f?.message ?? '', /grew to 12 lines \(limit 10\)/)
+  }
+  for (const point of ['ship', 'ci'] as const) assert.equal(size([crossing], cfg, { 'src/a.ts': 12 }, point).find(x => x.sensor === 'size')?.severity, 'warn', point)
+})
+
+test('a file that was already over the limit is not blamed for growing', () => {
+  const cfg = parseConfig(JSON.stringify({ limits: { fileLines: 10 } })).config
+  const d: FileDiff = { file: 'src/a.ts', status: 'M', added: [{ n: 1, text: 'x' }], removed: [] }
+  assert.deepEqual(size([d], cfg, { 'src/a.ts': 30 }, 'edit').filter(f => f.message.includes('grew')), [])
 })

@@ -16,11 +16,11 @@ Pattern source: Anthropic's `code-modernization` plugin (`anthropics/claude-plug
 | Unplanned ("vibe") work, no `/rig:start` | Stop and commit gates | every sensor runs at edit, stop, commit, push and CI with no active change (matrix test, R1) |
 | Story points | none | on every change; velocity and cost per point reported (R14) |
 | Sprint planning | none | a PRD becomes a validated task graph, dependency clusters and an allocation proposal in one command (R15, R16) |
-| Registered hook events | 9 | 5 in v0.5.0 (`SessionStart`, `UserPromptSubmit`, `Stop`, `PostToolUse` on edits, `PostToolUseFailure` for Skill); the two async lane hooks arrive in v0.6 (R10); none on Bash (R1) |
+| Registered hook events | 9 | 5 in v0.5.0 (`SessionStart`, `UserPromptSubmit`, `Stop`, `PostToolUse` on edits, `PostToolUseFailure` for Skill); 7 in v0.6 with the two async lane hooks `SubagentStart` and `SubagentStop` (R10); none on Bash (R1) |
 | Runs of the full test command per tier M change, same tree | 6 to 8 plus CI | verify once from clean, red-proof once on base, CI once |
 | In-session model review passes, tier S / M / L | 2 / 2 / 3-4 | 0-1 / 1 / one sharded pass |
 | Largest agent context in a review | whole diff in one reviewer | ≤ 25 files and ≤ 5,000 changed lines per shard |
-| Non-test source lines | about 5.2k | ≤ 5.0k at v0.7 (gated; every release is net negative) |
+| Non-test source lines | about 5.2k | Superseded in v0.6.0: the cap in `size.spec.ts` is the measured total (6900); this release adds features, so it is not net negative. Whether to keep a ceiling at all is the person's call |
 | Email failure modes without a full guard (§8) | 8 of 11 | 0 |
 
 **Non-goals.** No wiki, no learning loop, no `bin/rig` wrapper, no dependency-graph parsing from source, no tracker integration (Jira and similar; a PRD is a file or a `gh` issue), no Windows support, no telemetry.
@@ -88,7 +88,7 @@ Replaced by, following the official "Set it up" section:
 - Auto-approval of declared commands is replaced by `permissions.allow` rules for the exact commands in `sensors.json` (written by `init`) and by Claude Code's auto mode; the best-practices doc names both. Not shipped in v0.5.0: `init` does not yet write the allow rules, so declared commands prompt unless auto mode or the person's own allow rules cover them.
 - Human-only approve and waive keep `disable-model-invocation` on their skills. A script that opens files itself is not covered by deny rules (the official README says the same), and the model can still run `SDLC_HUMAN=1 ... approve` through Bash (residual risk accepted in D1); the boundary is CI: `check --at ci` already refuses approval and waiver rows added by a PR unless an independent reviewer approves the head commit, and recomputes every verdict from the base branch's checker and config. DESIGN §10 already states this ("CI plus branch protection is the boundary"). Document that in the README's Safety section.
 
-Registered hooks after R1, five events: `SessionStart` (context), `UserPromptSubmit` (turn baseline), `Stop` (the blocking gate), `PostToolUse` on `Write|Edit|MultiEdit` (slim, below), `PostToolUseFailure` for the Skill fallback (kept while chaining remains under `/rig:run`). The async, observational `SubagentStart` and `SubagentStop` lane hooks (R10) arrive in v0.6. No hook runs on Bash calls.
+Registered hooks after R1, five events in v0.5.0 and seven in v0.6: `SessionStart` (context), `UserPromptSubmit` (turn baseline), `Stop` (the blocking gate), `PostToolUse` on `Write|Edit|MultiEdit` (slim, below), `PostToolUseFailure` for the Skill fallback (kept while chaining remains under `/rig:run`). The async, observational `SubagentStart` and `SubagentStop` lane hooks (R10) arrive in v0.6, making seven. No hook runs on Bash calls.
 
 Behaviours removed with the guard layer (recorded in the CHANGELOG): the "file is not in the plan's `## Files`" prompt (scope drift is still judged at ship and CI), the tier L bugfix edit prompt (the `next` gate still holds), consumer-sibling edit rules, the read-only Bash allowlist for scout and reviewer (their `tools:` lists remain), and auto-approval. Guide injection moves from PreToolUse to the slim PostToolUse hook.
 
@@ -146,17 +146,17 @@ Tests: parity with the old function on a seeded repo (removed, renamed, deleted 
 
 ### R6. Preflight inside `init`
 
-`sdlc.ts preflight` (called by `init`, re-runnable) is the official `preflight` shape, scaled to what rig needs. **Every check runs; one complete report** goes to `.sdlc/PREFLIGHT.md` with a pass, fail-with-exact-fix, or skip per line, and open items for anything it could not decide. It runs once per repo, and `/rig:start` tells you to run it if the file is missing; it is not a per-change gate and not a stage.
+`sdlc.ts preflight` (called by `init`, re-runnable) is the official `preflight` shape, scaled to what rig needs. **Every check runs; one complete report** goes to the repo-level, advisory `.sdlc/PREFLIGHT.md` (written only by the script and denied to Edit and Write through `Edit(/.sdlc/PREFLIGHT.md)`; nothing trusts its `result:` line, and it checks the repo root only; v0.6 adjustment 3) with a pass, fail-with-exact-fix, or skip per line, and open items for anything it could not decide. It runs once per repo, and `/rig:start` tells you to run it if the file is missing; it is not a per-change gate and not a stage.
 
 | Check | Rule |
 |---|---|
 | Stack | Detected from manifests and extensions. |
 | Toolchain | The required version is read from the build's own source of truth in this order: `.tool-versions`, `.nvmrc` or `.node-version`, `package.json` `engines`, `go.mod`, `.python-version` or `pyproject` `requires-python`, and for Maven the effective `java.version` or `maven.compiler.release` resolved up the `<parent>` chain. The host passes when it satisfies that minimum. A different version in some other manifest is a warning. |
-| Commands, proven on this code | Each declared `fast`, `levels` and `quality` command resolves (first token on PATH, or the package script, Makefile target or wrapper exists). `init`'s existing baseline run of `fast` and `levels` supplies the proof, recorded in the file; nothing new executes. |
+| Commands, proven on this code | Each declared `fast`, `levels` and `quality` command resolves (first token on PATH, or the package script, Makefile target or wrapper exists). The proof that they run stays with `init`'s existing baseline step; preflight itself never runs the suite. |
 | Base and remote | `defaultBase()` resolves; tree clean outside `.sdlc/` (warning otherwise); `git ls-remote --heads origin` with a 10 s timeout. On an SSH auth failure, one retry over HTTPS. No other sync exists, so nothing repeats. |
 | Consumers | Every declared `consumers[].path` is a git repo; all missing ones listed with the `git clone` command. |
 | Protection | The deny rules from R1 are present (as the official check 7). |
-| People | The three questions `init` already asks (gates, value rate, consumers) are recorded verbatim in an **Answers** section; unanswered ones become open items. No new questions. |
+| People | The three questions `init` already asks (gates, value rate, consumers) arrive as `--answers '<json>'`, are recorded verbatim in an **Answers** section, and unanswered ones become open items. No new questions. |
 
 Tests (fixture repos): Maven with a parent POM at Java 21, a manifest at 25 and a host at 21 passes with a warning; a host below the parent minimum fails with the fix; `.nvmrc` mismatch; an undeclared script; an unreachable SSH remote retried once over HTTPS; three missing consumers reported in one run; a missing deny rule reported; every check runs even when the first fails.
 
@@ -168,7 +168,7 @@ Tests: each staleness rule; a change with no stored status file computes the sam
 
 ### R8. Scopes and shards
 
-`sensors.json` gains optional `scopes`:
+`sensors.json` gains optional `scopes` (v0.6 applies them to `fast`, `full` and `quality`, the `tier` sensor, CI selection, sparse base and shards; a scope's `levels` is rejected and the red-proof test command stays top-level until v0.7; sparse is the top-level boolean `sparseBase`, because `scopes` is a map of globs):
 
 ```json
 "scopes": {
@@ -177,15 +177,15 @@ Tests: each staleness rule; a change with no stored status file computes the sam
 }
 ```
 
-Value shapes match today's top-level keys and run with `cwd = root`; top-level keys remain the fallback.
+Value shapes match today's top-level keys (except `levels`, deferred) and run with `cwd = root`; top-level keys remain the fallback. Roots must be relative and inside the repo.
 
-**Selection.** `selectScopes(diffs, config)` is pure: each changed file maps to its longest matching glob; the affected set is those scopes plus every scope that lists one of them in `deps`, transitively. An optional `affected` command (turbo, nx, `pnpm -r` or similar, declared in the protected config) may add names; unknown names are ignored with a warning. Files matching no scope fall back to the top-level commands and warn `unscoped`.
+**Selection.** `selectScopes(diffs, config)` is pure: each changed file maps to its longest matching glob; the affected set is those scopes plus every scope that lists one of them in `deps`, transitively. An optional `affected` command (turbo, nx, `pnpm -r` or similar, declared in the protected config) may add names; unknown names are ignored with a warning; if the command fails or times out every declared scope is treated as affected (fail closed) with an `unscoped` warning. Files matching no scope fall back to the top-level commands and warn `unscoped`.
 
-**Where it applies.** Stop `fast`; `verify` and its levels; `quality` on both sides, counting only affected scopes; red-proof's test command; pre-commit. CI uses the same selection from the base branch's config and also runs the fallback whenever an unscoped file changed; `ci.scope: "all"` forces everything. A diff spanning more than `scopeLimit` scopes (default 3) is re-tiered to L by the `tier` sensor, with the reason printed.
+**Where it applies.** Stop `fast`; `verify` (with no resolvable base ref it runs every scope); `quality` on both sides, counting only affected scopes; pre-commit. Red-proof's test command and `levels` stay top-level in v0.6. CI uses the same selection from the base branch's config and also runs the fallback whenever an unscoped file changed; `ci.scope: "all"` forces everything. A diff spanning more than `scopeLimit` scopes (default 3) is re-tiered to L by the `tier` sensor, with the reason printed.
 
 **Shards.** `sdlc.ts shards <slug>` prints the diff split by scope into shards of at most 25 files and 5,000 changed lines (the official `make_shards.py` bounds), small shards of one scope merged, ordered by scope. It is the input to `workflows/review.js` (R3). Without scopes it splits by top-level directory.
 
-Edits that remove a scope glob or a `deps` edge are weakening edits, already detected by `weakensConfig` and extended here.
+Edits that remove a scope glob or a `deps` edge are weakening edits, already detected by `weakensConfig` and extended here (also: a changed, removed or emptied scope command, a changed root, a new scope glob without `fast` or `full` when the base declared scopes, a raised `scopeLimit`, and `ci.scope` moving from `all` to `affected`).
 
 Tests: overlapping globs; transitive `deps`; an unscoped file; an `affected` command naming an unknown scope; quality counts only affected scopes; CI fallback; weakening detected; shard bounds on a fixture with a 60-file diff; a repo without `scopes` behaves as v0.5.0 (golden test).
 
@@ -197,17 +197,17 @@ Tests: the commit holds only plan files; none on trunk; a killed session leaves 
 
 ### R10. Lane events
 
-`SubagentStart` and `SubagentStop` become `async: true` command hooks that append a `lane` event (agent, start, duration, whether it reported) to `events.jsonl`, as the official telemetry hooks are async and observational. `scorecard` adds work (union of command and lane intervals), span (first to last event) and idle (gaps over 15 minutes). They run in `-p` and CI, so headless numbers exist.
+`SubagentStart` and `SubagentStop` become `async: true` command hooks that append a `lane` event (agent, start, and a duration computed from the matching start; there is no "reported" flag, as a hook cannot know it) to `events.jsonl`, as the official telemetry hooks are async and observational. `scorecard` adds work (union of command and lane intervals), span (first to last event) and idle (gaps over 15 minutes). They run in `-p` and CI, so headless numbers exist.
 
 Tests: overlapping lanes counted once; a 3 h gap is idle; the hooks are `async` in `hooks.json`; a headless fixture yields the numbers.
 
 ### R11. Size block at edit and at Stop
 
-A file at or under `limits.fileLines` at the turn baseline that crosses it blocks, first in the slim per-edit hook (R1) and again at Stop. Waivable. Already-large files still warn. It lands at write time, before any review.
+A file at or under `limits.fileLines` at the turn baseline that crosses it blocks, first in the slim per-edit hook (R1), again at Stop and at commit; ship and CI keep it a warning. Waivable. Already-large files still warn. It lands at write time, before any review.
 
 ### R14. Story points
 
-Every change carries `points` in `intent.md` frontmatter. The default comes from the tier through a new optional `sensors.json` key, `points: { "S": 5, "M": 7, "L": 11 }` (your example numbers; D5). An architect or person can set an explicit number for one change; `points_source: tier|set` records which, and a re-tier (for example the `tier` sensor bumping a change to L) recomputes only `tier`-sourced points. `/rig:start` records them, `status` shows them, and `scorecard` and `metrics` report points shipped, velocity per week, and **cost per point** (dollars from the existing cost ledger divided by points; `unmeasured` when fewer than 5 changes shipped or cost is not captured). Cost per point is the number that shows whether this spec made the harness cheaper.
+Every change carries `points`, stored in `ratchet.json` (written only by `sdlc.ts new --points N` and `sdlc.ts points <slug> <N>`, because `intent.md` is model-writable and would let a model inflate velocity; `intent.md` shows them for people only). The default comes from the tier through a new optional `sensors.json` key, `points: { "S": 5, "M": 7, "L": 11 }` (your example numbers; D5). An architect or person can set an explicit number for one change; an explicit number is the `set` source and survives a re-tier, while an unset change is `tier`-sourced and follows the tier (for example the `tier` sensor bumping a change to L); there is no `points_source` field, the source is derived from whether `ratchet.json` holds a number. `/rig:start` records them, `status` shows them, and `scorecard` and `metrics` report points shipped, velocity per week, and **cost per point** (dollars from the existing cost ledger divided by points; `unmeasured` when fewer than 5 changes shipped or cost is not captured). Cost per point is the number that shows whether this spec made the harness cheaper.
 
 Tests: default mapping; explicit override survives a re-tier and a tier-sourced value does not; non-positive or non-integer rejected; cost per point is `unmeasured` below 5 shipped changes.
 
