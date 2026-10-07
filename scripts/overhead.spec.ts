@@ -5,6 +5,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
+import { frontmatter, SLUG_RE } from './core.ts'
+// The mod's own file, loaded at run time so this project's type check does not pull in the mod's module settings.
+const { stateChange } = (await import(path.join(import.meta.dirname, '../hooks/shared.ts'))) as { stateChange: (text: string) => string | null | undefined }
 
 let repo: string
 beforeEach(() => {
@@ -46,7 +49,8 @@ test('status --band carries only the active change and skips the per-change warn
   assert.ok(!('warnings' in band) && !('stale' in band) && 'step' in band && 'sensors' in band && 'flow' in band)
 })
 
-test('Stop does not re-run a fast command the recorder ran green on this exact tree, and does once the tree moves', () => {
+// runs.jsonl is only Edit-protected: a shell append could forge a green row, so Stop runs its fast commands itself, always.
+test('Stop runs its fast commands even when a green run is recorded on this exact tree', () => {
   const cmd = `node -e "require('fs').appendFileSync('.sdlc/count.txt','x')"`
   write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: cmd } }))
   gitIn(repo, 'add', '.')
@@ -58,8 +62,17 @@ test('Stop does not re-run a fast command the recorder ran green on this exact t
   const count = (): number => fs.readFileSync(path.join(repo, '.sdlc/count.txt'), 'utf8').length
   assert.equal(count(), 1)
   hook(repo, 'stop', { session_id: 's1' })
-  assert.equal(count(), 1, 'the recorded green run covers this tree')
-  write(repo, 'src/a.js', 'export const a = 2\n')
-  hook(repo, 'stop', { session_id: 's1' })
-  assert.equal(count(), 2, 'a changed tree runs the command again')
+  assert.equal(count(), 2, 'a recorded run never stands in for the gate')
+})
+
+// The mod skips the impact check on its own reading of STATE.md, so it must read exactly what core.ts's activeSlug reads.
+test("the mod's STATE.md reader agrees with core.ts's frontmatter on hostile inputs", () => {
+  const rows = ['change: add-login', 'change:', 'change: ghost', 'note: a\rchange: ghost', 'note: a\u2028change: ghost', 'note: a\u2029change: ghost',
+    'change: "add-login"', "change: 'x'", 'change:\tadd-login', 'change: Add-Login', ' change: ghost', 'change : ghost', 'add-login', 'change: add-login\r']
+  const cases = [...rows.map(r => `---\n${r}\n---\n`), ...rows.map(r => `---\nchange: add-login\n${r}\n---\nbody\n`), '---\r\nchange: add-login\r\n---\r\n', 'no frontmatter\nchange: ghost\n', '---\nchange: ghost\n']
+  for (const text of cases) {
+    const { data } = frontmatter(text)
+    const core = 'change' in data ? (data.change && SLUG_RE.test(data.change) ? data.change : null) : undefined
+    assert.equal(stateChange(text), core, JSON.stringify(text))
+  }
 })

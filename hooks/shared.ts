@@ -20,11 +20,15 @@ export function parseStatus(stdout: string): Status | null {
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
 export const NODES: ReadonlySet<string> = new Set(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review', 'intent', 'spec', 'plan', 'design', 'notes'])
 
-// The change STATE.md names, read as core.ts's activeSlug does: undefined with no `change:` key (the script then guesses), else the slug or null.
+// The change STATE.md names, by core.ts's frontmatter algorithm exactly (rows split on \n only, the last `change` row wins; a
+// spec pins the two together): undefined with no such row (the script then guesses), else the slug or null.
 export function stateChange(text: string): string | null | undefined {
-  const row = /^change:[ \t]*(.*)$/m.exec(/^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? '')
-  const slug = row?.[1]?.replace(/^["']|["']$/g, '').trim() ?? ''
-  return row ? (SLUG_RE.test(slug) ? slug : null) : undefined
+  let value: string | undefined
+  for (const row of (/^---\n([\s\S]*?)\n---\n?/.exec(text)?.[1] ?? '').split('\n')) {
+    const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(row)
+    if (kv?.[1] === 'change') value = (kv[2] ?? '').replace(/^["']|["']$/g, '').trim()
+  }
+  return value === undefined ? undefined : SLUG_RE.test(value) ? value : null
 }
 
 // Set at session start: true when this copy is the global plugin's and the project vendors its own (.sdlc/mod).
