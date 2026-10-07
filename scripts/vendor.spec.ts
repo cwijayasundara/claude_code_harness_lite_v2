@@ -184,7 +184,7 @@ test('standalone vendoring copies the review workflow and points the skills at i
 test('the settings template protects evidence with deny rules and the harness config with ask rules', () => {
   const settings = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'settings.json'), 'utf8')) as { permissions: { allow: string[]; ask: string[]; deny: string[] } }
   const deny = new Set(settings.permissions.deny)
-  for (const f of ['approvals.jsonl', 'waivers.jsonl', 'usage.jsonl', '.gate', '.baseline', 'unresolved.json']) assert.ok(deny.has(`Edit(/.sdlc/${f})`), f)
+  for (const f of ['approvals.jsonl', 'waivers.jsonl', 'usage.jsonl', '.gate', '.baseline', 'unresolved.json', 'PREFLIGHT.md']) assert.ok(deny.has(`Edit(/.sdlc/${f})`), f)
   for (const f of ['runs.jsonl', 'verification.md', 'impact.json', 'ratchet.json', 'events.jsonl', 'pr.md', 'ship.json']) assert.ok(deny.has(`Edit(/.sdlc/changes/*/${f})`), f)
   assert.ok(deny.has('Read(.env)') && deny.has('Edit(.env)'), 'the .env rules stay')
   assert.deepEqual(settings.permissions.ask, [
