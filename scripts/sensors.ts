@@ -258,9 +258,12 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
       else if (to.cmd !== q?.cmd || to.count !== q?.count) reasons.push(`scope ${glob} quality.${cat} changed`)
     }
   }
-  // A new scope without commands takes its files from the top-level (or a wider scope's) commands and runs nothing for them.
-  if (Object.keys(b.scopes).length) for (const [glob, s] of Object.entries(a.scopes)) {
-    if (!(glob in b.scopes) && !Object.keys(s.fast ?? {}).length && !Object.keys(s.full ?? {}).length) reasons.push(`scope ${glob} added with no fast or full command`)
+  // A new scope takes its files from the top-level (or a wider scope's) commands: each kind the base runs, it must run too.
+  const scopeList = Object.values(b.scopes)
+  const baseHas = { fast: Object.keys(b.fast).length > 0, full: Object.keys(b.full).length > 0, quality: Object.keys(b.quality).length > 0 }
+  for (const k of ['fast', 'full', 'quality'] as const) baseHas[k] ||= scopeList.some(s => Object.keys(s[k] ?? {}).length)
+  if (scopeList.length) for (const [glob, s] of Object.entries(a.scopes)) {
+    if (!(glob in b.scopes)) for (const k of ['fast', 'full', 'quality'] as const) if (baseHas[k] && !Object.keys(s[k] ?? {}).length) reasons.push(`scope ${glob} added with no ${k} command`)
   }
   for (const k of ['tests', 'contracts', 'testSupport'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
   for (const g of removedFrom(a.ignore, b.ignore)) reasons.push(`ignore added ${g}`)

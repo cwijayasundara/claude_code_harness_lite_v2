@@ -1,5 +1,6 @@
 // A recorded build slice is committed by the script, so a session that dies keeps its finished work: only on sdlc/<slug>, only the
-// slice's planned files, never a push, no hooks (the slice's checks just ran).
+// slice's planned files, never a push, no pre-commit or commit-msg hook (post-commit and the user's core.hooksPath hooks other
+// than those still run; the slice's checks just ran).
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'

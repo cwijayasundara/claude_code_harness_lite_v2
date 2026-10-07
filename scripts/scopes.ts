@@ -33,6 +33,7 @@ export function selectScopes(files: string[], config: SensorConfig, extra: strin
     }
   }
   const byName = new Set(Object.values(config.scopes).map(s => s.name))
+  // Names the affected command reports are not closed over deps: the tool reports its own closure.
   const names = extra === null ? byName : new Set([...[...affected].map(g => nameOf(config, g)), ...extra.filter(n => byName.has(n))])
   return { touched: [...touchedGlobs].map(g => nameOf(config, g)).sort(), affected: [...names].sort(), unscoped }
 }
@@ -61,11 +62,12 @@ export function extraScopes(config: SensorConfig, timeoutMs = 60_000): string[] 
 
 export type PlannedCommand = { key: string; cmd: string; cwd?: string }
 
-// The commands to run for a set of changed files. No files, or no scopes: the top-level commands, as before. With scopes: each
+// The commands to run for a set of changed files. No files (undefined or an empty list, e.g. a harness-only diff), or no scopes:
+// the top-level commands, as in 0.5.0. With scopes: each
 // affected scope's commands in its root, plus the top-level ones when a changed file is unscoped. extra === null fails closed.
 export function scopeCommands(prefix: 'fast' | 'full', config: SensorConfig, files: string[] | 'all' | undefined, extra: string[] | null = []): PlannedCommand[] {
   const root: PlannedCommand[] = Object.entries(config[prefix]).map(([name, cmd]) => ({ key: `${prefix}.${name}`, cmd }))
-  if (files === undefined || !Object.keys(config.scopes).length) return root
+  if (files === undefined || !files.length || !Object.keys(config.scopes).length) return root
   const sel = files === 'all' ? null : selectScopes(files, config, extra)
   const out: PlannedCommand[] = !sel || sel.unscoped.length ? [...root] : []
   for (const s of Object.values(config.scopes)) {

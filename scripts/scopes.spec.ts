@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseConfig } from './model.ts'
 import { tierFromDiff, weakensConfig } from './sensors.ts'
-import { scopeOf, selectScopes, closureRoots, extraScopes } from './scopes.ts'
+import { scopeOf, selectScopes, closureRoots, extraScopes, scopeCommands } from './scopes.ts'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -99,10 +99,11 @@ test('a scope losing, emptying or changing a command, or moving its root, is a w
   assert.deepEqual(weakensConfig(before, with_({ fast: { test: 'npm test', lint: 'eslint .' } })), [], 'adding a command is not weakening')
 })
 
-test('a new scope with no fast or full command weakens a config that already declares scopes; one with commands does not', () => {
+test('a new scope with no commands weakens a config that already declares scopes; one with commands does not', () => {
   const before = JSON.stringify({ scopes: { 'a/**': { name: 'a', root: 'a', fast: { test: 'npm test' } } } })
   const add = (s: object) => JSON.stringify({ scopes: { ...JSON.parse(before).scopes, 'a/gen/**': { name: 'gen', root: 'a/gen', ...s } } })
-  assert.match(weakensConfig(before, add({})).join(), /scope a\/gen\/\*\* added with no fast or full command/)
+  // The reason names each missing kind (final-review fix); this base runs only fast commands.
+  assert.deepEqual(weakensConfig(before, add({})), ['scope a/gen/** added with no fast command'])
   assert.deepEqual(weakensConfig(before, add({ fast: { test: 'npm test' } })), [])
   assert.deepEqual(weakensConfig('{}', JSON.stringify({ scopes: { 'a/**': { name: 'a', root: 'a' } } })), [], 'the first scopes are adoption, not weakening')
 })
@@ -314,4 +315,35 @@ test('a scope root symlinked outside the repository blocks and does not run', ()
   const out = JSON.parse(stopAfterEdits(repo, ['pkg/x.js']).stdout)
   assert.match(out.reason, /pkg:fast\.t not run: its scope root link resolves outside the repository/)
   assert.equal(ran(m), 0)
+})
+
+// Final-review fix wave
+test('a new scope must carry every kind of command the base runs, top-level or in any scope', () => {
+  const lint = { lint: { cmd: 'eslint .', count: 'lines' } }
+  const before = JSON.stringify({ full: { t: 'npm test' }, quality: lint, scopes: { 'a/**': { name: 'a', root: 'a', fast: { t: 'npm test' } } } })
+  const add = (s: object) => JSON.stringify({ ...JSON.parse(before), scopes: { ...JSON.parse(before).scopes, 'a/gen/**': { name: 'gen', root: 'a/gen', ...s } } })
+  assert.deepEqual(weakensConfig(before, add({ fast: { t: 'npm test' } })), ['scope a/gen/** added with no full command', 'scope a/gen/** added with no quality command'])
+  assert.deepEqual(weakensConfig(before, add({ fast: { t: 'npm test' }, full: { t: 'npm test' }, quality: lint })), [], 'a scope with every kind the base runs')
+  assert.deepEqual(weakensConfig(before, before), [])
+  const unscopedBase = JSON.stringify({ full: { t: 'npm test' }, quality: lint })
+  assert.deepEqual(weakensConfig(unscopedBase, JSON.stringify({ ...JSON.parse(unscopedBase), scopes: { 'a/**': { name: 'a', root: 'a' } } })), [], 'first scopes are adoption')
+})
+
+test('with scopes declared, an empty source diff plans the top-level commands, as 0.5.0 did', () => {
+  const c = parseConfig(JSON.stringify({ full: { t: 'npm test' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: 'npm run u' } } } })).config
+  assert.deepEqual(scopeCommands('full', c, []), [{ key: 'full.t', cmd: 'npm test' }])
+  assert.deepEqual(scopeCommands('full', c, 'all').map(x => x.key), ['full.t', 'pkg:full.u'], "'all' is unchanged")
+})
+
+test('verify on a branch with no source changes runs the top-level full commands instead of stamping pass with none', () => {
+  const m = mark('empty')
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { t: m.cmd }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: 'node -e "0"' } } } }))
+  write(repo, 'pkg/a.js', 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/em')
+  sdlc(repo, ['new', 'em', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/em/plan.md', '## Files\n- .sdlc/sensors.json\n## Verification\n- `node -e "process.exit(0)"`\n')
+  sdlc(repo, ['verify', 'em'])
+  assert.equal(ran(m), 1)
 })
