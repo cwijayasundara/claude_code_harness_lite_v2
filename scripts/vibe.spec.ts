@@ -89,3 +89,16 @@ test('layering at edit: a forbidden import this turn adds blocks and names the r
   assert.match(added.stderr, /layering/)
   assert.match(added.stderr, /src\/domain\/\*\* must not import infra: domain is pure/)
 })
+
+test('size: a file that crosses the limit is blocked at edit and at Stop with no active change', () => {
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 10 } }))
+  write(repo, 'src/a.js', Array.from({ length: 8 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  hook(repo, 'prompt-submit', {})
+  write(repo, 'src/a.js', Array.from({ length: 15 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
+  const edit = hook(repo, 'post-edit', { session_id: 's', tool_input: { file_path: path.join(repo, 'src/a.js') } })
+  assert.equal(edit.code, 2, edit.stdout + edit.stderr)
+  assert.match(edit.stderr, /grew to 15 lines/)
+  assert.equal(JSON.parse(hook(repo, 'stop', { session_id: 's' }).stdout).decision, 'block')
+})

@@ -59,7 +59,8 @@ for (const [name, sensor, apply] of DEFECTS) {
 }
 
 test('seeded: a 700-line diff warns at Stop and blocks in CI', () => {
-  write(repo, 'src/huge.js', Array.from({ length: 700 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
+  // two files under the line limit, so only the diff-size finding (a warning at Stop) fires; one 700-line file would now block at Stop
+  for (const f of ['huge1', 'huge2']) write(repo, `src/${f}.js`, Array.from({ length: 350 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
   assert.notEqual(JSON.parse(hook(repo, 'stop', {}).stdout || '{}').decision, 'block')
   // A warn emits nothing; the proof the size sensor ran and warned is the gate summary Stop records.
   const last = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8')).last

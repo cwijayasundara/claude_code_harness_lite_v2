@@ -51,12 +51,12 @@ test('staged assertion removal blocks as test-tamper', () => {
 })
 
 test('a failing fast command blocks; a size warning prints but does not block', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' }, limits: { fileLines: 5 } }))
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' }, limits: { lineChars: 10 } }))
   stage('src/a.js', 'export const a = 1\n')
   const red = commit()
   assert.equal(red.code, 1)
   assert.match(red.stdout, /fast\.test/)
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 5 } }))
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   stage('src/big.js', Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n')
   const warn = commit()
   assert.equal(warn.code, 0)
@@ -323,7 +323,7 @@ test('push judges by the destination ref, whatever the local side is named', () 
 })
 
 test('a Stop that passes with a warning tells the person, and the next prompt tells the agent once', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 5 } }))
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   hook(repo, 'prompt-submit', { session_id: 's' })
   write(repo, 'src/big.js', Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n')
   const stop = hook(repo, 'stop', { session_id: 's' })
@@ -383,7 +383,7 @@ test('an older vendored checker without githooks.ts is not wired: install and se
 })
 
 test('warnings at commit print with their fix text, five at most plus a count', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 5 } }))
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   const big = Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n'
   stage('src/big.js', big)
   const one = commit()
@@ -475,7 +475,7 @@ test('push says when the commands judge the working tree, and names refs it skip
 const bigFile = Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n'
 
 test('more than five warnings at Stop say how many more, to the person and to the agent', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 5 } }))
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   hook(repo, 'prompt-submit', { session_id: 's' })
   for (const n of [1, 2, 3, 4, 5, 6, 7]) write(repo, `src/big${n}.js`, bigFile)
   const stop = JSON.parse(hook(repo, 'stop', { session_id: 's' }).stdout).systemMessage

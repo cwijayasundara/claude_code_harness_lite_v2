@@ -125,7 +125,7 @@ export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<str
     if (now === undefined) continue
     const before = now - d.added.length + d.removed.length
     if (now > cfg.limits.fileLines && before <= cfg.limits.fileLines) {
-      findings.push({ sensor: 'size', severity: 'warn', file: d.file, message: `grew to ${now} lines (limit ${cfg.limits.fileLines})`, fix: 'split it by responsibility before it grows further' })
+      findings.push({ sensor: 'size', severity: point === 'edit' || point === 'stop' ? 'block' : 'warn', file: d.file, message: `grew to ${now} lines (limit ${cfg.limits.fileLines})`, fix: 'split it by responsibility now: this file was within the limit before this change' })
     }
   }
   const total = counted.reduce((n, d) => n + d.added.length + d.removed.length, 0)
