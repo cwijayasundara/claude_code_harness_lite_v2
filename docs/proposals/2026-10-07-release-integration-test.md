@@ -226,9 +226,9 @@ The selftest drives a scripted tier M feature through the whole route in the san
 | Pushing a finished change's branch (the push `pr-checks` asks the person for) made pre-push mint an `adhoc-*` change, repoint `STATE.md`, and refuse the push as unplanned tier M work past three files | **Fixed** (`86d984d`) |
 | The guard-layer removal left 11 unused imports | **Fixed** (`964f7e6`); `noUnusedLocals` now stops new ones |
 | `rig-check` checks the approval rows a PR *adds*, but never that a gated change *has* its approvals. Reproduced the way CI sees it: a tier M feature branch with its design approval removed in a commit passes `check --at ci`. `/rig-pr` refuses to ship past an open gate, but a plain commit and push is not caught by the CI boundary SECURITY.md relies on | **Open: design decision.** The selftest pins today's behaviour, so a fix flips it |
-| `status` and `next` clear `STATE.md` once a change finishes, leaving it modified in the tree after every shipped change | Open, minor. The assertions accept a cleared `STATE.md` and nothing else |
-| `init --full` warns on the vendored `.claude/workflows/review.js` (8 lines over 160 characters): the harness flags its own file in a consumer repo | Open, minor |
-| The CLAUDE.md routing line says `/rig:start`, but a standalone repo's command is `/rig-start` | Open, minor |
+| `status` and `next` clear `STATE.md` once a change finishes, leaving it modified in the tree after every shipped change | **Fixed** (`45a6540`): `pr-checks` clears it in the review-evidence commit |
+| `init --full` warns on the vendored `.claude/workflows/review.js` (8 lines over 160 characters): the harness flags its own file in a consumer repo; an upgrade also counted toward the diff limit | **Fixed** (`b8ee457`): size skips protected harness paths |
+| The CLAUDE.md routing line says `/rig:start`, but a standalone repo's command is `/rig-start` | **Fixed** (`836e9d3`) |
 | An old `sdlc` 0.3.0 plugin is still installed on this machine | Isolated: the sandbox disables every installed plugin and runs with `--setting-sources project,local` |
 
 Not proven yet, because M3 needs them:
