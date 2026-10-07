@@ -18,6 +18,7 @@ import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig } from './check.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
+import { cmdEvals } from './evals.ts'
 import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
@@ -366,6 +367,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   'log-usage': cmdLogUsage,
   hook: cmdHook,
   metrics: cmdMetrics,
+  evals: cmdEvals,
   scorecard: cmdScorecard,
   diff: cmdDiff,
   quality: cmdQuality,
