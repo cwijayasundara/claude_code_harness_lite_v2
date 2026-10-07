@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rig Playbook Gap Design</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a design memo. One column of sections; gap matrix, component map, and a milestone ladder. */
+:root {
+  --bg: #F2F4F1; --surface: #FFFFFF; --ink: #17201C; --muted: #59655F; --line: #CDD5CF; --band: #E4EAE6;
+  --accent: #2346C4; --accent-soft: #E2E8FA; --on-accent: #FFFFFF;
+  --gate: #A85F0A; --gate-soft: #F8EBD5; --stop: #B3261E; --stop-soft: #F9E3E1; --ok: #1D7347; --ok-soft: #DDF0E5;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101512; --surface: #182019; --ink: #E4EBE6; --muted: #98A49D; --line: #2F3933; --band: #1F2822;
+  --accent: #84A0FF; --accent-soft: #1D284A; --on-accent: #0B1020;
+  --gate: #F0A84E; --gate-soft: #392A12; --stop: #FF7B71; --stop-soft: #3A1816; --ok: #5FCB92; --ok-soft: #143122; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #101512; --surface: #182019; --ink: #E4EBE6; --muted: #98A49D; --line: #2F3933; --band: #1F2822;
+  --accent: #84A0FF; --accent-soft: #1D284A; --on-accent: #0B1020;
+  --gate: #F0A84E; --gate-soft: #392A12; --stop: #FF7B71; --stop-soft: #3A1816; --ok: #5FCB92; --ok-soft: #143122; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1100px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 48px; }
+header { display: grid; gap: 12px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.eyebrow span { color: var(--accent); }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(32px, 5vw, 52px); line-height: 1.04; margin: 0; letter-spacing: -.02em; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: clamp(22px, 3vw, 30px); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h3 { font-family: var(--f-display); font-weight: 500; font-size: 19px; margin: 0; }
+p { margin: 0; max-width: 72ch; }
+.lede { font-size: 17px; color: var(--muted); }
+section { display: grid; gap: 16px; }
+code { font-family: var(--f-mono); font-size: .9em; background: var(--band); padding: 1px 5px; border-radius: 4px; }
+pre { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-family: var(--f-mono); font-size: 12.5px; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+ul, ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; max-width: 78ch; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 16px; max-width: 80ch; }
+.note.warn { border-left-color: var(--gate); }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 820px; font-size: 13.5px; }
+th, td { padding: 9px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+thead th { font-family: var(--f-mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--band); position: sticky; top: 0; }
+tbody tr:last-child td { border-bottom: 0; }
+td.k { font-weight: 600; white-space: nowrap; }
+td.k small { display: block; font-weight: 400; color: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.pill { display: inline-block; font-family: var(--f-mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.p-ok { background: var(--ok-soft); color: var(--ok); }
+.p-part { background: var(--gate-soft); color: var(--gate); }
+.p-gap { background: var(--stop-soft); color: var(--stop); }
+.p-skip { background: var(--band); color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card h3 { font-size: 17px; }
+.card .tag { font-family: var(--f-mono); font-size: 11px; color: var(--accent); letter-spacing: .05em; text-transform: uppercase; }
+.card ul { font-size: 14px; }
+.card.rec { border-color: var(--accent); background: var(--accent-soft); }
+.kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; font-size: 14px; }
+.kv dt { font-family: var(--f-mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.kv dd { margin: 0; }
+.scroller { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.scroller svg { display: block; width: 100%; min-width: 860px; height: auto; }
+figure { margin: 0; display: grid; gap: 10px; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 90ch; }
+.dia text { fill: var(--ink); font-family: var(--f-body); font-size: 13px; }
+.dia .mono { font-family: var(--f-mono); font-size: 11.5px; }
+.dia .sm { font-size: 11.5px; }
+.dia .mu { fill: var(--muted); }
+.dia .b { font-weight: 600; }
+.dia .hd { font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; fill: var(--muted); }
+.dia .on { fill: var(--on-accent); }
+.dia .gt { fill: var(--gate); font-weight: 600; }
+.dia .st { fill: var(--stop); }
+.node { fill: var(--surface); stroke: var(--ink); stroke-width: 1.3; }
+.node-new { fill: var(--accent); stroke: var(--accent); }
+.node-ext { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.3; }
+.node-gate { fill: var(--gate-soft); stroke: var(--gate); stroke-width: 1.3; }
+.lane { fill: var(--band); }
+.edge { stroke: var(--ink); stroke-width: 1.4; fill: none; }
+.edge-dot { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 4 4; }
+.edge-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.mk { fill: var(--ink); } .mk-a { fill: var(--accent); } .mk-m { fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.steps { display: grid; gap: 10px; counter-reset: m; }
+.step { display: grid; grid-template-columns: 56px 1fr; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.step .n { font-family: var(--f-display); font-weight: 700; font-size: 22px; color: var(--accent); }
+.step h3 { font-size: 16px; margin-bottom: 4px; }
+.step p, .step ul { font-size: 14px; }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+@media (max-width: 560px) { .wrap { padding-inline: 16px; gap: 40px; } .kv { grid-template-columns: 1fr; } .step { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Design · 2026-10-07 · decisions taken, ready for planning</div>
+  <h1>Closing the gaps between rig and the AI-Native SDLC Playbook</h1>
+  <p class="lede">rig v0.6.0 already implements the playbook's core: the artifact chain, type × tier routing, human-only gates, deterministic sensors, a CI judge that cannot be weakened by the PR it judges, and the twelve metrics. This design maps every checklist item in <code>docs/ai-sdlc-checklist.md</code> to what rig has, and designs only what is missing. It keeps rig's principles, adds nothing to the core checker that a CI template can carry, and respects the 6,900-line budget.</p>
+</header>
+
+<!-- 1. UNDERSTANDING -->
+<section>
+  <div class="eyebrow"><span>01</span> · Understanding (please correct)</div>
+  <h2>What this is for</h2>
+  <dl class="kv">
+    <dt>Goal</dt><dd>Make a repo onboarded with rig satisfy every item in the checklist, including the worked example on p.42–43, CI/CD, and maintenance, so a team can run the playbook end to end on Claude Code.</dd>
+    <dt>Who</dt><dd>Engineering teams using rig, and a platform team that deploys managed settings and CI.</dt>
+    <dt>Success</dt><dd>Every checklist row reads <span class="pill p-ok">covered</span> with a named component, and every playbook metric is computed by <code>sdlc.ts metrics</code> rather than estimated.</dd>
+    <dt>Constraints you gave</dt><dd><strong>Keep rig as simple and lean as possible.</strong> Every item below passes a lean test: it is a template (zero core lines), a change to an existing skill, or a leaf script under 200 lines; anything else is cut or deferred. <strong>Model by tier:</strong> tier S on Haiku 5.5 (<code>claude-haiku-5-5</code>, $0.10 in / $0.50 out per M tokens), tier M on Sonnet 5.5, tier L on Opus 5.5, for every model step of a change (design, implementation, review, CI review, spec job). Steps that are not tied to a change (code search, triage, watch diagnosis, the review sweep) run on Haiku.</dd>
+    <dt>Decisions taken</dt><dd>(1) Everything lands in core; the line cap rises from 6,900 to <strong>7,600</strong>, and the design must fit it, templates included, because <code>size.spec.ts</code> counts them. (2) Evals are run by a person, never on a schedule or a PR trigger. (3) The intent inbox is <code>.sdlc/intent/</code>. (4) Model by tier, as above. (5) The production gate may match command text, as the playbook's script does.</dd>
+    <dt>Constraints I assume</dt><dd>No hook on Bash in the core (DESIGN §9). New parts add no imports to <code>check</code>, <code>hooks</code> or <code>sdlc</code>'s hot path (ROADMAP's v3 rule). Windows stays unsupported. Claude Tag (Slack) is a thin integration, not a dependency.</dd>
+    <dt>Not in scope</dt><dd>The DeepWiki and learning loops from ROADMAP.md. A rewrite of any existing stage. Moving artifacts out of <code>.sdlc/</code>.</dd>
+  </dl>
+</section>
+
+<!-- 2. GAP MATRIX -->
+<section>
+  <div class="eyebrow"><span>02</span> · Gap analysis</div>
+  <h2>Checklist item → what rig has today → what this design adds</h2>
+  <div class="legend">
+    <span><i class="pill p-ok">covered</i> rig does this now</span>
+    <span><i class="pill p-part">partial</i> exists but misses a playbook step or metric</span>
+    <span><i class="pill p-gap">gap</i> nothing in rig</span>
+    <span><i class="pill p-skip">thin</i> integrate, do not build</span>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Checklist item</th><th>Status</th><th>What rig has</th><th>What this design adds</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Artifact chain<small>§0.1</small></td><td><span class="pill p-ok">covered</span></td><td><code>.sdlc/changes/&lt;slug&gt;/</code> intent → spec/design/plan → runs → review → pr.md → ship.json. Status derived from files.</td><td>Nothing.</td></tr>
+      <tr><td class="k">Source of truth / linkage<small>§0.2</small></td><td><span class="pill p-part">partial</span></td><td><code>/rig:start #123</code> reads a GitHub issue and records the ref in intent.md.</td><td>Write the commit SHA back to the issue (<code>sdlc.ts pr</code> already has <code>gh</code>). One metric: share of changes with a record ID.</td></tr>
+      <tr><td class="k">Adoption order<small>§0.3</small></td><td><span class="pill p-ok">covered</span></td><td>rig's <code>init</code> installs the entry points together.</td><td>The milestone ladder (§6) follows the graph.</td></tr>
+      <tr><td class="k">Stage 1 · intent for non-engineers<small>§1</small></td><td><span class="pill p-gap">gap</span></td><td>intent.md is written by an engineer inside Claude Code via <code>/rig:start</code>.</td><td>An <code>intent/</code> inbox and one <code>SKILL.md</code> template; <code>/rig:start</code> learns to read an inbox file (prompt text, no script). Survival-rate metric.</td></tr>
+      <tr><td class="k">Stage 2 · spec from intent, policy skills, flagged concerns<small>§2</small></td><td><span class="pill p-part">partial</span></td><td>Opus architect writes spec.md and design.md; <code>approve design</code> refuses open questions.</td><td>Policy skills with a named owner (<code>policy-*</code>), a required <code>## Concerns</code> section routed to owners, and <code>rig-spec.yml</code>: spec.md opened as a PR when an intent merges.</td></tr>
+      <tr><td class="k">Stage 3 · plan mode, plan.md checked at review<small>§3.1</small></td><td><span class="pill p-ok">covered</span></td><td>plan.md with Files/Slices/Verification, no code; approvals go stale on edit; reviewer checks <code>## Contracts</code>.</td><td>Nothing.</td></tr>
+      <tr><td class="k">Auto mode guardrails<small>§3.2</small></td><td><span class="pill p-ok">covered</span></td><td>Ratchet: bounded rounds, budget caps, slice checkpoints, <code>/rig-run</code>.</td><td>Metric: share of changes run unattended, with their defect rate.</td></tr>
+      <tr><td class="k">CLAUDE.md, "twice" rule<small>§3.3</small></td><td><span class="pill p-part">partial</span></td><td><code>init</code> writes a compact CLAUDE.md; <code>/rig:rule</code> promotes regex rules.</td><td><code>/rig:rule</code> gains a prose outcome: when the recurring mistake is not a regex, it proposes one CLAUDE.md line instead. No new skill. Metric: repeat findings per category.</td></tr>
+      <tr><td class="k">Skills as institutional knowledge, trigger tests<small>§3.4</small></td><td><span class="pill p-part">partial</span></td><td>15 stage skills; guides injected on first touch.</td><td>Policy skills folder convention (<code>owner:</code>, <code>source:</code> in frontmatter) and trigger evals in the eval suite.</td></tr>
+      <tr><td class="k">Build-time hooks<small>§3.5</small></td><td><span class="pill p-ok">covered</span></td><td>post-edit: secrets, tamper, size, rules; Stop gate; git pre-commit.</td><td>Nothing in core (no Bash hook, by design).</td></tr>
+      <tr><td class="k">Parallel sessions, subagents<small>§3.6</small></td><td><span class="pill p-part">partial</span></td><td>4 agents; lane events; slices in one session.</td><td>Nothing in code. A README section shows <code>claude --worktree</code> per independent slice group; <code>status</code> already lists slices and their files. Metric exists (lane events).</td></tr>
+      <tr><td class="k">Feedback loop, test-first fixes, protect tests<small>§4.1</small></td><td><span class="pill p-ok">covered</span></td><td>Recorder with captured exit codes; red-proof; test-tamper sensor; diagnose writes the failing test first.</td><td>Nothing.</td></tr>
+      <tr><td class="k">Continuous evals in CI<small>§4.2</small></td><td><span class="pill p-gap">gap</span></td><td>None.</td><td><code>evals/</code> folder, <code>sdlc.ts evals</code> runner that a person runs before merging a CLAUDE.md, skill or hook change, incident → eval step. No workflow: evals are manual by decision.</td></tr>
+      <tr><td class="k">AI PR review, REVIEW.md, @claude fix loop<small>§5.1</small></td><td><span class="pill p-part">partial</span></td><td>REVIEW.md, <code>rig-review.yml</code>, in-session <code>/code-review</code>, one fix round.</td><td><code>/rig:pr-review</code>'s one fix round becomes a bounded sweep (cap in <code>ratchet</code>), on Haiku. A repeat finding ends with <code>Next: /rig:rule</code>. No new skill.</td></tr>
+      <tr><td class="k">Hooks as approval gates<small>§5.2</small></td><td><span class="pill p-gap">gap</span></td><td>Human gates are skills, not hooks; no Bash hook.</td><td>One <strong>managed-only</strong> hook, <code>production-gate.sh</code> (the p.41 script), shipped as a template for managed settings, never in <code>hooks.json</code>. Protected paths need no new code: <code>ask</code> rules plus <code>harness-tamper</code> already cover them.</td></tr>
+      <tr><td class="k">Managed settings (p.42–43)<small>§5.3</small></td><td><span class="pill p-part">partial</span></td><td>SECURITY.md recommends them; project template denies <code>.env</code>.</td><td><code>templates/managed-settings.json</code> from the worked example; preflight checks it is applied; fleet-coverage metric.</td></tr>
+      <tr><td class="k">CI/CD: non-interactive judgment, MCP deploy, tiered autonomy, rollback<small>§5.4</small></td><td><span class="pill p-gap">gap</span></td><td><code>rig-check</code> and <code>rig-review</code> only.</td><td>Two templates: <code>rig-triage.yml</code> (Haiku reads the failed log) and <code>rig-rehearse.yml</code> (runs the team's rollback command in staging on a schedule). No deploy config in rig: deploy tools are the platform team's MCP servers. DORA from <code>gh</code> plus one incident field.</td></tr>
+      <tr><td class="k">Closing the loop<small>§6.1</small></td><td><span class="pill p-part">partial</span></td><td><code>/rig:incident</code> (human-invoked) opens an incident change; metrics for breach → intent and repeat class.</td><td>A deterministic detector (<code>sdlc.ts watch</code>) with <code>bands</code> config, <code>rig-watch.yml</code> that invokes <code>claude -p</code> per tier, and a triage queue in <code>.sdlc/intent/</code>.</td></tr>
+      <tr><td class="k">Claude Tag on call<small>§6.2</small></td><td><span class="pill p-skip">thin</span></td><td><code>.sdlc/incidents/*.md</code> is the lessons file.</td><td>Nothing to build: the incident skill already writes the record Claude Tag should read. Document the handoff.</td></tr>
+      <tr><td class="k">Measurement scorecard<small>§7</small></td><td><span class="pill p-part">partial</span></td><td>12 playbook metrics plus cost; <code>unmeasured</code> below 5 samples.</td><td>Add: eval pass rate, incident → eval hours, gate wait, triage without paging, DORA, intent survival, repeat findings.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Six items are real gaps. Under the lean rule, only two of them need code in rig (<code>evals.ts</code> and <code>watch.ts</code>, both leaf scripts); the other four are templates, one SKILL.md, and edits to skills that already exist.</p>
+  <h3>Model routing: one rule, tier picks the model</h3>
+  <p>Decision 4: <strong>S → Haiku 5.5, M → Sonnet 5.5, L (and greenfield) → Opus 5.5</strong>, applied to every model step that belongs to a change. The mechanism is one thing rig does not do today: agents carry a fixed <code>model:</code>, and no skill sets one (a model switch re-reads the context uncached, DESIGN §2.7). The mechanism is the Agent call's own <code>model</code> parameter, which rig already uses (the build skill's tier L slice review passes <code>model: sonnet</code>) and which takes precedence over an agent file's <code>model:</code>. <code>sdlc.ts next --json</code> gains a <code>model</code> field derived from the change's effective tier; every skill passes it on each architect, implementer and reviewer launch. The template pins the aliases (<code>ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5</code> and the Sonnet and Opus equivalents) so <code>haiku</code> means 5.5. No new agent files. <em>Revised 2026-10-07 during planning: replaces the nine tiered agent files.</em></p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Step</th><th>Today</th><th>Tier S</th><th>Tier M</th><th>Tier L</th><th>Mechanism</th></tr></thead>
+    <tbody>
+      <tr><td class="k">architect (spec, plan, design)</td><td>Opus</td><td>Haiku 5.5</td><td>Sonnet 5.5</td><td>Opus 5.5</td><td><code>model</code> from <code>next --json</code> on the architect launch.</td></tr>
+      <tr><td class="k">implementer (one slice)</td><td>Sonnet</td><td>Haiku 5.5</td><td>Sonnet 5.5</td><td>Opus 5.5</td><td><code>model</code> from <code>next --json</code>; tier S now delegates to the implementer instead of building inline. The ratchet's bounded rounds catch a weak slice at S.</td></tr>
+      <tr><td class="k">reviewer (one review per change)</td><td>Opus</td><td>Haiku 5.5</td><td>Sonnet 5.5</td><td>Opus 5.5</td><td><code>model</code> from <code>next --json</code>; tier S and M use <code>rig:reviewer</code> instead of the built-in <code>code-review</code>, which takes no model. The <code>tier</code> sensor already re-tiers a diff that reaches auth, payments, data or contracts to L, so those still get the Opus review that caught the auth bypass in the trials.</td></tr>
+      <tr><td class="k">rig-review.yml (CI)</td><td>Opus</td><td>Haiku 5.5</td><td>Sonnet 5.5</td><td>Opus 5.5</td><td>One step reads <code>tier:</code> from the change's <code>ratchet.json</code> (sdlc-written, so a PR cannot lower it) and sets <code>--model</code>.</td></tr>
+      <tr><td class="k">rig-spec.yml design job (new)</td><td>—</td><td>Haiku 5.5</td><td>Sonnet 5.5</td><td>Opus 5.5</td><td>Same step, reading <code>tier:</code> from the inbox file's frontmatter.</td></tr>
+      <tr><td class="k">Main thread (skills)</td><td>Sonnet</td><td colspan="3">unchanged: Sonnet 5.5 from the template</td><td>A person may start a tier S session with <code>claude --model claude-haiku-5-5</code>; README says so.</td></tr>
+      <tr><td class="k">scout (code search)</td><td>Haiku 4.5</td><td colspan="3">Haiku 5.5, every tier</td><td>Not tied to a change's risk; same role, far stronger model (GDPval 735 → 1620).</td></tr>
+      <tr><td class="k">General subagents<small>CLAUDE_CODE_SUBAGENT_MODEL</small></td><td>Sonnet</td><td colspan="3">Haiku 5.5, every tier</td><td>Custom subagents with no <code>model:</code> of their own (verifier, summaries). Built-in Explore and Plan keep their own model; the env var does not move them. Requires Claude Code 2.1.251+, where a per-call <code>model</code> beats this env var.</td></tr>
+      <tr><td class="k">pr-review sweep, rig-triage, watch diagnosis (new)</td><td>—</td><td colspan="3">Haiku 5.5, every tier</td><td>Repetitive sweeps and read-only diagnosis; the tier gate (code owner, review) still sits after them.</td></tr>
+      <tr><td class="k">Eval runner (new)</td><td>—</td><td colspan="3">the model under test</td><td>An eval tests the configuration with the model the team ships; the scorer is deterministic.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Cost: a few lines in <code>graph.ts</code> and the skills; DESIGN §2.7 (no skill switches the main thread's model) holds. Tier M gets cheaper (Sonnet architect and reviewer instead of Opus); tier L gets a stronger implementer. On the trial numbers (tier S $0.31, tier L $2.50–2.87), expect S well under half and L slightly up from the Opus implementer, which is where assurance is bought.</p>
+</section>
+
+<!-- 3. APPROACHES -->
+<section>
+  <div class="eyebrow"><span>03</span> · Approaches</div>
+  <h2>Three ways to add the missing six</h2>
+  <div class="cards">
+    <article class="card rec">
+      <div class="tag">Recommended</div>
+      <h3>A · Templates first, core last</h3>
+      <ul>
+        <li>CI-side behaviour (spec job, triage, rehearsal, watch) ships as workflow templates that call <code>claude -p</code> and the vendored <code>sdlc.ts</code>. Zero lines in the checker (templates still count toward the line cap).</li>
+        <li>Approval-gate hooks ship as a managed-settings template, so the core keeps "no hook on Bash" and the enterprise gets the gates where they belong: where engineers cannot switch them off.</li>
+        <li>Core grows by two leaf scripts (<code>evals.ts</code>, <code>watch.ts</code>), metric fields, and edits to three existing skills (<code>start</code>, <code>rule</code>, <code>pr-review</code>). No new skills except one <code>SKILL.md</code> for product owners. Budget: 700 lines, the new cap of 7,600 less today's 6,900.</li>
+      </ul>
+      <p><strong>Why:</strong> matches DESIGN §2 ("thin layer, built-ins first") and the ROADMAP rule that optional parts add no imports to <code>check</code>, <code>hooks</code> or <code>sdlc</code>'s hot path. Fits the line budget. Each piece is testable on its own.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Alternative</div>
+      <h3>B · Everything in core</h3>
+      <ul>
+        <li>Evals, detector, gates and deploy become first-class stages in <code>graph.ts</code> with their own nodes.</li>
+        <li>Production gate as a <code>PreToolUse</code> Bash hook in <code>hooks.json</code>.</li>
+      </ul>
+      <p><strong>Rejected:</strong> reintroduces the Bash guard layer removed in v0.5.0 for being leaky; adds to the hot path that was just made flat; pushes past the line budget; and the detector would run in every session.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Alternative</div>
+      <h3>C · Separate plugin <code>rig-ops</code></h3>
+      <ul>
+        <li>Evals, watch and deploy as a second plugin that reads <code>.sdlc/</code> evidence.</li>
+      </ul>
+      <p><strong>Deferred:</strong> the right shape once the pieces are proven, as ROADMAP says for wiki and learn. Today the pieces are small and standalone repos need them without a second install. Design A keeps them in files that could be split out later without changing interfaces.</p>
+    </article>
+  </div>
+</section>
+
+<!-- 4. ARCHITECTURE -->
+<section>
+  <div class="eyebrow"><span>04</span> · Architecture</div>
+  <h2>Where each new piece sits</h2>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1100 560" role="img" aria-label="Component map in rig's five layers. New components in blue: an intent inbox and template, evals and watch scripts, rig-spec, rig-triage, rig-rehearse and rig-watch workflow templates, and a managed-settings template with the production gate. Extended in light blue: start, rule and pr-review skills, policy skills, metrics, preflight, sensors.json. Existing components in white. Arrows show which new pieces call which existing ones.">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-m" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <!-- lanes -->
+      <rect class="lane" x="20" y="20" width="1060" height="90" rx="8"/><text class="hd" x="32" y="40">SKILLS</text>
+      <rect class="lane" x="20" y="122" width="1060" height="80" rx="8"/><text class="hd" x="32" y="142">AGENTS</text>
+      <rect class="lane" x="20" y="214" width="1060" height="90" rx="8"/><text class="hd" x="32" y="234">HOOKS · SETTINGS</text>
+      <rect class="lane" x="20" y="316" width="1060" height="90" rx="8"/><text class="hd" x="32" y="336">SCRIPTS (sdlc.ts)</text>
+      <rect class="lane" x="20" y="418" width="1060" height="120" rx="8"/><text class="hd" x="32" y="438">CI TEMPLATES · EVIDENCE</text>
+
+      <!-- skills -->
+      <rect class="node-ext" x="40" y="52" width="100" height="40" rx="6"/><text class="b" x="90" y="77" text-anchor="middle">start</text>
+      <rect class="node" x="150" y="52" width="110" height="40" rx="6"/><text class="b" x="205" y="77" text-anchor="middle">design · plan</text>
+      <rect class="node" x="270" y="52" width="170" height="40" rx="6"/><text class="b" x="355" y="77" text-anchor="middle">build · test · sensors · pr</text>
+      <rect class="node-ext" x="450" y="52" width="100" height="40" rx="6"/><text class="b" x="500" y="77" text-anchor="middle">pr-review</text>
+      <rect class="node-ext" x="560" y="52" width="140" height="40" rx="6"/><text class="b" x="630" y="77" text-anchor="middle">incident · rule</text>
+      <rect class="node-new" x="830" y="52" width="110" height="40" rx="6"/><text class="on b" x="885" y="77" text-anchor="middle">intent-template</text>
+      <rect class="node-ext" x="950" y="52" width="120" height="40" rx="6"/><text class="b" x="1010" y="77" text-anchor="middle">policy-* skills</text>
+
+      <!-- agents -->
+      <rect class="node" x="40" y="150" width="110" height="36" rx="6"/><text class="b" x="95" y="173" text-anchor="middle">scout · haiku</text>
+      <rect class="node" x="160" y="150" width="130" height="36" rx="6"/><text class="b" x="225" y="173" text-anchor="middle">architect · opus</text>
+      <rect class="node" x="300" y="150" width="150" height="36" rx="6"/><text class="b" x="375" y="173" text-anchor="middle">implementer · sonnet</text>
+      <rect class="node" x="460" y="150" width="130" height="36" rx="6"/><text class="b" x="525" y="173" text-anchor="middle">reviewer · opus</text>
+      <rect class="node-ext" x="600" y="150" width="130" height="36" rx="6"/><text class="b" x="665" y="173" text-anchor="middle">verifier (report only)</text>
+
+      <!-- hooks -->
+      <rect class="node" x="40" y="246" width="250" height="40" rx="6"/><text class="b" x="165" y="266" text-anchor="middle">hooks.json (no Bash hook)</text><text class="sm mu" x="165" y="280" text-anchor="middle">session · prompt · post-edit · stop</text>
+      <rect class="node" x="300" y="246" width="200" height="40" rx="6"/><text class="b" x="400" y="266" text-anchor="middle">templates/settings.json</text><text class="sm mu" x="400" y="280" text-anchor="middle">project: deny evidence, ask on harness</text>
+      <rect class="node-new" x="520" y="246" width="250" height="40" rx="6"/><text class="on b" x="645" y="266" text-anchor="middle">templates/managed-settings.json</text><text class="on sm" x="645" y="280" text-anchor="middle">p.42 worked example, tailored</text>
+      <rect class="node-new" x="780" y="246" width="290" height="40" rx="6"/><text class="on b" x="925" y="266" text-anchor="middle">templates/production-gate.sh</text><text class="on sm" x="925" y="280" text-anchor="middle">managed hook only, never in hooks.json</text>
+
+      <!-- scripts -->
+      <rect class="node" x="40" y="348" width="260" height="40" rx="6"/><text class="b" x="170" y="368" text-anchor="middle">check · graph · ratchet · runs · hooks</text><text class="sm mu" x="170" y="382" text-anchor="middle">the hot path, unchanged</text>
+      <rect class="node-ext" x="310" y="348" width="120" height="40" rx="6"/><text class="b" x="370" y="368" text-anchor="middle">metrics</text><text class="sm mu" x="370" y="382" text-anchor="middle">+7 fields</text>
+      <rect class="node-ext" x="440" y="348" width="120" height="40" rx="6"/><text class="b" x="500" y="368" text-anchor="middle">preflight</text><text class="sm mu" x="500" y="382" text-anchor="middle">+managed check</text>
+      <rect class="node-new" x="570" y="348" width="110" height="40" rx="6"/><text class="on b" x="625" y="368" text-anchor="middle">evals.ts</text><text class="on sm" x="625" y="382" text-anchor="middle">runner + scorer</text>
+      <rect class="node-new" x="690" y="348" width="110" height="40" rx="6"/><text class="on b" x="745" y="368" text-anchor="middle">watch.ts</text><text class="on sm" x="745" y="382" text-anchor="middle">bands detector</text>
+      <rect class="node" x="810" y="348" width="110" height="40" rx="6"/><text class="b" x="865" y="368" text-anchor="middle">pr · pr-checks</text><text class="sm mu" x="865" y="382" text-anchor="middle">+1 line: inbox status</text>
+      <rect class="node-ext" x="930" y="348" width="140" height="40" rx="6"/><text class="b" x="1000" y="368" text-anchor="middle">sensors.json</text><text class="sm mu" x="1000" y="382" text-anchor="middle">+bands +deploy +evals</text>
+
+      <!-- CI / evidence -->
+      <rect class="node" x="40" y="450" width="120" height="40" rx="6"/><text class="b" x="100" y="474" text-anchor="middle">rig-check.yml</text>
+      <rect class="node" x="170" y="450" width="120" height="40" rx="6"/><text class="b" x="230" y="474" text-anchor="middle">rig-review.yml</text>
+      <rect class="node-new" x="300" y="450" width="110" height="40" rx="6"/><text class="on b" x="355" y="474" text-anchor="middle">rig-spec.yml</text>
+      <rect class="node-new" x="420" y="450" width="110" height="40" rx="6"/><text class="on b" x="475" y="474" text-anchor="middle">rig-rehearse.yml</text>
+      <rect class="node-new" x="540" y="450" width="110" height="40" rx="6"/><text class="on b" x="595" y="474" text-anchor="middle">rig-triage.yml</text>
+      <rect class="node-new" x="660" y="450" width="110" height="40" rx="6"/><text class="on b" x="715" y="474" text-anchor="middle">rig-watch.yml</text>
+      <rect class="node" x="790" y="450" width="130" height="40" rx="6"/><text class="b" x="855" y="474" text-anchor="middle">.sdlc/changes/</text>
+      <rect class="node-new" x="930" y="450" width="140" height="40" rx="6"/><text class="on b" x="1000" y="474" text-anchor="middle">.sdlc/intent/ · evals/</text>
+      <text class="sm mu" x="40" y="520">Templates call `claude -p` and the vendored `.sdlc/bin/sdlc.ts`. None of them is required for a repo to run the existing lifecycle.</text>
+
+      <!-- edges: new → existing -->
+      <path class="edge-acc" d="M355,450 C355,420 285,410 285,92" marker-end="url(#a)"/>
+      <path class="edge-acc" d="M475,450 L475,392" marker-end="url(#a)"/>
+      <path class="edge-acc" d="M715,450 L745,392" marker-end="url(#a)"/>
+      <path class="edge-acc" d="M1000,450 L865,392" marker-end="url(#a)"/>
+      <path class="edge-acc" d="M865,348 C865,320 115,320 115,92" marker-end="url(#a)"/>
+      <path class="edge-dot" d="M625,348 C625,300 525,300 525,186" marker-end="url(#am)"/>
+      <path class="edge-dot" d="M675,52 C675,20 445,20 445,52" marker-end="url(#am)"/>
+    </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--accent)"></i> new</span>
+      <span><i class="sw" style="background:var(--accent-soft);border:1px solid var(--accent)"></i> extended</span>
+      <span><i class="sw" style="background:var(--surface);border:1.3px solid var(--ink)"></i> existing, unchanged</span>
+    </div>
+    <figcaption>Dependencies still point downward. The hot path (check, graph, ratchet, runs, hooks) does not change. <code>evals.ts</code> and <code>watch.ts</code> are the only new scripts: leaf files that import <code>core</code> and <code>runs</code> only, so they can move to a <code>rig-ops</code> plugin later with no interface change. The intent inbox needs no script: a skill reads it and one existing command writes its status.</figcaption>
+  </figure>
+</section>
+
+<!-- 5. COMPONENTS -->
+<section>
+  <div class="eyebrow"><span>05</span> · Components</div>
+  <h2>Each piece: what it does, how it is used, what it depends on</h2>
+
+  <h3>5.1 Stage 1 · Intent inbox</h3>
+  <div class="cards">
+    <article class="card">
+      <div class="tag">.sdlc/intent/ (new folder)</div>
+      <p>The playbook's intent home, next to the code. A product owner or a non-engineer commits <code>intent/&lt;kebab&gt;.md</code> from claude.ai through the GitHub connector. The file follows the p.13 template, checked by the <code>intent-template</code> skill below. Status in frontmatter: <code>draft | accepted | closed</code>. Accepting is a PR merge by the product owner (CODEOWNERS on <code>.sdlc/intent/</code>).</p>
+    </article>
+    <article class="card">
+      <div class="tag">intent-template (new skill)</div>
+      <p>Vendored like the others, but also usable from claude.ai: a <code>SKILL.md</code> with the organisation's template and the questions an analyst asks (scope, users, constraints, success). <code>disable-model-invocation: false</code>; it writes only the one file. The lead signs off edits to it, through the normal <code>ask</code> rule on skills.</p>
+    </article>
+    <article class="card">
+      <div class="tag">/rig:start reads the inbox (skill edit, no script)</div>
+      <p><code>/rig:start intent/&lt;file&gt;</code>: the skill already classifies a request and runs <code>new &lt;slug&gt;</code>; it now accepts an inbox path, takes type and tier from the file's frontmatter when present, copies the body into <code>intent.md</code> and records <code>source: intent/&lt;file&gt;</code>. Six lines of prompt text. <code>pr-checks</code> writes <code>status: shipped</code> back to the inbox file when it already writes <code>ship.json</code> (one line).</p>
+      <p><strong>Metrics:</strong> <code>intent_to_commit_hours</code> (file created → first commit), <code>intent_survival</code> (accepted ÷ (accepted + closed)), <code>intent_edits_after_spec</code>.</p>
+    </article>
+  </div>
+
+  <h3>5.2 Stage 2 · Policy skills, concerns, spec job</h3>
+  <div class="cards">
+    <article class="card">
+      <div class="tag">policy-* skills (convention, not code)</div>
+      <p><code>.claude/skills/policy-&lt;area&gt;/SKILL.md</code> with two extra frontmatter keys: <code>owner:</code> (a person or team) and <code>source:</code> (the policy's URL or path). The architect agent's brief lists every <code>policy-*</code> skill, so spec.md and design.md are written with them loaded. <code>init</code> scaffolds <code>policy-security</code> from <code>guides/</code>.</p>
+    </article>
+    <article class="card">
+      <div class="tag">## Concerns (design-format change)</div>
+      <p><code>templates/design-format.md</code> gains a required <code>## Concerns</code> section: each line <code>- [policy-&lt;area&gt;] &lt;concern&gt; → owner: &lt;from frontmatter&gt;</code>, or "None". <code>approve design</code> refuses a concern without a resolution line, the same way it refuses open questions today. This is the playbook's "resolve each concern with its policy owner before engineering sees the spec".</p>
+    </article>
+    <article class="card">
+      <div class="tag">rig-spec.yml (new template)</div>
+      <p>On <code>push</code> to the trunk touching <code>.sdlc/intent/*.md</code> with <code>status: accepted</code>: a job runs <code>claude -p "/rig-start intent/&lt;file&gt;"</code> (the model picked from the file's tier: Haiku S, Sonnet M, Opus L) with <code>--allowedTools</code> limited to Read, Grep, Glob and <code>Edit(.sdlc/changes/&lt;slug&gt;/**)</code>, and opens a PR with intent.md and design.md. The product owner's first involvement is the review. Same privilege split as <code>rig-review.yml</code>: the model has no shell or network.</p>
+      <p><strong>Metric:</strong> <code>intent_to_spec_hours</code> (two git timestamps; exists today as plan lead time, renamed and pointed at the design file).</p>
+    </article>
+  </div>
+
+  <h3>5.3 Stage 3 · The "twice" rule and parallel sessions</h3>
+  <div class="cards">
+    <article class="card">
+      <div class="tag">/rig:rule gains a prose outcome (skill edit)</div>
+      <p><code>/rig:rule</code> already demands two real occurrences before it earns a regex rule. Its step 2 gains a branch: when the recurring mistake cannot be stated as a regex, draft one line for CLAUDE.md's <code>## Things Claude gets wrong</code> instead, and hand it to the person as it hands over a rule today (the playbook wants code owners to approve CLAUDE.md edits). <code>/rig:pr-review</code> ends with <code>Next: /rig:rule "&lt;category&gt;"</code> when a finding's category appeared on an earlier shipped change.</p>
+      <p><strong>Metric:</strong> <code>repeat_findings</code>, computable from <code>review*.md</code> today.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Parallel sessions (README only)</div>
+      <p>No code. A README section: <code>status</code> already prints each slice with its files; open one <code>claude --worktree sdlc/&lt;slug&gt;-&lt;n&gt;</code> per group of slices that share no file, 2–3 at a time, and run <code>/rig-build &lt;slug&gt;</code> in each. The slice checkpoint already refuses a file outside the slice's list, so sessions cannot collide. Lane events already count concurrent sessions per engineer.</p>
+    </article>
+  </div>
+
+  <h3>5.4 Stage 4 · Continuous evals</h3>
+  <div class="cards">
+    <article class="card">
+      <div class="tag">evals/ (new folder) and sdlc.ts evals</div>
+      <p>One JSON per eval: <code>{ id, prompt, allowedTools, checks: [{ kind: "command" | "file-contains" | "file-absent" | "skill-loaded", ... }], source: "incident:&lt;file&gt;" | "change:&lt;slug&gt;" | "skill:&lt;name&gt;" }</code>. <code>sdlc.ts evals [--only id]</code> runs each with <code>claude -p --output-format json</code> in a throwaway worktree, scores the checks deterministically (captured exit codes, as <code>runs.ts</code> does), and writes <code>.sdlc/evals/&lt;date&gt;.jsonl</code>. The <code>skill-loaded</code> check reads the JSON transcript for a Skill tool call, which is the playbook's "test that the skill triggers".</p>
+      <p>Seed: <code>sdlc.ts evals --seed</code> drafts 20 evals from the last shipped changes (prompt = intent.md problem, checks = the plan's verification commands). The person curates them.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Manual by decision (no workflow)</div>
+      <p>A person runs <code>sdlc.ts evals</code> before merging a change to CLAUDE.md, a skill, a hook, the guides, <code>sensors.json</code> or <code>rules.json</code>. Two cheap aids, both existing mechanisms: the <code>harness-tamper</code> sensor's message for those paths gains the sentence "run <code>sdlc.ts evals</code> and attach the result", and <code>status</code> shows the last eval run's pass rate and age. The result file is the evidence the code owner reads in the PR. <code>evals.minPass</code> in sensors.json is advisory: the runner prints pass or fail against it, and nothing blocks on it.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Incident → eval (one step added)</div>
+      <p><code>/rig:incident</code> ends by writing <code>evals/incident-&lt;date&gt;-&lt;class&gt;.json</code> with the regression test from <code>diagnose</code> as its check. The eval's <code>source</code> links back to the incident file, so the suite is also the repeat-incident guard.</p>
+      <p><strong>Metrics:</strong> <code>eval_pass_rate</code> (last run, trend), <code>incident_to_eval_hours</code>, <code>regressions_ci_vs_prod</code> (eval failures on PRs ÷ escaped incidents).</p>
+    </article>
+  </div>
+
+  <h3>5.5 Stage 5 · Review sweep, managed settings, the production gate, CI/CD</h3>
+  <div class="cards">
+    <article class="card">
+      <div class="tag">/rig:pr-review sweeps to green (skill edit)</div>
+      <p>The skill's "one fix round" becomes a loop: address unresolved review threads and failing checks, push, wait, repeat until green or <code>ratchet.reviewRounds</code> (default 3). The loop runs in a Haiku subagent, so the main thread's context stays small. Approval stays with the code owner. Uses <code>gh pr view --json reviewThreads,statusCheckRollup</code> and the existing <code>pr-checks</code>. Each round is a lane event, so cost shows per PR.</p>
+      <p><strong>Metrics:</strong> <code>time_to_first_review</code> and <code>comments_resolved_hands_off</code> (exists partly as review metrics today; add the hands-off share).</p>
+    </article>
+    <article class="card">
+      <div class="tag">templates/managed-settings.json (new)</div>
+      <p>The p.42 JSON with rig's own additions: deny <code>Edit</code> on evidence paths, allow the vendored <code>sdlc.ts</code>, <code>allowManagedHooksOnly: true</code> pointing at <code>templates/gates/</code>, a <code>strictKnownMarketplaces</code> entry for the team's fork, and <code>requiredMinimumVersion</code>. <code>sdlc.ts preflight</code> gains a <code>managed</code> check: reads the effective settings and reports which of the 16 controls are in force (advisory, like the rest of preflight). A per-repo "tailor" block in the file comments names the data classification each deny trades against.</p>
+      <p><strong>Metric:</strong> <code>managed_controls_in_force</code> (n of 16, from preflight; fleet coverage is the admin console's job, not rig's).</p>
+    </article>
+    <article class="card">
+      <div class="tag">templates/production-gate.sh (new, managed hook only)</div>
+      <p>The p.41 script, verbatim apart from reading the production environment name from an env var the platform team sets. Installed as a <code>PreToolUse</code> Bash hook through managed settings, never through <code>hooks.json</code>: a command naming <code>deploy</code> and that environment needs <code>RELEASE_APPROVAL</code>, else exit 2 with the route to approval. It appends allow or block with a timestamp to <code>.sdlc/gates.jsonl</code>. Protected paths (migrations, infra) need no second hook: put them in the project template's <code>ask</code> rules, where <code>harness-tamper</code> already watches the harness paths.</p>
+      <p>This keeps rig's core free of Bash hooks (a text match is leaky as a guardrail) while giving the enterprise the gate where it cannot be switched off (managed-only is the control, not the regex).</p>
+      <p><strong>Metrics:</strong> <code>gate_wait_hours</code> from <code>gates.jsonl</code>; <code>gate_violations_escaped</code> from incidents tagged <code>class: gate</code>.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Deploy and rollback (templates only, nothing in rig)</div>
+      <p>Deploy, status and rollback are MCP tools the platform team registers through managed MCP, scoped per environment; rig holds no deploy config and no credential. Tiered autonomy is then two facts: in dev and staging the agent may call the deploy tool; in production it may call only <code>prepare</code>, and the production gate above blocks the rest. <code>rig-rehearse.yml</code> runs the team's rollback command in staging on a schedule; the metric reads that workflow's run history through <code>gh</code>, so there is no <code>deploys.jsonl</code> to write.</p>
+    </article>
+    <article class="card">
+      <div class="tag">rig-triage.yml (new template)</div>
+      <p>The p.45 step: on any workflow failure, <code>claude -p --model claude-haiku-5-5</code> reads the log, says flaky or real, and writes three lines to the PR thread. Read-only tools; a model-free step posts, after the same credential scrub as <code>rig-review.yml</code>. Second stage, behind branch protection: <code>@claude</code> on a comment runs <code>/rig-pr-review</code> through <code>claude-code-action</code>.</p>
+      <p><strong>Metrics:</strong> <code>failures_triaged_without_paging</code> (triage comments ÷ failed runs) and DORA from <code>gh</code>: deployment frequency and lead time from merges and deploy records, change failure rate and time to restore from <code>.sdlc/incidents/</code> (<code>detected</code>, <code>restored</code> — one new frontmatter field).</p>
+    </article>
+  </div>
+
+  <h3>5.6 Stage 6 · Closing the loop</h3>
+  <div class="cards">
+    <article class="card">
+      <div class="tag">sdlc.ts watch (new, deterministic)</div>
+      <p>Reads <code>bands</code> from sensors.json, one entry per metric: a query (a command that prints a number, e.g. <code>gh run list --json conclusion</code> piped through the script's own counter, or a Prometheus URL), a rolling window, and Western Electric rules. It computes mean and σ over the window from <code>.sdlc/watch/&lt;metric&gt;.jsonl</code>, appends today's point, and prints a tier: 0, 1, 2 or 3. No model. Unit-tested on seeded series. Dismissals (<code>sdlc.ts watch dismiss &lt;id&gt;</code>) widen the band by a configured step, which is the playbook's noise tuning.</p>
+      <pre><code>"bands": [{
+  "id": "ci_failure_rate",
+  "query": "gh run list --limit 50 --json conclusion",
+  "count": "failure",
+  "window": 30, "rules": "western_electric",
+  "tiers": {
+    "2": { "action": "diagnose", "tools": "Read,Grep,Bash(gh run view *)" },
+    "3": { "action": "propose", "routes": ["pull_request", "runbook:rollback"] }
+  }
+}]</code></pre>
+    </article>
+    <article class="card">
+      <div class="tag">rig-watch.yml (new template)</div>
+      <p>Scheduled (hourly or daily) or webhook-triggered. Runs <code>sdlc.ts watch</code>; at tier 1 it stops; at tier 2 it runs <code>claude -p --model claude-haiku-5-5</code> read-only with the band's tools and the diagnosis goes to <code>.sdlc/intent/breach-&lt;id&gt;-&lt;date&gt;.md</code> in the Stage 1 format (<code>status: draft</code>, so a person triages it); at tier 3 it may additionally open a PR through <code>/rig-incident</code> → <code>/rig-diagnose</code> in the same job, or run the named runbook, which is the staging-rehearsed rollback command. Managed settings deny production access; the job's identity is the agent's own.</p>
+      <p>The existing <code>/rig:incident</code> stays the human entry; the watch job is the headless one. Both end in the same incident file and the same bugfix path.</p>
+      <p><strong>Metrics:</strong> <code>breach_to_intent_hours</code> (exists), <code>findings_merged_share</code> (breach intents that reached ship.json), <code>repeat_incident_share</code> (exists), <code>dismissal_rate</code> per band.</p>
+    </article>
+    <article class="card">
+      <div class="tag">Claude Tag (thin)</div>
+      <p>Nothing to build. Document in README: when Claude Tag handles an incident in Slack, the on-call engineer runs <code>/rig:incident "&lt;summary&gt;" --escaped</code> and pastes the thread link as evidence; the incident file is the lessons file the playbook describes. A later <code>rig-ops</code> plugin could listen to the channel through an Agent SDK service.</p>
+    </article>
+  </div>
+</section>
+
+<!-- 6. DATA FLOW -->
+<section>
+  <div class="eyebrow"><span>06</span> · Data flow</div>
+  <h2>One change through the extended loop</h2>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1100 300" role="img" aria-label="Sequence: an intent file lands in the inbox, rig-spec opens a design PR, the product owner approves, build runs in one or more worktrees, evals gate any config change, the PR is reviewed and swept to green, a code owner merges, deploy goes to dev and staging and stops at the production gate, watch detects a breach and writes a new intent into the inbox.">
+      <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0,0 L10,5 L0,10 z"/></marker>
+      <marker id="ba" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-a" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g>
+        <rect class="node-new" x="20" y="100" width="120" height="56" rx="8"/><text class="on b" x="80" y="124" text-anchor="middle">.sdlc/intent/</text><text class="on sm" x="80" y="142" text-anchor="middle">status: accepted</text>
+        <rect class="node-new" x="170" y="100" width="120" height="56" rx="8"/><text class="on b" x="230" y="124" text-anchor="middle">rig-spec.yml</text><text class="on sm" x="230" y="142" text-anchor="middle">/rig-start → design PR</text>
+        <rect class="node-gate" x="320" y="100" width="120" height="56" rx="8"/><text class="gt" x="380" y="124" text-anchor="middle">◆ PO approves</text><text class="sm" x="380" y="142" text-anchor="middle">concerns resolved</text>
+        <rect class="node" x="470" y="100" width="120" height="56" rx="8"/><text class="b" x="530" y="124" text-anchor="middle">build · test</text><text class="sm mu" x="530" y="142" text-anchor="middle">worktrees optional</text>
+        <rect class="node" x="620" y="100" width="120" height="56" rx="8"/><text class="b" x="680" y="124" text-anchor="middle">pr · review</text><text class="sm mu" x="680" y="142" text-anchor="middle">sweep to green (Haiku)</text>
+        <rect class="node-gate" x="770" y="100" width="120" height="56" rx="8"/><text class="gt" x="830" y="124" text-anchor="middle">◆ code owner</text><text class="sm" x="830" y="142" text-anchor="middle">rig-check · evals</text>
+        <rect class="node" x="920" y="100" width="160" height="56" rx="8"/><text class="b" x="1000" y="124" text-anchor="middle">deploy dev → staging</text><text class="gt sm" x="1000" y="142" text-anchor="middle">◆ production gate</text>
+      </g>
+      <line class="edge" x1="140" y1="128" x2="168" y2="128" marker-end="url(#b)"/>
+      <line class="edge" x1="290" y1="128" x2="318" y2="128" marker-end="url(#b)"/>
+      <line class="edge" x1="440" y1="128" x2="468" y2="128" marker-end="url(#b)"/>
+      <line class="edge" x1="590" y1="128" x2="618" y2="128" marker-end="url(#b)"/>
+      <line class="edge" x1="740" y1="128" x2="768" y2="128" marker-end="url(#b)"/>
+      <line class="edge" x1="890" y1="128" x2="918" y2="128" marker-end="url(#b)"/>
+      <!-- evals gate on config -->
+      <rect class="node-new" x="470" y="20" width="270" height="44" rx="8"/><text class="on b" x="605" y="38" text-anchor="middle">sdlc.ts evals (manual)</text><text class="on sm" x="605" y="54" text-anchor="middle">a person runs it before merging a config change</text>
+      <path class="edge-dot" d="M605,64 L605,98" marker-end="url(#b)"/>
+      <!-- watch loop -->
+      <rect class="node-new" x="470" y="220" width="270" height="50" rx="8"/><text class="on b" x="605" y="240" text-anchor="middle">rig-watch.yml · sdlc.ts watch</text><text class="on sm" x="605" y="258" text-anchor="middle">1σ log · 2σ diagnose · 3σ PR or rollback runbook</text>
+      <path class="edge-acc" d="M1000,156 C1000,245 760,245 742,245" marker-end="url(#ba)"/>
+      <path class="edge-acc" d="M470,245 C300,245 80,245 80,158" marker-end="url(#ba)"/>
+      <text class="sm mu" x="880" y="212" text-anchor="middle">post-deploy metrics</text>
+      <text class="sm mu" x="275" y="238" text-anchor="middle">breach → draft intent (Stage 1 format)</text>
+    </svg>
+    </div>
+    <figcaption>Every blue box is new; every white one is rig today. The two human gates are the same two rig has now. A breach does not open a change by itself: it writes a draft intent that a person accepts, which is where the playbook puts triage.</figcaption>
+  </figure>
+</section>
+
+<!-- 7. GOVERNANCE AND SECURITY -->
+<section>
+  <div class="eyebrow"><span>07</span> · Governance and security</div>
+  <h2>What stays human, what stays deterministic</h2>
+  <ul>
+    <li><strong>Models never approve.</strong> Accepting an intent is a PR merge by the product owner. Design approval, waivers, budget raises and tier changes stay the human-only skills. The review sweep and the watch job open PRs and never merge.</li>
+    <li><strong>The judge cannot be weakened by the judged.</strong> Evals are manual, so their guard is review: a PR that edits <code>evals/</code> and a skill in the same change trips <code>harness-tamper</code> and lands as its own reviewed change, and the eval result the author attaches is evidence the code owner reads, not a verdict a script trusts.</li>
+    <li><strong>No Bash hook in core.</strong> The gates are managed-only files. If a team does not deploy managed settings, they have what rig has today, which SECURITY.md already states is guardrails plus CI as the boundary.</li>
+    <li><strong>Headless jobs have the same privilege split as <code>rig-review.yml</code>:</strong> the model reads a prepared input and writes one or two named files; a model-free step posts after a credential scrub; secrets never reach fork PRs. The watch job's identity is the agent's own, with no production credential; the only production-affecting route is the pre-approved rollback runbook, rehearsed in staging.</li>
+    <li><strong>Evidence written only by the script:</strong> <code>.sdlc/evals/*.jsonl</code>, <code>.sdlc/watch/*.jsonl</code> and <code>.sdlc/gates.jsonl</code> join the deny list in both settings templates.</li>
+    <li><strong>Detection is deterministic.</strong> <code>watch.ts</code> has no model call. The tier sets the tools the model may use, and the band config is a protected harness file (<code>ask</code> rule, CODEOWNERS).</li>
+  </ul>
+</section>
+
+<!-- 8. ERRORS -->
+<section>
+  <div class="eyebrow"><span>08</span> · Failure handling</div>
+  <h2>What happens when a piece fails</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Failure</th><th>Behaviour</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td class="k">rig-spec job fails</td><td>No PR; the intent stays <code>accepted</code>; <code>status</code> lists accepted intents with no change as "waiting". A person can run <code>/rig:start intent/&lt;file&gt;</code> by hand.</td><td>The intent is the record; a failed job loses nothing.</td></tr>
+      <tr><td class="k">An eval times out or errors</td><td>Counted as a failure for that eval, with the reason in the jsonl. A run where more than <code>evals.maxErrors</code> error is reported <code>unmeasured</code>, and <code>status</code> says so.</td><td>An outage must not read as a pass.</td></tr>
+      <tr><td class="k">Watch query fails</td><td>Tier 0, point not recorded, a warning in the job log and in <code>status</code> after two misses.</td><td>Fail closed on action (no model runs), fail open on observation.</td></tr>
+      <tr><td class="k">The review sweep hits its round cap</td><td>Stops, comments the unresolved list on the PR, ends with <code>Next: /rig-approve &lt;slug&gt; budget</code> or a person's review.</td><td>Bounded loops (DESIGN §2.8).</td></tr>
+      <tr><td class="k">Production gate blocks</td><td>Exit 2 with the reason and the approval route; the block is logged with a timestamp.</td><td>The playbook: a block explains itself.</td></tr>
+      <tr><td class="k">Rollback rehearsal fails</td><td>The <code>rig-rehearse</code> run is red; <code>rig-watch.yml</code> checks the last rehearsal's conclusion with <code>gh</code> before taking a runbook route and downgrades to <code>pull_request</code> only.</td><td>An unproven rollback must not be an autonomous route.</td></tr>
+      <tr><td class="k">Two worktree sessions touch the same file</td><td>Cannot: the slice checkpoint commit refuses a file outside the slice's list, as today.</td><td>Existing checkpoint rule.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 9. TESTING -->
+<section>
+  <div class="eyebrow"><span>09</span> · Testing</div>
+  <h2>How each piece is proven</h2>
+  <ul>
+    <li><strong>Unit (node:test, like the rest):</strong> <code>watch.spec.ts</code> on seeded series (a slow drift of 8 above the mean trips rule 2 before any 3σ point; a dismissal widens the band); <code>evals.spec.ts</code> with a stubbed <code>claude</code> that returns canned transcripts (skill-loaded detection, exit-code scoring, maxErrors → unmeasured); one case in <code>pr.spec.ts</code> for the inbox status write-back; <code>gate.spec.ts</code> gains a case that runs <code>production-gate.sh</code> with crafted stdin.</li>
+    <li><strong>Integration (the M1 sandbox from <code>tests/integration/</code>):</strong> one new scenario per template with the stubbed <code>gh</code>: an accepted intent produces a design PR; a CLAUDE.md edit runs the evals and fails below minPass; a seeded breach writes a draft intent.</li>
+    <li><strong>Size:</strong> <code>size.spec.ts</code> cap rises from 6,900 to 7,600 in the same change that adds the first new file. The harness is at 6,900 today, and templates count. Budget for the 700 lines: <code>evals.ts</code> ≤ 170, <code>watch.ts</code> ≤ 150, metrics +60, preflight +25, skill edits +30, the <code>model</code> field and skill edits +15, <code>production-gate.sh</code> +15, <code>managed-settings.json</code> +45, four workflow templates (spec, triage, rehearse, watch) ≤ 45 each. The implementation plan carries this table and the size test fails the build if it slips.</li>
+    <li><strong>Live:</strong> one paid run per template on the shop-app lane before a release, as the release integration test proposal does.</li>
+  </ul>
+</section>
+
+<!-- 10. MILESTONES -->
+<section>
+  <div class="eyebrow"><span>10</span> · Milestones</div>
+  <h2>Order of work, following the adoption graph</h2>
+  <div class="steps">
+    <div class="step"><div class="n">M0</div><div><h3>Model by tier</h3><p>Raise the cap to 7,600. Scout and <code>CLAUDE_CODE_SUBAGENT_MODEL</code> on <code>claude-haiku-5-5</code>; <code>next --json</code> gains <code>model</code>; every skill passes it on architect, implementer and reviewer launches; <code>rig-review.yml</code> reads the tier from <code>ratchet.json</code>. Config and prompt text, measurable at once in <code>/rig:metrics</code> (cost per change by tier).</p></div></div>
+    <div class="step"><div class="n">M1</div><div><h3>Evals (manual)</h3><p><code>evals/</code>, <code>sdlc.ts evals</code> with <code>--seed</code>, the tamper message and <code>status</code> line, incident → eval, three metrics. The regression net every later milestone's config change is checked against, by a person.</p></div></div>
+    <div class="step"><div class="n">M2</div><div><h3>Intent inbox and spec job</h3><p><code>.sdlc/intent/</code>, <code>intent-template</code>, the <code>start</code> skill edit, <code>policy-*</code> convention, <code>## Concerns</code>, <code>rig-spec.yml</code>, survival metrics. Stage 1 and 2 become usable by a product owner.</p></div></div>
+    <div class="step"><div class="n">M3</div><div><h3>Skill edits</h3><p><code>rule</code> gains the CLAUDE.md outcome; <code>pr-review</code> gains the bounded sweep; README gains the worktree fan-out section. Prompt text only.</p></div></div>
+    <div class="step"><div class="n">M4</div><div><h3>Managed settings and gates</h3><p><code>templates/managed-settings.json</code>, <code>templates/gates/</code>, preflight <code>managed</code> check, gate metrics, SECURITY.md update. Needs a platform team to deploy; the rest of rig does not depend on it.</p></div></div>
+    <div class="step"><div class="n">M5</div><div><h3>CI/CD</h3><p><code>rig-triage.yml</code>, <code>rig-rehearse.yml</code>, DORA metrics (one <code>restored</code> field on incidents). Templates plus metric lines; nothing else in core.</p></div></div>
+    <div class="step"><div class="n">M6</div><div><h3>Closing the loop</h3><p><code>bands</code>, <code>sdlc.ts watch</code>, <code>rig-watch.yml</code>, dismissal tuning, loop metrics. Last, because the graph puts it last: it needs the inbox (M2), the review gate, the rehearsed rollback (M5) and the gate (M4).</p></div></div>
+  </div>
+</section>
+
+<!-- 11. OPEN QUESTIONS -->
+<section>
+  <div class="eyebrow"><span>11</span> · Decisions</div>
+  <h2>Answered on 2026-10-07</h2>
+  <ol>
+    <li><strong>Core or plugin:</strong> core. The line cap rises to 7,600 (the harness is at 6,900 today and templates count), which leaves exactly the 700 lines §9 budgets.</li>
+    <li><strong>Evals:</strong> manual. No workflow, no schedule; a person runs <code>sdlc.ts evals</code> before merging a config change and attaches the result.</li>
+    <li><strong>Intent inbox:</strong> <code>.sdlc/intent/</code>.</li>
+    <li><strong>Model by tier:</strong> S Haiku 5.5, M Sonnet 5.5, L Opus 5.5, for every change-bound step; Haiku for search, triage, watch and the sweep.</li>
+    <li><strong>Production gate:</strong> a text match on the command, as in the playbook's script, is acceptable in the managed layer.</li>
+  </ol>
+  <div class="note">Next: a written implementation plan for M0 and M1, carrying the §9 line budget as a table the size test enforces.</div>
+</section>
+
+<footer>
+  <div>Sources: <code>docs/ai-sdlc-checklist.md</code>, <code>docs/ai-sdlc-map.html</code>, <code>DESIGN.md</code>, <code>README.md</code>, <code>SECURITY.md</code>, <code>ROADMAP.md</code>, <code>templates/*</code>, <code>skills/*</code>, <code>scripts/metrics.ts</code>, <code>scripts/graph.ts</code>.</div>
+  <div>Playbook page references use the printed page numbers.</div>
+</footer>
+</div>
+</body>
+</html>

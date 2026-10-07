@@ -1,0 +1,290 @@
+// Manual evals: a prompt plus deterministic checks, run with claude -p in a throwaway worktree. A stub stands in for claude.
+import { test, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
+import { isProtected, harnessTamper } from './sensors.ts'
+import { parseEval, skillsLoaded, summarize, type EvalResult } from './evals.ts'
+import type { FileDiff } from './model.ts'
+
+const STUB = `#!/usr/bin/env node
+const fs = require('fs')
+fs.appendFileSync(process.env.STUB_LOG, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), gh: process.env.GH_TOKEN, cc: process.env.CLAUDECODE, sid: process.env.CLAUDE_CODE_SESSION_ID, msg: process.env.CLAUDE_CODE_MESSAGING_X }) + '\\n')
+if (process.env.STUB_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.STUB_SLEEP))
+if (process.env.STUB_WRITE) fs.writeFileSync(process.env.STUB_WRITE, 'done by stub\\n')
+if (process.env.STUB_SKILL) console.log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Skill', input: { skill: process.env.STUB_SKILL } }] } }))
+console.log(JSON.stringify({ type: 'result', is_error: false }))
+process.exit(Number(process.env.STUB_EXIT || 0))
+`
+let repo: string
+let stub: string
+let log: string
+beforeEach(() => {
+  repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', '{}\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'sdlc')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-stub-'))
+  stub = path.join(dir, 'claude')
+  fs.writeFileSync(stub, STUB, { mode: 0o755 })
+  log = path.join(dir, 'log.jsonl')
+})
+const evals = (args: string[], env: Record<string, string> = {}) => sdlc(repo, ['evals', ...args], { env: { RIG_CLAUDE: stub, STUB_LOG: log, ...env } })
+const defineEval = (id: string, body: object) => write(repo, `.sdlc/evals/${id}.json`, JSON.stringify(body))
+const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { cwd: string; args: string[]; gh?: string; cc?: string; sid?: string; msg?: string })
+const results = () => fs.readFileSync(path.join(repo, '.sdlc/evals/results.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as EvalResult)
+
+test('parseEval accepts a full definition and rejects what it cannot trust', () => {
+  const e = parseEval(JSON.stringify({ prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }, { kind: 'skill-loaded', name: 'build' }], base: 'abc', files: ['t.js'], source: 'change:x' }), 'one')
+  assert.deepEqual(e, { id: 'one', prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }, { kind: 'skill-loaded', name: 'build' }], base: 'abc', files: ['t.js'], source: 'change:x' })
+  assert.match(parseEval('{', 'x') as string, /not valid JSON/)
+  assert.match(parseEval(JSON.stringify({ prompt: 'p', checks: [] }), 'x') as string, /at least one check/)
+  assert.match(parseEval(JSON.stringify({ prompt: 'p', checks: [{ kind: 'vibes' }] }), 'x') as string, /unknown or incomplete check/)
+})
+
+test('skillsLoaded reads Skill tool calls from stream-json and ignores everything else', () => {
+  const stream = [
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }, { type: 'tool_use', name: 'Skill', input: { skill: 'rig-build' } }] } }),
+    'not json',
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] } }),
+  ].join('\n')
+  assert.deepEqual(skillsLoaded(stream), ['rig-build'])
+})
+
+test('summarize: pass at minPass, fail below it, unmeasured past maxErrors', () => {
+  const row = (pass: boolean, error?: string): EvalResult => ({ at: 't', run: 'r', id: 'x', pass, ...(error ? { error } : {}), checks: [], ms: 0 })
+  const cfg = { minPass: 0.5, maxErrors: 1 }
+  assert.equal(summarize([row(true), row(false)], cfg)?.verdict, 'pass')
+  assert.equal(summarize([row(true), row(false), row(false)], cfg)?.verdict, 'fail')
+  assert.equal(summarize([row(true), row(false, 'e'), row(false, 'e')], cfg)?.verdict, 'unmeasured')
+  assert.equal(summarize([], cfg), null)
+})
+
+test('a passing eval runs claude in a throwaway worktree with stream-json and records the result', () => {
+  defineEval('writes', { prompt: 'write out.txt', checks: [{ kind: 'file-contains', path: 'out.txt', text: 'done by stub' }, { kind: 'skill-loaded', name: 'build' }] })
+  const r = evals([], { STUB_WRITE: 'out.txt', STUB_SKILL: 'rig-build' })
+  assert.equal(r.code, 0, r.stderr + r.stdout)
+  assert.match(r.stdout, /^pass writes$/m)
+  assert.match(r.stdout, /evals: 1\/1 pass \(1\.00\), 0 error\(s\), minPass 0\.9 → pass/)
+  const [call] = calls()
+  assert.match(path.basename(call?.cwd ?? ''), /^rig-eval-/, 'claude ran in a throwaway worktree, not the repo')
+  assert.deepEqual(call?.args.slice(0, 7), ['-p', 'write out.txt', '--output-format', 'stream-json', '--verbose', '--max-turns', '30'])
+  assert.equal(fs.existsSync(path.join(repo, 'out.txt')), false, 'the repo itself is untouched')
+  assert.equal(results()[0]?.pass, true)
+})
+
+test('a failing check fails the eval and the run exits 1 with the check that failed', () => {
+  defineEval('nothing', { prompt: 'p', checks: [{ kind: 'command', cmd: 'test -f missing.txt' }] })
+  const r = evals([])
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /^FAIL nothing: test -f missing\.txt → exit 1$/m)
+  assert.match(r.stdout, /→ fail$/m)
+})
+
+test('a file check outside the worktree fails and reads nothing', () => {
+  defineEval('escape', { prompt: 'p', checks: [{ kind: 'file-contains', path: '../../etc/passwd', text: 'root' }, { kind: 'file-absent', path: '/etc/hosts' }] })
+  const r = evals([])
+  assert.match(r.stdout, /\.\.\/\.\.\/etc\/passwd is outside the repository/)
+  assert.match(r.stdout, /\/etc\/hosts is outside the repository/)
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /^FAIL escape: /m)
+})
+
+test('a missing claude is an error; past maxErrors the run is unmeasured, never pass', () => {
+  for (const id of ['a', 'b', 'c']) defineEval(id, { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  const r = evals([], { RIG_CLAUDE: path.join(os.tmpdir(), 'no-such-claude') })
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /FAIL a: .*not found/)
+  assert.match(r.stdout, /3 error\(s\), minPass 0\.9 → unmeasured/)
+})
+
+test('a malformed definition is reported and the others still run', () => {
+  write(repo, '.sdlc/evals/broken.json', '{')
+  defineEval('fine', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  const r = evals([])
+  assert.match(r.stdout, /^FAIL broken: broken: not valid JSON$/m)
+  assert.match(r.stdout, /^pass fine$/m)
+})
+
+test('uncommitted configuration is not evaluated, and the run says so', () => {
+  defineEval('fine', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  write(repo, 'CLAUDE.md', '# edited, not committed\n')
+  assert.match(evals([]).stdout, /^warn: uncommitted changes to CLAUDE\.md.*commit first$/m)
+})
+
+test('code comes from the eval base; configuration and the eval files come from HEAD', () => {
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  write(repo, 'tests/t.test.js', 'test\n')
+  write(repo, 'CLAUDE.md', 'newrule\n')
+  write(repo, 'src/later.js', 'later\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'later')
+  defineEval('overlay', { prompt: 'p', base, files: ['tests/t.test.js'], checks: [{ kind: 'command', cmd: 'test -f tests/t.test.js && grep -q newrule CLAUDE.md && test ! -f src/later.js' }] })
+  const r = evals([])
+  assert.match(r.stdout, /^pass overlay$/m, r.stdout)
+})
+
+test('--only runs one eval; an unknown id fails with its name', () => {
+  defineEval('a', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  defineEval('b', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  assert.match(evals(['--only', 'b']).stdout, /evals: 1\/1 pass/)
+  assert.match(evals(['--only', 'zz']).stderr, /no eval zz in \.sdlc\/evals/)
+})
+
+test('configuration deleted at HEAD does not survive from the eval base', () => {
+  write(repo, '.claude/skills/x/SKILL.md', 'skill\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'skill')
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  gitIn(repo, 'rm', '-q', '.claude/skills/x/SKILL.md')
+  gitIn(repo, 'commit', '-qm', 'drop skill')
+  defineEval('gone', { prompt: 'p', base, checks: [{ kind: 'file-absent', path: '.claude/skills/x/SKILL.md' }] })
+  assert.match(evals([]).stdout, /^pass gone$/m)
+})
+
+test('a timeout and a non-zero exit are errors, never a pass', () => {
+  write(repo, '.sdlc/sensors.json', '{"evals":{"timeoutMs":300}}\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'timeout')
+  defineEval('slow', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  const a = evals([], { STUB_SLEEP: '3000' })
+  assert.equal(a.code, 1)
+  assert.match(a.stdout, /timed out after 300 ms/)
+  const b = evals([], { STUB_EXIT: '3' })
+  assert.equal(b.code, 1)
+  assert.match(b.stdout, /exited 3/)
+})
+
+test('eval definitions are protected harness files; results stay sdlc-written; the template asks before editing them', () => {
+  assert.equal(isProtected('.sdlc/evals/x.json'), true)
+  assert.equal(isProtected('.sdlc/evals/results.jsonl'), false)
+  const t = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../templates/settings.json'), 'utf8'))
+  assert.ok(t.permissions.ask.includes('Edit(/.sdlc/evals/*.json)'))
+})
+
+test('claude does not get the GitHub tokens or the running session\'s variables', () => {
+  defineEval('tok', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  evals([], { GH_TOKEN: 'secret-x', GITHUB_TOKEN: 'secret-y', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_CODE_MESSAGING_X: 'y' })
+  const [call] = calls()
+  assert.deepEqual([call?.gh, call?.cc, call?.sid, call?.msg], [undefined, undefined, undefined, undefined])
+})
+
+test('the vendored harness comes from HEAD, not the eval base, so HEAD\'s skills and hooks find the scripts they call', () => {
+  write(repo, '.sdlc/bin/x.txt', 'old harness\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'old')
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  write(repo, '.sdlc/bin/x.txt', 'new harness\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'new')
+  defineEval('bin', { prompt: 'p', base, checks: [{ kind: 'file-contains', path: '.sdlc/bin/x.txt', text: 'new harness' }] })
+  assert.match(evals([]).stdout, /^pass bin$/m)
+})
+
+test('uncommitted eval definitions run as they are, and the run says so', () => {
+  defineEval('fine', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  assert.match(evals([]).stdout, /^warn: uncommitted eval definitions run as they are in the working tree$/m)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'evals')
+  const r = evals([])
+  assert.doesNotMatch(r.stdout, /uncommitted eval definitions/, 'a committed definition and a fresh results.jsonl do not warn')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'results')
+  write(repo, '.sdlc/evals/results.jsonl', '')
+  assert.doesNotMatch(evals([]).stdout, /uncommitted eval definitions/, 'results.jsonl is not a definition')
+})
+
+test('the template asks before sdlc.ts evals runs, though it allows the other sdlc.ts commands', () => {
+  const t = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../templates/settings.json'), 'utf8'))
+  assert.ok(t.permissions.ask.includes('Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts evals*)'))
+})
+
+test('an eval file missing at HEAD is an error naming it', () => {
+  defineEval('nofile', { prompt: 'p', files: ['tests/nope.js'], checks: [{ kind: 'command', cmd: 'true' }] })
+  const r = evals([])
+  assert.equal(r.code, 1)
+  assert.match(r.stdout, /^FAIL nofile: files not in HEAD: tests\/nope\.js; commit them first$/m)
+})
+
+test('--seed drafts one eval per shipped change from its intent, base, tests and verification, and never overwrites', () => {
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  write(repo, '.sdlc/changes/demo/intent.md', '---\nslug: demo\ntype: feature\ntier: S\n---\n# demo\n\n## Problem\nAdd a greeting.\n')
+  write(repo, '.sdlc/changes/demo/plan.md', '## Files\n- src/hi.js\n## Verification\n- `node --test tests/hi.test.js`\n')
+  write(repo, 'tests/hi.test.js', 'test\n')
+  write(repo, 'src/hi.js', 'hi\n')
+  write(repo, '.sdlc/changes/demo/ship.json', JSON.stringify({ base }))
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'ship demo')
+  const r = evals(['--seed'])
+  assert.match(r.stdout, /seeded 1 eval/)
+  const draft = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/evals/change-demo.json'), 'utf8'))
+  assert.equal(draft.base, base)
+  assert.deepEqual(draft.files, ['tests/hi.test.js'])
+  assert.deepEqual(draft.checks, [{ kind: 'command', cmd: 'node --test tests/hi.test.js' }])
+  assert.equal(draft.source, 'change:demo')
+  assert.match(draft.prompt, /Add a greeting/)
+  assert.equal(draft.allowedTools, 'Read,Grep,Glob,Edit,Write,Bash(node --test tests/hi.test.js)')
+  const gate = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8'))
+  assert.ok(gate.tool.includes('.sdlc/evals/change-demo.json'))
+  write(repo, '.sdlc/evals/change-demo.json', '{"kept":true}')
+  assert.match(evals(['--seed']).stdout, /nothing to seed/)
+  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/evals/change-demo.json'), 'utf8'), '{"kept":true}')
+})
+
+test('--seed skips a change whose ship base is not a commit hash', () => {
+  write(repo, '.sdlc/changes/odd/intent.md', '---\nslug: odd\ntype: feature\ntier: S\n---\n# odd\n')
+  write(repo, '.sdlc/changes/odd/plan.md', '## Verification\n- `true`\n')
+  write(repo, '.sdlc/changes/odd/ship.json', JSON.stringify({ base: '--output=/tmp/x' }))
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'ship odd')
+  assert.match(evals(['--seed']).stdout, /nothing to seed/)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/evals/change-odd.json')), false)
+})
+
+test('status shows the last eval run', () => {
+  sdlc(repo, ['new', 'demo', '--type', 'chore', '--tier', 'S'])
+  defineEval('fine', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  evals([])
+  assert.match(sdlc(repo, ['status']).stdout, /^evals: 1\/1 pass \(1\.00\) → pass, last run \d{4}-\d{2}-\d{2}$/m)
+})
+
+test('metrics: eval pass rate from the last run, incident-to-eval hours from git', () => {
+  for (const id of ['a', 'b', 'c', 'd', 'e']) defineEval(id, { prompt: 'p', checks: [{ kind: 'command', cmd: id === 'e' ? 'false' : 'true' }] })
+  evals([])
+  const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
+  assert.deepEqual({ value: m.eval_pass_rate.value, n: m.eval_pass_rate.n }, { value: 0.8, n: 5 })
+  assert.equal(m.incident_to_eval_hours.value, null, 'no incidents yet')
+})
+
+test('metrics: incident_to_eval_hours is the median over incidents that have an eval; an incident without one adds no sample', () => {
+  const detected = new Date(Date.now() - 2 * 3_600_000).toISOString()
+  for (const k of [1, 2, 3, 4, 5]) {
+    write(repo, `.sdlc/incidents/2026100${k}-x.md`, `---\ndetected: ${detected}\n---\n# incident ${k}\n`)
+    defineEval(`incident-${k}`, { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }], source: `incident:2026100${k}-x.md` })
+  }
+  write(repo, '.sdlc/incidents/20261009-orphan.md', `---\ndetected: ${detected}\n---\n# no eval\n`)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'incidents and their evals')
+  const h = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics.incident_to_eval_hours
+  assert.equal(h.n, 5, 'the incident with no eval is not a sample')
+  assert.ok(typeof h.value === 'number' && h.value > 1.5 && h.value < 3, `hours ${h.value}`)
+})
+
+test('a harness change outside the weakening rules asks for an eval run', () => {
+  const [f] = harnessTamper([{ file: 'CLAUDE.md', status: 'M' } as FileDiff], { point: 'ship', before: () => '', after: () => '' })
+  assert.equal(f?.severity, 'warn')
+  assert.match(f?.fix ?? '', /ask the person to run `sdlc\.ts evals`/)
+})
+
+test('diagnose turns an incident fix into an eval named for its class', () => {
+  const text = fs.readFileSync(path.join(import.meta.dirname, '..', 'skills/diagnose/SKILL.md'), 'utf8')
+  assert.match(text, /\.sdlc\/evals\/incident-<yyyymmdd>-<class>\.json/)
+  assert.match(text, /"source": "incident:<incident file name, e\.g\. 20261001-timeout\.md>"/)
+  assert.match(text, /bare file name, with no directory/)
+  assert.match(text, /"base": "<the HEAD noted in step 1>"/)
+  assert.match(text, /runs once this change ships, when the regression test is committed/)
+  assert.match(text, /"allowedTools": "Read,Grep,Glob,Edit,Write,Bash\(<the regression test command>\)"/)
+  assert.match(text, /If the write is denied \(headless run\), give the person the JSON instead\./)
+})

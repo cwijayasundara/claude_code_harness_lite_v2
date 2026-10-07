@@ -141,8 +141,13 @@ export function activeSlug(): string | null {
   return byMtime[0]?.slug ?? null
 }
 
+// The tier picks the model for every subagent a change launches (architect, implementer, reviewer); greenfield is always Opus.
+// Skills pass it as the Agent call's `model`, which takes precedence over the agent file's own.
+export type ModelAlias = 'haiku' | 'sonnet' | 'opus'
+export const modelFor = (type: ChangeType, tier: Tier): ModelAlias => (type === 'greenfield' || tier === 'L' ? 'opus' : tier === 'M' ? 'sonnet' : 'haiku')
+
 export type Verdict = 'continue' | 'human' | 'blocked' | 'ready'
-export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number }
+export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number; model: ModelAlias }
 export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
 const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
 
@@ -154,7 +159,7 @@ export function step(slug: string): Step {
   const round = node && BUDGETED.has(node) ? (ratchet.nodes[node as RatchetNode]?.rounds ?? 0) : 0
   // Finished build slices: partial progress inside a node that has not changed round.
   const progress = node === 'build' ? Object.values(ratchet.slices).filter(sl => sl.status === 'done').length : 0
-  const base = { slug, node, round, progress, command: nextCommand(change) }
+  const base = { slug, node, round, progress, command: nextCommand(change), model: modelFor(change.type, change.tier) }
   if (!change.next) return { ...base, verdict: 'ready', reason: 'every node is done; a person merges the PR' }
   // R46: a gate or level block is cleared by the node's own code (pr re-runs the gate, verify-report re-derives levels) once a person
   // fixed or waived it, so the node resumes; cap, stall, budget and other need /rig-approve <slug> budget.

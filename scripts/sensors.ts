@@ -223,7 +223,7 @@ export function contractsFromPlan(planText: string): string[] {
     .filter((id): id is string => Boolean(id))
 }
 
-export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/bin/**', '.sdlc/mod/**', '.sdlc/githooks/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
+export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/evals/*.json', '.sdlc/bin/**', '.sdlc/mod/**', '.sdlc/githooks/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
 // ci: compare case-insensitively (macOS and Windows file systems treat CLAUDE.MD and CLAUDE.md as one file).
 export const isProtected = (file: string, ci = false): boolean => (ci ? matchesAny(file.toLowerCase(), PROTECTED.map(p => p.toLowerCase())) : matchesAny(file, PROTECTED))
 const SENSORS = '.sdlc/sensors.json'
@@ -334,7 +334,7 @@ export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | '
     }
     findings.push(reasons.length
       ? { sensor: 'harness-tamper', severity: 'block', file: d.file, message: reasons.join('; '), fix: `declare it on the trunk first: a separate harness change to ${d.file}, reviewed by the code owners; then rebase this change (CI never accepts a harness waiver from the PR)`, labels: ['weakens-harness'] }
-      : { sensor: 'harness-tamper', severity: 'warn', file: d.file, message: 'harness file changed', fix: 'needs human review' })
+      : { sensor: 'harness-tamper', severity: 'warn', file: d.file, message: 'harness file changed', fix: 'needs human review; if it changes how the agent works (CLAUDE.md, .claude/**, guides, rules), commit it on the branch, ask the person to run `sdlc.ts evals` and attach the result' })
   }
   return findings
 }

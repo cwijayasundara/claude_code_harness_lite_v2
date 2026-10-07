@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Native SDLC Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one long field-manual column; each section pairs a hand-drawn mechanism diagram with the checks it implies. */
+:root {
+  --bg: #F2F4F1;
+  --surface: #FFFFFF;
+  --ink: #17201C;
+  --muted: #59655F;
+  --line: #CDD5CF;
+  --band: #E4EAE6;
+  --accent: #2346C4;
+  --accent-soft: #E2E8FA;
+  --on-accent: #FFFFFF;
+  --gate: #A85F0A;
+  --gate-soft: #F8EBD5;
+  --stop: #B3261E;
+  --ok: #1D7347;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101512; --surface: #182019; --ink: #E4EBE6; --muted: #98A49D; --line: #2F3933; --band: #1F2822;
+    --accent: #84A0FF; --accent-soft: #1D284A; --on-accent: #0B1020;
+    --gate: #F0A84E; --gate-soft: #392A12; --stop: #FF7B71; --ok: #5FCB92;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101512; --surface: #182019; --ink: #E4EBE6; --muted: #98A49D; --line: #2F3933; --band: #1F2822;
+  --accent: #84A0FF; --accent-soft: #1D284A; --on-accent: #0B1020;
+  --gate: #F0A84E; --gate-soft: #392A12; --stop: #FF7B71; --ok: #5FCB92;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+header { display: grid; gap: 12px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(34px, 5vw, 56px); line-height: 1.02; margin: 0; letter-spacing: -.02em; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: clamp(24px, 3vw, 32px); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h3 { font-family: var(--f-display); font-weight: 500; font-size: 20px; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 17px; color: var(--muted); }
+section { display: grid; gap: 18px; }
+.sec-head { display: grid; gap: 6px; }
+.sec-head .eyebrow span { color: var(--accent); }
+code, .mono { font-family: var(--f-mono); font-size: .9em; }
+figure { margin: 0; display: grid; gap: 10px; }
+.scroller { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.scroller svg { display: block; width: 100%; min-width: 860px; height: auto; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 90ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.sw-entry { background: var(--accent); }
+.sw-node { background: var(--surface); border: 1.5px solid var(--ink); }
+.sw-line { width: 26px; height: 0; border-top: 2px solid var(--ink); border-radius: 0; }
+.sw-dot { width: 26px; height: 0; border-top: 2px dashed var(--muted); border-radius: 0; }
+.g-human { color: var(--gate); font-weight: 600; }
+.g-auto { color: var(--accent); font-weight: 600; }
+
+/* SVG styling, all through tokens */
+.dia { color: var(--ink); }
+.dia text { fill: var(--ink); font-family: var(--f-body); font-size: 13px; }
+.dia .t-mono { font-family: var(--f-mono); font-size: 12px; }
+.dia .t-sm { font-size: 11.5px; }
+.dia .t-muted { fill: var(--muted); }
+.dia .t-bold { font-weight: 600; }
+.dia .t-head { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .08em; fill: var(--muted); }
+.dia .t-display { font-family: var(--f-display); font-weight: 700; font-size: 26px; }
+.dia .t-stage { font-family: var(--f-display); font-weight: 700; font-size: 18px; }
+.dia .t-on { fill: var(--on-accent); }
+.dia .t-gate { fill: var(--gate); font-weight: 600; }
+.dia .t-auto { fill: var(--accent); font-weight: 600; }
+.dia .t-stop { fill: var(--stop); }
+.dia .t-ok { fill: var(--ok); font-weight: 600; }
+.node { fill: var(--surface); stroke: var(--ink); stroke-width: 1.4; }
+.node-entry { fill: var(--accent); stroke: var(--accent); stroke-width: 1.4; }
+.node-soft { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+.node-dash { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.colbg { fill: var(--band); }
+.hub { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+.edge { stroke: var(--ink); stroke-width: 1.5; fill: none; }
+.edge-accent { stroke: var(--accent); stroke-width: 2; fill: none; }
+.edge-dot { stroke: var(--muted); stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; }
+.edge-ok { stroke: var(--ok); stroke-width: 2; fill: none; }
+.edge-stop { stroke: var(--stop); stroke-width: 2.4; fill: none; }
+.edge-gate { stroke: var(--gate); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.mk-ink { fill: var(--ink); }
+.mk-muted { fill: var(--muted); }
+.mk-accent { fill: var(--accent); }
+.mk-ok { fill: var(--ok); }
+.mk-gate { fill: var(--gate); }
+.gatebar { fill: var(--gate); }
+.gatebox { fill: var(--gate-soft); stroke: var(--gate); stroke-width: 1.3; }
+.layer { fill: var(--band); }
+.band1 { fill: var(--band); }
+.band2 { fill: var(--gate-soft); }
+.band3 { fill: var(--stop); fill-opacity: .14; }
+.gridline { stroke: var(--line); stroke-width: 1; }
+.meanline { stroke: var(--ink); stroke-width: 1.2; }
+.series { stroke: var(--ink); stroke-width: 1.6; fill: none; }
+.pt { fill: var(--surface); stroke: var(--ink); stroke-width: 1.4; }
+.pt-gate { fill: var(--gate); stroke: var(--gate); }
+.pt-stop { fill: var(--stop); stroke: var(--stop); }
+.tierbox { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+
+/* Stage cards */
+.stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; }
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.stage-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.stage-num { font-family: var(--f-mono); font-size: 12px; color: var(--accent); }
+.plays { font-size: 12.5px; color: var(--muted); font-family: var(--f-mono); }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.checks li { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; }
+.checks li::before { content: ""; width: 12px; height: 12px; margin-top: 5px; border: 1.5px solid var(--muted); border-radius: 3px; }
+.gate-row { font-size: 13px; background: var(--gate-soft); border-radius: 8px; padding: 7px 10px; }
+.gate-row b { color: var(--gate); font-weight: 600; }
+.metrics { display: grid; gap: 4px; font-size: 13px; border-top: 1px solid var(--line); padding-top: 10px; }
+.metrics div { display: grid; grid-template-columns: 62px 1fr; gap: 8px; }
+.metrics dt, .tag { font-family: var(--f-mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+
+/* Measurement matrix */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 13.5px; }
+th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+thead th { font-family: var(--f-mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--band); }
+th.src, td.src { text-align: center; width: 92px; }
+tbody tr:last-child td { border-bottom: 0; }
+td.play { font-weight: 600; white-space: nowrap; }
+td.play small { display: block; font-weight: 400; color: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.m { display: inline-block; width: 13px; height: 13px; border-radius: 50%; vertical-align: middle; }
+.m-l { background: var(--accent); }
+.m-g { border: 2px solid var(--ink); }
+.m-b { background: linear-gradient(90deg, var(--accent) 50%, transparent 50%); border: 2px solid var(--ink); }
+td.tgt { color: var(--muted); font-size: 13px; }
+td.tgt b { color: var(--ink); font-weight: 600; }
+
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13.5px; }
+.flow .chip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+.flow .chip.h { border-color: var(--gate); background: var(--gate-soft); }
+.flow .arr { color: var(--muted); }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+@media (max-width: 560px) { .wrap { padding-inline: 16px; gap: 44px; } .stages { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Field map · from the AI-Native SDLC Playbook</div>
+  <h1>Six stages, one loop, a gate at every handoff</h1>
+  <p class="lede">Each stage commits an artifact that the next stage reads. Each handoff has a gate, held by a named person or by a deterministic check. The agent acts up to the production gate and cannot pass it.</p>
+  <div class="legend">
+    <span><b class="g-human">◆</b> human gate (named approver)</span>
+    <span><b class="g-auto">■</b> deterministic gate (check must pass)</span>
+    <span><i class="sw sw-entry"></i> entry-point play, needs nothing first</span>
+  </div>
+</header>
+
+<!-- 1. THE LOOP -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>01</span> · The loop</div>
+    <h2>What each stage hands to the next</h2>
+  </div>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1120 640" role="img" aria-label="Six SDLC stages arranged as a loop. Each arrow names the committed artifact and the gate that releases it: intent.md to design, spec.md to build, plan and diff to test, PR to deploy, merged PR to the pipeline, and a control-band breach writing a new intent.md back to plan.">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-muted" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-accent" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-gate" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="aho" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-ok" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+
+      <!-- hub -->
+      <circle class="hub" cx="560" cy="320" r="104"/>
+      <text class="t-display" x="560" y="306" text-anchor="middle">Claude</text>
+      <text x="560" y="328" text-anchor="middle" class="t-sm">embedded in every stage</text>
+      <text x="560" y="352" text-anchor="middle" class="t-sm t-muted">humans above the loop:</text>
+      <text x="560" y="368" text-anchor="middle" class="t-sm t-muted">instigate · direct · govern</text>
+
+      <!-- edges -->
+      <line class="edge" x1="644" y1="86" x2="778" y2="167" marker-end="url(#ah)"/>
+      <line class="edge" x1="850" y1="232" x2="850" y2="406" marker-end="url(#ah)"/>
+      <line class="edge" x1="780" y1="472" x2="646" y2="553" marker-end="url(#ah)"/>
+      <line class="edge" x1="476" y1="554" x2="342" y2="473" marker-end="url(#ah)"/>
+      <line class="edge" x1="270" y1="408" x2="270" y2="234" marker-end="url(#ah)"/>
+      <line class="edge-accent" x1="340" y1="168" x2="474" y2="87" marker-end="url(#aha)"/>
+
+      <!-- edge labels -->
+      <text x="736" y="102" class="t-mono">accepted intent.md</text>
+      <text x="736" y="120" class="t-sm"><tspan class="t-gate">◆</tspan> product owner merges it</text>
+
+      <text x="866" y="312" class="t-mono">approved spec.md</text>
+      <text x="866" y="330" class="t-sm"><tspan class="t-gate">◆</tspan> PO; tech lead if high-risk</text>
+
+      <text x="744" y="540" class="t-mono">plan.md + diff + tests</text>
+      <text x="744" y="558" class="t-sm"><tspan class="t-auto">■</tspan> tests pass, output pasted</text>
+
+      <text x="376" y="540" text-anchor="end" class="t-mono">PR + check run</text>
+      <text x="376" y="558" text-anchor="end" class="t-sm"><tspan class="t-auto">■</tspan> CI green, evals ≥ threshold</text>
+
+      <text x="254" y="312" text-anchor="end" class="t-mono">merged PR → pipeline</text>
+      <text x="254" y="330" text-anchor="end" class="t-sm"><tspan class="t-gate">◆</tspan> release manager authorizes prod</text>
+
+      <text x="384" y="102" text-anchor="end" class="t-mono">band breach → new intent.md</text>
+      <text x="384" y="120" text-anchor="end" class="t-sm"><tspan class="t-gate">◆</tspan> service owner triages</text>
+
+      <!-- nodes -->
+      <g>
+        <rect class="node" x="476" y="38" width="168" height="64" rx="10"/>
+        <text x="560" y="66" text-anchor="middle" class="t-stage">1 · Plan</text>
+        <text x="560" y="88" text-anchor="middle" class="t-mono t-muted">intent.md</text>
+      </g>
+      <g>
+        <rect class="node" x="766" y="168" width="168" height="64" rx="10"/>
+        <text x="850" y="196" text-anchor="middle" class="t-stage">2 · Design</text>
+        <text x="850" y="218" text-anchor="middle" class="t-mono t-muted">spec.md</text>
+      </g>
+      <g>
+        <rect class="node" x="766" y="408" width="168" height="64" rx="10"/>
+        <text x="850" y="436" text-anchor="middle" class="t-stage">3 · Build</text>
+        <text x="850" y="458" text-anchor="middle" class="t-mono t-muted">plan.md · diff</text>
+      </g>
+      <g>
+        <rect class="node" x="476" y="538" width="168" height="64" rx="10"/>
+        <text x="560" y="566" text-anchor="middle" class="t-stage">4 · Test</text>
+        <text x="560" y="588" text-anchor="middle" class="t-mono t-muted">test output · evals</text>
+      </g>
+      <g>
+        <rect class="node" x="186" y="408" width="168" height="64" rx="10"/>
+        <text x="270" y="436" text-anchor="middle" class="t-stage">5 · Deploy</text>
+        <text x="270" y="458" text-anchor="middle" class="t-mono t-muted">PR · findings</text>
+      </g>
+      <g>
+        <rect class="node" x="186" y="168" width="168" height="64" rx="10"/>
+        <text x="270" y="196" text-anchor="middle" class="t-stage">6 · Maintain</text>
+        <text x="270" y="218" text-anchor="middle" class="t-mono t-muted">lessons/*.md</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>The chain of commits is the audit trail: who asked, what the agent produced, who approved it. The blue arrow closes the loop. Production findings come back as a new <code>intent.md</code>, so the next cycle starts without anyone opening a ticket by hand.</figcaption>
+  </figure>
+</section>
+
+<!-- 2. ADOPTION ORDER -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>02</span> · Adoption order</div>
+    <h2>Which plays to adopt first</h2>
+    <p>Columns group plays by stage. Arrows give the order to adopt them in. Start with any blue play; for any other play, adopt every play with a solid arrow into it first.</p>
+  </div>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1120 340" role="img" aria-label="Play dependency graph. Entry points: Capture intent, CLAUDE.md, Plan mode, Feedback loop, Hooks. CLAUDE.md feeds Skills, Subagents, Evals and PR review. PR review and Hooks feed CI/CD. Capture intent, PR review, CI/CD and Hooks all feed Closing the loop.">
+      <defs>
+        <marker id="d-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="d-ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-muted" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="colbg" x="24" y="28" width="170" height="296" rx="8"/>
+      <rect class="colbg" x="206" y="28" width="170" height="296" rx="8"/>
+      <rect class="colbg" x="388" y="28" width="170" height="296" rx="8"/>
+      <rect class="colbg" x="570" y="28" width="170" height="296" rx="8"/>
+      <rect class="colbg" x="752" y="28" width="170" height="296" rx="8"/>
+      <rect class="colbg" x="934" y="28" width="170" height="296" rx="8"/>
+      <text class="t-head" x="109" y="314" text-anchor="middle">PLAN</text>
+      <text class="t-head" x="291" y="314" text-anchor="middle">DESIGN</text>
+      <text class="t-head" x="473" y="314" text-anchor="middle">BUILD</text>
+      <text class="t-head" x="655" y="314" text-anchor="middle">TEST</text>
+      <text class="t-head" x="837" y="314" text-anchor="middle">DEPLOY</text>
+      <text class="t-head" x="1019" y="314" text-anchor="middle">MAINTAIN</text>
+
+      <!-- required edges -->
+      <path class="edge" d="M184,90 L214,90" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M398,90 L368,90" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M473,133 L473,109" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M473,167 L473,191" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M548,150 L578,150" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M548,142 C640,120 700,98 760,98" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M655,193 L655,169" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M837,107 L837,131" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M837,193 L837,169" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M912,150 L942,150" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M912,86 C960,86 1000,98 1000,131" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M912,210 C960,210 1000,200 1000,169" marker-end="url(#d-ah)"/>
+      <path class="edge" d="M109,73 C109,4 1040,4 1040,131" marker-end="url(#d-ah)"/>
+      <!-- helps, not required -->
+      <path class="edge-dot" d="M548,82 L760,82" marker-end="url(#d-ahm)"/>
+      <path class="edge-dot" d="M580,210 L550,210" marker-end="url(#d-ahm)"/>
+      <path class="edge-dot" d="M291,107 C291,220 340,278 396,278" marker-end="url(#d-ahm)"/>
+      <path class="edge-dot" d="M398,158 C366,190 366,240 396,264" marker-end="url(#d-ahm)"/>
+
+      <!-- nodes -->
+      <rect class="node-entry" x="34" y="73" width="150" height="34" rx="6"/><text class="t-on t-bold" x="109" y="94" text-anchor="middle">Capture intent</text>
+      <rect class="node" x="216" y="73" width="150" height="34" rx="6"/><text class="t-bold" x="291" y="94" text-anchor="middle">Requirements &amp; design</text>
+      <rect class="node" x="398" y="73" width="150" height="34" rx="6"/><text class="t-bold" x="473" y="94" text-anchor="middle">Skills</text>
+      <rect class="node-entry" x="398" y="133" width="150" height="34" rx="6"/><text class="t-on t-bold" x="473" y="154" text-anchor="middle">CLAUDE.md</text>
+      <rect class="node" x="398" y="193" width="150" height="34" rx="6"/><text class="t-bold" x="473" y="214" text-anchor="middle">Subagents</text>
+      <rect class="node-entry" x="398" y="253" width="150" height="34" rx="6"/><text class="t-on t-bold" x="473" y="274" text-anchor="middle">Plan mode</text>
+      <rect class="node" x="580" y="133" width="150" height="34" rx="6"/><text class="t-bold" x="655" y="154" text-anchor="middle">Evals</text>
+      <rect class="node-entry" x="580" y="193" width="150" height="34" rx="6"/><text class="t-on t-bold" x="655" y="214" text-anchor="middle">Feedback loop</text>
+      <rect class="node" x="762" y="73" width="150" height="34" rx="6"/><text class="t-bold" x="837" y="94" text-anchor="middle">PR review</text>
+      <rect class="node" x="762" y="133" width="150" height="34" rx="6"/><text class="t-bold" x="837" y="154" text-anchor="middle">CI/CD</text>
+      <rect class="node-entry" x="762" y="193" width="150" height="34" rx="6"/><text class="t-on t-bold" x="837" y="214" text-anchor="middle">Hooks</text>
+      <rect class="node" x="944" y="133" width="150" height="34" rx="6"/><text class="t-bold" x="1019" y="154" text-anchor="middle">Closing the loop</text>
+    </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw sw-entry"></i> entry point</span>
+      <span><i class="sw sw-line"></i> do A before B</span>
+      <span><i class="sw sw-dot"></i> helps, not required</span>
+    </div>
+    <figcaption>Redrawn from the playbook's Figure 3. One mismatch in the source: the graph has CLAUDE.md feeding Skills, but the Skills section says nothing is required first and CLAUDE.md only helps. Closing the loop has the most prerequisites (intent capture, PR review, CI/CD, hooks), so it is the last play to adopt.</figcaption>
+  </figure>
+</section>
+
+<!-- 3. STAGE CARDS -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>03</span> · Stage by stage</div>
+    <h2>What must be true, who signs, how you measure it</h2>
+  </div>
+  <div class="stages">
+    <article class="stage">
+      <div class="stage-top"><span class="stage-num">STAGE 1</span><h3>Plan</h3></div>
+      <div class="plays">Capture as intent.md</div>
+      <ul class="checks">
+        <li>The originator brainstorms with Claude in their own words until the idea is concrete</li>
+        <li>A template skill structures it: problem, outcome, users and systems, constraints, open questions</li>
+        <li>Committed to a watched <code>intent/</code> home. A VCS connector commits for people who don't use git</li>
+        <li>The product owner corrects every agent-written intent before commit</li>
+      </ul>
+      <div class="gate-row"><b>◆ Gate:</b> product owner. Merge = accept, closed review = reject.</div>
+      <dl class="metrics">
+        <div><dt>Leading</dt><dd>First conversation → committed intent (weeks → <b>hours</b>)</dd></div>
+        <div><dt>Lagging</dt><dd>Intent survival rate; intent edits after the first spec.md</dd></div>
+      </dl>
+    </article>
+
+    <article class="stage">
+      <div class="stage-top"><span class="stage-num">STAGE 2</span><h3>Design</h3></div>
+      <div class="plays">Requirements and design</div>
+      <ul class="checks">
+        <li>Brand, security, compliance and UX policies are loaded as skills</li>
+        <li>The prompt demands flagged concerns, including policies that contradict each other</li>
+        <li>Automation path: by hand → org slash command → job on intent merge that opens a spec.md PR</li>
+        <li>Concerns are resolved with named policy owners before engineering sees the spec</li>
+        <li>The spec, its prompt and the skill versions in force are all in git</li>
+      </ul>
+      <div class="gate-row"><b>◆ Gate:</b> product owner; tech lead for higher-risk changes.</div>
+      <dl class="metrics">
+        <div><dt>Leading</dt><dd>intent.md commit → spec.md commit</dd></div>
+        <div><dt>Lagging</dt><dd>spec.md commits dated after the first plan.md (rework)</dd></div>
+      </dl>
+    </article>
+
+    <article class="stage">
+      <div class="stage-top"><span class="stage-num">STAGE 3</span><h3>Build</h3></div>
+      <div class="plays">Plan mode · auto mode · CLAUDE.md · skills · hooks · parallel sessions</div>
+      <ul class="checks">
+        <li>plan.md names the files, the order and the proving tests, and is updated in the same commit when the work drifts</li>
+        <li>CLAUDE.md stays under a page. A mistake made twice goes into it</li>
+        <li>Skills are tested for triggering and signed off by the policy owner. Must-hold policies get a hook as backstop</li>
+        <li>Build hooks are fast and scoped to the file. No "ask" hooks during build</li>
+        <li>Start with 2–3 worktrees. The verifier subagent reports only and never fixes</li>
+        <li>Auto mode only with a tight spec, a small blast radius and existing test coverage</li>
+      </ul>
+      <div class="gate-row"><b>◆ Gate:</b> engineer accepts the plan; tech lead or architect if higher-risk.</div>
+      <dl class="metrics">
+        <div><dt>Leading</dt><dd>% merged from the first pass; plan approved → PR merged; repeated mistakes; policy → skill merge time; sessions per engineer</dd></div>
+        <div><dt>Lagging</dt><dd>Rework cycles; diff ↔ plan.md match; new joiner's first PR; policy-citing findings → <b>zero</b>; merges per week vs. rework</dd></div>
+      </dl>
+    </article>
+
+    <article class="stage">
+      <div class="stage-top"><span class="stage-num">STAGE 4</span><h3>Test</h3></div>
+      <div class="plays">Feedback loop · continuous evals in CI</div>
+      <ul class="checks">
+        <li>Test and build each run with one command that exits non-zero on failure. Healthy output is listed in CLAUDE.md</li>
+        <li>Bug fixes: commit the failing test first. A hook blocks edits to test files during the fix</li>
+        <li>"Done" means the test output is pasted. UI work loops on screenshots against the mock</li>
+        <li>20–50 real-task evals run nightly and on any change to <code>CLAUDE.md</code> or <code>.claude/**</code></li>
+        <li>The pass rate is a merge check. Every incident becomes an eval</li>
+      </ul>
+      <div class="gate-row"><b class="g-auto">■ Gate:</b> eval pass-rate threshold; code owner reviews with evidence attached.</div>
+      <dl class="metrics">
+        <div><dt>Leading</dt><dd>First-pass CI success; eval pass rate; incident → eval time</dd></div>
+        <div><dt>Lagging</dt><dd>Review time per PR; change failure rate; regressions caught in CI vs. in prod</dd></div>
+      </dl>
+    </article>
+
+    <article class="stage">
+      <div class="stage-top"><span class="stage-num">STAGE 5</span><h3>Deploy</h3></div>
+      <div class="plays">PR review · approval-gate hooks · managed settings · CI/CD</div>
+      <ul class="checks">
+        <li>REVIEW.md defines three passes (bugs, security, compliance with spec/plan) and caps nits at 5</li>
+        <li>Findings never approve. Branch protection requires a code owner</li>
+        <li>An <code>@claude</code> fix loop, or a babysit command that drives Claude's own PRs to green. Tuning is monthly</li>
+        <li>Gates are hooks. Non-negotiable ones live in managed settings, and every block explains itself</li>
+        <li>Rollback is a single command, rehearsed in staging</li>
+      </ul>
+      <div class="gate-row"><b>◆ Gate:</b> code owner merges; a named release manager authorizes production.</div>
+      <dl class="metrics">
+        <div><dt>Leading</dt><dd>Time to first review → <b>minutes</b>; comments resolved hands-off; wait time per gate; failures triaged without paging</dd></div>
+        <div><dt>Lagging</dt><dd>Defects caught vs. escaped; gate violations in prod; <b>DORA</b></dd></div>
+      </dl>
+    </article>
+
+    <article class="stage">
+      <div class="stage-top"><span class="stage-num">STAGE 6</span><h3>Maintain</h3></div>
+      <div class="plays">Closing the loop · Claude Tag on call</div>
+      <ul class="checks">
+        <li>Monitor one metric with a stable rolling baseline. The detector is deterministic and unit-tested</li>
+        <li>Tiers live in <code>bands.yaml</code>: 1σ logs, 2σ diagnoses read-only, 3σ opens a PR or runs a pre-approved runbook</li>
+        <li>Findings come back as intent.md. Triage is fix, schedule or dismiss; dismissals tune the bands</li>
+        <li>In Slack, Claude waits for a human "Go", confirms the metric is back in band, and writes a lessons file</li>
+      </ul>
+      <div class="gate-row"><b>◆ Gate:</b> service owner triages; fixes take the normal PR gate.</div>
+      <dl class="metrics">
+        <div><dt>Leading</dt><dd>Band breach → intent.md in the triage queue</dd></div>
+        <div><dt>Lagging</dt><dd>% of findings merged as fixes; repeat incidents of the same class</dd></div>
+      </dl>
+    </article>
+  </div>
+</section>
+
+<!-- 4. MANAGED SETTINGS -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>04</span> · Worked example, p.42–43</div>
+    <h2>Managed settings: where each attempt is stopped</h2>
+    <p>The platform team deploys these settings through MDM or the admin console, and engineers cannot override them. Each row is something an agent session might try. The line shows how far it gets before a setting stops it.</p>
+  </div>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1120 430" role="img" aria-label="Defense-in-depth diagram for the managed settings example. Reading .env and curl are stopped by permission deny rules. Shell egress and retrying outside the sandbox are stopped by the sandbox network allowlist. Reading SSH keys and GitHub tokens are stopped by sandbox credential rules. Local hooks, MCP servers, sideloading, bypass mode and old binaries are stopped by managed-only lockdown. make test passes every layer with no prompt.">
+      <defs>
+        <marker id="s-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-ok" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="layer" x="320" y="62" width="150" height="350" rx="6"/>
+      <rect class="layer" x="490" y="62" width="150" height="350" rx="6"/>
+      <rect class="layer" x="660" y="62" width="150" height="350" rx="6"/>
+      <rect class="layer" x="830" y="62" width="150" height="350" rx="6"/>
+      <text class="t-head" x="20" y="30">ATTEMPTED ACTION</text>
+      <text class="t-bold" x="395" y="30" text-anchor="middle">Permissions</text>
+      <text class="t-mono t-sm t-muted" x="395" y="48" text-anchor="middle">deny · allow</text>
+      <text class="t-bold" x="565" y="30" text-anchor="middle">Sandbox: network</text>
+      <text class="t-mono t-sm t-muted" x="565" y="48" text-anchor="middle">allowedDomains</text>
+      <text class="t-bold" x="735" y="30" text-anchor="middle">Sandbox: credentials</text>
+      <text class="t-mono t-sm t-muted" x="735" y="48" text-anchor="middle">files · envVars</text>
+      <text class="t-bold" x="905" y="30" text-anchor="middle">Managed-only lockdown</text>
+      <text class="t-mono t-sm t-muted" x="905" y="48" text-anchor="middle">allowManaged*Only</text>
+      <text class="t-head" x="1050" y="30" text-anchor="middle">RESULT</text>
+
+      <!-- row helper: action text at x20; line from 300 to stop; X at stop cx; reason below -->
+      <!-- r1 y90 -->
+      <text class="t-mono" x="20" y="94">Read .env</text>
+      <line class="edge-stop" x1="300" y1="90" x2="383" y2="90"/>
+      <path class="edge-stop" d="M389,84 L401,96 M401,84 L389,96"/>
+      <text class="t-mono t-sm t-stop" x="410" y="94">Read(.env*)</text>
+      <!-- r2 y128 -->
+      <text class="t-mono" x="20" y="132">curl pastebin.com</text>
+      <line class="edge-stop" x1="300" y1="128" x2="383" y2="128"/>
+      <path class="edge-stop" d="M389,122 L401,134 M401,122 L389,134"/>
+      <text class="t-mono t-sm t-stop" x="410" y="132">Bash(curl *)</text>
+      <!-- r3 y166 -->
+      <text class="t-mono" x="20" y="170">python urlopen(…)</text>
+      <line class="edge-stop" x1="300" y1="166" x2="553" y2="166"/>
+      <path class="edge-stop" d="M559,160 L571,172 M571,160 L559,172"/>
+      <text class="t-mono t-sm t-stop" x="580" y="170">not allowlisted</text>
+      <!-- r4 y204 -->
+      <text class="t-mono" x="20" y="208">retry outside sandbox</text>
+      <line class="edge-stop" x1="300" y1="204" x2="553" y2="204"/>
+      <path class="edge-stop" d="M559,198 L571,210 M571,198 L559,210"/>
+      <text class="t-mono t-sm t-stop" x="580" y="208">unsandboxed: off</text>
+      <!-- r5 y242 -->
+      <text class="t-mono" x="20" y="246">cat ~/.ssh/id_rsa</text>
+      <line class="edge-stop" x1="300" y1="242" x2="723" y2="242"/>
+      <path class="edge-stop" d="M729,236 L741,248 M741,236 L729,248"/>
+      <text class="t-mono t-sm t-stop" x="750" y="246">files: deny</text>
+      <!-- r6 y280 -->
+      <text class="t-mono" x="20" y="284">echo $GITHUB_TOKEN</text>
+      <line class="edge-stop" x1="300" y1="280" x2="723" y2="280"/>
+      <path class="edge-stop" d="M729,274 L741,286 M741,274 L729,286"/>
+      <text class="t-mono t-sm t-stop" x="750" y="284">env stripped</text>
+      <!-- r7 y318 -->
+      <text class="t-mono" x="20" y="322">local hook · .mcp.json · sideload</text>
+      <line class="edge-stop" x1="300" y1="318" x2="893" y2="318"/>
+      <path class="edge-stop" d="M899,312 L911,324 M911,312 L899,324"/>
+      <text class="t-mono t-sm t-stop" x="920" y="322">managed only</text>
+      <!-- r8 y356 -->
+      <text class="t-mono" x="20" y="360">bypass mode · old binary</text>
+      <line class="edge-stop" x1="300" y1="356" x2="893" y2="356"/>
+      <path class="edge-stop" d="M899,350 L911,362 M911,350 L899,362"/>
+      <text class="t-mono t-sm t-stop" x="920" y="360">disabled · floor</text>
+      <!-- r9 y394 allowed -->
+      <text class="t-mono t-bold" x="20" y="398">make test</text>
+      <line class="edge-ok" x1="300" y1="394" x2="1012" y2="394" marker-end="url(#s-ok)"/>
+      <text class="t-sm t-ok" x="1100" y="398" text-anchor="end">runs, no prompt</text>
+    </svg>
+    </div>
+    <figcaption>Each layer covers a gap the previous one leaves. A WebFetch deny doesn't stop a shell command from reaching the network, so the OS-level sandbox blocks egress. File-tool denies don't cover a shell reading <code>~/.ssh</code>, so the credentials rules do. <code>failIfUnavailable</code> makes the sandbox fail closed: Claude Code won't start without it. The allow list (<code>git</code>, <code>make build/test/lint</code>) keeps the safe inner loop free of prompts. The playbook says to treat this as a starting point to tailor to each repo's data classification, not a config to copy.</figcaption>
+  </figure>
+</section>
+
+<!-- 5. CI/CD -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>05</span> · CI/CD</div>
+    <h2>The agent goes up to the production gate, not past it</h2>
+  </div>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1120 330" role="img" aria-label="CI/CD flow. A sandboxed agent job with scoped tokens opens a pull request; it has no route to push to main. A code owner approves through branch protection. The pipeline deploys through MCP tools: freely to dev, to staging with rehearsed rollback, then stops at the production gate where a hook requires a named release manager's approval. Rollback runs from production back as one rehearsed command.">
+      <defs>
+        <marker id="c-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="c-ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-muted" d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="c-ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="mk-gate" d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <!-- no direct push -->
+      <path class="edge-dot" d="M125,40 C125,0 730,0 730,40"/>
+      <path class="edge-stop" d="M422,4 L436,18 M436,4 L422,18"/>
+      <text class="t-sm t-stop" x="446" y="28">no route to push to main</text>
+
+      <!-- row 1 -->
+      <rect class="node" x="20" y="40" width="210" height="70" rx="10"/>
+      <text class="t-bold" x="125" y="68" text-anchor="middle">Agent job (claude -p)</text>
+      <text class="t-mono t-sm t-muted" x="125" y="90" text-anchor="middle">sandbox · scoped token</text>
+      <rect class="node" x="330" y="40" width="210" height="70" rx="10"/>
+      <text class="t-bold" x="435" y="68" text-anchor="middle">Pull request</text>
+      <text class="t-mono t-sm t-muted" x="435" y="90" text-anchor="middle">AI review · CI · evals</text>
+      <rect class="node" x="660" y="40" width="140" height="70" rx="10"/>
+      <text class="t-bold" x="730" y="68" text-anchor="middle">main</text>
+      <text class="t-mono t-sm t-muted" x="730" y="90" text-anchor="middle">branch protected</text>
+
+      <line class="edge" x1="230" y1="75" x2="328" y2="75" marker-end="url(#c-ah)"/>
+      <text class="t-sm" x="279" y="66" text-anchor="middle">opens PR</text>
+      <line class="edge" x1="540" y1="75" x2="658" y2="75" marker-end="url(#c-ah)"/>
+      <text class="t-sm t-gate" x="599" y="56" text-anchor="middle">◆ code owner</text>
+      <text class="t-sm t-gate" x="599" y="70" text-anchor="middle">approves</text>
+
+      <!-- read-only first -->
+      <line class="edge-dot" x1="125" y1="110" x2="125" y2="198" marker-end="url(#c-ahm)"/>
+      <text class="t-sm t-muted" x="135" y="158">start here</text>
+      <rect class="node-dash" x="20" y="200" width="230" height="70" rx="10"/>
+      <text class="t-bold" x="135" y="226" text-anchor="middle">Read-only judgment first</text>
+      <text class="t-mono t-sm t-muted" x="135" y="246" text-anchor="middle">triage build · flaky vs real</text>
+      <text class="t-mono t-sm t-muted" x="135" y="262" text-anchor="middle">draft changelog</text>
+
+      <!-- main to dev -->
+      <path class="edge" d="M730,110 C730,160 405,150 405,198" marker-end="url(#c-ah)"/>
+      <text class="t-sm" x="470" y="150" text-anchor="end">deploy, status, rollback</text>
+      <text class="t-sm t-muted" x="470" y="166" text-anchor="end">as MCP tools per env</text>
+
+      <!-- environments -->
+      <rect class="node" x="330" y="200" width="150" height="70" rx="10"/>
+      <text class="t-bold" x="405" y="228" text-anchor="middle">Dev</text>
+      <text class="t-sm t-muted" x="405" y="248" text-anchor="middle">agent deploys freely</text>
+      <rect class="node" x="520" y="200" width="170" height="70" rx="10"/>
+      <text class="t-bold" x="605" y="228" text-anchor="middle">Staging</text>
+      <text class="t-sm t-muted" x="605" y="248" text-anchor="middle">agent deploys · rollback drill</text>
+      <line class="edge" x1="480" y1="235" x2="518" y2="235" marker-end="url(#c-ah)"/>
+      <line class="edge" x1="690" y1="235" x2="788" y2="235" marker-end="url(#c-ah)"/>
+
+      <rect class="gatebar" x="731" y="186" width="14" height="98" rx="3"/>
+      <text class="t-sm t-gate" x="738" y="160" text-anchor="middle">◆ production gate</text>
+      <text class="t-mono t-sm t-gate" x="738" y="176" text-anchor="middle">hook: RELEASE_APPROVAL</text>
+
+      <rect class="gatebox" x="790" y="200" width="230" height="70" rx="10"/>
+      <text class="t-bold" x="905" y="228" text-anchor="middle">Production</text>
+      <text class="t-sm" x="905" y="248" text-anchor="middle">agent prepares; release manager</text>
+      <text class="t-sm" x="905" y="262" text-anchor="middle">authorizes</text>
+
+      <path class="edge-gate" d="M880,270 C880,318 620,318 620,272" marker-end="url(#c-ahg)"/>
+      <text class="t-sm t-gate" x="750" y="324" text-anchor="middle">rollback · one command, rehearsed</text>
+    </svg>
+    </div>
+    <figcaption>Introduce automation in order. First, read-only judgment steps. Then write steps that arrive as PRs. Then deployment exposed as MCP tools scoped per environment. Agent runs use the agent's own identity and hold no standing production credentials. Measure: % of pipeline failures triaged without paging a human, and the four DORA metrics (deployment frequency, lead time, change failure rate, time to restore). Other CI jobs in the playbook: the spec.md job on intent merge, nightly and config-change evals, and the <code>@claude</code> review fix loop.</figcaption>
+  </figure>
+</section>
+
+<!-- 6. MAINTAIN -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>06</span> · Maintain</div>
+    <h2>Detection is deterministic; the tier decides what Claude may do</h2>
+  </div>
+  <figure>
+    <div class="scroller">
+    <svg class="dia" viewBox="0 0 1120 340" role="img" aria-label="Control band chart for CI test failure rate against a rolling 30-day baseline, with illustrative data. Points drift above the mean for eight runs in a row, which a Western Electric rule catches, then cross 2 sigma, triggering read-only diagnosis, and finally 3 sigma, where Claude may propose a PR or trigger the rollback runbook. Within 1 to 2 sigma the script only logs.">
+      <text class="t-mono t-sm t-muted" x="70" y="40">ci_test_failure_rate · rolling_30d baseline · western_electric rules · illustrative data</text>
+      <!-- bands: mean 230, sigma 40 -->
+      <rect class="band3" x="70" y="62" width="690" height="48"/>
+      <rect class="band2" x="70" y="110" width="690" height="40"/>
+      <rect class="band1" x="70" y="150" width="690" height="40"/>
+      <rect class="band1" x="70" y="270" width="690" height="40"/>
+      <line class="gridline" x1="70" y1="110" x2="760" y2="110"/>
+      <line class="gridline" x1="70" y1="150" x2="760" y2="150"/>
+      <line class="gridline" x1="70" y1="190" x2="760" y2="190"/>
+      <line class="meanline" x1="70" y1="230" x2="760" y2="230"/>
+      <line class="gridline" x1="70" y1="270" x2="760" y2="270"/>
+      <line class="gridline" x1="70" y1="310" x2="760" y2="310"/>
+      <text class="t-mono t-sm t-muted" x="62" y="114" text-anchor="end">+3σ</text>
+      <text class="t-mono t-sm t-muted" x="62" y="154" text-anchor="end">+2σ</text>
+      <text class="t-mono t-sm t-muted" x="62" y="194" text-anchor="end">+1σ</text>
+      <text class="t-mono t-sm" x="62" y="234" text-anchor="end">mean</text>
+      <text class="t-mono t-sm t-muted" x="62" y="274" text-anchor="end">−1σ</text>
+      <text class="t-mono t-sm t-muted" x="62" y="314" text-anchor="end">−2σ</text>
+
+      <!-- series: y = 230 - v*40, x = 90 + i*27 -->
+      <polyline class="series" points="90,222 117,246 144,226 171,210 198,238 225,218 252,254 279,230 306,214 333,234 360,222 387,206 414,198 441,202 468,186 495,190 522,178 549,182 576,166 603,170 630,158 657,142 684,154 711,126 738,98"/>
+      <g>
+        <circle class="pt" cx="90" cy="222" r="3.5"/><circle class="pt" cx="117" cy="246" r="3.5"/><circle class="pt" cx="144" cy="226" r="3.5"/><circle class="pt" cx="171" cy="210" r="3.5"/><circle class="pt" cx="198" cy="238" r="3.5"/><circle class="pt" cx="225" cy="218" r="3.5"/><circle class="pt" cx="252" cy="254" r="3.5"/><circle class="pt" cx="279" cy="230" r="3.5"/><circle class="pt" cx="306" cy="214" r="3.5"/><circle class="pt" cx="333" cy="234" r="3.5"/><circle class="pt" cx="360" cy="222" r="3.5"/><circle class="pt" cx="387" cy="206" r="3.5"/><circle class="pt" cx="414" cy="198" r="3.5"/><circle class="pt" cx="441" cy="202" r="3.5"/><circle class="pt" cx="468" cy="186" r="3.5"/><circle class="pt" cx="495" cy="190" r="3.5"/><circle class="pt" cx="522" cy="178" r="3.5"/><circle class="pt" cx="549" cy="182" r="3.5"/><circle class="pt" cx="576" cy="166" r="3.5"/><circle class="pt" cx="603" cy="170" r="3.5"/><circle class="pt" cx="630" cy="158" r="3.5"/>
+        <circle class="pt pt-gate" cx="657" cy="142" r="5"/>
+        <circle class="pt" cx="684" cy="154" r="3.5"/>
+        <circle class="pt pt-gate" cx="711" cy="126" r="5"/>
+        <circle class="pt pt-stop" cx="738" cy="98" r="6"/>
+      </g>
+      <!-- drift bracket -->
+      <path class="edge-dot" d="M387,246 L387,252 L576,252 L576,246"/>
+      <text class="t-sm t-muted" x="482" y="268" text-anchor="middle">slow drift: 8 in a row above the mean</text>
+      <text class="t-sm t-muted" x="482" y="284" text-anchor="middle">caught before any spike</text>
+
+      <!-- tiers -->
+      <line class="edge-dot" x1="760" y1="86" x2="796" y2="86"/>
+      <line class="edge-dot" x1="760" y1="130" x2="796" y2="130"/>
+      <line class="edge-dot" x1="760" y1="170" x2="796" y2="170"/>
+      <rect class="tierbox" x="796" y="66" width="310" height="40" rx="7"/>
+      <text class="t-bold t-stop" x="808" y="82">3σ · propose</text>
+      <text class="t-mono t-sm" x="808" y="98">PR into review gate · runbook:rollback-deploy</text>
+      <rect class="tierbox" x="796" y="110" width="310" height="40" rx="7"/>
+      <text class="t-bold t-gate" x="808" y="126">2σ · diagnose, read-only</text>
+      <text class="t-mono t-sm" x="808" y="142">Read, Grep, Bash(gh run view *)</text>
+      <rect class="tierbox" x="796" y="154" width="310" height="34" rx="7"/>
+      <text class="t-bold" x="808" y="176">1σ · log only</text>
+      <text class="t-sm t-muted" x="808" y="218">No model runs in detection.</text>
+      <text class="t-sm t-muted" x="808" y="234">The script is versioned and unit-tested,</text>
+      <text class="t-sm t-muted" x="808" y="250">and tiers live in bands.yaml.</text>
+    </svg>
+    </div>
+    <figcaption>Other examples from the playbook: when the post-deploy 5xx rate goes past 3σ with a deploy in the window, Claude triggers the existing rollback pipeline. When PR cycle time drifts, Claude writes a report for engineering leadership.</figcaption>
+  </figure>
+  <div class="flow" aria-label="What happens after a breach">
+    <span class="chip">band breach</span><span class="arr">→</span>
+    <span class="chip">Claude writes <code>intent.md</code> with evidence</span><span class="arr">→</span>
+    <span class="chip h">◆ owner triages: fix · schedule · dismiss</span><span class="arr">→</span>
+    <span class="chip">normal stages + PR gate</span><span class="arr">→</span>
+    <span class="chip">fix ships</span><span class="arr">→</span>
+    <span class="chip">incident added as an eval</span>
+  </div>
+  <p class="lede" style="font-size:15px">Measure the time from breach to <code>intent.md</code> in the triage queue, the share of findings that become merged fixes, and repeat incidents of the same class. Dismissals feed back into the band settings to cut noise.</p>
+</section>
+
+<!-- 7. MEASUREMENT MAP -->
+<section>
+  <div class="sec-head">
+    <div class="eyebrow"><span>07</span> · Measurement map</div>
+    <h2>Every metric, and the system that already records it</h2>
+    <p>The playbook gives each play one leading and one lagging indicator. Almost all of them come from systems you already run. This shows where each one comes from.</p>
+  </div>
+  <div class="legend">
+    <span><i class="m m-l"></i> leading indicator</span>
+    <span><i class="m m-g"></i> lagging indicator</span>
+    <span><i class="m m-b"></i> both</span>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Play</th>
+        <th class="src">Git history</th>
+        <th class="src">PR metadata</th>
+        <th class="src">OpenTelemetry</th>
+        <th class="src">CI / CD</th>
+        <th class="src">Eval suite</th>
+        <th class="src">Incident tracker</th>
+        <th class="src">Detection log</th>
+        <th>Stated target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="play">Capture intent<small>stage 1</small></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">Idea → intent in <b>hours</b>, not weeks</td></tr>
+      <tr><td class="play">Requirements &amp; design<small>stage 2</small></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">Shorter than the old cycle; spec rework ↓</td></tr>
+      <tr><td class="play">Plan mode<small>stage 3</small></td><td class="src"></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">First-pass merges ↑; rework ↓</td></tr>
+      <tr><td class="play">CLAUDE.md<small>stage 3</small></td><td class="src"><i class="m m-l"></i></td><td class="src"><i class="m m-g"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">Repeat mistakes ↓; new joiner's first PR sooner</td></tr>
+      <tr><td class="play">Skills<small>stage 3</small></td><td class="src"></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">Policy-citing findings → <b>zero</b></td></tr>
+      <tr><td class="play">Parallel sessions<small>stage 3</small></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"><i class="m m-l"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">More sessions, review quality held</td></tr>
+      <tr><td class="play">Feedback loop<small>stage 4</small></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"></td><td class="src"><i class="m m-l"></i></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"></td><td class="tgt">First-pass CI ↑; review time and CFR ↓</td></tr>
+      <tr><td class="play">Continuous evals<small>stage 4</small></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"><i class="m m-l"></i></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="tgt">More regressions caught in CI than in prod</td></tr>
+      <tr><td class="play">PR review<small>stage 5</small></td><td class="src"><i class="m m-l"></i></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"></td><td class="tgt">First review in <b>minutes</b></td></tr>
+      <tr><td class="play">Approval-gate hooks<small>stage 5</small></td><td class="src"></td><td class="src"></td><td class="src"><i class="m m-l"></i></td><td class="src"></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"></td><td class="tgt">Wait per gate ↓; violations in prod ↓</td></tr>
+      <tr><td class="play">CI/CD<small>stage 5</small></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"><i class="m m-b"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="tgt">Triage without paging ↑; <b>DORA</b></td></tr>
+      <tr><td class="play">Closing the loop<small>stage 6</small></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"></td><td class="src"></td><td class="src"></td><td class="src"><i class="m m-g"></i></td><td class="src"><i class="m m-l"></i></td><td class="tgt">Breach → intent fast; repeats ↓</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>
+  <div>Source: <i>The AI-Native SDLC Playbook</i> (Louis Claxton, Anthropic). Page references use the playbook's printed numbers.</div>
+  <div>The full checklist, with every step and the proposed additional metrics, is in <code>docs/ai-sdlc-checklist.md</code>.</div>
+</footer>
+</div>
+</body>
+</html>

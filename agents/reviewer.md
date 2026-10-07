@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Opus code reviewer. One independent pass over a change's diff against its intent, spec and plan; reports only high-confidence findings. Never edits files.
+description: Code reviewer. One independent pass over a change's diff against its intent, spec and plan; reports only high-confidence findings. Never edits files.
 tools: Read, Grep, Glob, LSP, Bash
 model: claude-opus-5-5
 effort: high

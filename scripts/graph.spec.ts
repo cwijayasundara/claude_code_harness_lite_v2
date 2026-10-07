@@ -160,3 +160,18 @@ test('step reports how many build slices are done, so the driver sees partial pr
   write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: {}, slices: { 1: done, 2: { ...done, status: 'open' }, 3: done }, baseline: {} }))
   assert.equal(stepOf('tiny').progress, 2)
 })
+
+test('next --json names the model for the tier: S haiku, M sonnet, L opus, greenfield opus at any tier', () => {
+  const cases: [string, string, string, string][] = [['s1', 'feature', 'S', 'haiku'], ['m1', 'refactor', 'M', 'sonnet'], ['l1', 'bugfix', 'L', 'opus'], ['g1', 'greenfield', 'S', 'opus']]
+  for (const [slug, type, tier, model] of cases) {
+    sdlc(repo, ['new', slug, '--type', type, '--tier', tier])
+    assert.equal(stepOf(slug).model, model, `${type} ${tier}`)
+  }
+})
+
+test('the model follows the effective tier: lowering tier in intent.md does not lower the model', () => {
+  sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
+  const f = path.join(repo, '.sdlc/changes/big/intent.md')
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^tier: L$/m, 'tier: S'))
+  assert.equal(stepOf('big').model, 'opus')
+})

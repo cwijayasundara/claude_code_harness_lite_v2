@@ -13,6 +13,7 @@ Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` o
 
 1. **Reproduce.**
    - Read `intent.md`.
+   - Note `git rev-parse HEAD` now: an incident eval (step 6) uses it as its base.
    - Write the smallest failing test that shows the bug, as a regression test in the project's suite. Run it once with `sdlc.ts run --expect-fail -- "<test command>"` so the red run is on record.
    - Run it and confirm it fails for the reported reason.
    - If you cannot reproduce in 3 attempts, stop and ask the person for data.
@@ -26,7 +27,8 @@ Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` o
    - If the fix touches more than 3 files or a contract, stop: it is a feature or refactor, so tell the person.
 4. **Tier L: stop for approval before fixing.** After steps 1–2 (the failing test and the root cause), write `.sdlc/changes/$0/plan.md` (≤ 30 lines, no code): `## Root cause` (`path:line`, one paragraph), `## Fix` (the smallest change, in words), `## Files`, `## Verification`. Then stop and tell the person: review plan.md and run `/rig-approve $0 plan`. When run again after approval, go straight to step 3.
 5. **Record (tier S and M).** Write `## Files` (touched files) and `## Verification` (test commands) into `.sdlc/changes/$0/plan.md`, using 15 lines or fewer and no code.
-6. **Verify.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts verify $0` (Bash timeout 600000): it runs the plan's commands through the recorder and writes `.sdlc/changes/$0/verification.md`.
+6. **Incident changes only** (`type: incident` in intent.md): the incident file is the one linked in intent.md; its date prefix is `<yyyymmdd>` and its `class:` frontmatter is `<class>`. Write `.sdlc/evals/incident-<yyyymmdd>-<class>.json` with the Write tool: `{"prompt": "<the incident's symptoms, one paragraph>", "base": "<the HEAD noted in step 1>", "files": ["<the regression test file>"], "checks": [{"kind": "command", "cmd": "<the regression test command>"}], "allowedTools": "Read,Grep,Glob,Edit,Write,Bash(<the regression test command>)", "source": "incident:<incident file name, e.g. 20261001-timeout.md>"}`. The source is the bare file name, with no directory. It keeps the incident in the eval suite after it ships, and runs once this change ships, when the regression test is committed. The write asks the person to approve it: eval definitions are protected. If the write is denied (headless run), give the person the JSON instead.
+7. **Verify.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts verify $0` (Bash timeout 600000): it runs the plan's commands through the recorder and writes `.sdlc/changes/$0/verification.md`.
 
 Three failed hypotheses means consult the advisor or the person. Do not keep guessing.
 

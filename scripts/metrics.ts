@@ -11,6 +11,7 @@ import { loadChange } from './graph.ts'
 import { loadConfig } from './check.ts'
 import { valueHoursFor } from './scorecard.ts'
 import { pointsMetrics } from './points.ts'
+import { EVALS, RESULTS, type EvalResult } from './evals.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -115,8 +116,8 @@ export function cmdMetrics(args: Args): void {
     m.time_to_first_review_hours = needsGh
   }
   const incidentDir = path.join(SDLC, 'incidents')
-  const incidents = exists(incidentDir)
-    ? fs.readdirSync(incidentDir).filter(f => f.endsWith('.md')).map(f => frontmatter(read(path.join(incidentDir, f))).data)
+  const incidents: Array<Record<string, string>> = exists(incidentDir)
+    ? fs.readdirSync(incidentDir).filter(f => f.endsWith('.md')).map(f => ({ ...frontmatter(read(path.join(incidentDir, f))).data, file: f }))
     : []
   const caught = changes.reduce((n, c) => n + Number(c.review.caught ?? 0), 0)
   const escaped = incidents.filter(i => i.escaped === 'true').length
@@ -125,6 +126,18 @@ export function cmdMetrics(args: Args): void {
   m.breach_to_intent_hours = median(incidents.map(i => hours(i.detected, i.intent_at)))
   const classes = incidents.map(i => i.class).filter((c): c is string => Boolean(c))
   m.repeat_incident_share = share(classes.length - new Set(classes).size, classes.length)
+  // Test: the last manual eval run, and how long an incident takes to become a permanent eval (its `source` names the incident).
+  const evalRows = readJsonl<EvalResult>(RESULTS)
+  const lastEvalRun = evalRows.filter(r => r.run === evalRows.at(-1)?.run)
+  m.eval_pass_rate = share(lastEvalRun.filter(r => r.pass).length, lastEvalRun.length)
+  const evalSources = exists(EVALS) ? fs.readdirSync(EVALS).filter(f => f.endsWith('.json')).map(f => {
+    try { return { rel: toPosix(path.relative(ROOT, path.join(EVALS, f))), source: String((JSON.parse(read(path.join(EVALS, f)) || '{}') as { source?: unknown }).source ?? '') } } catch { return { rel: '', source: '' } }
+  }) : []
+  // An incident with no eval yet has no time: never pass '' to firstCommitTime, which would date the whole repo.
+  m.incident_to_eval_hours = median(incidents.map(i => {
+    const ev = evalSources.find(e => e.source === `incident:${i.file}`)
+    return ev ? hours(i.detected, firstCommitTime(ev.rel)) : null
+  }))
 
   // Cost, from the mod's usage log
   const usage = readJsonl<UsageRow>(USAGE).filter(r => Date.parse(r.at) >= since)
