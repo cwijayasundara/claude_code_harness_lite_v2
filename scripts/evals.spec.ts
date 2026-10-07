@@ -212,5 +212,19 @@ test('metrics: eval pass rate from the last run, incident-to-eval hours from git
   evals([])
   const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
   assert.deepEqual({ value: m.eval_pass_rate.value, n: m.eval_pass_rate.n }, { value: 0.8, n: 5 })
-  assert.equal(m.incident_to_eval_hours.value, null, 'unmeasured below five incidents with an eval')
+  assert.equal(m.incident_to_eval_hours.value, null, 'no incidents yet')
+})
+
+test('metrics: incident_to_eval_hours is the median over incidents that have an eval; an incident without one adds no sample', () => {
+  const detected = new Date(Date.now() - 2 * 3_600_000).toISOString()
+  for (const k of [1, 2, 3, 4, 5]) {
+    write(repo, `.sdlc/incidents/2026100${k}-x.md`, `---\ndetected: ${detected}\n---\n# incident ${k}\n`)
+    defineEval(`incident-${k}`, { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }], source: `incident:2026100${k}-x.md` })
+  }
+  write(repo, '.sdlc/incidents/20261009-orphan.md', `---\ndetected: ${detected}\n---\n# no eval\n`)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'incidents and their evals')
+  const h = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics.incident_to_eval_hours
+  assert.equal(h.n, 5, 'the incident with no eval is not a sample')
+  assert.ok(typeof h.value === 'number' && h.value > 1.5 && h.value < 3, `hours ${h.value}`)
 })
