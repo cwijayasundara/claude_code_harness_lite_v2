@@ -4,7 +4,7 @@
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
 //  - /rig-map: mission control pane (mission.tsx): SDLC subway map, fix-loop arc, spend by station, fuel gauges
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
-//  - the impact dialog and per-edit notices (gates.ts); the band and pane (band.tsx)
+//  - the impact dialog (gates.ts); the band and pane (band.tsx)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
 // Essential gates live in hooks.json settings hooks so they also hold in `claude -p` and CI.
 
@@ -36,7 +36,7 @@ const agentTypes = new Map<string, string>()
 
 const sdlc = ($: EngineInterface, args: string[]): string[] => sdlcArgv($.plugin.root, ...args)
 const isInitialised = ($: EngineInterface): Promise<boolean> => $.fs.exists('.sdlc')
-const statusJson = async ($: EngineInterface): Promise<Status | null> => parseStatus((await $.process.run(sdlc($, ['status', '--json']))).stdout)
+const statusJson = async ($: EngineInterface): Promise<Status | null> => parseStatus((await $.process.run(sdlc($, ['status', '--json', '--band']))).stdout)
 
 function stageOf(status: Status | null): { change: string | null; stage: string | null } {
   const change = status?.active ?? null
@@ -44,15 +44,14 @@ function stageOf(status: Status | null): { change: string | null; stage: string 
   return { change, stage }
 }
 
-const activeStage = async ($: EngineInterface): Promise<{ change: string | null; stage: string | null }> => stageOf(await statusJson($))
-
-async function refreshBand($: EngineInterface): Promise<void> {
+async function refreshBand($: EngineInterface): Promise<Status | null> {
   const status = await statusJson($)
   const { change, stage } = stageOf(status)
   const session = await $.session.usage()
   const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow }
   await update($, band, () => value)
   $.ui.status(`rig${stage ? ` · ${stage}` : ''} · ${money(value.sessionUsd)} · ${kilo(value.contextTokens)} ctx`)
+  return status
 }
 
 async function stopDriver($: EngineInterface, why: string): Promise<void> {
@@ -96,12 +95,9 @@ async function advance($: EngineInterface): Promise<void> {
 }
 
 // The one human gate of a feature: a turn ending at the design gate starts the driver, which asks once and then drives build to PR.
-async function offerDesignGate($: EngineInterface): Promise<void> {
-  if (!(await isInitialised($))) return
-  try {
-    const s = JSON.parse((await $.process.run(sdlc($, ['next', '--json']))).stdout) as StepInfo
-    if (s.verdict !== 'human' || gateOf(s) !== 'design') return
-  } catch { return }
+// `step` comes from this turn's band refresh (the same answer as `next --json`), so no extra process.
+async function offerDesignGate($: EngineInterface, step: StepInfo | null | undefined): Promise<void> {
+  if (!step || step.verdict !== 'human' || gateOf(step) !== 'design') return
   await Promise.all([update($, driverLast, () => ''), update($, driverRunning, () => true)])
   return advance($)
 }
@@ -207,7 +203,7 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (mod.aside) return next(e)
-    if (await isInitialised($)) ({ change: turnChange, stage: turnStage } = await activeStage($))
+    if (await isInitialised($)) ({ change: turnChange, stage: turnStage } = stageOf(await statusJson($)))
     return next(e)
   })
 
@@ -221,6 +217,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (mod.aside) return next(e)
     const result = await next(e)
+    let status: Status | null = null
     try {
       if (!(await isInitialised($))) return result
       const usage = e.usage
@@ -253,7 +250,7 @@ export const register: Register = on => {
       }
       await $.process.run(sdlc($, ['log-usage', JSON.stringify(row)]))
       await update($, turns, h => [...h, turnPoint(usage, !!e.agentId, Number(row.usd ?? 0))].slice(-KEEP_TURNS))
-      if (!e.agentId) await refreshBand($)
+      if (!e.agentId) status = await refreshBand($)
     } catch (err) {
       $.ui.log(`usage capture skipped: ${String(err)}`)
     }
@@ -263,7 +260,7 @@ export const register: Register = on => {
         if (e.isAborted) {
           if (await read($, driverRunning)) await stopDriver($, 'driver paused')
         } else {
-          await ((await read($, driverRunning)) ? advance($) : offerDesignGate($))
+          await ((await read($, driverRunning)) ? advance($) : offerDesignGate($, status?.step))
         }
       } catch (err) {
         $.ui.log(`driver stopped: ${String(err)}`)

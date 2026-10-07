@@ -23,6 +23,8 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     step: { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '/rig:build add-login', round: 1 } as unknown,
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
+    state: null as string | null, // .sdlc/STATE.md; null reads as the settings file (no change named)
+    impactFile: true,
     standalone: false,
     noFlow: false,
     vendoredMod: false,
@@ -60,7 +62,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     value: { startedAt: 0, context: { tokens: world.contextTokens, window: 1_000_000, percent: 5 }, rateLimits: [], cost: { usd: world.costUsd } },
   }))
   // .sdlc exists; the vendored approve skill exists only in a standalone repo.
-  on('fs.exists', ($, e) => ({ value: JSON.stringify(e).includes('.sdlc/mod/') ? world.vendoredMod : !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
+  on('fs.exists', ($, e) => ({ value: JSON.stringify(e).includes('impact.json') ? world.impactFile : JSON.stringify(e).includes('.sdlc/mod/') ? world.vendoredMod : !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
   on('agent.list', () => ({ value: [{ id: 'a1', description: 'slice 1', type: 'rig:implementer', status: 'running' }] }))
   on('ui.toast', ($, e) => {
     world.toasts.push(String(e.text ?? e))
@@ -71,7 +73,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     world.prompts.push(e.text)
     return { text: e.text }
   })
-  on('fs.read', () => ({ value: world.settings }))
+  on('fs.read', ($, e) => ({ value: JSON.stringify(e).includes('STATE.md') && world.state !== null ? world.state : world.settings }))
   on('ui.log', ($, e) => {
     world.logs.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
     return { value: undefined }
@@ -210,13 +212,27 @@ describe('sdlc mod', () => {
     expect(world.runs.find(r => r.argv.includes('waive'))?.env).toEqual({ SDLC_HUMAN: '1' })
   })
 
-  test('an edit with no impact hold runs, and gets a per-edit sensor notice', async ($, on) => {
+  test('an edit whose active change has no impact.json starts no process (the settings hook checks it)', async ($, on) => {
+    const world = worldOf(on)
+    world.state = '---\nchange: add-login\n---\n# State\n'
+    world.impactFile = false
+    on('tool.call', () => ({ result: 'edited' }))
+    await $.session.start(SESSION)
+    const before = world.runs.length
+    const result = await $.tool.call({ tool: 'Edit', tool_use_id: 'tu1', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
+    expect(result.result).toBe('edited')
+    expect(world.runs.slice(before)).toEqual([])
+    expect(world.notices).toEqual([])
+  })
+
+  test('an edit with impact.json, or no change named in STATE.md, asks the script about a hold', async ($, on) => {
     const world = worldOf(on)
     on('tool.call', () => ({ result: 'edited' }))
     await $.session.start(SESSION)
-    const result = await $.tool.call({ tool: 'Edit', tool_use_id: 'tu1', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
-    expect(result.result).toBe('edited')
-    expect(world.notices).toEqual(['✓ sdlc'])
+    await $.tool.call({ tool: 'Edit', tool_use_id: 'tu1', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
+    world.state = '---\nchange: add-login\n---\n'
+    await $.tool.call({ tool: 'Edit', tool_use_id: 'tu2', file_path: '/work/src/a.ts', old_string: 'a', new_string: 'b' })
+    expect(world.runs.filter(r => r.argv.includes('impact-status')).length).toBe(2)
   })
 
   test('an impact hold with no one to ask falls through to the settings hook and approves nothing', async ($, on) => {

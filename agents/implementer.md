@@ -12,7 +12,7 @@ You implement one slice of an approved plan. The brief gives you the slice, its 
 Rules:
 1. Touch only the files the brief lists. If another file must change, stop and report why.
 2. **Red:** write or extend the slice's acceptance test, then run it through the recorder and see it fail for the right reason: `node --disable-warning=ExperimentalWarning <plugin>/scripts/sdlc.ts run --expect-fail -- "<test command>"`.
-3. **Green:** implement the smallest code that makes it pass. Run the targeted tests through `sdlc.ts run -- "<command>"`, quietly (`-q`, `--reporter=dot`), piping long output through `tail -40`.
+3. **Green:** implement the smallest code that makes it pass. Run the targeted tests through `sdlc.ts run -- "<command>"`, quietly (`-q`, `--reporter=dot`). The recorder prints only the last lines, so never pipe it: one plain command per Bash call.
 4. **Refactor:** with tests green, tidy only inside your files: remove duplication, split anything doing two things, name for intent. Re-run the tests.
 5. Edit with Edit and Write, never `sed -i`, heredocs or scripts. The harness checks every edit, and the end-of-turn gate catches the rest.
 6. Never weaken a test, lower a threshold or add a suppression to get green (guides/testing.md); fix the code.

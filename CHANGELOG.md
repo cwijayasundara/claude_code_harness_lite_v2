@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Overhead: the harness no longer slows down as history grows, and never makes the model wait on display work.
+
+- **Shipped changes are read with one `git ls-tree` of HEAD per process**, not a `git log -- <path>` per change. `status` used to run four history walks for every change ever made (fifteen for the active, unshipped one, which walks all of history to find nothing): 14 s and 507 git processes in a repo with 120 shipped changes and 3,000 commits, now 0.4 s and 13. A ship record deleted from HEAD after it was committed no longer counts as shipped.
+- **`status --json --band`** returns only what the mod draws (the active change, step, story, sensors, flow), without the per-change warnings, open items and staleness, so it never stamps the tree. The mod uses it on every turn (0.2 s, one git process).
+- **The mod's per-turn reads are lean.** Turn start and the band refresh use `--band` (0.2 s each instead of seconds that grew with every change shipped), and the design-gate check reuses the step from the band refresh instead of running `next --json`.
+- **Edits start no extra process.** The impact dialog asks the script only when the active change has an `impact.json`. The per-edit `✓ sdlc` notice is gone: it cost a node start per edit and core clears a notice as soon as the call resolves. The settings post-edit hook still checks every edit.
+- **Stop does not re-run a fast command the recorder ran green on the same tree** (a build slice's check). The tree is stamped only when a stamped green run exists.
+- The implementer no longer pipes the recorder through `tail` (the recorder prints only the last lines), so each test run is one plain command.
+
 ## 0.6.0
 
 Scale: monorepos, large repos and a cleaner view of where work stands.
