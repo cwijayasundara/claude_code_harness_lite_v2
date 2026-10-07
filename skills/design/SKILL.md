@@ -9,6 +9,8 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
+**Models:** pass `model` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` on every `rig:architect`, `rig:implementer` and `rig:reviewer` launch.
+
 **Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
 `intent.md` is written. This stage writes `design.md` and ends at the **one** human gate of a feature: the person approves intent.md and design.md together, and everything after (build, test, sensors, PR) runs on its own.
