@@ -2,7 +2,7 @@
 name: scout
 description: Cheap read-only codebase search. Use instead of reading many files yourself: finding where something lives, how a flow works, which files a change touches, conventions to follow. Returns paths with line numbers and a short answer.
 tools: Read, Grep, Glob, LSP, Bash
-model: haiku
+model: claude-haiku-5-5
 effort: low
 omitClaudeMd: true
 maxTurns: 25
