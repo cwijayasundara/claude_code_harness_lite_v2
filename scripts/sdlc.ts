@@ -19,6 +19,7 @@ import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
 import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
+import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor, installStandalone } from './vendor.ts'
@@ -81,7 +82,7 @@ function cmdInit(args: Args): void {
 
 function cmdNew(args: Args): void {
   const slug = args.pos[0]
-  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."]')
+  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N]')
   const type = optString(args, 'type') ?? 'feature'
   const tier = optString(args, 'tier') ?? 'M'
   if (!isChangeType(type)) fail(`unknown type "${type}"; one of ${Object.keys(PATHS).join(', ')}`)
@@ -89,7 +90,9 @@ function cmdNew(args: Args): void {
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
   if (!exists(SDLC)) cmdInit({ pos: [], opt: {} })
-  createChange(slug, type, tier, optString(args, 'title') ?? slug)
+  const explicit = args.opt.points !== undefined ? parsePoints(args.opt.points) : null
+  const defaults = loadConfig().config.points
+  createChange(slug, type, tier, optString(args, 'title') ?? slug, { value: explicit ?? defaults[tier], set: explicit !== null })
   const other = otherChangeBranch(slug)
   out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})${other ? `\nwarning: ${other}` : ''}`)
 }
@@ -135,14 +138,14 @@ function cmdStatus(args: Args): void {
     if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
   }
   if (json) {
-    const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, next: c.next, command: nextCommand(c) }))
+    const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
     return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
   }
   if (!changes.length) return out(`no changes yet: run ${skillRef('start')} "<what you want>"`)
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
   const rows = changes
     .sort((a, b) => (a.slug === active ? -1 : b.slug === active ? 1 : 0))
-    .map(c => `${c.slug === active ? '▶' : ' '} ${c.slug.padEnd(28)} ${c.type.padEnd(10)} ${c.tier}  ${label(c)}`)
+    .map(c => `${c.slug === active ? '▶' : ' '} ${c.slug.padEnd(28)} ${c.type.padEnd(10)} ${c.tier}  ${label(c)}  ${pointsOf(c.slug).points}pt`)
   const act = active ? loadChange(active) : null
   const st = active ? step(active) : null
   out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
@@ -336,6 +339,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   stamp: () => out(treeStamp() ?? 'none'),
   init: cmdInit,
   new: cmdNew,
+  points: cmdPoints,
   activate: cmdActivate,
   status: cmdStatus,
   next: cmdNext,

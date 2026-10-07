@@ -8,7 +8,7 @@ import { checkSlice } from './slicecheck.ts'
 import type { RatchetNode } from './model.ts'
 
 export type NodeState = { rounds: number; hashes: string[][]; status: 'open' | 'done'; tree?: string }
-export type Ratchet = { version?: number; tier?: string; type?: string; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, { cmd: string; count: string; n: number }> }; blocked?: { node: string; reason: string; at: string; kind?: BlockKind }; credits?: Partial<Record<RatchetNode, number>> }
+export type Ratchet = { version?: number; tier?: string; type?: string; points?: number; nodes: Partial<Record<RatchetNode, NodeState>>; slices: Record<string, NodeState>; baseline: { tests?: number; base?: string; quality?: Record<string, { cmd: string; count: string; n: number }> }; blocked?: { node: string; reason: string; at: string; kind?: BlockKind }; credits?: Partial<Record<RatchetNode, number>> }
 export type BlockKind = 'cap' | 'stall' | 'budget' | 'level' | 'gate' | 'other'
 export type Event = { at: string; node: string; verdict: string; round?: number; reason?: string; kind?: string; tool?: string; target?: string; usd?: number }
 export type ReviewFinding = { severity: string; category: string; text: string }

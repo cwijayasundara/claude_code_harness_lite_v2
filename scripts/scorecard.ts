@@ -4,9 +4,10 @@ import { CHANGES, USAGE, planPath, read, readJsonl, frontmatter, out, fail, chec
 import { loadChange, step } from './graph.ts'
 import { readEvents, readRatchet, rawSpendUsd } from './ratchet.ts'
 import { loadConfig } from './check.ts'
+import { pointsOf } from './points.ts'
 import type { RatchetNode } from './model.ts'
 
-export type Story = { slug: string; node: string | null; verdict: string; round: number; cap: number; tokens: number; tokensByNode: Record<string, number>; budgetByNode: Record<string, { spent: number; cap: number }>; usd: number; usdByNode: Record<string, number>; valueUsd: number; valueHours: number; autoApproved: number; escalations: number; levels: string; sensors: string }
+export type Story = { slug: string; node: string | null; verdict: string; round: number; cap: number; tokens: number; tokensByNode: Record<string, number>; budgetByNode: Record<string, { spent: number; cap: number }>; usd: number; usdByNode: Record<string, number>; valueUsd: number; valueHours: number; autoApproved: number; escalations: number; levels: string; sensors: string; points: number; pointsSource: string }
 
 const tokensOf = (r: UsageRow): number => (r.in ?? 0) + (r.out ?? 0) + (r.cr ?? 0) + (r.cw ?? 0)
 
@@ -43,6 +44,7 @@ export function story(slug: string): Story {
     autoApproved: events.filter(e => e.kind === 'auto-approve').length, escalations: events.filter(e => e.verdict === 'blocked').length,
     levels: frontmatter(read(path.join(CHANGES, slug, 'verification.md'))).data.levels ?? '',
     sensors: r.nodes.sensors?.status === 'done' ? 'pass' : r.nodes.sensors ? 'open' : 'not run',
+    points: pointsOf(slug).points, pointsSource: pointsOf(slug).source,
   }
 }
 
@@ -61,6 +63,7 @@ export function renderScorecard(slug: string): string {
     `| Fix rounds per slice | ${slices} |`,
     `| Test levels | ${s.levels || 'none recorded'} |`,
     `| Sensors | ${s.sensors} |`,
+    `| Story points | ${s.points} (${s.pointsSource}) |`,
     `| Auto-approved tool calls | ${s.autoApproved} |`,
     `| Budget | ${Object.entries(s.budgetByNode).map(([n, b]) => `${n} ${money(b.spent)}/$${b.cap}`).join(', ') || 'none'} |`,
     `| Escalations | ${s.escalations} |`,
