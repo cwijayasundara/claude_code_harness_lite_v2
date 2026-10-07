@@ -27,20 +27,25 @@ function writeFile(rel: string, text: string, written: string[]): void {
   written.push(rel)
 }
 
-// The plugin's settings hooks, pointed at the project copy and merged into .claude/settings.json. A re-run replaces
-// the previous sdlc entries; the project's own hooks and other settings are kept.
+// The plugin's settings hooks, pointed at the project copy and merged into .claude/settings.json. A re-run removes
+// every previous sdlc entry, in any event (so hooks a newer version retired go too); the project's own hooks are kept.
 function mergeHooks(written: string[]): void {
   const plugin = JSON.parse(read(path.join(PLUGIN_ROOT, 'hooks', 'hooks.json'))) as { hooks: Record<string, HookGroup[]> }
   const file = path.join(ROOT, '.claude', 'settings.json')
   const settings = (read(file) ? JSON.parse(read(file)) : {}) as { hooks?: Record<string, HookGroup[]>; extraKnownMarketplaces?: object; enabledPlugins?: Record<string, boolean> }
   const hooks = settings.hooks ?? {}
   const ours = (g: HookGroup): boolean => g.hooks.some(h => h.command.includes(SDLC_HOOK))
+  for (const [event, groups] of Object.entries(hooks)) {
+    const kept = groups.filter(g => !ours(g))
+    if (kept.length) hooks[event] = kept
+    else delete hooks[event]
+  }
   for (const [event, groups] of Object.entries(plugin.hooks)) {
     const copied = groups.map(g => ({
       ...g,
       hooks: g.hooks.map(h => ({ ...h, command: h.command.replace('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', `$CLAUDE_PROJECT_DIR/${SDLC_HOOK}`) })),
     }))
-    hooks[event] = [...(hooks[event] ?? []).filter(g => !ours(g)), ...copied]
+    hooks[event] = [...(hooks[event] ?? []), ...copied]
   }
   const merged = {
     ...settings, hooks,

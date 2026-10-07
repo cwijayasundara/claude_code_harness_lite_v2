@@ -12,7 +12,14 @@
     "ask": [
       "Edit(/.sdlc/sensors.json)",
       "Edit(/.sdlc/rules.json)",
-      "Edit(/.claude/settings.json)"
+      "Edit(/.claude/settings.json)",
+      "Edit(/.sdlc/bin/**)",
+      "Edit(/.sdlc/githooks/**)",
+      "Edit(/.sdlc/mod/**)",
+      "Edit(/.sdlc/guides/**)",
+      "Edit(/.github/workflows/rig-check.yml)",
+      "Edit(/CODEOWNERS)",
+      "Edit(/.github/CODEOWNERS)"
     ],
     "deny": [
       "Read(.env)",

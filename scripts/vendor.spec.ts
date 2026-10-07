@@ -187,7 +187,13 @@ test('the settings template protects evidence with deny rules and the harness co
   for (const f of ['approvals.jsonl', 'waivers.jsonl', 'usage.jsonl', '.gate', '.baseline', 'unresolved.json']) assert.ok(deny.has(`Edit(/.sdlc/${f})`), f)
   for (const f of ['runs.jsonl', 'verification.md', 'impact.json', 'ratchet.json', 'events.jsonl', 'pr.md', 'ship.json']) assert.ok(deny.has(`Edit(/.sdlc/changes/*/${f})`), f)
   assert.ok(deny.has('Read(.env)') && deny.has('Edit(.env)'), 'the .env rules stay')
-  assert.deepEqual(settings.permissions.ask, ['Edit(/.sdlc/sensors.json)', 'Edit(/.sdlc/rules.json)', 'Edit(/.claude/settings.json)'])
+  assert.deepEqual(settings.permissions.ask, [
+    'Edit(/.sdlc/sensors.json)', 'Edit(/.sdlc/rules.json)', 'Edit(/.claude/settings.json)',
+    'Edit(/.sdlc/bin/**)', 'Edit(/.sdlc/githooks/**)', 'Edit(/.sdlc/mod/**)', 'Edit(/.sdlc/guides/**)',
+    'Edit(/.github/workflows/rig-check.yml)', 'Edit(/CODEOWNERS)', 'Edit(/.github/CODEOWNERS)',
+  ])
+  assert.ok(settings.permissions.ask.includes('Edit(/.sdlc/bin/**)'), 'a model edit to the vendored checker (.sdlc/bin/sensors.ts) asks the person')
+  assert.ok(!settings.permissions.ask.some(r => /CLAUDE\.md/.test(r)), 'unattended init writes CLAUDE.md, so it never asks')
   assert.ok(settings.permissions.allow.includes('Edit(.sdlc/**)'), 'plans and intents stay editable')
 })
 
@@ -198,4 +204,33 @@ test('init --full merges the evidence rules into an existing settings file witho
   const merged = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
   assert.ok(merged.permissions.deny.includes('Bash(rm -rf *)'))
   assert.ok(merged.permissions.deny.includes('Edit(/.sdlc/approvals.jsonl)'))
+})
+
+test('re-vendoring over an older standalone install drops the retired sdlc hooks and keeps the project\'s own', () => {
+  const repo = makeRepo()
+  const cmd = (name: string) => `node --disable-warning=ExperimentalWarning "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hook ${name}`
+  const group = (name: string, matcher?: string) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command: cmd(name), timeout: 10 }] })
+  write(repo, '.claude/settings.json', JSON.stringify({
+    hooks: {
+      PreToolUse: [group('pre-bash', 'Bash'), group('pre-edit', 'Write|Edit|MultiEdit|NotebookEdit'), { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] }],
+      SubagentStart: [group('subagent-start')],
+      SubagentStop: [group('subagent-stop')],
+      Stop: [group('stop')],
+    },
+  }))
+  assert.equal(sdlc(repo, ['init']).code, 0)
+  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
+  const file = path.join(repo, '.claude/settings.json')
+  const once = fs.readFileSync(file, 'utf8')
+  const hooks = JSON.parse(once).hooks as Record<string, { matcher?: string; hooks: { command: string }[] }[]>
+  const commands = Object.values(hooks).flat().flatMap(g => g.hooks.map(h => h.command))
+  for (const gone of ['pre-bash', 'pre-edit', 'subagent-start', 'subagent-stop']) assert.ok(!commands.some(c => c.endsWith(`hook ${gone}`)), gone)
+  assert.deepEqual(hooks.PreToolUse, [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] }], 'the project\'s own hook is kept untouched')
+  assert.equal(hooks.SubagentStart, undefined)
+  assert.equal(hooks.SubagentStop, undefined)
+  for (const [event, name] of [['UserPromptSubmit', 'prompt-submit'], ['Stop', 'stop'], ['SessionStart', 'session-start'], ['PostToolUse', 'post-edit'], ['PostToolUseFailure', 'skill-failed']]) {
+    assert.equal(hooks[event as string]?.filter(g => g.hooks.some(h => h.command.endsWith(`hook ${name}`))).length, 1, `${event} registered once`)
+  }
+  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
+  assert.equal(fs.readFileSync(file, 'utf8'), once, 're-vendoring again changes nothing')
 })
