@@ -81,7 +81,7 @@ test('the affected command is read in full from stdout: 60 names survive stderr 
   const scopes = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`s${i}/**`, { name: `s${i}`, root: `s${i}` }]))
   const script = 'for(let i=0;i<60;i++){console.log("s"+i);console.error("noise "+i)}'
   const c = parseConfig(JSON.stringify({ scopes, affected: `node -e '${script}'` })).config
-  assert.equal(extraScopes(c).length, 60)
+  assert.equal(extraScopes(c)?.length, 60)
 })
 
 test('a scope losing, emptying or changing a command, or moving its root, is a weakening edit', () => {
@@ -119,4 +119,13 @@ test('backticks in a warning cannot close the step summary fence', () => {
   assert.match(text, /loose\/a/)
   assert.equal(text.split('\n').filter(l => l.startsWith('```')).length % 2, 0, text)
   assert.doesNotMatch(text.split('\n').filter(l => !/^```\s*$/.test(l)).join('\n'), /`/, text)
+})
+
+test('a failing or timed-out affected command fails closed: null, and every declared scope is affected', () => {
+  const failing = cfg({ affected: 'node -e "process.exit(1)"' })
+  assert.equal(extraScopes(failing), null)
+  assert.deepEqual(selectScopes(['packages/web/x.ts'], failing, extraScopes(failing)), { touched: ['web'], affected: ['api', 'gen', 'shared', 'tools', 'web'], unscoped: [] })
+  const slow = cfg({ affected: 'node -e "setTimeout(() => console.log(\'tools\'), 5000)"' })
+  assert.equal(extraScopes(slow, 300), null)
+  assert.deepEqual(extraScopes(cfg()), [], 'no affected command declared')
 })

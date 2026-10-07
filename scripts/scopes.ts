@@ -13,7 +13,8 @@ export function scopeOf(file: string, config: SensorConfig): string | null {
 
 const nameOf = (config: SensorConfig, glob: string): string => config.scopes[glob]?.name ?? glob
 
-export function selectScopes(files: string[], config: SensorConfig, extra: string[] = []): { touched: string[]; affected: string[]; unscoped: string[] } {
+// extra === null means the `affected` command failed: fail closed, every declared scope is affected.
+export function selectScopes(files: string[], config: SensorConfig, extra: string[] | null = []): { touched: string[]; affected: string[]; unscoped: string[] } {
   const touchedGlobs = new Set<string>()
   const unscoped: string[] = []
   for (const f of files) {
@@ -30,7 +31,7 @@ export function selectScopes(files: string[], config: SensorConfig, extra: strin
     }
   }
   const byName = new Set(Object.values(config.scopes).map(s => s.name))
-  const names = new Set([...[...affected].map(g => nameOf(config, g)), ...extra.filter(n => byName.has(n))])
+  const names = extra === null ? byName : new Set([...[...affected].map(g => nameOf(config, g)), ...extra.filter(n => byName.has(n))])
   return { touched: [...touchedGlobs].map(g => nameOf(config, g)).sort(), affected: [...names].sort(), unscoped }
 }
 
@@ -45,12 +46,13 @@ export function closureRoots(config: SensorConfig, names: string[]): string[] {
 }
 
 // The optional `affected` command (turbo, nx, pnpm -r ...) prints scope names, one per line; names that are not declared are ignored.
-export function extraScopes(config: SensorConfig): string[] {
+// null: it was declared but failed or timed out, so the caller must treat every scope as affected.
+export function extraScopes(config: SensorConfig, timeoutMs = 60_000): string[] | null {
   if (!config.affected.trim()) return []
   // The whole stdout, not the run row's 30-line tail of stdout+stderr: a long list must not lose its first names.
   let stdout = ''
-  const row = runCommand(config.affected, { cwd: ROOT, timeoutMs: 60_000, stdout: t => { stdout = t } })
-  if (row.exit !== 0) return []
+  const row = runCommand(config.affected, { cwd: ROOT, timeoutMs, stdout: t => { stdout = t } })
+  if (row.exit !== 0 || row.timedOut) return null
   const known = new Set(Object.values(config.scopes).map(s => s.name))
   return stdout.split('\n').map(l => l.trim()).filter(l => known.has(l))
 }
