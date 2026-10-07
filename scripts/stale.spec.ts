@@ -2,6 +2,7 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 import { sliceFiles } from './slices.ts'
@@ -65,4 +66,45 @@ test('approving a design is refused while intent.md has an open question', () =>
   const r = sdlc(repo, ['approve', 'feat', 'design'], { env: { SDLC_HUMAN: '1' } })
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /resolve the open question\(s\) in feat\/intent\.md/)
+})
+
+test('a shipped change is never stale; the same data on an unshipped one is', () => {
+  const data = (slug: string): void => {
+    write(repo, `.sdlc/changes/${slug}/intent.md`, '# i\n')
+    write(repo, `.sdlc/changes/${slug}/design.md`, '## Files\n- a\n')
+    write(repo, `.sdlc/changes/${slug}/verification.md`, '---\nresult: pass\ngenerated: sdlc\nruns: 1\ndigest: x\ntree: 0123456789abcdef\n---\n')
+    touch(`.sdlc/changes/${slug}/design.md`, 200)
+    touch(`.sdlc/changes/${slug}/intent.md`, 100)
+  }
+  data('old'); data('live')
+  write(repo, '.sdlc/changes/old/ship.json', '{}\n')
+  gitIn(repo, 'add', '.sdlc/changes/old/ship.json'); gitIn(repo, 'commit', '-qm', 'ship old')
+  const stale = status().stale as string[]
+  assert.ok(stale.some(s => s.startsWith('live: ')), stale.join('|'))
+  assert.ok(!stale.some(s => s.startsWith('old: ')), stale.join('|'))
+})
+
+test('three unshipped changes with stamped verifications are all flagged', () => {
+  for (const s of ['bb', 'cc']) sdlc(repo, ['new', s, '--type', 'feature', '--tier', 'M'])
+  for (const s of ['feat', 'bb', 'cc']) write(repo, `.sdlc/changes/${s}/verification.md`, '---\nresult: pass\ngenerated: sdlc\nruns: 1\ndigest: x\ntree: 0123456789abcdef\n---\n')
+  const stale = status().stale as string[]
+  for (const s of ['feat', 'bb', 'cc']) assert.ok(stale.some(x => x.startsWith(`${s}: verification.md was made`)), stale.join('|'))
+})
+
+test('staleness uses a passed tree stamp instead of computing one', () => {
+  write(repo, '.sdlc/changes/feat/verification.md', '---\nresult: pass\ngenerated: sdlc\nruns: 1\ndigest: x\ntree: abc\n---\n')
+  const run = (tree: string): string => execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', '-e',
+    `import('${path.resolve(import.meta.dirname, 'stale.ts')}').then(m => console.log(JSON.stringify(m.staleness('feat', '${tree}'))))`], { cwd: repo, encoding: 'utf8', env: { ...process.env, SDLC_ROOT: repo } }).trim()
+  assert.deepEqual(JSON.parse(run('abc')), [])
+  assert.match(run('zzz'), /verification\.md was made on a different tree/)
+})
+
+test('sliceFiles reads bulleted Files lists, merges inline ones, and stops at a non-bullet', () => {
+  const plan = '### Task 1: a\n**Files:**\n- `a.ts` (new)\n* `b.ts`\n\n- `not.ts`\n### Task 2: b\nFiles: `x.ts`\n- `y.ts`\n### Task 3: c\nFiles:\nSome paragraph with `z.ts`.\n'
+  assert.deepEqual(sliceFiles(plan), { '1': ['a.ts', 'b.ts'], '2': ['x.ts', 'y.ts'], '3': [] })
+})
+
+test('a six-bullet slice gets the warning', () => {
+  write(repo, '.sdlc/changes/feat/plan.md', '## Files\n- a\n## Slices\n### Task 1: big\nFiles:\n' + 'abcdef'.split('').map(c => `- \`${c}.ts\`\n`).join(''))
+  assert.match(sdlc(repo, ['status']).stdout, /warn: feat: slice 1 lists 6 files/)
 })

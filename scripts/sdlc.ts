@@ -32,7 +32,7 @@ import { cmdShards } from './shards.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { normCmd } from './runs.ts'
 import { treeStamp } from './stamp.ts'
-import { staleness, openItems, sliceWarnings } from './stale.ts'
+import { stalenessAll, openItems, sliceWarnings } from './stale.ts'
 
 // ---------- commands ----------
 
@@ -141,7 +141,7 @@ function cmdStatus(args: Args): void {
     if (stacked) warnings.push(stacked)
     if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
   }
-  const stale = changes.flatMap(c => staleness(c.slug))
+  const stale = stalenessAll(changes.map(c => c.slug))
   const open = changes.flatMap(c => openItems(c.slug))
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
