@@ -4,8 +4,9 @@ import { parseConfig } from './model.ts'
 import { tierFromDiff, weakensConfig } from './sensors.ts'
 import { scopeOf, selectScopes, closureRoots, extraScopes } from './scopes.ts'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
+import { makeRepo, sdlc, write, gitIn, hook } from './testkit.ts'
 
 const cfg = (extra: object = {}) => parseConfig(JSON.stringify({ scopes: {
   'packages/shared/**': { name: 'shared', root: 'packages/shared' },
@@ -128,4 +129,112 @@ test('a failing or timed-out affected command fails closed: null, and every decl
   const slow = cfg({ affected: 'node -e "setTimeout(() => console.log(\'tools\'), 5000)"' })
   assert.equal(extraScopes(slow, 300), null)
   assert.deepEqual(extraScopes(cfg()), [], 'no affected command declared')
+})
+
+const mark = (name: string): { file: string; cmd: string } => {
+  const file = path.join(os.tmpdir(), `rig-scope-${process.pid}-${name}-${Math.random().toString(36).slice(2)}.txt`)
+  return { file, cmd: `node -e "require('fs').appendFileSync('${file}','x')"` }
+}
+const ran = (m: { file: string }): number => (fs.existsSync(m.file) ? fs.readFileSync(m.file, 'utf8').length : 0)
+
+function monorepo(extra: object = {}) {
+  const root = mark('root'), api = mark('api'), web = mark('web'), shared = mark('shared')
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({
+    fast: { root: root.cmd },
+    scopes: {
+      'packages/shared/**': { name: 'shared', root: 'packages/shared', fast: { t: shared.cmd } },
+      'packages/api/**': { name: 'api', root: 'packages/api', fast: { t: api.cmd }, deps: ['packages/shared/**'] },
+      'packages/web/**': { name: 'web', root: 'packages/web', fast: { t: web.cmd } },
+    },
+    ...extra,
+  }))
+  for (const p of ['shared', 'api', 'web']) write(repo, `packages/${p}/index.js`, 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  return { repo, root, api, web, shared }
+}
+const stopAfterEdit = (repo: string, rel: string) => {
+  hook(repo, 'prompt-submit', {})
+  write(repo, rel, 'export const x = 1\n')
+  return hook(repo, 'stop', { session_id: 's' })
+}
+
+test('Stop runs only the fast commands of the scopes the turn touched, and their dependents', () => {
+  const { repo, root, api, web, shared } = monorepo()
+  stopAfterEdit(repo, 'packages/shared/new.js')
+  assert.deepEqual([ran(shared), ran(api), ran(web), ran(root)], [1, 1, 0, 0], 'shared and its dependent api; not web; not the root fallback')
+})
+
+test('a changed file outside every scope runs the top-level commands too', () => {
+  const { repo, root, api, web, shared } = monorepo()
+  stopAfterEdit(repo, 'loose.js')
+  assert.deepEqual([ran(root), ran(api), ran(web), ran(shared)], [1, 0, 0, 0])
+})
+
+test('a failing affected command fails closed: every scope runs, with a warning', () => {
+  const { repo, root, api, web, shared } = monorepo({ affected: 'node -e "process.exit(3)"' })
+  const res = stopAfterEdit(repo, 'packages/web/new.js')
+  assert.deepEqual([ran(shared), ran(api), ran(web), ran(root)], [1, 1, 1, 0])
+  assert.match(res.stdout + res.stderr, /affected command failed, so every scope ran/)
+})
+
+test('scoped commands run in the scope root', () => {
+  const repo = makeRepo()
+  const out = path.join(os.tmpdir(), `rig-cwd-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: `node -e "require('fs').writeFileSync('${out}', process.cwd())"` } } } }))
+  write(repo, 'pkg/a.js', 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  stopAfterEdit(repo, 'pkg/b.js')
+  assert.equal(fs.realpathSync(fs.readFileSync(out, 'utf8')), fs.realpathSync(path.join(repo, 'pkg')))
+})
+
+test('a scoped failure is reported with the scope in its key', () => {
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: 'node -e "process.exit(1)"' } } } }))
+  write(repo, 'pkg/a.js', 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  const out = JSON.parse(stopAfterEdit(repo, 'pkg/b.js').stdout)
+  assert.match(out.reason, /pkg:fast\.t failed/)
+})
+
+test('CI runs the selected scopes from the diff, and everything with ci.scope all', () => {
+  for (const [ciScope, expected] of [['affected', [1, 0]], ['all', [1, 1]]] as const) {
+    const api = mark('api'), web = mark('web')
+    const repo = makeRepo()
+    write(repo, '.sdlc/sensors.json', JSON.stringify({
+      ci: { scope: ciScope },
+      full: {},
+      scopes: { 'api/**': { name: 'api', root: 'api', full: { t: api.cmd } }, 'web/**': { name: 'web', root: 'web', full: { t: web.cmd } } },
+    }))
+    write(repo, 'web/index.js', 'export {}\n')
+    gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+    gitIn(repo, 'checkout', '-qb', 'feature')
+    write(repo, 'api/a.js', 'export {}\n')
+    gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'api change')
+    sdlc(repo, ['check', '--at', 'ci', '--base', 'main'])
+    assert.deepEqual([ran(api), ran(web)], expected, ciScope)
+  }
+})
+
+test('verify runs the full commands of the scopes the branch touches, once each', () => {
+  const m = mark('full')
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { t: 'node -e "process.exit(0)"' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: m.cmd } }, 'other/**': { name: 'other', root: 'other', full: { t: m.cmd.replace(/x'/, 'y\'') } } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'sdlc/vf')
+  sdlc(repo, ['new', 'vf', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/vf/plan.md', '## Files\n- pkg/a.js\n## Verification\n- `node -e "process.exit(0)"`\n')
+  write(repo, 'pkg/a.js', 'export {}\n')
+  sdlc(repo, ['verify', 'vf'])
+  assert.equal(ran(m), 1)
+})
+
+test('a scope whose root is not a directory blocks instead of running its command elsewhere', () => {
+  const m = mark('ghost')
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'nowhere', fast: { t: m.cmd } } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
+  const out = JSON.parse(stopAfterEdit(repo, 'pkg/b.js').stdout)
+  assert.match(out.reason, /pkg:fast\.t not run: its scope root nowhere is not a directory/)
+  assert.equal(ran(m), 0)
 })

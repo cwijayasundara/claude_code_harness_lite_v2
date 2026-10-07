@@ -56,3 +56,19 @@ export function extraScopes(config: SensorConfig, timeoutMs = 60_000): string[] 
   const known = new Set(Object.values(config.scopes).map(s => s.name))
   return stdout.split('\n').map(l => l.trim()).filter(l => known.has(l))
 }
+
+export type PlannedCommand = { key: string; cmd: string; cwd?: string }
+
+// The commands to run for a set of changed files. No files, or no scopes: the top-level commands, as before. With scopes: each
+// affected scope's commands in its root, plus the top-level ones when a changed file is unscoped. extra === null fails closed.
+export function scopeCommands(prefix: 'fast' | 'full', config: SensorConfig, files: string[] | 'all' | undefined, extra: string[] | null = []): PlannedCommand[] {
+  const root: PlannedCommand[] = Object.entries(config[prefix]).map(([name, cmd]) => ({ key: `${prefix}.${name}`, cmd }))
+  if (files === undefined || !Object.keys(config.scopes).length) return root
+  const sel = files === 'all' ? null : selectScopes(files, config, extra)
+  const out: PlannedCommand[] = !sel || sel.unscoped.length ? [...root] : []
+  for (const s of Object.values(config.scopes)) {
+    if (sel && !sel.affected.includes(s.name)) continue
+    for (const [name, cmd] of Object.entries(s[prefix] ?? {})) out.push({ key: `${s.name}:${prefix}.${name}`, cmd, cwd: s.root })
+  }
+  return out
+}

@@ -9,8 +9,8 @@ import {
 import { parseConfig, parseRules, formatFindings, warnLines, matchesAny, isTest, isSource, type FileDiff, type Finding, type Rule, type SensorConfig } from './model.ts'
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
-import { runCommand, recordRun } from './runs.ts'
-import { selectScopes } from './scopes.ts'
+import { runCommand, recordRun, normCmd } from './runs.ts'
+import { selectScopes, scopeCommands, extraScopes } from './scopes.ts'
 import { withBaseTree } from './basetree.ts'
 import { loadChange, activeSlug } from './graph.ts'
 
@@ -53,18 +53,25 @@ function ratchet(cleared: string[]): void {
   fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n')
 }
 
-export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug: string | null, budgetMs: number, allowRatchet = false): Finding[] {
+// files: the changed source files select the scopes whose commands run; 'all' runs every scope's; undefined only the top-level ones.
+export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug: string | null, budgetMs: number, allowRatchet = false, files?: string[] | 'all', skip?: Set<string>): Finding[] {
   const findings: Finding[] = []
   const cleared: string[] = []
   let left = budgetMs
-  for (const [name, cmd] of Object.entries(config[prefix])) {
-    const key = `${prefix}.${name}`
+  const extra = Array.isArray(files) && Object.keys(config.scopes).length ? extraScopes(config) : []
+  if (extra === null) findings.push({ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .sdlc/sensors.json and fix it' })
+  for (const { key, cmd, cwd } of scopeCommands(prefix, config, files, extra)) {
+    if (!cwd && skip?.has(normCmd(cmd))) continue // a scoped command runs in its root: a same-text run at the repo root is not it
     const known = config.knownRed.includes(key)
+    if (cwd && !fs.statSync(path.join(ROOT, cwd), { throwIfNoEntry: false })?.isDirectory()) {
+      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: its scope root ${cwd} is not a directory`, fix: `fix the scope's root in .sdlc/sensors.json` })
+      continue
+    }
     if (left <= 0) {
       findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: the ${Math.round(budgetMs / 1000)} s budget ran out`, fix: `make the ${prefix} commands in .sdlc/sensors.json faster` })
       continue
     }
-    const row = runCommand(cmd, { timeoutMs: left })
+    const row = runCommand(cmd, { timeoutMs: left, cwd: cwd ? path.join(ROOT, cwd) : undefined })
     left -= row.ms
     if (slug) recordRun(slug, { ...row, source: prefix === 'fast' ? 'gate' : 'ship' })
     if (row.exit === 0) {
@@ -306,7 +313,7 @@ export function runChecks(i: CheckInput): CheckResult {
     const unscoped = selectScopes(diffs.filter(d => isSource(d.file, config)).map(d => d.file), config).unscoped
     if (unscoped.length) findings.push({ sensor: 'unscoped', severity: 'warn', message: `${unscoped.length} changed file(s) match no scope, so the top-level commands run for them: ${unscoped.slice(0, 5).join(', ')}`, fix: 'add a scope glob that covers them in .sdlc/sensors.json scopes' })
   }
-  if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
+  if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci', i.point === 'ci' && config.ci.scope === 'all' ? 'all' : diffs.map(d => d.file).filter(f => isSource(f, config))))
   const result = applyWaivers(findings, i.slugs, i.point === 'ci' ? { base: i.base } : undefined)
   logRuleFires(result.findings, i.point)
   return result
