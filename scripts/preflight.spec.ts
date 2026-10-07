@@ -5,8 +5,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
-import { parseVersion, satisfies, requirements, hostVersion } from './toolchain.ts'
-import { resolveCommand, httpsFallback, checkRemote, parseAnswers } from './preflight.ts'
+import { parseVersion, satisfies, requirements, hostVersion, realRunner } from './toolchain.ts'
+import { resolveCommand, httpsFallback, checkRemote, parseAnswers, runPreflight, sshEnv } from './preflight.ts'
 
 const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'rig-pf-'))
 
@@ -23,11 +23,35 @@ test('versions parse the way each tool prints them', () => {
 })
 
 test('host versions come from the version the tool names, not the first number it prints', () => {
-  const java = hostVersion('java', () => 'Picked up JAVA_TOOL_OPTIONS: -Xmx512m\nopenjdk version "21.0.2" 2024-01-16\n')
+  const java = hostVersion('java', () => 'Picked up JAVA_TOOL_OPTIONS: -Xmx512m\nopenjdk version "21.0.2" 2024-01-16\n', '.')
   assert.deepEqual(java, { major: 21, minor: 0 })
-  assert.deepEqual(hostVersion('go', () => 'go version go1.22.3 darwin/arm64\n'), { major: 1, minor: 22 })
-  assert.deepEqual(hostVersion('python', () => 'Python 3.11.4\n'), { major: 3, minor: 11 })
-  assert.equal(hostVersion('go', () => null), null, 'a tool that is not installed has no version')
+  assert.deepEqual(hostVersion('go', () => 'go version go1.22.3 darwin/arm64\n', '.'), { major: 1, minor: 22 })
+  assert.deepEqual(hostVersion('python', () => 'Python 3.11.4\n', '.'), { major: 3, minor: 11 })
+  assert.equal(hostVersion('go', () => null, '.'), null, 'a tool that is not installed has no version')
+})
+
+test('host probes run in the project root with GOTOOLCHAIN=local, so go never switches to a go.mod toolchain', () => {
+  const bin = tmp()
+  const root = tmp()
+  fs.writeFileSync(path.join(bin, 'go'), '#!/bin/sh\necho "go version go1.22.0 toolchain=$GOTOOLCHAIN"\npwd\n', { mode: 0o755 })
+  const saved = process.env.PATH
+  process.env.PATH = `${bin}${path.delimiter}${saved}`
+  try {
+    const text = realRunner('go', ['version'], root) ?? ''
+    assert.match(text, /toolchain=local/)
+    if (process.platform !== 'win32') assert.equal(fs.realpathSync(text.trim().split('\n').at(-1) ?? ''), fs.realpathSync(root))
+  } finally { process.env.PATH = saved }
+  const cwds: string[] = []
+  fs.writeFileSync(path.join(root, 'go.mod'), 'module x\n\ngo 1.22\n')
+  runPreflight({ root, run: (_c, _a, cwd) => { cwds.push(cwd); return 'go version go1.22.0' }, reach: () => false, answers: {} })
+  assert.deepEqual(cwds, [root], 'the probe gets the project root, not process.cwd()')
+})
+
+test('the SSH probe keeps the user\'s own ssh command and only adds BatchMode', () => {
+  assert.equal(sshEnv({}, null).GIT_SSH_COMMAND, 'ssh -o BatchMode=yes')
+  assert.equal(sshEnv({}, 'ssh -i ~/.ssh/work').GIT_SSH_COMMAND, 'ssh -i ~/.ssh/work -o BatchMode=yes')
+  assert.equal(sshEnv({ GIT_SSH_COMMAND: 'ssh -i k' }, 'ssh -i other').GIT_SSH_COMMAND, 'ssh -i k', 'an explicit env command is left alone')
+  assert.equal(sshEnv({ GIT_SSH: '/usr/bin/plink' }, null).GIT_SSH_COMMAND, undefined, 'GIT_SSH is not overridden')
 })
 
 test('Maven: the java version comes from the effective parent chain, not from another manifest', () => {
@@ -152,6 +176,13 @@ test('bad answers are refused before anything is written', () => {
 test('the protection check wants the evidence deny rules in .claude/settings.json', () => {
   assert.match(sdlc(repo, ['preflight']).stdout, /protection \| fail/)
   sdlc(repo, ['init', '--full'])
+  assert.match(sdlc(repo, ['preflight']).stdout, /protection \| pass/)
+})
+
+test('pre-v0.6.0 settings (approvals denied, PREFLIGHT.md not) fail protection; both rules pass', () => {
+  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Edit(/.sdlc/approvals.jsonl)'] } }))
+  assert.match(sdlc(repo, ['preflight']).stdout, /protection \| fail/)
+  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Edit(/.sdlc/approvals.jsonl)', 'Edit(/.sdlc/PREFLIGHT.md)'] } }))
   assert.match(sdlc(repo, ['preflight']).stdout, /protection \| pass/)
 })
 

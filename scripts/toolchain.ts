@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process'
 export type Tool = 'node' | 'java' | 'go' | 'python'
 export type Requirement = { tool: Tool; required: string; source: string }
 export type Version = { major: number; minor: number }
-export type Runner = (cmd: string, args: string[]) => string | null
+export type Runner = (cmd: string, args: string[], cwd: string) => string | null
 
 export function parseVersion(text: string, tool = ''): Version | null {
   const m = /(\d+)(?:\.(\d+))?/.exec(text)
@@ -74,13 +74,14 @@ export function requirements(root: string): Requirement[] {
   return out.filter(r => typeof r.required === 'string')
 }
 
-// No shell, a timeout and an output cap. Only absolute PATH entries are searched, so a repo can never supply the binary; on Windows the
-// working directory is the temp dir because the executable search there tries the current directory first.
-export const realRunner: Runner = (cmd, args) => {
+// No shell, a timeout and an output cap, run in the project root (version managers read its version files). Only absolute PATH entries
+// are searched, so a repo can never supply the binary; on Windows the working directory is the temp dir because the executable search
+// there tries the current directory first. GOTOOLCHAIN=local: go measures the host's own go and never downloads one go.mod selects.
+export const realRunner: Runner = (cmd, args, cwd) => {
   const PATH = (process.env.PATH ?? '').split(path.delimiter).filter(d => path.isAbsolute(d)).join(path.delimiter)
   const r = spawnSync(cmd, args, {
     encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PATH }, ...(process.platform === 'win32' ? { cwd: os.tmpdir() } : {}),
+    env: { ...process.env, PATH, GOTOOLCHAIN: 'local' }, cwd: process.platform === 'win32' ? os.tmpdir() : cwd,
   })
   return r.error ? null : `${r.stdout}${r.stderr}`
 }
@@ -88,9 +89,9 @@ export const realRunner: Runner = (cmd, args) => {
 // The version the tool names (java -version may print "Picked up JAVA_TOOL_OPTIONS ..." first), else the first number after any prefix.
 const NAMED: Record<Exclude<Tool, 'node'>, RegExp> = { java: /version "([^"]+)"/, go: /\bgo(\d+\.\d+)/, python: /Python (\d+\.\d+)/ }
 
-export function hostVersion(tool: Tool, run: Runner): Version | null {
+export function hostVersion(tool: Tool, run: Runner, root: string): Version | null {
   if (tool === 'node') return parseVersion(process.versions.node)
-  const text = tool === 'java' ? run('java', ['-version']) : tool === 'go' ? run('go', ['version']) : run('python3', ['--version'])
+  const text = tool === 'java' ? run('java', ['-version'], root) : tool === 'go' ? run('go', ['version'], root) : run('python3', ['--version'], root)
   if (!text) return null
   const named = NAMED[tool].exec(text)?.[1]
   return parseVersion(named ?? text.replace(/^[^\d]*/, ''), tool)

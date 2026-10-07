@@ -85,10 +85,17 @@ export function checkRemote(url: string | null, reach: (u: string) => boolean): 
   return { id: 'remote', status: 'fail', line: `origin ${shown} is not reachable`, fix: 'check your network and credentials, then rerun preflight' }
 }
 
+// SSH in batch mode without losing the user's own ssh setup: an explicit GIT_SSH_COMMAND or GIT_SSH is left alone; a configured
+// core.sshCommand is carried into the env var (which git prefers over it) with BatchMode appended.
+export function sshEnv(env: NodeJS.ProcessEnv, coreSshCommand: string | null): NodeJS.ProcessEnv {
+  if (env.GIT_SSH_COMMAND || env.GIT_SSH) return { ...env }
+  return { ...env, GIT_SSH_COMMAND: `${coreSshCommand || 'ssh'} -o BatchMode=yes` }
+}
+
 // One bounded, prompt-free probe: no shell, `--` before the URL, SSH in batch mode, the ext transport off.
 const reachReal = (u: string): boolean => spawnSync('git', ['-c', 'protocol.ext.allow=never', 'ls-remote', '--heads', '--', u], {
   cwd: ROOT, timeout: 10_000, stdio: 'ignore',
-  env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' },
+  env: { ...sshEnv(process.env, git(['config', 'core.sshCommand'])), GIT_TERMINAL_PROMPT: '0' },
 }).status === 0
 
 type Opts = { root: string; run: Runner; reach: (u: string) => boolean; answers: Record<string, string> }
@@ -105,7 +112,7 @@ function toolchain(o: Opts): Check {
     const need = parseVersion(primary?.required ?? '', tool)
     if (!primary || !need) continue
     const want = SAFE.test(primary.required) || /^[<>=~^\d. ]+$/.test(primary.required) ? primary.required : `${need.major}.${need.minor}`
-    const host = hostVersion(tool, o.run)
+    const host = hostVersion(tool, o.run, o.root)
     if (!host) { status = 'fail'; lines.push(`${tool} is not installed (${primary.source} requires ${primary.required})`); fix = `install ${tool} ${want}`; continue }
     if (!satisfies(host, need, tool)) { status = 'fail'; lines.push(`${tool} ${host.major} is older than the ${primary.required} ${primary.source} requires`); fix = `install ${tool} ${want} (declared in ${primary.source})`; continue }
     lines.push(`${tool} ${host.major} satisfies ${primary.required} (${primary.source})`)
