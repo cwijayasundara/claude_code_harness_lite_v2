@@ -60,14 +60,6 @@ test('the vendored copy names project skills and agents, and prints its own skil
   assert.match(failed.hookSpecificOutput.additionalContext, /\.sdlc\/bin\/sdlc\.ts" skill verify small-thing/)
 })
 
-test('read-only rules also hold for the vendored rig- agents', () => {
-  const repo = makeRepo()
-  sdlc(repo, ['init'])
-  sdlc(repo, ['vendor', '--cloud'])
-  const r = JSON.parse(vendored(repo, ['hook', 'pre-bash'], JSON.stringify({ agent_type: 'rig-reviewer', tool_input: { command: 'touch x.js' } })).stdout)
-  assert.equal(r.hookSpecificOutput.permissionDecision, 'deny')
-})
-
 test('the PR review may write its two files through Edit rules; a Write(path) rule grants nothing', () => {
   const yml = fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'rig-review.yml'), 'utf8')
   const allowed = /--allowedTools "([^"]+)"/.exec(yml)?.[1] ?? ''
@@ -75,9 +67,7 @@ test('the PR review may write its two files through Edit rules; a Write(path) ru
 })
 
 const humanCommand = (cmd: string): string => `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts ${cmd}`
-const bashDecision = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined)
-
-test('standalone ships human-only /rig-approve and /rig-waive skills the model cannot invoke or imitate', () => {
+test('standalone ships human-only /rig-approve and /rig-waive skills the model cannot invoke', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
@@ -87,8 +77,6 @@ test('standalone ships human-only /rig-approve and /rig-waive skills the model c
     assert.ok(skill.includes(`allowed-tools: Bash(${humanCommand(cmd)} *)`), `${cmd}: the grant covers exactly the injected command`)
     assert.ok(skill.includes(`!\`${humanCommand(cmd)} '$ARGUMENTS' 2>&1\``), `${cmd}: arguments are single-quoted, never globbed`)
   }
-  const input = JSON.stringify({ tool_input: { command: humanCommand('approve demo plan') } })
-  assert.equal(bashDecision(vendored(repo, ['hook', 'pre-bash'], input)), 'deny', 'the model cannot reuse the grant for another approval')
 })
 
 test('a quoted argument string is split: /rig-approve and /rig-waive work from a standalone skill', () => {
@@ -105,23 +93,26 @@ test('a quoted argument string is split: /rig-approve and /rig-waive work from a
 })
 
 test('the plugin hooks step aside only in a standalone repo, so no hook runs twice', () => {
-  const input = JSON.stringify({ tool_input: { command: humanCommand('approve demo plan') } })
+  const edit = (repo: string) => sdlc(repo, ['hook', 'post-edit'], { input: JSON.stringify({ tool_input: { file_path: path.join(repo, 'src/key.js') } }) })
+  const plant = (repo: string) => write(repo, 'src/key.js', 'const key = "AKIAABCDEFGHIJKLMNOP"\n')
   const ci = makeRepo()
   sdlc(ci, ['init'])
   sdlc(ci, ['vendor'])
-  assert.equal(bashDecision(sdlc(ci, ['hook', 'pre-bash'], { input })), 'deny', 'plain vendor (the CI checker) leaves the plugin hooks on')
+  plant(ci)
+  assert.equal(edit(ci).code, 2, 'plain vendor (the CI checker) leaves the plugin hooks on')
   const standalone = makeRepo()
   sdlc(standalone, ['init'])
   sdlc(standalone, ['vendor', '--standalone'])
-  const r = sdlc(standalone, ['hook', 'pre-bash'], { input })
+  plant(standalone)
+  const r = edit(standalone)
   assert.equal(r.code, 0)
-  assert.equal(r.stdout, '', 'the plugin copy is silent; the project copy decides')
+  assert.equal(r.stderr, '', 'the plugin copy is silent; the project copy decides')
   const settings = path.join(standalone, '.claude/settings.json')
   const full = JSON.parse(fs.readFileSync(settings, 'utf8'))
   fs.writeFileSync(settings, JSON.stringify({ $comment: 'see .sdlc/bin/sdlc.ts', hooks: { Stop: full.hooks.Stop } }))
-  assert.equal(bashDecision(sdlc(standalone, ['hook', 'pre-bash'], { input })), 'deny', 'a mention or another hook does not silence pre-bash')
+  assert.equal(edit(standalone).code, 2, 'a mention or another hook does not silence post-edit')
   fs.writeFileSync(settings, '{ not json')
-  assert.equal(bashDecision(sdlc(standalone, ['hook', 'pre-bash'], { input })), 'deny', 'unreadable settings keep the plugin hooks')
+  assert.equal(edit(standalone).code, 2, 'unreadable settings keep the plugin hooks')
 })
 
 test('the settings template is portable: no personal plugins, absolute paths or no-op Write(path) rules', () => {
@@ -156,7 +147,6 @@ test('standalone vendoring installs the mod as a project plugin', () => {
   assert.ok(settings.extraKnownMarketplaces['rig-local'])
 })
 
-
 test('init --full vendors, wires git hooks and merges the settings template without overriding the project', () => {
   const repo = makeRepo()
   write(repo, '.claude/settings.json', JSON.stringify({ model: 'my-model', permissions: { allow: ['Bash(ls)'] } }))
@@ -189,4 +179,23 @@ test('standalone vendoring copies the review workflow and points the skills at i
   const skill = fs.readFileSync(path.join(repo, '.claude/skills/rig-pr-review/SKILL.md'), 'utf8')
   assert.match(skill, /\.claude\/workflows\/review\.js/)
   assert.doesNotMatch(skill, /CLAUDE_PLUGIN_ROOT/)
+})
+
+test('the settings template protects evidence with deny rules and the harness config with ask rules', () => {
+  const settings = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'templates', 'settings.json'), 'utf8')) as { permissions: { allow: string[]; ask: string[]; deny: string[] } }
+  const deny = new Set(settings.permissions.deny)
+  for (const f of ['approvals.jsonl', 'waivers.jsonl', 'usage.jsonl', '.gate', '.baseline', 'unresolved.json']) assert.ok(deny.has(`Edit(/.sdlc/${f})`), f)
+  for (const f of ['runs.jsonl', 'verification.md', 'impact.json', 'ratchet.json', 'events.jsonl', 'pr.md', 'ship.json']) assert.ok(deny.has(`Edit(/.sdlc/changes/*/${f})`), f)
+  assert.ok(deny.has('Read(.env)') && deny.has('Edit(.env)'), 'the .env rules stay')
+  assert.deepEqual(settings.permissions.ask, ['Edit(/.sdlc/sensors.json)', 'Edit(/.sdlc/rules.json)', 'Edit(/.claude/settings.json)'])
+  assert.ok(settings.permissions.allow.includes('Edit(.sdlc/**)'), 'plans and intents stay editable')
+})
+
+test('init --full merges the evidence rules into an existing settings file without dropping its own', () => {
+  const repo = makeRepo()
+  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Bash(rm -rf *)'] } }))
+  assert.equal(sdlc(repo, ['init', '--full']).code, 0)
+  const merged = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
+  assert.ok(merged.permissions.deny.includes('Bash(rm -rf *)'))
+  assert.ok(merged.permissions.deny.includes('Edit(/.sdlc/approvals.jsonl)'))
 })

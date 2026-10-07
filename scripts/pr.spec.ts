@@ -429,7 +429,7 @@ test('a passing ship gate clears only a gate-kind block on pr', () => {
   }
 })
 
-test('R46: after a waiver, next resumes at pr, auto-approval works there, and pr passes the gate and clears the block', () => {
+test('R46: after a waiver, next resumes at pr and pr passes the gate and clears the block', () => {
   write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
   gitIn(repo, 'add', '.sdlc/sensors.json')
   gitIn(repo, 'commit', '-qm', 'cfg')
@@ -443,8 +443,6 @@ test('R46: after a waiver, next resumes at pr, auto-approval works there, and pr
   const n = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
   assert.equal(n.verdict, 'continue')
   assert.equal(n.node, 'pr')
-  const edit = sdlc(repo, ['hook', 'pre-edit'], { input: JSON.stringify({ tool_input: { file_path: path.join(repo, 'src/app.js'), content: 'x' } }) })
-  assert.equal(JSON.parse(edit.stdout).hookSpecificOutput?.permissionDecision, 'allow', 'auto-approval needs continue at this node')
   const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(r.code, 0, r.stderr)
   assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'tiny']).stdout).blocked, undefined)

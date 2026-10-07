@@ -36,8 +36,8 @@ Thin layer with built-ins first; ceremony scales with risk; state lives in files
  │ AGENTS (4)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
  │                reviewer·opus                                         │  small fresh contexts
  ├────────────────────────────────────────────────────────────────────────┤
- │ HOOKS          session-start · pre-bash · pre-edit · post-edit ·       │  guardrails: run in
- │                stop · subagent-stop · prompt-submit                    │  -p and CI, zero tokens
+ │ HOOKS          session-start · prompt-submit · post-edit · stop ·      │  guardrails: run in
+ │                skill-failed                                            │  -p and CI, zero tokens
  │                + git: pre-commit · pre-push (any editor or agent)      │
  ├────────────────────────────────────────────────────────────────────────┤
  │ SCRIPTS        sdlc.ts → check · sensors · graph · ratchet · runs …    │  the deterministic brain
@@ -163,14 +163,15 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | Moment | Hook | What happens, at zero tokens |
 |---|---|---|
 | Session opens | `session-start` | Injects the active change, its next command and the guides that apply. |
-| You submit a prompt | `prompt-submit` | Snapshots the tree as the turn baseline, so Stop judges exactly this turn's diff. (Subagents get their own baseline at `subagent-start`.) |
-| Before a shell command | `pre-bash` | Blocks writes to evidence files, secret reads and forged `SDLC_HUMAN`; allows only a read-only command set for read-only agents. |
-| Before an edit | `pre-edit` | Asks about files outside the plan's `## Files`; rejects secrets and plans containing code. |
-| After an edit | `post-edit` | Notices for secrets, test tampering and the matching guide. |
-| A turn or subagent ends | `stop`, `subagent-stop` | Runs the sensors on the turn's diff; blocks at most 2 times, then records `unresolved.json`. |
+| You submit a prompt | `prompt-submit` | Snapshots the tree as the turn baseline, so Stop judges exactly this turn's diff. |
+| After an edit | `post-edit` | Rejects secrets and plans containing code, runs the file's sensors against the turn baseline, and injects a matching guide once per session. |
+| A turn ends | `stop` | Runs the sensors on the turn's diff; blocks at most 2 times, then records `unresolved.json`. |
+| A skill fails to load | `skill-failed` | Hands the model the exact fallback command for that stage. |
 | You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print with their fix text, blocks refuse the commit (during a merge or rebase only the fast commands are skipped). |
 | You push | git pre-push | The branch's commits (against its merge-base with the trunk, as CI) go through the ship checks and the quality ratchet; warnings print with their fix text; `githooks.prePush: "off"` disables it. |
 | A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
+
+**Safety.** No hook runs on Bash. Evidence is protected by `permissions` deny rules and by CI, which recomputes every verdict from the base branch's checker. A shell script can still write a file locally; CI plus branch protection is the boundary.
 
 ## Install
 
@@ -239,7 +240,7 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 | `agents/reviewer.md` | **Opus 5.5**, high effort. One independent review per change, keeping findings at confidence 80 or above. |
 | `hooks/hooks.json` | Settings hooks, which also hold in `-p` and CI. They inject session context, block model-made approvals, ask about edits outside the plan's `## Files`, and reject secrets or plans that contain code (exit 2). |
 | `hooks/register.ts` | The mod. It records per-turn tokens and the dollar delta from the session ledger, shows the context and spend band, runs the zero-token commands and the context-budget nudges, and gives general-purpose subagents Sonnet by default. |
-| `scripts/*.ts` (20, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `autoapprove`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI), `shell` (bash-faithful tokenizer and the read-only Bash allowlist). |
+| `scripts/*.ts` (20, not counting specs and testkit) | Zero-dependency Node, no build step (the list names the main ones; the rest are `graph`, `ratchet`, `levels`, `quality`, `pr`, `scorecard` and `vendor`): `core` (paths, change state, approvals), `model` (pure diff, config and glob model), `sensors` (the pure sensors), `diffs` (baselines and git diffs), `runs` (captured exit codes and verification reports), `check` (one `check` entry point for Stop, plan, ship and CI), `hooks` (hook decisions and the Stop gate), `metrics` (playbook metrics and cost), `sdlc` (the CLI). |
 | `guides/` | Short per-area guides (contracts, engineering, testing) injected when a matching file is touched. |
 | `templates/rig-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 | `templates/rig-review.yml` | One background Claude review per PR, for tier S and M and as a second look on L. |

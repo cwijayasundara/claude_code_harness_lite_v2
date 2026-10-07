@@ -85,30 +85,3 @@ test('seeded: a B-number with no test blocks at ship', () => {
   write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('B1 subtracts', () => assert.equal(sub(3, 1), 2))\n")
   assert.match(sdlc(repo, ['check', '--at', 'ship', '--base', 'main', '--slug', 'sub']).stdout, /\[traceability\][\s\S]*B2 .*has no test that names it/)
 })
-
-const bash = (command: string, extra: Record<string, unknown> = {}) =>
-  JSON.parse(hook(repo, 'pre-bash', { tool_input: { command }, ...extra }).stdout || '{}').hookSpecificOutput?.permissionDecision
-
-test('forgery: appending to runs.jsonl, bumping the gate and model approvals or waivers are denied', () => {
-  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
-  assert.equal(bash(`echo '{"cmd":"npm test","exit":0}' >> .sdlc/changes/xx/runs.jsonl`), 'deny')
-  assert.equal(bash(`echo '{"blocks":{"main":2}}' > .sdlc/.gate`), 'deny')
-  assert.equal(bash('node /p/scripts/sdlc.ts approve xx plan'), 'deny')
-  assert.equal(bash('node /p/scripts/sdlc.ts waive size * xx'), 'deny')
-  const binEdit = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/bin/sensors.ts'), content: '' } }).stdout)
-  assert.equal(binEdit.hookSpecificOutput.permissionDecision, 'ask')
-})
-
-test('forgery: quoting and $-quoting cannot hide an evidence path', () => {
-  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
-  for (const f of ['run"s".jsonl', "run$'s'.jsonl"]) {
-    assert.equal(bash(`echo '{"exit":0}' >> .sdlc/changes/xx/${f}`, { agent_type: 'rig:implementer' }), 'deny', f)
-  }
-})
-
-test('forgery: a read-only agent cannot smuggle a write past the Bash allowlist', () => {
-  sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
-  for (const c of ['echo \\"; touch f; echo \\"', "sort '-o' f x"]) {
-    assert.equal(bash(c, { agent_type: 'rig:reviewer' }), 'deny', c)
-  }
-})

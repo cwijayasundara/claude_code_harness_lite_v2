@@ -1,5 +1,5 @@
 {
-  "$comment": "Project settings for the sdlc harness. Merge into <project>/.claude/settings.json and commit. superpowers is off so sdlc routes all work (turn it on only for \"build\": \"sdd\"); turn off any other plugin your team does not use here too.",
+  "$comment": "Project settings for the sdlc harness. Merge into <project>/.claude/settings.json and commit. superpowers is off so sdlc routes all work (turn it on only for \"build\": \"sdd\"); turn off any other plugin your team does not use here too. Evidence is protected by these rules and by CI, which recomputes every verdict: a shell script can still write a file, so CI plus branch protection is the boundary.",
   "enabledPlugins": {
     "superpowers@claude-plugins-official": false
   },
@@ -9,11 +9,29 @@
     "allow": [
       "Edit(.sdlc/**)"
     ],
+    "ask": [
+      "Edit(/.sdlc/sensors.json)",
+      "Edit(/.sdlc/rules.json)",
+      "Edit(/.claude/settings.json)"
+    ],
     "deny": [
       "Read(.env)",
       "Read(.env.*)",
       "Edit(.env)",
-      "Edit(.env.*)"
+      "Edit(.env.*)",
+      "Edit(/.sdlc/approvals.jsonl)",
+      "Edit(/.sdlc/waivers.jsonl)",
+      "Edit(/.sdlc/usage.jsonl)",
+      "Edit(/.sdlc/.gate)",
+      "Edit(/.sdlc/.baseline)",
+      "Edit(/.sdlc/unresolved.json)",
+      "Edit(/.sdlc/changes/*/runs.jsonl)",
+      "Edit(/.sdlc/changes/*/verification.md)",
+      "Edit(/.sdlc/changes/*/impact.json)",
+      "Edit(/.sdlc/changes/*/ratchet.json)",
+      "Edit(/.sdlc/changes/*/events.jsonl)",
+      "Edit(/.sdlc/changes/*/pr.md)",
+      "Edit(/.sdlc/changes/*/ship.json)"
     ]
   },
   "env": {

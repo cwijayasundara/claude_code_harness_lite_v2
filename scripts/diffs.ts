@@ -6,7 +6,7 @@ import { ROOT, SDLC, read, sha, now, git, withLock, writeAtomic } from './core.t
 import { parseUnifiedDiff, type FileDiff } from './model.ts'
 
 export type Snapshot = { sha: string; at: string; untracked: Record<string, string> }
-type Baselines = { main?: Snapshot; agents: Record<string, Snapshot> }
+type Baselines = { main?: Snapshot }
 
 const BASELINE = path.join(SDLC, '.baseline')
 // Past this a file is not read at all (a hook must not run out of memory or time, which would switch the gate off): it is flagged, and the size sensor blocks.
@@ -42,22 +42,17 @@ export function snapshot(): Snapshot | null {
 function readAll(): Baselines {
   try {
     const all = JSON.parse(read(BASELINE)) as Baselines
-    return { main: all.main, agents: all.agents ?? {} }
+    return { main: all.main }
   } catch {
-    return { agents: {} }
+    return {}
   }
 }
 
-export const readBaseline = (agentId?: string): Snapshot | null => (agentId ? readAll().agents[agentId] : readAll().main) ?? null
+export const readBaseline = (): Snapshot | null => readAll().main ?? null
 
-// A new main turn starts fresh; a subagent's baseline is added beside the main one.
-export function writeBaseline(snap: Snapshot, agentId?: string): void {
-  withLock(BASELINE, () => {
-    const all: Baselines = agentId ? readAll() : { agents: {} }
-    if (agentId) all.agents[agentId] = snap
-    else all.main = snap
-    writeAtomic(BASELINE, JSON.stringify(all))
-  })
+// Each turn starts fresh: one baseline, the main thread's.
+export function writeBaseline(snap: Snapshot): void {
+  withLock(BASELINE, () => writeAtomic(BASELINE, JSON.stringify({ main: snap })))
 }
 
 function addedFile(rel: string): FileDiff {

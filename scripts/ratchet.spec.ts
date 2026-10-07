@@ -45,17 +45,6 @@ test('build is done when every plan slice is done', () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')).nodes.build.status, 'done')
 })
 
-test('ratchet.json, events.jsonl, pr.md and ship.json are evidence: model edits and Bash writes are denied', () => {
-  for (const f of ['.sdlc/changes/big/ratchet.json', '.sdlc/changes/big/events.jsonl', '.sdlc/changes/big/pr.md', '.sdlc/changes/big/ship.json']) {
-    const edit = JSON.parse(sdlc(repo, ['hook', 'pre-edit'], { input: JSON.stringify({ tool_input: { file_path: path.join(repo, f) } }) }).stdout)
-    assert.equal(edit.hookSpecificOutput.permissionDecision, 'deny', f)
-  }
-  for (const f of ['ratchet.json', 'ship.json']) {
-    const bash = JSON.parse(sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ tool_input: { command: `echo {} > .sdlc/changes/big/${f}` } }) }).stdout)
-    assert.equal(bash.hookSpecificOutput.permissionDecision, 'deny', f)
-  }
-})
-
 test('testCaseCount counts test cases across common frameworks', () => {
   assert.equal(testCaseCount(["test('a', () => {})\nit('b', () => {})\n  it.each([1])('c', x => {})", 'def test_x():\n    pass\n', 'func TestY(t *testing.T) {}', '@Test\nvoid z() {}']), 6)
 })
@@ -84,13 +73,6 @@ test('record refuses changes-needed when no critical or high finding parsed', ()
   assert.notEqual(r.code, 0)
   assert.match(r.stderr + r.stdout, /changes-needed but no critical or high finding lines parsed/)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, tier: 'L', type: 'feature', nodes: {}, slices: {}, baseline: {} })
-})
-
-test('a bare pr.md, verification.md or impact.json is evidence once the command mentions .sdlc', () => {
-  const verdict = (command: string) => JSON.parse(sdlc(repo, ['hook', 'pre-bash'], { input: JSON.stringify({ tool_input: { command } }) }).stdout || '{}').hookSpecificOutput?.permissionDecision
-  for (const c of ['cd .sdlc/changes/big && echo x > pr.md', 'cd .sdlc/changes/big && echo x | tee pr.md', 'cd .sdlc/changes/big && cp /tmp/a verification.md', 'cd .sdlc/changes/big; echo {} > impact.json']) assert.equal(verdict(c), 'deny', c)
-  assert.notEqual(verdict('cat .sdlc/changes/big/pr.md'), 'deny')
-  assert.notEqual(verdict('echo x > docs/pr.md'), 'deny')
 })
 
 test('build needs --slice when the plan has several, and rejects unknown slices', () => {

@@ -320,11 +320,9 @@ test('a consumer that is not checked out at the plan point also needs the impact
   assert.match(sdlc(repo, ['status']).stdout, /impact \(awaiting approval\)/)
 })
 
-test('impact.json is evidence: pre-edit denies writing it; approving impact without it fails', () => {
+test('approving impact without an impact.json fails', () => {
   sdlc(repo, ['new', 'ev', '--type', 'feature', '--tier', 'M'])
   write(repo, '.sdlc/changes/ev/plan.md', '## Files\n- a\n')
-  const r = JSON.parse(hook(repo, 'pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/changes/ev/impact.json') } }).stdout)
-  assert.match(JSON.stringify(r), /deny/)
   assert.notEqual(sdlc(repo, ['approve', 'ev', 'impact'], { env: { SDLC_HUMAN: '1' } }).code, 0)
 })
 

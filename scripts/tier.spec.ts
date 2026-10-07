@@ -9,10 +9,6 @@ let repo: string
 const intentPath = (slug: string): string => path.join(repo, `.sdlc/changes/${slug}/intent.md`)
 const setIntent = (slug: string, from: string, to: string): void => fs.writeFileSync(intentPath(slug), fs.readFileSync(intentPath(slug), 'utf8').replace(from, to))
 const status = (): { changes: { slug: string; tier: string }[]; step: { verdict: string; node: string } } => JSON.parse(sdlc(repo, ['status', '--json']).stdout)
-const preEdit = (rel: string): string | undefined => {
-  const r = sdlc(repo, ['hook', 'pre-edit'], { input: JSON.stringify({ tool_input: { file_path: path.join(repo, rel), content: 'x' } }) })
-  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined
-}
 const ratchetJson = (slug: string) => JSON.parse(fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/ratchet.json`), 'utf8'))
 const planned = (slug: string): void => {
   write(repo, `.sdlc/changes/${slug}/design.md`, '## Files\n- src/**\n## Verification\n- `npm test`\n## Open questions\nnone\n')
@@ -30,13 +26,12 @@ test('createChange records the tier and type in ratchet.json', () => {
   assert.equal(ratchetJson('big').type, 'feature')
 })
 
-test('editing intent.md from tier L to M does not remove the plan gate or enable auto-approval', () => {
+test('editing intent.md from tier L to M does not remove the plan gate', () => {
   assert.equal(status().step.verdict, 'human')
   setIntent('big', 'tier: L', 'tier: M')
   const s = status()
   assert.equal(s.step.verdict, 'human')
   assert.equal(s.changes[0]?.tier, 'L')
-  assert.notEqual(preEdit('src/a.js'), 'allow')
 })
 
 test('status warns when intent.md differs from the recorded tier', () => {
@@ -106,6 +101,5 @@ test('with no recorded type, intent.md cannot pick a shorter path: the type is f
   setIntent('big', 'type: feature', 'type: chore')
   assert.equal(status().step.verdict, 'human')
   assert.equal(status().step.node, 'design')
-  assert.notEqual(preEdit('src/a.js'), 'allow')
   assert.match(sdlc(repo, ['status']).stdout, /type changed in intent\.md \(feature → chore\)/)
 })

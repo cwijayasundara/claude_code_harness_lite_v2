@@ -141,36 +141,10 @@ test('scope-drift flags files outside plan ## Files and records ship.json', () =
   assert.deepEqual(ship.drift, ['src/other.js'])
 })
 
-test('pre-bash hook denies model approvals, allows normal commands (Claude Code itself blocks sleep-polling)', () => {
-  run(['init'])
-  const approve = JSON.parse(hook('pre-bash', { tool_input: { command: 'node /x/scripts/sdlc.ts approve a plan' } }).stdout)
-  assert.equal(approve.hookSpecificOutput.permissionDecision, 'deny')
-  assert.equal(hook('pre-bash', { tool_input: { command: 'git add src/a.js .sdlc/approvals.jsonl && git commit -m "feat: x"' } }).stdout, '')
-  assert.equal(hook('pre-bash', { tool_input: { command: 'cat .sdlc/approvals.jsonl' } }).stdout, '')
-  const redirect = JSON.parse(hook('pre-bash', { tool_input: { command: 'echo {} >> .sdlc/approvals.jsonl' } }).stdout)
-  assert.equal(redirect.hookSpecificOutput.permissionDecision, 'deny')
-  const restore = JSON.parse(hook('pre-bash', { tool_input: { command: 'git checkout -- .sdlc/approvals.jsonl' } }).stdout)
-  assert.equal(restore.hookSpecificOutput.permissionDecision, 'deny')
-  const forged = JSON.parse(hook('pre-bash', { tool_input: { command: `python3 -c "open('.sdlc/approvals.jsonl','a').write('x')"` } }).stdout)
-  assert.equal(forged.hookSpecificOutput.permissionDecision, 'deny')
-  assert.equal(hook('pre-bash', { tool_input: { command: 'npm test' } }).stdout, '')
-})
-
 test('hooks are silent in repos that never opted in', () => {
-  assert.equal(hook('pre-bash', { tool_input: { command: 'sleep 300' } }).stdout, '')
   assert.equal(hook('session-start', {}).stdout, '')
-  assert.equal(hook('pre-edit', { tool_input: { file_path: path.join(repo, 'src/x.js') } }).stdout, '')
-})
-
-test('pre-edit asks for files outside the plan during build and denies approvals.jsonl', () => {
-  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
-  write('.sdlc/changes/add-login/plan.md', PLAN)
-  const outside = JSON.parse(hook('pre-edit', { tool_input: { file_path: path.join(repo, 'src/other.js') } }).stdout)
-  assert.equal(outside.hookSpecificOutput.permissionDecision, 'ask')
-  // v0.4 R13: a planned edit in an ungated tier is now allowed without a prompt (it was silent, i.e. a prompt, before)
-  assert.equal(JSON.parse(hook('pre-edit', { tool_input: { file_path: path.join(repo, 'src/app.js') } }).stdout).hookSpecificOutput.permissionDecision, 'allow')
-  const approvals = JSON.parse(hook('pre-edit', { tool_input: { file_path: path.join(repo, '.sdlc/approvals.jsonl') } }).stdout)
-  assert.equal(approvals.hookSpecificOutput.permissionDecision, 'deny')
+  assert.equal(hook('post-edit', { tool_input: { file_path: path.join(repo, 'src/x.js') } }).stdout, '')
+  assert.equal(hook('stop', {}).stdout, '')
 })
 
 test('post-edit blocks secrets and code-heavy plans with exit 2', () => {

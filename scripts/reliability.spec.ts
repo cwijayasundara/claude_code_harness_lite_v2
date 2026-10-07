@@ -14,18 +14,15 @@ const runHook = (repo: string, name: string, input: object): Promise<void> => ne
   p.stdin.end(JSON.stringify(input))
 })
 
-test('parallel post-edit hooks all land in .gate, and parallel subagent baselines all survive', async () => {
+test('parallel post-edit hooks all land in .gate', async () => {
   const repo = makeRepo()
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   hook(repo, 'prompt-submit', {})
   const n = 10
   for (let i = 0; i < n; i++) write(repo, `f${i}.ts`, `export const v${i} = ${i}\n`)
-  await Promise.all(Array.from({ length: n }, (_, i) => runHook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, `f${i}.ts`) }, agent_id: `a${i}` })))
+  await Promise.all(Array.from({ length: n }, (_, i) => runHook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, `f${i}.ts`) } })))
   const gate = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8')) as { tool: string[] }
   assert.equal(gate.tool.length, n, `recorded ${gate.tool.length} of ${n}`)
-  await Promise.all(Array.from({ length: n }, (_, i) => runHook(repo, 'subagent-start', { agent_id: `a${i}` })))
-  const base = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.baseline'), 'utf8')) as { agents: Record<string, unknown> }
-  assert.equal(Object.keys(base.agents).length, n)
   assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc')).filter(f => f.endsWith('.lock') || f.endsWith('.tmp')), [], 'no lock or temp file is left behind')
 })
 

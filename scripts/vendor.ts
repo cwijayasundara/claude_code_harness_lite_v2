@@ -5,7 +5,7 @@ import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
 import { writeHookScripts, installHooks } from './githooks.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'shards', 'quality', 'basetree', 'levels', 'verify', 'autoapprove', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'shell', 'githooks', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'shards', 'quality', 'basetree', 'levels', 'verify', 'hooks', 'metrics', 'scorecard', 'flow', 'pr', 'sdlc', 'githooks', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
 
@@ -50,8 +50,9 @@ function mergeHooks(written: string[]): void {
   writeFile('.claude/settings.json', JSON.stringify(merged, null, 2) + '\n', written)
 }
 
-// Human-only gates without the mod: the person invokes these, the model cannot (disable-model-invocation), and the
-// pre-bash hook denies any model Bash naming SDLC_HUMAN. '$ARGUMENTS' is quoted so the shell never globs or splits it.
+// Human-only gates without the mod: the person invokes these, the model cannot (disable-model-invocation), and
+// CI refuses approval rows a PR adds unless an independent reviewer approves.
+// '$ARGUMENTS' is quoted so the shell never globs or splits it.
 function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): string {
   const run = `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${SDLC_HOOK} ${cmd}`
   return [

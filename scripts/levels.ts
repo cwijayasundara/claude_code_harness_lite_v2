@@ -1,8 +1,7 @@
 // Test levels (spec §5.2): unit always; acceptance for tier L and greenfield; api when the plan's contracts touch an
 // endpoint; integration when the plan spans more than one top-level module or a consumer repo.
-import { readRuns } from './runs.ts'
+import { readRuns, normCmd } from './runs.ts'
 import { contractsFromPlan } from './sensors.ts'
-import { normCmd } from './shell.ts'
 import { LEVELS, type Level, type SensorConfig } from './model.ts'
 import type { Change } from './core.ts'
 

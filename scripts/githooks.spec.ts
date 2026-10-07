@@ -484,19 +484,6 @@ test('more than five warnings at Stop say how many more, to the person and to th
   assert.match(next, /\+2 more/)
 })
 
-test('a subagent Stop does not overwrite the main thread\'s unshown warnings', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 5 } }))
-  hook(repo, 'prompt-submit', { session_id: 's' })
-  write(repo, 'src/big.js', bigFile)
-  assert.match(JSON.parse(hook(repo, 'stop', { session_id: 's' }).stdout).systemMessage, /big\.js/)
-  hook(repo, 'subagent-start', { session_id: 's', agent_id: 'a1' })
-  write(repo, 'src/clean.js', 'export const ok = 1\n')
-  hook(repo, 'post-edit', { session_id: 's', agent_id: 'a1', tool_input: { file_path: path.join(repo, 'src/clean.js') } })
-  hook(repo, 'subagent-stop', { session_id: 's', agent_id: 'a1' })
-  const next = hook(repo, 'prompt-submit', { session_id: 's' }).stdout
-  assert.match(next, /big\.js/)
-})
-
 test('a real git push runs the installed pre-push hook: clean work goes, a secret committed with --no-verify does not', () => {
   sdlc(repo, ['vendor'])
   sdlc(repo, ['hooks', 'install'])
