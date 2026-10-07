@@ -32,6 +32,7 @@ import { cmdShards } from './shards.ts'
 import { requiredLevels, levelResults } from './levels.ts'
 import { normCmd } from './runs.ts'
 import { treeStamp } from './stamp.ts'
+import { staleness, openItems, sliceWarnings } from './stale.ts'
 
 // ---------- commands ----------
 
@@ -126,7 +127,10 @@ function cmdStatus(args: Args): void {
   const warnings: string[] = []
   for (const c of changes) {
     const plan = planPath(c.slug)
-    if (exists(plan)) for (const p of planProblems(plan)) warnings.push(`${c.slug}: ${p}`)
+    if (exists(plan)) {
+      for (const p of planProblems(plan)) warnings.push(`${c.slug}: ${p}`)
+      warnings.push(...sliceWarnings(c.slug, read(plan)))
+    }
     const drift = tierDrift(c.slug)
     if (drift) warnings.push(`${c.slug}: ${drift}`)
     if (lines(read(path.join(c.dir, 'intent.md'))) > LIMITS.intentLines + 10) warnings.push(`${c.slug}: intent.md is long; keep it under ${LIMITS.intentLines} lines`)
@@ -137,9 +141,11 @@ function cmdStatus(args: Args): void {
     if (stacked) warnings.push(stacked)
     if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
   }
+  const stale = changes.flatMap(c => staleness(c.slug))
+  const open = changes.flatMap(c => openItems(c.slug))
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
-    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
+    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
   }
   if (!changes.length) return out(`no changes yet: run ${skillRef('start')} "<what you want>"`)
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
@@ -148,7 +154,8 @@ function cmdStatus(args: Args): void {
     .map(c => `${c.slug === active ? '▶' : ' '} ${c.slug.padEnd(28)} ${c.type.padEnd(10)} ${c.tier}  ${label(c)}  ${pointsOf(c.slug).points}pt`)
   const act = active ? loadChange(active) : null
   const st = active ? step(active) : null
-  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`)].filter(Boolean).join('\n'))
+  const where = act ? `${act.slug} is at ${act.next ? (act.next.kind === 'approve' ? act.next.gate : act.next.stage) : 'done'}` : 'no active change'
+  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, `where: ${where}`, `stale: ${stale.length ? stale.join('; ') : 'nothing'}`, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`), ...open.map(o => `open: ${o}`)].filter(Boolean).join('\n'))
 }
 
 // A standalone repo's /rig-approve and /rig-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
@@ -187,10 +194,12 @@ function cmdApprove(args: Args): void {
   const artifact = APPROVAL_ARTIFACTS[stage as GatedStage] && path.basename(approvalFile(slug, stage as GatedStage))
   const file = artifact ? approvalFile(slug, stage as GatedStage) : ''
   if (!artifact || !exists(file)) fail(`nothing to approve: ${slug}/${artifact ?? stage} does not exist`)
-  const open = stage === 'spec' || stage === 'plan' || stage === 'design' ? openQuestions(read(file)) : []
+  const open = ['intent', 'spec', 'plan', 'design'].includes(stage)
+    ? [...openQuestions(read(file)).map(q => `${artifact}: ${q}`), ...(stage === 'design' ? openQuestions(read(path.join(CHANGES, slug, 'intent.md'))).map(q => `intent.md: ${q}`) : [])]
+    : []
   if (open.length) {
     const list = open.map(q => `  - ${q}`).join('\n')
-    fail(`resolve the open question(s) in ${slug}/${artifact} before approving: answer each, or record the default under ## Decisions, and leave "## Open questions" as none:\n${list}`)
+    fail(`resolve the open question(s) in ${open.some(q => q.startsWith('intent.md:')) ? `${slug}/intent.md` : `${slug}/${artifact}`} before approving: answer each, or record the default under ## Decisions, and leave "## Open questions" as none:\n${list}`)
   }
   const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
   if (stage === 'impact' && !exists(path.join(CHANGES, slug, 'impact.json'))) fail(`nothing to approve: ${slug}/impact.json does not exist (run check --at plan first)`)
