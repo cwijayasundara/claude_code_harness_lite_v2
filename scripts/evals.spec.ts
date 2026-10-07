@@ -239,5 +239,8 @@ test('a harness change outside the weakening rules asks for an eval run', () => 
 test('diagnose turns an incident fix into an eval named for its class', () => {
   const text = fs.readFileSync(path.join(import.meta.dirname, '..', 'skills/diagnose/SKILL.md'), 'utf8')
   assert.match(text, /\.sdlc\/evals\/incident-<yyyymmdd>-<class>\.json/)
-  assert.match(text, /"source": "incident:<incident file>"/)
+  assert.match(text, /"source": "incident:<incident file name, e\.g\. 20261001-timeout\.md>"/)
+  assert.match(text, /bare file name, with no directory/)
+  assert.match(text, /"base": "<the HEAD noted in step 1>"/)
+  assert.match(text, /runs once this change ships, when the regression test is committed/)
 })
