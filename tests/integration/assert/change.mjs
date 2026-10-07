@@ -1,7 +1,5 @@
 // What one shipped change must leave, judged against what the repo's own checker says its route is (lib/oracle.mjs).
 // Call it after pr-review, on the change branch, before the operator merges it.
-import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { oracle } from '../lib/oracle.mjs'
 
@@ -12,18 +10,6 @@ const frontmatter = text => {
   return Object.fromEntries(pairs.map(m => [m[1], m[2].trim()]))
 }
 const section = (text, name) => new RegExp(`^## ${name}\\s*$`, 'm').test(text)
-
-// Runs fn against a detached worktree of HEAD, using that checkout's own vendored checker, then removes it.
-function inWorktree(sb, fn) {
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-ci-'))
-  sb.git('worktree', 'add', '-q', '--detach', wt, 'HEAD')
-  try {
-    const script = path.join(wt, '.sdlc/bin/sdlc.ts')
-    return fn({ sdlc: args => sb.run('node', ['--disable-warning=ExperimentalWarning', script, ...args], { cwd: wt, env: { CLAUDE_PROJECT_DIR: wt } }) })
-  } finally {
-    sb.git('worktree', 'remove', '--force', wt)
-  }
-}
 
 // README, Guides and sensors: changed tests must fail on the base for these, so the change must also have run red first.
 const redFirst = (type, tier) => ['bugfix', 'incident'].includes(type) || (['feature', 'greenfield'].includes(type) && tier !== 'S')
@@ -94,10 +80,11 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
     const blocked = ratchet.blocked ? ` blocked: ${JSON.stringify(ratchet.blocked)}` : ''
     return (open.length === 0 && !ratchet.blocked) || `${open.map(([k, n]) => `${k}=${n.status}`).join(', ')}${blocked}`
   })
+  // checkpoint.ts commits each recorded slice as `sdlc/<slug>: slice <n>`.
   await c.check(`${t}: each slice was checkpointed by its own commit`, () => {
-    const slices = Object.keys(ratchet.slices ?? {}).length
-    const commits = sb.git('log', '--format=%s', 'main..HEAD').split('\n').filter(Boolean)
-    return commits.length >= slices + 1 || `${commits.length} commit(s) on the branch for ${slices} slice(s) plus the PR commit`
+    const subjects = sb.git('log', '--format=%s', 'main..HEAD').split('\n')
+    const missing = Object.keys(ratchet.slices ?? {}).filter(k => !subjects.includes(`sdlc/${slug}: slice ${k}`))
+    return (Object.keys(ratchet.slices ?? {}).length > 0 && missing.length === 0) || `no checkpoint for slice(s) ${missing.join(', ') || '(none recorded)'}`
   })
   if (o.tier === 'L') await c.check(`${t}: an in-session review was recorded`, () =>
     sb.git('ls-files', dir).split('\n').some(f => /\/review[^/]*\.md$/.test(f)) || 'no review*.md committed')
@@ -109,7 +96,11 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
     const missing = ['ship.json', 'pr.md'].filter(f => !tracked.includes(`${dir}/${f}`))
     return missing.length === 0 || `not committed: ${missing.join(', ')}`
   })
-  await c.check(`${t}: the PR was opened through gh`, () => /^pr create /m.test(sb.read('../logs/gh.log')) || 'gh pr create never called')
+  await c.check(`${t}: the PR was opened through gh`, () => {
+    const body = `${path.sep}.sdlc${path.sep}changes${path.sep}${slug}${path.sep}pr.md`
+    const calls = sb.read('../logs/gh.log').split('\n').filter(l => l.startsWith('pr create ') && l.endsWith(body))
+    return calls.length === 1 || `${calls.length} gh pr create call(s) for ${slug}`
+  })
   await c.check(`${t}: no scope drift`, () => {
     const r = JSON.parse(sb.sdlc(['scope-drift', slug, '--base', 'main', '--json']).stdout)
     return r.drift.length === 0 || r.drift.join(', ')
@@ -129,7 +120,7 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
   // gives the same view and leaves the sandbox untouched.
   await c.check(`${t}: CI check blocks only on the human-approval rows it cannot verify offline`, () => {
     const committed = jsonl(sb.run('git', ['show', `HEAD:.sdlc/approvals.jsonl`]).stdout ?? '').filter(a => a.slug === slug)
-    const res = inWorktree(sb, wt => JSON.parse(wt.sdlc(['check', '--at', 'ci', '--base', 'main', '--json']).stdout))
+    const res = sb.inWorktree(wt => JSON.parse(wt.sdlc(['check', '--at', 'ci', '--base', 'main', '--json']).stdout))
     const other = res.blocks.filter(b => b.sensor !== 'human-approval')
     const rows = res.humanRows.length
     if (other.length === 0 && rows === committed.length && (rows === 0 || res.blocks.length === 1)) return true

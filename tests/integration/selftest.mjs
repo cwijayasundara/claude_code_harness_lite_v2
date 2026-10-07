@@ -10,6 +10,7 @@ import { createSandbox, FIXTURES } from './lib/sandbox.mjs'
 import { assertOnboarding } from './assert/onboarding.mjs'
 import { assertChange } from './assert/change.mjs'
 import { assertPreCommitRefusesSecret, assertPrePushPasses } from './assert/hooks.mjs'
+import { assertProcess, readSession } from './assert/process.mjs'
 import { assertCart } from './acceptance/cart.mjs'
 import { assertShop, MODULES, PHASES as SHOP } from './acceptance/shop.mjs'
 
@@ -49,6 +50,12 @@ function onboard(sb, claudeMd) {
 
 const ROUTING = 'sdlc routes all work in this repo: start with /rig:start; use superpowers skills only when an sdlc skill names one.'
 const claudeMd = (title, map) => `# ${title}\n\n${ROUTING}\n\n## Map\n${map.map(m => `- src/${m}/`).join('\n')}\n`
+
+// Marks HEAD as `branch`, then runs fn, so a seeded case can be undone with a hard reset to it.
+function markThen(sb, branch, fn) {
+  sb.git('branch', '-f', branch)
+  fn()
+}
 
 // A scripted tier M feature through the whole route, the way the skills drive it.
 function shipBestsellers(sb) {
@@ -126,7 +133,7 @@ const slug = shipBestsellers(shop)
   shop.write('stray.txt', 'left behind\n')
   const c = new Checks('shop change with its approval removed and a stray file')
   await assertChange(c, shop, slug, { operator: OPERATOR, label: slug })
-  // CI still passes here: it judges the committed rows, and rig-check never requires a gated change to carry its approvals.
+  // The CI check still passes here because it judges the committed tree, where the approval is intact.
   expect(c, [/approved exactly the gates/, /done \(nothing left/, /tree clean/, /no scope drift/])
   shop.write('.sdlc/approvals.jsonl', approvals)
   fs.rmSync(shop.file('stray.txt'))
@@ -135,6 +142,54 @@ const slug = shipBestsellers(shop)
   const c = new Checks('shop change judged as someone else\'s approval')
   await assertChange(c, shop, slug, { operator: 'someone-else', label: slug })
   expect(c, [/every approval is the operator's/])
+}
+
+// A branch whose slice commit was squashed away has no checkpoint left to find.
+{
+  markThen(shop, 'kept', () => {
+    shop.git('reset', '-q', '--soft', 'main')
+    shop.git('commit', '-q', '--no-verify', '-m', 'everything at once')
+  })
+  const c = new Checks('shop change squashed into one commit')
+  await assertChange(c, shop, slug, { operator: OPERATOR, label: slug })
+  expect(c, [/each slice was checkpointed/])
+  shop.git('reset', '-q', '--hard', 'kept')
+}
+
+// Known gap, pinned so a fix flips it: rig-check judges the rows a PR adds, never whether a gated change carries its
+// approvals, so a tier M feature whose design approval was never committed still passes CI.
+{
+  markThen(shop, 'kept2', () => {
+    shop.write('.sdlc/approvals.jsonl', '')
+    shop.commitAll('drop the design approval')
+  })
+  const c = new Checks('CI on a gated change with no approval committed')
+  await c.check('rig-check passes it (known gap: see the proposal, section 11)', () => {
+    const res = shop.inWorktree(wt => JSON.parse(wt.sdlc(['check', '--at', 'ci', '--base', 'main', '--json']).stdout))
+    return res.blocks.length === 0 || res.blocks.map(b => b.sensor).join(', ')
+  })
+  expect(c)
+  shop.git('reset', '-q', '--hard', 'kept2')
+}
+
+// Transcripts shaped like `claude -p --output-format stream-json --verbose`: a clean one and one with a denial and a leaked skill.
+{
+  const dir = path.join(OUT, 'transcripts')
+  fs.mkdirSync(dir, { recursive: true })
+  const tool = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } })
+  const result = denials =>
+    JSON.stringify({ type: 'result', is_error: false, total_cost_usd: 0.12, num_turns: 4, duration_ms: 900, permission_denials: denials })
+  const clean = [tool('Skill', { skill: 'rig-pr-review' }), tool('Skill', { skill: 'code-review' }), tool('Agent', { subagent_type: 'rig-reviewer' })]
+  clean.push(result([]))
+  const leaky = [tool('Skill', { skill: 'superpowers:brainstorming' }), result([{ tool_name: 'Bash', tool_input: { command: 'npm test' } }])]
+  fs.writeFileSync(path.join(dir, 'clean.jsonl'), clean.join('\n'))
+  fs.writeFileSync(path.join(dir, 'leaky.jsonl'), leaky.join('\n'))
+  const good = new Checks('process checks on a clean transcript')
+  await assertProcess(good, [readSession(path.join(dir, 'clean.jsonl'))], { label: 'clean' })
+  expect(good)
+  const bad = new Checks('process checks on a transcript with a denial and a leaked skill')
+  await assertProcess(bad, [readSession(path.join(dir, 'leaky.jsonl'))], { label: 'leaky' })
+  expect(bad, [/0 permission denials/, /only rig skills/])
 }
 
 // ---------- greenfield: the cart ----------

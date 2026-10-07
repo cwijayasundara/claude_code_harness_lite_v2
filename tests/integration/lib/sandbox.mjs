@@ -1,6 +1,7 @@
 // A throwaway repo for one lane: git on main, a local bare repo as origin, a stub gh on PATH, and settings that keep the
 // person's own plugins out, so the run sees what a teammate's clone sees.
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 
@@ -73,6 +74,18 @@ export function createSandbox({ name, out }) {
     isolate(plugins = installedPlugins()) {
       sb.write('.claude/settings.local.json', JSON.stringify({ enabledPlugins: Object.fromEntries(plugins.map(id => [id, false])) }, null, 2) + '\n')
       fs.appendFileSync(path.join(dir, '.git/info/exclude'), '.claude/settings.local.json\n')
+    },
+    // fn gets a detached worktree of HEAD with its own vendored checker: what CI sees, and nothing it writes lands here.
+    inWorktree(fn) {
+      const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-ci-'))
+      git('worktree', 'add', '-q', '--detach', wt, 'HEAD')
+      try {
+        const script = path.join(wt, '.sdlc/bin/sdlc.ts')
+        const sdlc = args => run('node', ['--disable-warning=ExperimentalWarning', script, ...args], { cwd: wt, env: { CLAUDE_PROJECT_DIR: wt } })
+        return fn({ dir: wt, sdlc })
+      } finally {
+        git('worktree', 'remove', '--force', wt)
+      }
     },
     copyFixture(name) {
       fs.cpSync(path.join(FIXTURES, name), dir, { recursive: true })

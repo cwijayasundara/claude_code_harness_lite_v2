@@ -35,8 +35,9 @@ export const totals = sessions => ({
   denials: sessions.flatMap(s => s.denials),
 })
 
-// rig's skills are rig-* in a standalone repo and rig:* from the plugin; anything else means a plugin leaked into the run.
-const RIG_SKILL = /^(?:rig[-:])/
+// rig's skills are rig-* in a standalone repo and rig:* from the plugin, and its stages call two built-ins (pr-review runs
+// code-review; security-review where a stage names it). Anything else means a plugin leaked into the run.
+const RIG_SKILL = /^(?:rig[-:]|code-review$|security-review$)/
 
 export async function assertProcess(c, sessions, { label = 'phase' } = {}) {
   await c.check(`${label}: every session ran to a result`, () =>
