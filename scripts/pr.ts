@@ -4,8 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import {
-  ROOT, CHANGES, SDLC, exists, read, git, gitIn, out, fail, now, optString, toPosix, defaultBase, scopeDrift, ensureGitignore, checkSlug,
-  planFiles, planName, isPlanned, type Args,
+  ROOT, CHANGES, SDLC, STATE, exists, read, git, gitIn, out, fail, now, optString, toPosix, defaultBase, scopeDrift, ensureGitignore, checkSlug,
+  planFiles, planName, isPlanned, frontmatter, clearState, type Args,
 } from './core.ts'
 import { loadChange, nextCommand, activeSlug, prRecorded, prDone } from './graph.ts'
 import { loadConfig, runChecks } from './check.ts'
@@ -245,9 +245,14 @@ export const checksVerdict = (states: string[] | null): string =>
 function commitReviewEvidence(slug: string): void {
   if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== `sdlc/${slug}` || !prDone(slug)) return
   const dir = toPosix(path.relative(ROOT, path.join(CHANGES, slug)))
-  if (!git(['status', '--porcelain', '--', dir])) return
-  if (git(['add', '--', dir]) === null) return
-  if (git(['commit', '-q', '--no-verify', '-m', `chore(sdlc): pr-review evidence for ${slug}`, '--', dir]) === null) return
+  // A change this review finishes leaves a tracked STATE.md in the same commit, so status and next have nothing left to clear.
+  const state = toPosix(path.relative(ROOT, STATE))
+  const finished = frontmatter(read(STATE)).data.change === slug && loadChange(slug).next === null && git(['ls-files', '--error-unmatch', state]) !== null
+  if (finished) clearState(slug)
+  const paths = finished ? [dir, state] : [dir]
+  if (!git(['status', '--porcelain', '--', ...paths])) return
+  if (git(['add', '--', ...paths]) === null) return
+  if (git(['commit', '-q', '--no-verify', '-m', `chore(sdlc): pr-review evidence for ${slug}`, '--', ...paths]) === null) return
   out(`pr-review evidence committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
 }
 
