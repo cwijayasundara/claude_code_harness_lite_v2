@@ -48,9 +48,10 @@ export function story(slug: string): Story {
     else if (e.kind === 'lane' && e.id && e.verdict === 'stop' && lanes.has(e.id)) { intervals.push([lanes.get(e.id) ?? t, t]); lanes.delete(e.id) }
     else stamps.push(t)
   }
+  for (const t of lanes.values()) stamps.push(t)
   for (const row of readRuns(slug)) {
     const end = Date.parse(row.at)
-    if (Number.isFinite(end)) intervals.push([end - Math.max(0, row.ms), end])
+    if (Number.isFinite(end) && Number.isFinite(row.ms)) intervals.push([end - Math.max(0, row.ms), end])
   }
   const tm = timing(intervals, stamps, config.idleGapMs)
   const r = readRatchet(slug)
