@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { parseConfig } from './model.ts'
 import { tierFromDiff, weakensConfig } from './sensors.ts'
 import { scopeOf, selectScopes, closureRoots, extraScopes } from './scopes.ts'
+import fs from 'node:fs'
+import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
 const cfg = (extra: object = {}) => parseConfig(JSON.stringify({ scopes: {
@@ -73,4 +75,48 @@ test('the unscoped sensor warns when scopes are declared and a changed source fi
   assert.match(r.stdout, /unscoped/)
   assert.match(r.stdout, /loose\/b\.js/)
   assert.equal(r.code, 0, 'a warning, not a block')
+})
+
+test('the affected command is read in full from stdout: 60 names survive stderr noise', () => {
+  const scopes = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`s${i}/**`, { name: `s${i}`, root: `s${i}` }]))
+  const script = 'for(let i=0;i<60;i++){console.log("s"+i);console.error("noise "+i)}'
+  const c = parseConfig(JSON.stringify({ scopes, affected: `node -e '${script}'` })).config
+  assert.equal(extraScopes(c).length, 60)
+})
+
+test('a scope losing, emptying or changing a command, or moving its root, is a weakening edit', () => {
+  const base = { 'a/**': { name: 'a', root: 'a', fast: { test: 'npm test' }, full: { e2e: 'npm run e2e' }, quality: { lint: { cmd: 'eslint .', count: 'lines' } } } }
+  const with_ = (s: object) => JSON.stringify({ scopes: { 'a/**': { ...base['a/**'], ...s } } })
+  const before = with_({})
+  assert.match(weakensConfig(before, with_({ fast: {} })).join(), /scope a\/\*\* fast\.test removed/)
+  assert.match(weakensConfig(before, with_({ fast: { test: 'true' } })).join(), /scope a\/\*\* fast\.test changed/)
+  assert.match(weakensConfig(before, with_({ full: { e2e: '' } })).join(), /scope a\/\*\* full\.e2e (?:removed|changed)/)
+  assert.match(weakensConfig(before, with_({ quality: {} })).join(), /scope a\/\*\* quality\.lint removed/)
+  assert.match(weakensConfig(before, with_({ quality: { lint: { cmd: 'true', count: 'lines' } } })).join(), /scope a\/\*\* quality\.lint changed/)
+  assert.match(weakensConfig(before, with_({ root: 'a/src' })).join(), /scope a\/\*\* root changed a → a\/src/)
+  assert.deepEqual(weakensConfig(before, before), [])
+  assert.deepEqual(weakensConfig(before, with_({ fast: { test: 'npm test', lint: 'eslint .' } })), [], 'adding a command is not weakening')
+})
+
+test('a new scope with no fast or full command weakens a config that already declares scopes; one with commands does not', () => {
+  const before = JSON.stringify({ scopes: { 'a/**': { name: 'a', root: 'a', fast: { test: 'npm test' } } } })
+  const add = (s: object) => JSON.stringify({ scopes: { ...JSON.parse(before).scopes, 'a/gen/**': { name: 'gen', root: 'a/gen', ...s } } })
+  assert.match(weakensConfig(before, add({})).join(), /scope a\/gen\/\*\* added with no fast or full command/)
+  assert.deepEqual(weakensConfig(before, add({ fast: { test: 'npm test' } })), [])
+  assert.deepEqual(weakensConfig('{}', JSON.stringify({ scopes: { 'a/**': { name: 'a', root: 'a' } } })), [], 'the first scopes are adoption, not weakening')
+})
+
+test('backticks in a warning cannot close the step summary fence', () => {
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg' } } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'feature')
+  write(repo, 'loose/a```b.js', 'export const b = 1\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'work')
+  const summary = path.join(repo, 'summary.md')
+  sdlc(repo, ['check', '--at', 'ci', '--base', 'main'], { env: { GITHUB_STEP_SUMMARY: summary } })
+  const text = fs.readFileSync(summary, 'utf8')
+  assert.match(text, /loose\/a/)
+  assert.equal(text.split('\n').filter(l => l.startsWith('```')).length % 2, 0, text)
+  assert.doesNotMatch(text.split('\n').filter(l => !/^```\s*$/.test(l)).join('\n'), /`/, text)
 })

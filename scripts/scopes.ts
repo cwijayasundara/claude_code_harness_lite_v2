@@ -47,8 +47,10 @@ export function closureRoots(config: SensorConfig, names: string[]): string[] {
 // The optional `affected` command (turbo, nx, pnpm -r ...) prints scope names, one per line; names that are not declared are ignored.
 export function extraScopes(config: SensorConfig): string[] {
   if (!config.affected.trim()) return []
-  const row = runCommand(config.affected, { cwd: ROOT, timeoutMs: 60_000 })
+  // The whole stdout, not the run row's 30-line tail of stdout+stderr: a long list must not lose its first names.
+  let stdout = ''
+  const row = runCommand(config.affected, { cwd: ROOT, timeoutMs: 60_000, stdout: t => { stdout = t } })
   if (row.exit !== 0) return []
   const known = new Set(Object.values(config.scopes).map(s => s.name))
-  return row.tail.split('\n').map(l => l.trim()).filter(l => known.has(l))
+  return stdout.split('\n').map(l => l.trim()).filter(l => known.has(l))
 }

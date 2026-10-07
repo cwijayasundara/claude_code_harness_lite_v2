@@ -368,7 +368,9 @@ function report(point: string, result: CheckResult, count: number, json: boolean
   const human = humanRows.length ? `needs human review: ${humanRows.length} waiver/approval row(s) added by this PR\n${humanRows.map(r => `  - ${r}`).join('\n')}` : ''
   out([text || `sdlc check ${point}: pass (${count} file(s) checked${result.waived ? `, ${result.waived} waived` : ''})`, human].filter(Boolean).join('\n'))
   const summary = process.env.GITHUB_STEP_SUMMARY
-  if (summary) fs.appendFileSync(summary, `## sdlc check (${point})\n\n${text ? '```\n' + text + '\n```' : 'pass'}\n${human ? '\n```\n' + human + '\n```\n' : ''}`)
+  // Backticks in a file name or message must not close the summary's code fence.
+  const fenced = (t: string): string => '```\n' + t.replace(/`/g, "'") + '\n```'
+  if (summary) fs.appendFileSync(summary, `## sdlc check (${point})\n\n${text ? fenced(text) : 'pass'}\n${human ? '\n' + fenced(human) + '\n' : ''}`)
 }
 
 export function cmdCheck(args: Args): void {

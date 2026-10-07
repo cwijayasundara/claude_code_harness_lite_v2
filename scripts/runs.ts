@@ -24,7 +24,8 @@ child.on('exit', code => { clearTimeout(timer); process.exit(code ?? 1) })
 child.on('error', () => process.exit(127))
 `
 
-export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number } = {}): RunRow {
+// `stdout`, when given, receives the command's whole stdout (no stderr, no tail cap) for callers that parse it.
+export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number; stdout?: (text: string) => void } = {}): RunRow {
   const started = Date.now()
   const timeoutMs = opts.timeoutMs ?? 600_000
   // A declared `node --test` must really run even when sdlc itself runs inside a node test process.
@@ -34,6 +35,7 @@ export function runCommand(cmd: string, opts: { cwd?: string; timeoutMs?: number
   delete env.GH_TOKEN
   delete env.GITHUB_TOKEN
   const r = spawnSync(process.execPath, ['-e', WRAPPER, cmd, String(timeoutMs)], { cwd: opts.cwd ?? ROOT, env, encoding: 'utf8', timeout: timeoutMs + 5_000, maxBuffer: 64 * 1024 * 1024 })
+  opts.stdout?.((r.stdout ?? '').replace(/\r\n/g, '\n'))
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`.replace(/\r\n/g, '\n').trimEnd()
   const ms = Date.now() - started
   const timedOut = (r.status === TIMED_OUT && ms >= timeoutMs) || (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'

@@ -245,6 +245,22 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
     const now = a.scopes[glob]
     if (!now) { reasons.push(`scope ${glob} removed`); continue }
     for (const d of s.deps ?? []) if (!(now.deps ?? []).includes(d)) reasons.push(`scope ${glob} lost dependency ${d}`)
+    if (now.root !== s.root) reasons.push(`scope ${glob} root changed ${s.root} → ${now.root}`)
+    // Any edit to a command the base declared counts: adding commands does not.
+    for (const p of ['fast', 'full'] as const) for (const [name, cmd] of Object.entries(s[p] ?? {})) {
+      const to = now[p]?.[name]
+      if (!to?.trim()) reasons.push(`scope ${glob} ${p}.${name} removed`)
+      else if (to !== cmd) reasons.push(`scope ${glob} ${p}.${name} changed`)
+    }
+    for (const [cat, q] of Object.entries(s.quality ?? {})) {
+      const to = now.quality?.[cat as keyof typeof now.quality]
+      if (!to?.cmd.trim()) reasons.push(`scope ${glob} quality.${cat} removed`)
+      else if (to.cmd !== q?.cmd || to.count !== q?.count) reasons.push(`scope ${glob} quality.${cat} changed`)
+    }
+  }
+  // A new scope without commands takes its files from the top-level (or a wider scope's) commands and runs nothing for them.
+  if (Object.keys(b.scopes).length) for (const [glob, s] of Object.entries(a.scopes)) {
+    if (!(glob in b.scopes) && !Object.keys(s.fast ?? {}).length && !Object.keys(s.full ?? {}).length) reasons.push(`scope ${glob} added with no fast or full command`)
   }
   for (const k of ['tests', 'contracts', 'testSupport'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
   for (const g of removedFrom(a.ignore, b.ignore)) reasons.push(`ignore added ${g}`)
