@@ -93,7 +93,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 | Cheap subagents | implementer on Sonnet, scout on Haiku; Opus only for architect and reviewer |
 | One review per change | Findings below confidence 80 dropped; bounded fix rounds |
 | No "continue" prompting | `build` ends with a ready `/goal` line; `/rig-run` drives one node per turn |
-| Stamp, don't re-run | `verify` runs the plan's commands and the declared `full` commands once from a clean tree and stamps `verification.md` with a tree stamp; ship and pre-push compare the stamp instead of re-running, and a stale stamp re-runs as before. CI reads no stamp |
+| Stamp, don't re-run | `verify` runs the plan's commands and the declared `full` commands once against the current tree and stamps `verification.md` with a tree stamp; ship and pre-push compare the stamp instead of re-running, and a stale stamp re-runs as before. CI reads no stamp |
 | Lean plans | No code in plans; `status` warns past 120 lines |
 | Plugin diet | Project `enabledPlugins` turns off unrelated plugins |
 | Cloud for long builds | A cloud session keeps running while the laptop sleeps |
@@ -115,9 +115,11 @@ Live, paid, one run per arm: treat as directional.
 
 ## 9. Autonomous ratchet (v0.4)
 
+Since v0.5.0 declared commands prompt unless Claude Code runs in auto mode or the user adds their own `permissions.allow` rules; unattended builds depend on that until `init` writes those rules.
+
 `graph.ts` holds the per-type paths, per-tier gates and `step()`, which says continue, stop for a human, or block, and why. State is `ratchet.json` plus `events.jsonl` per change (evidence, sdlc-written). Build runs slice by slice with a bounded review loop; `levels` (unit, integration, acceptance, api) and `quality` commands (lint and similar, run on the branch and a base worktree, only a worsening blocks, else `unmeasured`) feed the test and sensors nodes; `/rig:pr` commits, pushes and opens the PR; `/rig:pr-review` reads it fail-closed. `/rig-approve <slug> budget` is the only way to raise a cap.
 
-**No auto-approval and no Bash hook.** The guard layer (the `PreToolUse` hooks for Bash and Edit, the `SubagentStart` and `SubagentStop` gates, auto-approval and the read-only Bash allowlist) was removed in v0.5.0. `permissions` deny rules in `templates/settings.json` keep the Edit and Write tools off pure evidence; `ask` rules make a person confirm edits to `sensors.json`, `rules.json`, `.claude/settings.json`, `.sdlc/bin`, the git hooks, the mod, the guides, the `rig-check` workflow and CODEOWNERS. `CLAUDE.md` is deliberately not on the list (`init` writes it with the Write tool). Rules are evaluated deny, then ask, then allow; case-folded paths on case-insensitive file systems are not covered. The model can still run `SDLC_HUMAN=1 ... approve` through Bash; CI refuses approval rows a PR adds unless an independent reviewer approves the head commit. **Never self-approved:** approvals, waivers, budget raises.
+**No auto-approval and no Bash hook.** The guard layer (the `PreToolUse` hooks for Bash and Edit, the `SubagentStart` and `SubagentStop` gates, auto-approval and the read-only Bash allowlist) was removed in v0.5.0. `permissions` deny rules in `templates/settings.json` keep the Edit and Write tools off pure evidence; `ask` rules make a person confirm edits to `sensors.json`, `rules.json`, `.claude/settings.json`, `.sdlc/bin`, the git hooks, the mod, the guides, the `rig-check` workflow and CODEOWNERS. `CLAUDE.md` is deliberately not on the list (`init` writes it with the Write tool). Rules are evaluated deny, then ask, then allow, so the template's `allow: Edit(.sdlc/**)` is overridden by the more specific `ask` and `deny` rules; case-folded paths on case-insensitive file systems are not covered. The model can still run `SDLC_HUMAN=1 ... approve` through Bash; CI refuses approval rows a PR adds unless an independent reviewer approves the head commit. **Never self-approved:** approvals, waivers, budget raises.
 
 **Sensors and test are never self-certified.** `ratchet record` refuses those nodes; `quality` and `verify-report` record them because they measure. The ship gate re-runs the quality comparison. A slice review is model-self-certified and only paces the build; test levels, sensors, the ship gate and CI are what a change must pass.
 
