@@ -32,7 +32,7 @@ function writeFile(rel: string, text: string, written: string[]): void {
 function mergeHooks(written: string[]): void {
   const plugin = JSON.parse(read(path.join(PLUGIN_ROOT, 'hooks', 'hooks.json'))) as { hooks: Record<string, HookGroup[]> }
   const file = path.join(ROOT, '.claude', 'settings.json')
-  const settings = (read(file) ? JSON.parse(read(file)) : {}) as { hooks?: Record<string, HookGroup[]>; extraKnownMarketplaces?: object; enabledPlugins?: Record<string, boolean> }
+  const settings = (read(file) ? JSON.parse(read(file)) : {}) as Record<string, unknown> & { hooks?: Record<string, HookGroup[]>; extraKnownMarketplaces?: object; enabledPlugins?: Record<string, boolean> }
   const hooks = settings.hooks ?? {}
   const ours = (g: HookGroup): boolean => g.hooks.some(h => h.command.includes(SDLC_HOOK))
   for (const [event, groups] of Object.entries(hooks)) {
@@ -47,6 +47,8 @@ function mergeHooks(written: string[]): void {
     }))
     hooks[event] = [...(hooks[event] ?? []), ...copied]
   }
+  // The template's permissions too (deny and ask rules guard the evidence), merged under the project's own.
+  mergeMissing(settings, { permissions: (JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'settings.json'))) as { permissions: object }).permissions })
   const merged = {
     ...settings, hooks,
     extraKnownMarketplaces: { ...settings.extraKnownMarketplaces, 'rig-local': { source: { source: 'directory', path: '.' } } },

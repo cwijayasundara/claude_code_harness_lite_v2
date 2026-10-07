@@ -92,7 +92,7 @@ Registered hooks after R1, five events: `SessionStart` (context), `UserPromptSub
 
 Behaviours removed with the guard layer (recorded in the CHANGELOG): the "file is not in the plan's `## Files`" prompt (scope drift is still judged at ship and CI), the tier L bugfix edit prompt (the `next` gate still holds), consumer-sibling edit rules, the read-only Bash allowlist for scout and reviewer (their `tools:` lists remain), and auto-approval. Guide injection moves from PreToolUse to the slim PostToolUse hook.
 
-Tests: a repo whose `settings.json` lacks a deny rule is reported by `preflight`; deleted-module imports are gone (`tsc`, existing size test); the Stop gate and baseline tests still pass; a scenario test confirms an Edit to a denied evidence path is refused by the permission rule (using Claude Code's `--permission-mode dontAsk` in a recorded run, not a mock); the non-test source ceiling test (≤ 5.0k at v0.7) is added.
+Tests: a repo whose `settings.json` lacks a deny rule is reported by `preflight` (v0.6, with preflight; by hand in 0.5.0); deleted-module imports are gone (`tsc`, existing size test); the Stop gate and baseline tests still pass; a scenario test confirms an Edit to a denied evidence path is refused by the permission rule (using Claude Code's `--permission-mode dontAsk` in a recorded run, not a mock; v0.6 / by hand in 0.5.0); the non-test source ceiling test (≤ 5.0k at v0.7) is added (v0.6 / by hand in 0.5.0; 0.5.0 keeps the size cap in `size.spec.ts`).
 
 Risk: the model can write evidence through a shell script. Accepted and documented: CI recomputes everything, so tampered local evidence cannot reach the trunk. This is the trade the official plugin makes.
 

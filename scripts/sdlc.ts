@@ -261,8 +261,9 @@ function cmdRun(): void {
   const slug = given ? checkSlug(given) : activeSlug()
   if (!slug || !exists(path.join(CHANGES, slug))) fail('no such change: run /rig:start first, or pass an existing --slug')
   const expectFail = Boolean(head.opt['expect-fail'])
+  const before = treeStamp()
   const row = runCommand(cmd)
-  const tree = treeStamp()
+  const tree = treeStamp() === before ? before : null
   const stamped = tree ? { ...row, tree } : row
   recordRun(slug, expectFail ? { ...stamped, expectFail: true } : stamped)
   if (row.tail) out(row.tail)

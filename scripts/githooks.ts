@@ -155,7 +155,7 @@ export function cmdCheckPush(_args: Args): void {
     const shipSlugs = slug?.startsWith('adhoc-') ? [slug] : []
     // A rig change verified and sensed on exactly this tree, pushed from a clean checkout of it, needs neither again.
     const stamped = Boolean(slug) && !slug?.startsWith('adhoc-') && r.localSha === head && !git(['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).sdlc'])
-    const covered = stamped && verificationFresh(slug as string).fullCovered
+    const covered = stamped && verificationFresh(slug as string).fullCovered // knownRed is not tightened here either
     const result = runChecks({
       point: 'ship', diffs, config, rules, slugs: shipSlugs, commands: covered ? 'none' : 'full', budgetMs: config.githooks.budgetMs,
       before: f => showAt(base, f) ?? '', after: f => showAt(r.localSha, f) ?? '', base, ratchet: false,

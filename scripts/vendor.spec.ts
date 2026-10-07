@@ -234,3 +234,41 @@ test('re-vendoring over an older standalone install drops the retired sdlc hooks
   assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
   assert.equal(fs.readFileSync(file, 'utf8'), once, 're-vendoring again changes nothing')
 })
+
+test('vendor --standalone over an old install adds the template permissions, keeps the project\'s own, and is idempotent; plain vendor leaves settings alone', () => {
+  const repo = makeRepo()
+  const old = { permissions: { deny: ['Bash(rm -rf *)'], allow: ['Bash(npm test)'] }, hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.sdlc/bin/sdlc.ts" hook pre-bash' }] }, { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] }] } }
+  write(repo, '.claude/settings.json', JSON.stringify(old))
+  const file = path.join(repo, '.claude/settings.json')
+  assert.equal(sdlc(repo, ['vendor']).code, 0)
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), old, 'plain vendor does not touch settings')
+  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
+  const once = fs.readFileSync(file, 'utf8')
+  const perms = JSON.parse(once).permissions as { deny: string[]; allow: string[]; ask: string[] }
+  assert.ok(perms.deny.includes('Bash(rm -rf *)') && perms.allow.includes('Bash(npm test)'), 'own rules kept')
+  assert.ok(perms.deny.includes('Edit(/.sdlc/approvals.jsonl)') && perms.deny.includes('Edit(/.sdlc/waivers.jsonl)'), 'evidence denies added')
+  assert.ok(perms.ask.includes('Edit(/.sdlc/sensors.json)') && perms.ask.includes('Edit(/CODEOWNERS)'), 'ask rules added')
+  assert.ok(JSON.stringify(JSON.parse(once).hooks).includes('echo mine') && !once.includes('pre-bash'))
+  assert.ok(!once.includes('$comment'))
+  assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
+  assert.equal(fs.readFileSync(file, 'utf8'), once, 'a second run is byte-identical')
+  assert.equal(sdlc(repo, ['init', '--full']).code, 0)
+  const full = fs.readFileSync(file, 'utf8')
+  assert.equal(sdlc(repo, ['init', '--full']).code, 0)
+  assert.equal(fs.readFileSync(file, 'utf8'), full, 'init --full is idempotent too')
+  assert.deepEqual(JSON.parse(full).permissions, JSON.parse(once).permissions)
+})
+
+test('every module a script imports is vendored', () => {
+  const scripts = path.join(import.meta.dirname)
+  const vendoredNames = new Set((fs.readFileSync(path.join(scripts, 'vendor.ts'), 'utf8').match(/export const VENDORED = \[([^\]]*)\]/)?.[1] ?? '').split(',').map(s => s.trim().replace(/'/g, '')))
+  const NOT_VENDORED: string[] = [] // none: the checker copy must be self-contained
+  const missing: string[] = []
+  for (const f of fs.readdirSync(scripts).filter(n => n.endsWith('.ts') && !n.endsWith('.spec.ts') && n !== 'testkit.ts')) {
+    for (const m of fs.readFileSync(path.join(scripts, f), 'utf8').matchAll(/from '\.\/([\w-]+)\.ts'/g)) {
+      if (!vendoredNames.has(m[1] as string) && !NOT_VENDORED.includes(m[1] as string)) missing.push(`${f} imports ${m[1]}`)
+    }
+  }
+  assert.deepEqual(missing, [])
+  assert.ok(vendoredNames.has('stamp') && vendoredNames.size > 20)
+})

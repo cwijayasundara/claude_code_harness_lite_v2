@@ -101,7 +101,7 @@ export function cmdPr(args: Args): void {
   const { config, rules, errors } = loadConfig()
   const sensorsBefore = read(path.join(SDLC, 'sensors.json'))
   // verify ran the declared full commands on this exact tree: judging the tree again would only repeat them.
-  const covered = verificationFresh(slug).fullCovered
+  const covered = verificationFresh(slug).fullCovered // the knownRed ratchet is not tightened on this path; it tightens at the next Stop
   const gate = runChecks({ point: 'ship', diffs: branchDiff(base ?? 'HEAD'), config, rules, slugs: [slug], commands: covered ? 'none' : 'full', budgetMs: 1_800_000, before: f => showAt(base ?? 'HEAD', f) ?? '', base, ratchet: true })
   const ratcheted = read(path.join(SDLC, 'sensors.json')) !== sensorsBefore
   // Defence in depth: when the tree changed after the sensors node, measure again (the base counts are cached per base SHA)

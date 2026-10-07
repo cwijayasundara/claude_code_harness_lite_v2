@@ -27,7 +27,10 @@ function slugOf(args: Args, usage: string): string {
 
 const FULL_BUDGET_MS = 1_800_000
 
-function writeReport(slug: string, full: 'pass' | 'fail' | 'none' = 'none'): 'pass' | 'fail' {
+// `before` is the stamp taken before any command ran: the report is stamped only when the tree is unchanged since, so a
+// command that rewrites files (a formatter, codegen) never vouches for a tree the tests did not run on. verify-report alone
+// never yields `full: pass`.
+function writeReport(slug: string, full: 'pass' | 'fail' | 'none' = 'none', before?: string | null): 'pass' | 'fail' {
   const rows = readRuns(slug)
   const plan = planVerificationBullets(slug)
   const change = loadChange(slug)
@@ -38,7 +41,9 @@ function writeReport(slug: string, full: 'pass' | 'fail' | 'none' = 'none'): 'pa
   const planned = plan.commands.map(normCmd)
   const planPassed = planned.length ? planned.every(c => latest.get(c) === 0) : latest.size > 0 && [...latest.values()].every(e => e === 0)
   const levels = levelResults(slug, required, config, planPassed)
-  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels, { tree: treeStamp(), full })
+  const after = treeStamp()
+  const tree = before === undefined || before === after ? after : null
+  const { text, result } = renderVerification(rows, runsDigest(slug, rows.length), plan.commands, plan.ignored, levels, { tree, full: full === 'pass' && !tree ? 'none' : full })
   fs.writeFileSync(path.join(CHANGES, slug, 'verification.md'), text)
   // A required level nobody declared is not fixable by code (spec §5.2): block with the exact edit a person makes.
   // The level kind clears first, so a cap reached in this same run is recorded rather than refused behind the old block.
@@ -67,8 +72,10 @@ export function cmdVerify(args: Args): void {
   const required = change.type === 'spike' ? [] : requiredLevels(change, read(planPath(slug)), config)
   const wanted = [...planVerificationBullets(slug).commands, ...required.map(l => config.levels[l] ?? '')].filter(Boolean)
   const trusted = declaredCommandSet(slug)
+  const before = treeStamp()
   const seen = new Set<string>()
   const skipped: string[] = []
+  const ran = new Set<string>()
   for (const cmd of wanted) {
     const key = normCmd(cmd)
     if (seen.has(key)) continue
@@ -76,11 +83,12 @@ export function cmdVerify(args: Args): void {
     if (!trusted.has(key)) { skipped.push(cmd); continue }
     const row = runCommand(cmd)
     recordRun(slug, row)
+    ran.add(key)
     out(`exit ${row.exit}${row.timedOut ? ' (timed out)' : ''} in ${row.ms} ms: ${cmd}`)
   }
   if (skipped.length) out(`not run (not declared in sensors.json and the plan is not approved): ${skipped.map(c => `\`${c}\``).join(', ')}. Run each with \`sdlc.ts run --slug ${slug} -- "<command>"\`, which asks the person, then \`verify-report ${slug}\`.`)
   // One authoritative run: the declared full commands run here too, so ship and push can check the stamp instead.
-  const failed = runDeclared('full', config, slug, FULL_BUDGET_MS).filter(f => f.severity === 'block')
+  const failed = runDeclared('full', { ...config, full: Object.fromEntries(Object.entries(config.full).filter(([, c]) => !ran.has(normCmd(c)))) }, slug, FULL_BUDGET_MS).filter(f => f.severity === 'block')
   if (failed.length) out(formatFindings(failed))
-  if (writeReport(slug, failed.length ? 'fail' : 'pass') !== 'pass') process.exitCode = 1
+  if (writeReport(slug, failed.length ? 'fail' : 'pass', before) !== 'pass') process.exitCode = 1
 }

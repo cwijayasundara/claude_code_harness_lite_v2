@@ -36,11 +36,11 @@ export function treeStamp(): string | null {
 
 // verification.md was written by sdlc, passed, and was stamped on exactly this tree. fullCovered: its declared full
 // commands also passed there, so ship and push need not run them again.
-export function verificationFresh(slug: string): { fresh: boolean; fullCovered: boolean } {
+export function verificationFresh(slug: string): { fullCovered: boolean } {
   const { data } = frontmatter(read(path.join(CHANGES, slug, 'verification.md')))
   const now = treeStamp()
   const fresh = data.generated === 'sdlc' && data.result === 'pass' && Boolean(data.tree) && now !== null && data.tree === now
-  return { fresh, fullCovered: fresh && data.full === 'pass' }
+  return { fullCovered: fresh && data.full === 'pass' }
 }
 
 // The sensors node finished clean on exactly this tree.

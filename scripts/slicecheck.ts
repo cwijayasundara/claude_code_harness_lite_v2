@@ -19,5 +19,5 @@ export function checkSlice(slug: string): SliceCheck {
   const tests = new Set([config.fast.test, config.full.test, ...Object.values(config.levels), ...(planApproved(slug) ? planVerification(slug) : [])].filter((c): c is string => Boolean(c)).map(normCmd))
   const tree = treeStamp()
   const green = tree !== null && readRuns(slug).some(r => !r.expectFail && !r.source && !r.timedOut && r.exit === 0 && r.tree === tree && tests.has(normCmd(r.cmd)))
-  return green ? { ok: true } : { ok: false, why: 'no green run of a declared test command on the current tree: run it with sdlc.ts run -- "<command>", then record again' }
+  return green ? { ok: true } : { ok: false, why: 'no green run of a declared test command on the current tree (declared: fast.test or full.test in sensors.json, levels.*, or the approved plan ## Verification): run one with sdlc.ts run -- "<command>", then record again' }
 }

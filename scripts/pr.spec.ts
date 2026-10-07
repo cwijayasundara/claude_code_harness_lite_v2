@@ -535,3 +535,15 @@ test('ship does not re-measure quality when the sensors node was stamped on this
   assert.equal(r.code, 0, r.stderr)
   assert.equal(count(m), measured)
 })
+
+test('ship runs the full commands when a full command rewrote the tree during verify', () => {
+  const m = marker()
+  const rewrite = `node -e "require('fs').appendFileSync('${m}','x');require('fs').appendFileSync('src/app.js','y')"`
+  stamped({ fast: { test: OK }, full: { fmt: rewrite } })
+  assert.equal(sdlc(repo, ['verify', 'tiny']).code, 0)
+  assert.equal(count(m), 1)
+  markDone('tiny', ['build', 'sensors'])
+  const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(count(m), 2, 'no stamp, so ship ran it again')
+})

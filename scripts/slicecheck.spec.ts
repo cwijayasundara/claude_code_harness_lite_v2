@@ -82,3 +82,15 @@ test('--checks takes no reply: combined with --from it refuses', () => {
   assert.match(r.stderr, /--checks takes no reply/)
   assert.equal(state().slices['1'], undefined)
 })
+
+test('a declared command that rewrites files is recorded without a tree, so it cannot clear a slice', () => {
+  change('M')
+  const rewrite = `node -e "require('fs').appendFileSync('src/a.js','//x\\n')"`
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: rewrite } }))
+  assert.equal(sdlc(repo, ['run', '--slug', 'feat', '--', rewrite]).code, 0)
+  const rows = fs.readFileSync(path.join(repo, '.sdlc/changes/feat/runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  assert.equal(rows[0].tree, undefined)
+  const r = record()
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /no green run of a declared test command on the current tree \(declared: fast\.test or full\.test in sensors\.json/)
+})

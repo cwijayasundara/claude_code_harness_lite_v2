@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, write, buildDone, gitIn } from './testkit.ts'
 
@@ -84,4 +85,30 @@ test('verify-report alone does not claim the full commands ran', () => {
   sdlc(repo, ['run', '--slug', 'tiny', '--', PASS])
   sdlc(repo, ['verify-report', 'tiny'])
   assert.match(report(repo), /^full: none$/m)
+})
+
+test('a full command that rewrites the tree leaves verification unstamped and ship runs the full commands again', () => {
+  const m = path.join(os.tmpdir(), `rig-rw-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
+  const rewrite = `node -e "require('fs').appendFileSync('${m}','x');require('fs').appendFileSync('src/a.js','//y\\n')"`
+  const repo = stampedChange({ fmt: rewrite })
+  const r = sdlc(repo, ['verify', 'tiny'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.doesNotMatch(report(repo), /^tree: /m)
+  assert.doesNotMatch(report(repo), /^full: pass$/m)
+  assert.equal(fs.readFileSync(m, 'utf8').length, 1)
+})
+
+test('a full command equal to a plan command runs once during verify and is still recorded as the full pass', () => {
+  const m = path.join(os.tmpdir(), `rig-once-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
+  const bump = `node -e "require('fs').appendFileSync('${m}','x')"`
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: bump }, full: { test: bump } }))
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/a.js\n## Verification\n- \`${bump}\`\n`)
+  write(repo, 'src/a.js', 'export const a = 1\n')
+  const r = sdlc(repo, ['verify', 'tiny'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.equal(fs.readFileSync(m, 'utf8').length, 1, 'the command ran once')
+  assert.match(report(repo), /^full: pass$/m)
 })
