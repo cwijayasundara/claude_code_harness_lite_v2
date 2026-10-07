@@ -2,7 +2,7 @@
 import path from 'node:path'
 import { CHANGES, USAGE, planPath, read, readJsonl, frontmatter, out, fail, checkSlug, type Args, type UsageRow } from './core.ts'
 import { loadChange, step } from './graph.ts'
-import { readEvents, readRatchet, rawSpendUsd } from './ratchet.ts'
+import { readEvents, readRatchet } from './ratchet.ts'
 import { loadConfig } from './check.ts'
 import { pointsOf } from './points.ts'
 import { readRuns } from './runs.ts'

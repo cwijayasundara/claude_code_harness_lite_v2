@@ -1,6 +1,6 @@
 // Language-agnostic sensors: pure functions from a parsed diff and config to findings.
 // Language knowledge lives in the pattern tables below, never in code paths per language.
-import { RATCHET_NODES, parseConfig, parseRules, type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
+import { RATCHET_NODES, parseConfig, parseRules, type FileDiff, type Finding, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
 import { selectScopes } from './scopes.ts'
 
 export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
