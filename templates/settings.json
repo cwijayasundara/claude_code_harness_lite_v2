@@ -7,7 +7,8 @@
   "autoCompactWindow": 200000,
   "permissions": {
     "allow": [
-      "Edit(.sdlc/**)"
+      "Edit(.sdlc/**)",
+      "Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts *)"
     ],
     "ask": [
       "Edit(/.sdlc/sensors.json)",
