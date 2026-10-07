@@ -21,7 +21,8 @@
       "Edit(/.sdlc/guides/**)",
       "Edit(/.github/workflows/rig-check.yml)",
       "Edit(/CODEOWNERS)",
-      "Edit(/.github/CODEOWNERS)"
+      "Edit(/.github/CODEOWNERS)",
+      "Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts evals*)"
     ],
     "deny": [
       "Read(.env)",

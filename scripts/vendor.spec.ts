@@ -197,6 +197,7 @@ test('the settings template protects evidence with deny rules and the harness co
     'Edit(/.sdlc/sensors.json)', 'Edit(/.sdlc/rules.json)', 'Edit(/.sdlc/evals/*.json)', 'Edit(/.claude/settings.json)',
     'Edit(/.sdlc/bin/**)', 'Edit(/.sdlc/githooks/**)', 'Edit(/.sdlc/mod/**)', 'Edit(/.sdlc/guides/**)',
     'Edit(/.github/workflows/rig-check.yml)', 'Edit(/CODEOWNERS)', 'Edit(/.github/CODEOWNERS)',
+    'Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts evals*)',
   ])
   assert.ok(settings.permissions.ask.includes('Edit(/.sdlc/bin/**)'), 'a model edit to the vendored checker (.sdlc/bin/sensors.ts) asks the person')
   assert.ok(!settings.permissions.ask.some(r => /CLAUDE\.md/.test(r)), 'unattended init writes CLAUDE.md, so it never asks')

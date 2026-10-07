@@ -11,7 +11,7 @@ import type { FileDiff } from './model.ts'
 
 const STUB = `#!/usr/bin/env node
 const fs = require('fs')
-fs.appendFileSync(process.env.STUB_LOG, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), gh: process.env.GH_TOKEN }) + '\\n')
+fs.appendFileSync(process.env.STUB_LOG, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), gh: process.env.GH_TOKEN, cc: process.env.CLAUDECODE, sid: process.env.CLAUDE_CODE_SESSION_ID, msg: process.env.CLAUDE_CODE_MESSAGING_X }) + '\\n')
 if (process.env.STUB_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.STUB_SLEEP))
 if (process.env.STUB_WRITE) fs.writeFileSync(process.env.STUB_WRITE, 'done by stub\\n')
 if (process.env.STUB_SKILL) console.log(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Skill', input: { skill: process.env.STUB_SKILL } }] } }))
@@ -33,7 +33,7 @@ beforeEach(() => {
 })
 const evals = (args: string[], env: Record<string, string> = {}) => sdlc(repo, ['evals', ...args], { env: { RIG_CLAUDE: stub, STUB_LOG: log, ...env } })
 const defineEval = (id: string, body: object) => write(repo, `.sdlc/evals/${id}.json`, JSON.stringify(body))
-const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { cwd: string; args: string[]; gh?: string })
+const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { cwd: string; args: string[]; gh?: string; cc?: string; sid?: string; msg?: string })
 const results = () => fs.readFileSync(path.join(repo, '.sdlc/evals/results.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as EvalResult)
 
 test('parseEval accepts a full definition and rejects what it cannot trust', () => {
@@ -164,10 +164,41 @@ test('eval definitions are protected harness files; results stay sdlc-written; t
   assert.ok(t.permissions.ask.includes('Edit(/.sdlc/evals/*.json)'))
 })
 
-test('claude does not get the GitHub tokens', () => {
+test('claude does not get the GitHub tokens or the running session\'s variables', () => {
   defineEval('tok', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
-  evals([], { GH_TOKEN: 'secret-x', GITHUB_TOKEN: 'secret-y' })
-  assert.equal(calls()[0]?.gh, undefined)
+  evals([], { GH_TOKEN: 'secret-x', GITHUB_TOKEN: 'secret-y', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_CODE_MESSAGING_X: 'y' })
+  const [call] = calls()
+  assert.deepEqual([call?.gh, call?.cc, call?.sid, call?.msg], [undefined, undefined, undefined, undefined])
+})
+
+test('the vendored harness comes from HEAD, not the eval base, so HEAD\'s skills and hooks find the scripts they call', () => {
+  write(repo, '.sdlc/bin/x.txt', 'old harness\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'old')
+  const base = gitIn(repo, 'rev-parse', 'HEAD')
+  write(repo, '.sdlc/bin/x.txt', 'new harness\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'new')
+  defineEval('bin', { prompt: 'p', base, checks: [{ kind: 'file-contains', path: '.sdlc/bin/x.txt', text: 'new harness' }] })
+  assert.match(evals([]).stdout, /^pass bin$/m)
+})
+
+test('uncommitted eval definitions run as they are, and the run says so', () => {
+  defineEval('fine', { prompt: 'p', checks: [{ kind: 'command', cmd: 'true' }] })
+  assert.match(evals([]).stdout, /^warn: uncommitted eval definitions run as they are in the working tree$/m)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'evals')
+  const r = evals([])
+  assert.doesNotMatch(r.stdout, /uncommitted eval definitions/, 'a committed definition and a fresh results.jsonl do not warn')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'results')
+  write(repo, '.sdlc/evals/results.jsonl', '')
+  assert.doesNotMatch(evals([]).stdout, /uncommitted eval definitions/, 'results.jsonl is not a definition')
+})
+
+test('the template asks before sdlc.ts evals runs, though it allows the other sdlc.ts commands', () => {
+  const t = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../templates/settings.json'), 'utf8'))
+  assert.ok(t.permissions.ask.includes('Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts evals*)'))
 })
 
 test('an eval file missing at HEAD is an error naming it', () => {
@@ -194,11 +225,22 @@ test('--seed drafts one eval per shipped change from its intent, base, tests and
   assert.deepEqual(draft.checks, [{ kind: 'command', cmd: 'node --test tests/hi.test.js' }])
   assert.equal(draft.source, 'change:demo')
   assert.match(draft.prompt, /Add a greeting/)
+  assert.equal(draft.allowedTools, 'Read,Grep,Glob,Edit,Write,Bash(node --test tests/hi.test.js)')
   const gate = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8'))
   assert.ok(gate.tool.includes('.sdlc/evals/change-demo.json'))
   write(repo, '.sdlc/evals/change-demo.json', '{"kept":true}')
   assert.match(evals(['--seed']).stdout, /nothing to seed/)
   assert.equal(fs.readFileSync(path.join(repo, '.sdlc/evals/change-demo.json'), 'utf8'), '{"kept":true}')
+})
+
+test('--seed skips a change whose ship base is not a commit hash', () => {
+  write(repo, '.sdlc/changes/odd/intent.md', '---\nslug: odd\ntype: feature\ntier: S\n---\n# odd\n')
+  write(repo, '.sdlc/changes/odd/plan.md', '## Verification\n- `true`\n')
+  write(repo, '.sdlc/changes/odd/ship.json', JSON.stringify({ base: '--output=/tmp/x' }))
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'ship odd')
+  assert.match(evals(['--seed']).stdout, /nothing to seed/)
+  assert.equal(fs.existsSync(path.join(repo, '.sdlc/evals/change-odd.json')), false)
 })
 
 test('status shows the last eval run', () => {
@@ -233,7 +275,7 @@ test('metrics: incident_to_eval_hours is the median over incidents that have an 
 test('a harness change outside the weakening rules asks for an eval run', () => {
   const [f] = harnessTamper([{ file: 'CLAUDE.md', status: 'M' } as FileDiff], { point: 'ship', before: () => '', after: () => '' })
   assert.equal(f?.severity, 'warn')
-  assert.match(f?.fix ?? '', /sdlc\.ts evals/)
+  assert.match(f?.fix ?? '', /ask the person to run `sdlc\.ts evals`/)
 })
 
 test('diagnose turns an incident fix into an eval named for its class', () => {
@@ -243,4 +285,6 @@ test('diagnose turns an incident fix into an eval named for its class', () => {
   assert.match(text, /bare file name, with no directory/)
   assert.match(text, /"base": "<the HEAD noted in step 1>"/)
   assert.match(text, /runs once this change ships, when the regression test is committed/)
+  assert.match(text, /"allowedTools": "Read,Grep,Glob,Edit,Write,Bash\(<the regression test command>\)"/)
+  assert.match(text, /If the write is denied \(headless run\), give the person the JSON instead\./)
 })

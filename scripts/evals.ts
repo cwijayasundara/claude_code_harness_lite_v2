@@ -13,7 +13,8 @@ import { matchesAny } from './model.ts'
 
 export const EVALS = path.join(SDLC, 'evals')
 export const RESULTS = path.join(EVALS, 'results.jsonl')
-export const CONFIG_PATHS = ['CLAUDE.md', '.claude', '.sdlc/guides', '.sdlc/rules.json', '.sdlc/sensors.json']
+// The vendored harness (.sdlc/bin, githooks, mod) comes from HEAD too: HEAD's skills and hooks call the scripts beside them.
+export const CONFIG_PATHS = ['CLAUDE.md', '.claude', '.sdlc/guides', '.sdlc/rules.json', '.sdlc/sensors.json', '.sdlc/bin', '.sdlc/githooks', '.sdlc/mod']
 
 export type Check = { kind: 'command'; cmd: string } | { kind: 'file-contains'; path: string; text: string } | { kind: 'file-absent'; path: string } | { kind: 'skill-loaded'; name: string }
 export type Eval = { id: string; prompt: string; checks: Check[]; allowedTools?: string; base?: string; files?: string[]; source?: string }
@@ -98,6 +99,9 @@ function runEval(e: Eval, run: string, cfg: { maxTurns: number; timeoutMs: numbe
     delete env.NODE_TEST_CONTEXT
     delete env.GH_TOKEN
     delete env.GITHUB_TOKEN
+    // The nested claude is its own session, not a child of the one that may have launched this run.
+    for (const k of Object.keys(env)) if (k.startsWith('CLAUDE_CODE_MESSAGING_')) delete env[k]
+    for (const k of ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_EFFORT']) delete env[k]
     const c = spawnSync(bin, args, { cwd: dir, env, encoding: 'utf8', timeout: cfg.timeoutMs, maxBuffer: 256 * 1024 * 1024 })
     const code = (c.error as NodeJS.ErrnoException | undefined)?.code
     if (code === 'ENOENT') return done(false, [], `${bin} not found: install Claude Code`)
@@ -132,11 +136,12 @@ function seed(limit: number): void {
     let ship: { base?: unknown } = {}
     try { ship = JSON.parse(read(path.join(CHANGES, slug, 'ship.json'))) as { base?: unknown } } catch { continue }
     const cmds = planVerification(slug)
-    if (exists(file) || !str(ship.base) || !cmds.length) continue
+    // The base goes to git as a revision, so only a commit hash is trusted; anything else skips the change.
+    if (exists(file) || typeof ship.base !== 'string' || !/^[0-9a-f]{7,40}$/.test(ship.base) || !cmds.length) continue
     const shipCommit = git(['log', '-1', '--format=%H', '--', `.sdlc/changes/${slug}/ship.json`]) ?? 'HEAD'
     const files = (git(['diff', '--name-only', ship.base, shipCommit]) ?? '').split('\n').filter(f => f && matchesAny(f, tests))
     const { body } = frontmatter(read(path.join(CHANGES, slug, 'intent.md')))
-    const draft = { prompt: `Make this change in this repository, then run its verification.\n\n${body.trim()}`, base: ship.base, files, checks: cmds.map(cmd => ({ kind: 'command', cmd })), source: `change:${slug}` }
+    const draft = { prompt: `Make this change in this repository, then run its verification.\n\n${body.trim()}`, base: ship.base, files, checks: cmds.map(cmd => ({ kind: 'command', cmd })), allowedTools: 'Read,Grep,Glob,Edit,Write,' + cmds.map(c => `Bash(${c})`).join(','), source: `change:${slug}` }
     fs.mkdirSync(EVALS, { recursive: true })
     fs.writeFileSync(file, JSON.stringify(draft, null, 2) + '\n')
     written.push(`.sdlc/evals/change-${slug}.json`)
@@ -152,7 +157,8 @@ export function cmdEvals(args: Args): void {
   const only = optString(args, 'only')
   const files = exists(EVALS) ? fs.readdirSync(EVALS).filter(f => f.endsWith('.json') && (!only || f === `${only}.json`)).sort() : []
   if (!files.length) fail(only ? `no eval ${only} in .sdlc/evals` : 'no evals in .sdlc/evals: run `sdlc.ts evals --seed` or write one')
-  if (git(['status', '--porcelain', '--', ...CONFIG_PATHS])) out('warn: uncommitted changes to CLAUDE.md, .claude, guides, rules or sensors are not evaluated: evals use the configuration at HEAD; commit first')
+  if (git(['status', '--porcelain', '--', ...CONFIG_PATHS])) out('warn: uncommitted changes to CLAUDE.md, .claude, guides, rules, sensors or the vendored harness are not evaluated: evals use the configuration at HEAD; commit first')
+  if ((git(['status', '--porcelain', '--untracked-files=all', '--', '.sdlc/evals']) ?? '').split('\n').some(l => l.trim().endsWith('.json'))) out('warn: uncommitted eval definitions run as they are in the working tree')
   const run = now()
   const model = optString(args, 'model')
   const rows: EvalResult[] = files.map(f => {
