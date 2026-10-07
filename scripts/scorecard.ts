@@ -5,9 +5,11 @@ import { loadChange, step } from './graph.ts'
 import { readEvents, readRatchet, rawSpendUsd } from './ratchet.ts'
 import { loadConfig } from './check.ts'
 import { pointsOf } from './points.ts'
+import { readRuns } from './runs.ts'
+import { timing } from './timing.ts'
 import type { RatchetNode } from './model.ts'
 
-export type Story = { slug: string; node: string | null; verdict: string; round: number; cap: number; tokens: number; tokensByNode: Record<string, number>; budgetByNode: Record<string, { spent: number; cap: number }>; usd: number; usdByNode: Record<string, number>; valueUsd: number; valueHours: number; autoApproved: number; escalations: number; levels: string; sensors: string; points: number; pointsSource: string }
+export type Story = { slug: string; node: string | null; verdict: string; round: number; cap: number; tokens: number; tokensByNode: Record<string, number>; budgetByNode: Record<string, { spent: number; cap: number }>; usd: number; usdByNode: Record<string, number>; valueUsd: number; valueHours: number; autoApproved: number; escalations: number; levels: string; sensors: string; points: number; pointsSource: string; workMs: number; spanMs: number; idleMs: number; lastActivity: string | null }
 
 const tokensOf = (r: UsageRow): number => (r.in ?? 0) + (r.out ?? 0) + (r.cr ?? 0) + (r.cw ?? 0)
 
@@ -36,6 +38,21 @@ export function story(slug: string): Story {
   for (const [n, cap] of Object.entries(config.ratchet.usd)) if (n in usdByNode) budgetByNode[n] = { spent: usdByNode[n] ?? 0, cap }
   const valueHours = valueHoursFor(slug, change.tier, config.value.hours)
   const events = readEvents(slug)
+  const lanes = new Map<string, number>()
+  const intervals: [number, number][] = []
+  const stamps: number[] = []
+  for (const e of events) {
+    const t = Date.parse(e.at)
+    if (!Number.isFinite(t)) continue
+    if (e.kind === 'lane' && e.id && e.verdict === 'start') lanes.set(e.id, t)
+    else if (e.kind === 'lane' && e.id && e.verdict === 'stop' && lanes.has(e.id)) { intervals.push([lanes.get(e.id) ?? t, t]); lanes.delete(e.id) }
+    else stamps.push(t)
+  }
+  for (const row of readRuns(slug)) {
+    const end = Date.parse(row.at)
+    if (Number.isFinite(end)) intervals.push([end - Math.max(0, row.ms), end])
+  }
+  const tm = timing(intervals, stamps, config.idleGapMs)
   const r = readRatchet(slug)
   const node = s.node as RatchetNode | null
   return {
@@ -45,9 +62,11 @@ export function story(slug: string): Story {
     levels: frontmatter(read(path.join(CHANGES, slug, 'verification.md'))).data.levels ?? '',
     sensors: r.nodes.sensors?.status === 'done' ? 'pass' : r.nodes.sensors ? 'open' : 'not run',
     points: pointsOf(slug).points, pointsSource: pointsOf(slug).source,
+    workMs: tm.workMs, spanMs: tm.spanMs, idleMs: tm.idleMs, lastActivity: tm.lastAt === null ? null : new Date(tm.lastAt).toISOString(),
   }
 }
 
+const dur = (ms: number): string => { const m = Math.round(ms / 60_000); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m` }
 const money = (n: number): string => `$${n.toLocaleString('en-US', { minimumFractionDigits: n < 100 ? 2 : 0, maximumFractionDigits: n < 100 ? 2 : 0 })}`
 
 export function renderScorecard(slug: string): string {
@@ -64,6 +83,7 @@ export function renderScorecard(slug: string): string {
     `| Test levels | ${s.levels || 'none recorded'} |`,
     `| Sensors | ${s.sensors} |`,
     `| Story points | ${s.points} (${s.pointsSource}) |`,
+    `| Time | work ${dur(s.workMs)} · span ${dur(s.spanMs)} · idle ${dur(s.idleMs)} |`,
     `| Auto-approved tool calls | ${s.autoApproved} |`,
     `| Budget | ${Object.entries(s.budgetByNode).map(([n, b]) => `${n} ${money(b.spent)}/$${b.cap}`).join(', ') || 'none'} |`,
     `| Escalations | ${s.escalations} |`,

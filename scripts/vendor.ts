@@ -5,9 +5,9 @@ import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
 import { writeHookScripts, installHooks } from './githooks.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'shards', 'quality', 'basetree', 'configparse', 'levels', 'verify', 'hooks', 'metrics', 'scorecard', 'points', 'flow', 'pr', 'sdlc', 'githooks', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'shards', 'quality', 'basetree', 'configparse', 'levels', 'verify', 'hooks', 'metrics', 'scorecard', 'points', 'timing', 'flow', 'pr', 'sdlc', 'githooks', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
-type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
+type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number; async?: boolean }[] }
 
 // Plugin references rewritten for a project copy: script paths, /rig:x skills, rig:x agents and the skill's name.
 export function forProject(text: string): string {

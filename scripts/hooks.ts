@@ -4,7 +4,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  ROOT, SDLC, git, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
+  ROOT, SDLC, CHANGES, git, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
   scanSecrets, planProblems, relPosix, sha, withLock, writeAtomic, type Args, type HookInput,
 } from './core.ts'
 import { activeSlug, loadChange, nextCommand, createAdhoc } from './graph.ts'
@@ -13,6 +13,7 @@ import { isProtected, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, warnRow, type Finding, type SensorConfig } from './model.ts'
 import { sessionNote } from './githooks.ts'
+import { appendEvent, readEvents } from './ratchet.ts'
 
 function readStdin(): HookInput {
   try {
@@ -220,12 +221,28 @@ function hookStop(): void {
   out(JSON.stringify({ decision: 'block', reason: `sdlc quality gate (attempt ${attempt}/${MAX_BLOCKS}): fix these before you finish.\n${formatFindings(findings)}` }))
 }
 
+// Subagent lanes, for the work/span/idle numbers. Observational only: they never block and write nothing without an active change.
+function laneEvent(input: HookInput, phase: 'start' | 'stop'): void {
+  try {
+    if (!exists(SDLC)) return
+    const slug = activeSlug()
+    if (!slug || !exists(path.join(CHANGES, slug))) return
+    const id = String(input.agent_id ?? '').slice(0, 80)
+    const agent = String(input.agent_type ?? 'unknown').slice(0, 60)
+    if (phase === 'start') return appendEvent(slug, { node: 'lane', verdict: 'start', kind: 'lane', agent, id })
+    const started = readEvents(slug).findLast(e => e.kind === 'lane' && e.verdict === 'start' && e.id === id)
+    appendEvent(slug, { node: 'lane', verdict: 'stop', kind: 'lane', agent, id, ms: started ? Math.max(0, Date.now() - Date.parse(started.at)) || 0 : 0 })
+  } catch { /* observational: a failure must never wedge a session */ }
+}
+
 const HOOKS: Record<string, (input: HookInput) => void> = {
   'session-start': hookSessionStart,
   'post-edit': hookPostEdit,
   'skill-failed': hookSkillFailed,
   'prompt-submit': () => hookPromptSubmit(),
   stop: () => hookStop(),
+  'subagent-start': i => laneEvent(i, 'start'),
+  'subagent-stop': i => laneEvent(i, 'stop'),
 }
 
 // A standalone repo registers its own copy's hooks in .claude/settings.json. The plugin's copy of a hook steps aside only
