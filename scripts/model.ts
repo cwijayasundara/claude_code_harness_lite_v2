@@ -44,6 +44,7 @@ export type SensorConfig = {
   value: { rate: number; hours: Record<'S' | 'M' | 'L', number> }
   points: Record<'S' | 'M' | 'L', number>
   idleGapMs: number
+  evals: { minPass: number; maxErrors: number; maxTurns: number; timeoutMs: number }
   scopes: Record<string, Scope>
   scopeLimit: number
   ci: { scope: 'affected' | 'all' }
@@ -72,6 +73,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   value: { rate: 100, hours: { S: 2, M: 8, L: 24 } },
   points: { S: 5, M: 7, L: 11 },
   idleGapMs: 900_000,
+  evals: { minPass: 0.9, maxErrors: 2, maxTurns: 30, timeoutMs: 600_000 },
   scopes: {},
   scopeLimit: 3,
   ci: { scope: 'affected' },

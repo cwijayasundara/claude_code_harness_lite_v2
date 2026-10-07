@@ -74,6 +74,15 @@ export function parseV6(value: Record<string, unknown>, config: SensorConfig, er
   }
   if ('affected' in value) { if (typeof value.affected === 'string') config.affected = value.affected; else errors.push('affected must be a command string') }
   if ('sparseBase' in value) { if (typeof value.sparseBase === 'boolean') config.sparseBase = value.sparseBase; else errors.push('sparseBase must be true or false') }
+  if ('evals' in value) {
+    if (!isObject(value.evals)) errors.push('evals must be { minPass, maxErrors, maxTurns, timeoutMs }')
+    else for (const [k, v] of Object.entries(value.evals)) {
+      if (k === 'minPass') { if (typeof v === 'number' && v >= 0 && v <= 1) config.evals.minPass = v; else errors.push('evals.minPass must be a number from 0 to 1') }
+      else if (k === 'maxErrors') { if (Number.isInteger(v) && (v as number) >= 0) config.evals.maxErrors = v as number; else errors.push('evals.maxErrors must be a whole number') }
+      else if (k === 'maxTurns' || k === 'timeoutMs') { if (posInt(v)) config.evals[k] = v; else errors.push(`evals.${k} must be a positive integer`) }
+      else errors.push(`evals: unknown key "${k}"`)
+    }
+  }
   if ('scopes' in value) parseScopes(value.scopes, config, errors)
 }
 
