@@ -3,6 +3,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
+import { execFileSync } from 'node:child_process'
+import { makeRepo, gitIn, write } from './testkit.ts'
 
 const ROOT = path.join(import.meta.dirname, '..')
 const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8')
@@ -38,4 +41,39 @@ test('tier S builds through a Haiku implementer; tier S and M review through rig
   const review = read('skills/pr-review/SKILL.md')
   assert.match(review, /Tier S and M: one `rig:reviewer`/)
   assert.doesNotMatch(review, /Tier S and M: one `code-review`/)
+})
+
+// The model-by-tier step, cut from the workflow between its markers and run in a real git repo.
+function pickModel(setup: (repo: string) => void): string {
+  const yml = read('templates/rig-review.yml')
+  const block = yml.slice(yml.indexOf('# model-by-tier:start'), yml.indexOf('# model-by-tier:end'))
+  assert.ok(block, 'the workflow carries the model-by-tier markers')
+  const script = block.split('\n').map(l => l.replace(/^ {10}/, '')).join('\n')
+  const repo = makeRepo()
+  gitIn(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
+  gitIn(repo, 'checkout', '-q', '-b', 'pr')
+  setup(repo)
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'pr', '--allow-empty')
+  const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rig-gh-')), 'out')
+  execFileSync('bash', ['-c', script], { cwd: repo, env: { ...process.env, BASE: 'main', GITHUB_OUTPUT: outFile } })
+  return fs.readFileSync(outFile, 'utf8').trim()
+}
+const change = (slug: string, ratchet: string) => (repo: string) => write(repo, `.sdlc/changes/${slug}/ratchet.json`, ratchet)
+
+test('CI review model: S haiku, M sonnet, L opus', () => {
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}')), 'model=claude-haiku-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"M","type":"refactor"}')), 'model=claude-sonnet-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"L","type":"feature"}')), 'model=claude-opus-5-5')
+})
+
+test('CI review model fails closed to Opus: greenfield, no change folder, two folders, unreadable ratchet', () => {
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"greenfield"}')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(repo => write(repo, 'src/x.js', 'x\n')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(repo => { change('a', '{"tier":"S"}')(repo); change('b', '{"tier":"S"}')(repo) }), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', 'not json')), 'model=claude-opus-5-5')
+})
+
+test('the CI review passes the picked model to Claude', () => {
+  assert.match(read('templates/rig-review.yml'), /--model \$\{\{ steps\.model\.outputs\.model \}\}/)
 })
