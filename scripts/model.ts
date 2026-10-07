@@ -7,7 +7,7 @@ export type Severity = 'block' | 'warn'
 // Every sensor name a Finding can carry; /rig-waive accepts exactly these (a test keeps this in step with the sources).
 export const SENSOR_NAMES = [
   'test-tamper', 'suppression', 'layering', 'size', 'secrets', 'rules', 'contract-impact', 'harness-tamper',
-  'traceability', 'red-proof', 'unscanned', 'adhoc', 'commands', 'config', 'tier',
+  'traceability', 'red-proof', 'unscanned', 'adhoc', 'commands', 'config', 'tier', 'unscoped',
 ]
 
 export type Finding = { sensor: string; severity: Severity; file?: string; line?: number; message: string; fix: string; labels?: string[] }

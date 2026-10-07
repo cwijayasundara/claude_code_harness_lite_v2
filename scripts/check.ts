@@ -10,6 +10,7 @@ import { parseConfig, parseRules, formatFindings, warnLines, matchesAny, isTest,
 import { withoutFixtures, testTamper, suppressions, layering, size, secretsInDiff, rulesSensor, retiredIdentifiers, contractsFromPlan, harnessTamper, behaviourIds, behaviourText, missingBehaviours, tierFromDiff } from './sensors.ts'
 import { readBaseline, snapshot, turnDiff, fileDiff, branchDiff, showAt, fileLines, stagedDiff, showStaged } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
+import { selectScopes } from './scopes.ts'
 import { withBaseTree } from './basetree.ts'
 import { loadChange, activeSlug } from './graph.ts'
 
@@ -301,6 +302,10 @@ export function runChecks(i: CheckInput): CheckResult {
   if (point !== 'stop') for (const slug of i.slugs) findings.push(...shipVerdicts(slug, config, diffs, i.base, i.budgetMs))
   if (i.point === 'ci' && !i.slugs.length) findings.push(...unrecorded(diffs, config))
   if (point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
+  if (Object.keys(config.scopes).length) {
+    const unscoped = selectScopes(diffs.filter(d => isSource(d.file, config)).map(d => d.file), config).unscoped
+    if (unscoped.length) findings.push({ sensor: 'unscoped', severity: 'warn', message: `${unscoped.length} changed file(s) match no scope, so the top-level commands run for them: ${unscoped.slice(0, 5).join(', ')}`, fix: 'add a scope glob that covers them in .sdlc/sensors.json scopes' })
+  }
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci'))
   const result = applyWaivers(findings, i.slugs, i.point === 'ci' ? { base: i.base } : undefined)
   logRuleFires(result.findings, i.point)
@@ -358,7 +363,8 @@ export function independentApproval(): string | null {
 
 function report(point: string, result: CheckResult, count: number, json: boolean, humanRows: string[] = []): void {
   if (json) return out(JSON.stringify({ ...result, humanRows }))
-  const text = [formatFindings(result.findings), ...(point === 'commit' ? warnLines(result.findings) : [])].filter(Boolean).join('\n')
+  // A commit hook and the CI log are read by a person, so they list each warning with its fix, not just a count.
+  const text = [formatFindings(result.findings), ...(point === 'commit' || point === 'ci' ? warnLines(result.findings) : [])].filter(Boolean).join('\n')
   const human = humanRows.length ? `needs human review: ${humanRows.length} waiver/approval row(s) added by this PR\n${humanRows.map(r => `  - ${r}`).join('\n')}` : ''
   out([text || `sdlc check ${point}: pass (${count} file(s) checked${result.waived ? `, ${result.waived} waived` : ''})`, human].filter(Boolean).join('\n'))
   const summary = process.env.GITHUB_STEP_SUMMARY

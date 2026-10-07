@@ -1,6 +1,7 @@
 // Language-agnostic sensors: pure functions from a parsed diff and config to findings.
 // Language knowledge lives in the pattern tables below, never in code paths per language.
 import { RATCHET_NODES, parseConfig, parseRules, type FileDiff, type Finding, type Rule, type SensorConfig, isTest, isSource, matchesAny, globToRegex, SECRET_PATTERNS } from './model.ts'
+import { selectScopes } from './scopes.ts'
 
 export const TAMPER_PATTERNS: { id: string; re: RegExp; what: string }[] = [
   { id: 'skip-or-only', re: /\b(?:it|describe|test|context|suite)\.(?:skip|only|todo)\s*[.(]/, what: 'test skipped or focused' },
@@ -238,6 +239,13 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
   for (const k of ['fileLines', 'diffLines', 'lineChars'] as const) {
     if (a.limits[k] > b.limits[k]) reasons.push(`limits.${k} raised ${b.limits[k]} → ${a.limits[k]}`)
   }
+  if (a.scopeLimit > b.scopeLimit) reasons.push(`scopeLimit raised ${b.scopeLimit} → ${a.scopeLimit}`)
+  if (b.ci.scope === 'all' && a.ci.scope === 'affected') reasons.push('ci.scope changed from "all" to "affected"')
+  for (const [glob, s] of Object.entries(b.scopes)) {
+    const now = a.scopes[glob]
+    if (!now) { reasons.push(`scope ${glob} removed`); continue }
+    for (const d of s.deps ?? []) if (!(now.deps ?? []).includes(d)) reasons.push(`scope ${glob} lost dependency ${d}`)
+  }
   for (const k of ['tests', 'contracts', 'testSupport'] as const) for (const g of removedFrom(b[k], a[k])) reasons.push(`${k} glob removed ${g}`)
   for (const g of removedFrom(a.ignore, b.ignore)) reasons.push(`ignore added ${g}`)
   for (const g of removedFrom(a.fixtures, b.fixtures)) reasons.push(`fixtures added ${g}`)
@@ -314,6 +322,7 @@ export function harnessTamper(diffs: FileDiff[], o: { point: 'stop' | 'ship' | '
 // Tier of work done without /rig:start (spec 6.2): S is 3 or fewer source files and no contract; M is up to 15; else L.
 export function tierFromDiff(diffs: FileDiff[], cfg: SensorConfig): 'S' | 'M' | 'L' {
   const files = diffs.filter(d => isSource(d.file, cfg))
+  if (Object.keys(cfg.scopes).length && selectScopes(files.map(d => d.file), cfg).touched.length > cfg.scopeLimit) return 'L'
   if (files.length > 15) return 'L'
   return files.length > 3 || files.some(d => matchesAny(d.file, cfg.contracts)) ? 'M' : 'S'
 }
