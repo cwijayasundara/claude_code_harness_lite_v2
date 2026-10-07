@@ -329,9 +329,9 @@ test('a new scope must carry every kind of command the base runs, top-level or i
   assert.deepEqual(weakensConfig(unscopedBase, JSON.stringify({ ...JSON.parse(unscopedBase), scopes: { 'a/**': { name: 'a', root: 'a' } } })), [], 'first scopes are adoption')
 })
 
-test('with scopes declared, an empty source diff plans the top-level commands, as 0.5.0 did', () => {
+test('with scopes declared, an empty source diff plans nothing; verify alone falls back to the top-level commands', () => {
   const c = parseConfig(JSON.stringify({ full: { t: 'npm test' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: 'npm run u' } } } })).config
-  assert.deepEqual(scopeCommands('full', c, []), [{ key: 'full.t', cmd: 'npm test' }])
+  assert.deepEqual(scopeCommands('full', c, []), [])
   assert.deepEqual(scopeCommands('full', c, 'all').map(x => x.key), ['full.t', 'pkg:full.u'], "'all' is unchanged")
 })
 
@@ -346,4 +346,17 @@ test('verify on a branch with no source changes runs the top-level full commands
   write(repo, '.sdlc/changes/em/plan.md', '## Files\n- .sdlc/sensors.json\n## Verification\n- `node -e "process.exit(0)"`\n')
   sdlc(repo, ['verify', 'em'])
   assert.equal(ran(m), 1)
+})
+
+test('a docs-only diff in CI with ci.scope affected plans no commands, scoped or top-level', () => {
+  const top = mark('docs-top'), sc = mark('docs-scope')
+  const repo = makeRepo()
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { t: top.cmd }, fast: { t: top.cmd }, ci: { scope: 'affected' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: sc.cmd } } } }))
+  write(repo, 'pkg/a.js', 'export {}\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
+  gitIn(repo, 'checkout', '-qb', 'feature')
+  write(repo, 'docs/guide.md', '# guide\n')
+  gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'docs')
+  sdlc(repo, ['check', '--at', 'ci', '--base', 'main'])
+  assert.deepEqual([ran(top), ran(sc)], [0, 0])
 })

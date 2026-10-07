@@ -90,9 +90,11 @@ export function cmdVerify(args: Args): void {
   if (skipped.length) out(`not run (not declared in sensors.json and the plan is not approved): ${skipped.map(c => `\`${c}\``).join(', ')}. Run each with \`sdlc.ts run --slug ${slug} -- "<command>"\`, which asks the person, then \`verify-report ${slug}\`.`)
   // One authoritative run: the declared full commands run here too, so ship and push can check the stamp instead.
   // The full commands of the scopes the branch touches (source files only), skipping any the loop above already ran.
-  // With no base to diff against, every scope's: an empty selection must never stamp `full: pass`.
+  // With no base to diff against, every scope's: an empty selection must never stamp `full: pass`. A source-less branch (docs
+  // or harness only) runs the top-level ones (undefined), for the same reason.
   const base = defaultBase()
-  const files = base ? branchDiff(base).map(d => d.file).filter(f => isSource(f, config)) : 'all'
+  const changed = base ? branchDiff(base).map(d => d.file).filter(f => isSource(f, config)) : 'all'
+  const files = changed.length ? changed : undefined
   const failed = runDeclared('full', config, slug, FULL_BUDGET_MS, false, files, ran).filter(f => f.severity === 'block')
   if (failed.length) out(formatFindings(failed))
   if (writeReport(slug, failed.length ? 'fail' : 'pass', before) !== 'pass') process.exitCode = 1
