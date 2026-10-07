@@ -14,7 +14,7 @@ Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sd
 ## `--defaults` mode
 When the arguments contain `--defaults`, the person has pre-approved every recommended answer below, so ask no AskUserQuestion at all. Use these answers:
 - Greenfield: stack, deployment target and test framework come from the quoted goal; anything it leaves out takes the recommended default (deployment: local only).
-- **Sensors:** write `.sdlc/sensors.json` with `fast`, `full`, `gates` (default: design for M, spec, plan and design for L), `value.rate` $100/h and no `consumers`. Then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts init --stack`: it declares `levels` from the shipped stack template. Do not write `levels` or `quality` yourself: the settings ask rule on `.sdlc/sensors.json` makes a person confirm any declared command a model adds, and an unattended run cannot answer. Say that `quality` and a real acceptance or api command need the person's yes (re-run `/rig:init` without `--defaults`).
+- **Sensors:** write `.sdlc/sensors.json` with `fast`, `full`, `gates` (default: design for M, spec, plan and design for L), `value.rate` $100/h and no `consumers`. Then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts init --stack`: it declares `levels` from the shipped stack template, with `acceptance` and `api` set to the unit command. Do not write `levels` or `quality` yourself: the settings ask rule on `.sdlc/sensors.json` makes a person confirm any declared command a model adds, and an unattended run cannot answer. Say that `quality` and a real acceptance or api command need the person's yes (re-run `/rig:init` without `--defaults`).
 - Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts init --full`: it vendors the standalone harness, wires the git hooks and merges `templates/settings.json` into `.claude/settings.json`.
 - Skip: `claude plugin marketplace add`, and `--workflows` (the `.github/workflows/` files and `REVIEW.md`). The first writes user settings and the others need a remote, so they stay an explicit yes.
 - Existing `CLAUDE.md` still gets a proposed diff, never an overwrite: write the diff to `CLAUDE.md.proposed` and say so.
@@ -27,7 +27,7 @@ End with a table of every answer taken and every item skipped, and how to do eac
    - (c) conventions, gotchas, environment setup and things that must never be done.
 2. Verify the fast test command by running it once with quiet output.
 3. Write `CLAUDE.md` in **at most 120 lines**. Sections:
-   - a first line under the title, verbatim: `sdlc routes all work in this repo: start with /rig:start; use superpowers skills only when an sdlc skill names one.`
+   - a first line under the title, verbatim: `sdlc routes all work in this repo: start with /rig-start; use superpowers skills only when an sdlc skill names one.` A standalone install (the default) names its skills `rig-*`; when `--full` is skipped because the team installs the plugin, write the colon form of the same command instead.
    - What this is (3 lines)
    - Map (directories, one line each)
    - Commands

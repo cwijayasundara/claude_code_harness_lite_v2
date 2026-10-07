@@ -19,7 +19,7 @@ jobs:
       - run: npm run typecheck
       - run: node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts
   dogfood:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: false # off for now: the harness is not run on its own repo; to re-enable: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

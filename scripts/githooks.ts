@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, SDLC, git, exists, out, fail, type Args } from './core.ts'
-import { loadConfig, runChecks } from './check.ts'
+import { loadConfig, runChecks, slugsIn } from './check.ts'
 import { rangeDiff, showAt } from './diffs.ts'
 import { activeSlug, createAdhoc } from './graph.ts'
 import { runQuality } from './quality.ts'
@@ -148,9 +148,11 @@ export function cmdCheckPush(_args: Args): void {
     if (!base || git(['cat-file', '-e', `${base}^{commit}`]) === null) { notes.push(`${r.remoteRef.replace('refs/heads/', '')}: no base to compare against, so CI judges it`); continue }
     const diffs = rangeDiff(base, r.localSha)
     if (!diffs.length) continue
-    const active = activeSlug()
+    // A finished change is not active, but its branch carries its folder: judge the push as that change (its branch's first), as CI does.
+    const owned = slugsIn(diffs).filter(s => exists(path.join(SDLC, 'changes', s)))
+    const own = owned.find(s => r.remoteRef === `refs/heads/sdlc/${s}`) ?? owned[0]
     const touched = diffs.some(d => isSource(d.file, config) && !isProtected(d.file))
-    const slug = active ?? (touched ? createAdhoc(tierFromDiff(diffs, config)) : null)
+    const slug = activeSlug() ?? own ?? (touched ? createAdhoc(tierFromDiff(diffs, config)) : null)
     // A rig-managed change in flight is gated by /rig:pr; only ad-hoc work gets ship verdicts here.
     const shipSlugs = slug?.startsWith('adhoc-') ? [slug] : []
     // A rig change verified and sensed on exactly this tree, pushed from a clean checkout of it, needs neither again.

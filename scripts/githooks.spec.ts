@@ -340,6 +340,23 @@ test('push judges by the destination ref, whatever the local side is named', () 
   assert.match(pushRaw('(delete)', ZERO, 'refs/heads/main', remoteSha).stdout, /nothing to judge/)
 })
 
+test('pushing a change branch after the change finished is judged as that change, not a new ad-hoc one', () => {
+  gitIn(repo, 'add', '-A'); gitIn(repo, 'commit', '-qm', 'cfg')
+  const base = head()
+  gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  for (const n of ['app', 'b', 'c', 'd']) write(repo, `src/${n}.js`, `export const ${n} = 1\n`)
+  gitIn(repo, 'add', '-A'); gitIn(repo, 'commit', '-qm', 'work')
+  // Shipped and reviewed: nothing is active any more, as after /rig-pr-review (STATE.md names no change).
+  write(repo, '.sdlc/STATE.md', '---\nchange:\n---\n# State\n\nNo active change. Last shipped: tiny.\n')
+  const state = fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8')
+  const r = pushRaw('refs/heads/sdlc/tiny', head(), 'refs/heads/sdlc/tiny', base)
+  assert.doesNotMatch(r.stdout, /adhoc/, r.stdout)
+  assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc/changes')), ['tiny'])
+  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), state)
+})
+
 test('a Stop that passes with a warning tells the person, and the next prompt tells the agent once', () => {
   write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   hook(repo, 'prompt-submit', { session_id: 's' })

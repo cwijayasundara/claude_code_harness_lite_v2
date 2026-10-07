@@ -175,6 +175,18 @@ test('pr-checks commits the pr-review evidence written after ship, leaving a cle
   assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/changes/tiny'), /\S/, 'a repeat check appends an event and commits it too')
 })
 
+test('the review evidence commit also clears STATE.md, so a finished change leaves nothing to commit', () => {
+  ready('tiny')
+  assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
+  assert.match(gitIn(repo, 'show', 'HEAD:.sdlc/STATE.md'), /^change: tiny$/m)
+  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n')
+  sdlc(repo, ['pr-checks', 'tiny'])
+  assert.match(gitIn(repo, 'show', 'HEAD:.sdlc/STATE.md'), /^change:\s*$/m)
+  sdlc(repo, ['status'])
+  sdlc(repo, ['next', '--json'])
+  assert.equal(gitIn(repo, 'status', '--porcelain'), '', 'status and next find nothing left to clear')
+})
+
 test('pr-checks records local-only with no remote', () => {
   ready('tiny')
   const r = sdlc(repo, ['pr-checks', 'tiny'])

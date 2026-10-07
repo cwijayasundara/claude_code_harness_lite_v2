@@ -12,11 +12,11 @@ import {
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type UsageRow,
 } from './core.ts'
 import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step, tierDrift } from './graph.ts'
-import { formatFindings, openQuestions, SENSOR_NAMES, type Finding, type SensorConfig } from './model.ts'
-import { readBaseline, branchDiff, turnDiff, showAt, type Snapshot } from './diffs.ts'
+import { formatFindings, openQuestions, SENSOR_NAMES, type Finding } from './model.ts'
+import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook, readGate } from './hooks.ts'
-import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig, runChecks } from './check.ts'
-import { runCommand, recordRun, readRuns, renderVerification, runsDigest } from './runs.ts'
+import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig } from './check.ts'
+import { runCommand, recordRun } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
@@ -25,7 +25,7 @@ import { cmdVendor, installStandalone } from './vendor.ts'
 import { cmdVerify, cmdVerifyReport } from './verify.ts'
 import { cmdHooks, cmdCheckPush } from './githooks.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
-import { cmdRatchet, recordRound, readRatchet, writeRatchet, rawSpendUsd, unblock, block, appendEvent } from './ratchet.ts'
+import { cmdRatchet, readRatchet, writeRatchet, rawSpendUsd, unblock, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
 import { cmdShards } from './shards.ts'
 import { treeStamp } from './stamp.ts'
@@ -40,7 +40,7 @@ const STACK_MARKERS: [string, string][] = [['package.json', 'node'], ['go.mod', 
 // without a person's yes, because it takes commands only from that shipped template and never from arguments. The write guard
 // asks a person before a model adds a level (declared commands run unprompted). Onboarding only: it declares only while `levels`
 // is empty, no change exists yet and sensors.json is not committed, so it cannot launder an edit to a reviewed config.
-// acceptance and api are not in the template: acceptance defaults to the unit command until a person points it at a real e2e.
+// acceptance and api are not in the template: both default to the unit command, so a change never blocks on an undeclared level.
 function declareStackLevels(opt: string | true): string {
   const stacks = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'stacks.json'))) as Record<string, { levels: Record<string, string> }>
   const name = typeof opt === 'string' ? opt : STACK_MARKERS.find(([f]) => exists(path.join(ROOT, f)))?.[1]
@@ -55,11 +55,11 @@ function declareStackLevels(opt: string | true): string {
   }
   if (cfg.levels && Object.keys(cfg.levels as object).length) return 'levels already declared; left as they are'
   const unit = stack.levels.unit ?? ''
-  cfg.levels = { ...stack.levels, acceptance: unit }
+  cfg.levels = { ...stack.levels, acceptance: unit, api: unit }
   if (!cfg.fast && !cfg.full && unit) { cfg.fast = { test: unit }; cfg.full = { test: unit } }
   fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
   sanctionWrites(['.sdlc/sensors.json'])
-  return `declared levels for ${name}: ${Object.entries(cfg.levels as Record<string, string>).map(([k, v]) => `${k}=${v}`).join(', ')} (acceptance defaults to the unit command; point it at a real e2e when you have one)`
+  return `declared levels for ${name}: ${Object.entries(cfg.levels as Record<string, string>).map(([k, v]) => `${k}=${v}`).join(', ')} (acceptance and api default to the unit command; point them at a real e2e or HTTP test when you have one)`
 }
 
 function cmdInit(args: Args): void {

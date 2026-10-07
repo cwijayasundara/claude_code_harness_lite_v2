@@ -598,9 +598,10 @@ test('init runs git init when the directory is not inside a repository, and leav
 test('init --stack declares levels from the shipped template once, and never overwrites declared ones', () => {
   const init = (...a: string[]) => run(['init', ...a])
   write('package.json', '{ "type": "module" }\n')
-  assert.match(init('--stack').stdout, /declared levels for node: unit=npm test, integration=npm test, acceptance=npm test/)
+  assert.match(init('--stack').stdout, /declared levels for node: unit=npm test, integration=npm test, acceptance=npm test, api=npm test/)
   const cfg = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8')) as { levels: Record<string, string>; fast: { test: string } }
-  assert.deepEqual(cfg.levels, { unit: 'npm test', integration: 'npm test', acceptance: 'npm test' })
+  // every level a change can require is declared, so an endpoint change onboarded with --defaults never blocks on an undeclared api level
+  assert.deepEqual(cfg.levels, { unit: 'npm test', integration: 'npm test', acceptance: 'npm test', api: 'npm test' })
   assert.equal(cfg.fast.test, 'npm test')
   fs.writeFileSync(path.join(repo, '.sdlc/sensors.json'), JSON.stringify({ ...cfg, levels: { unit: 'make t' } }))
   assert.match(init('--stack').stdout, /already declared/)

@@ -120,6 +120,13 @@ test('size blocks when a file crosses the line limit at stop, and the diff limit
   assert.equal(size([fd('docs/x.md', Array.from({ length: 900 }, () => 'z'))], CFG, {}, 'ship').length, 0, 'ignored files do not count')
 })
 
+test('size does not judge the vendored harness: an install or upgrade is neither long lines nor an oversized diff', () => {
+  const long = 'x'.repeat(200)
+  const vendored = [fd('.claude/workflows/review.js', [long], [], 'A'), fd('.sdlc/bin/check.ts', Array.from({ length: 1600 }, () => 'y'), [], 'A')]
+  assert.deepEqual(size(vendored, CFG, { '.claude/workflows/review.js': 1, '.sdlc/bin/check.ts': 1600 }, 'ship'), [])
+  assert.equal(size([fd('src/review.js', [long], [], 'A')], CFG, { 'src/review.js': 1 }, 'ship')[0]?.sensor, 'size', 'project code still is')
+})
+
 test('secrets in added lines block; an in-line allow comment does not opt out', () => {
   assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP"'])]).length, 1)
   assert.equal(secretsInDiff([fd('src/c.js', ['const key = "AKIAABCDEFGHIJKLMNOP" // rig:allow-secret test fixture'])]).length, 1, 'an in-line marker no longer exempts: only base-branch fixtures do')
