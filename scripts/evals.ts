@@ -5,10 +5,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { SDLC, exists, read, now, out, fail, git, gitIn, optString, readJsonl, type Args } from './core.ts'
+import { SDLC, CHANGES, exists, read, now, out, fail, git, gitIn, optString, readJsonl, frontmatter, listChanges, isShipped, planVerification, sanctionWrites, type Args } from './core.ts'
 import { loadConfig } from './check.ts'
 import { runCommand } from './runs.ts'
 import { withBaseTree } from './basetree.ts'
+import { matchesAny } from './model.ts'
 
 export const EVALS = path.join(SDLC, 'evals')
 export const RESULTS = path.join(EVALS, 'results.jsonl')
@@ -120,8 +121,33 @@ export function summarize(rows: EvalResult[], cfg: { minPass: number; maxErrors:
 
 export const lastRun = (): Summary | null => summarize(readJsonl<EvalResult>(RESULTS), loadConfig().config.evals)
 
+// Drafts evals from shipped changes: the task as its intent stated it, run from the commit before it, checked by the plan's
+// verification commands with the change's own tests taken from HEAD. A person curates every draft before relying on it.
+function seed(limit: number): void {
+  const tests = loadConfig().config.tests
+  const written: string[] = []
+  for (const slug of listChanges().filter(isShipped)) {
+    if (written.length >= limit) break
+    const file = path.join(EVALS, `change-${slug}.json`)
+    let ship: { base?: unknown } = {}
+    try { ship = JSON.parse(read(path.join(CHANGES, slug, 'ship.json'))) as { base?: unknown } } catch { continue }
+    const cmds = planVerification(slug)
+    if (exists(file) || !str(ship.base) || !cmds.length) continue
+    const shipCommit = git(['log', '-1', '--format=%H', '--', `.sdlc/changes/${slug}/ship.json`]) ?? 'HEAD'
+    const files = (git(['diff', '--name-only', ship.base, shipCommit]) ?? '').split('\n').filter(f => f && matchesAny(f, tests))
+    const { body } = frontmatter(read(path.join(CHANGES, slug, 'intent.md')))
+    const draft = { prompt: `Make this change in this repository, then run its verification.\n\n${body.trim()}`, base: ship.base, files, checks: cmds.map(cmd => ({ kind: 'command', cmd })), source: `change:${slug}` }
+    fs.mkdirSync(EVALS, { recursive: true })
+    fs.writeFileSync(file, JSON.stringify(draft, null, 2) + '\n')
+    written.push(`.sdlc/evals/change-${slug}.json`)
+  }
+  if (written.length) sanctionWrites(written)
+  out(written.length ? `seeded ${written.length} eval(s) in .sdlc/evals: read each prompt and check before relying on it` : 'nothing to seed: every shipped change with a base and plan verification already has an eval')
+}
+
 export function cmdEvals(args: Args): void {
   if (!exists(SDLC)) fail('sdlc not initialised here')
+  if (args.opt.seed) return seed(Number(optString(args, 'limit')) || 20)
   const cfg = loadConfig().config.evals
   const only = optString(args, 'only')
   const files = exists(EVALS) ? fs.readdirSync(EVALS).filter(f => f.endsWith('.json') && (!only || f === `${only}.json`)).sort() : []
