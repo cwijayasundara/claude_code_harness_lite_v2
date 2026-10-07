@@ -34,6 +34,7 @@ test('tier S builds through a Haiku implementer; tier S and M review through rig
   assert.doesNotMatch(build, /Tier S, and tier M with/, 'tier S no longer builds inline')
   assert.match(build, /Tier M with ≤ 3 slices and ≤ 8 files: do it yourself/)
   assert.doesNotMatch(read('skills/start/SKILL.md'), /Tier S builds inline with no subagents/)
+  assert.doesNotMatch(read('skills/start/SKILL.md'), /\*\*Models:\*\*/, 'start passes no slug, so it carries no Models line')
   const review = read('skills/pr-review/SKILL.md')
   assert.match(review, /Tier S and M: one `rig:reviewer`/)
   assert.doesNotMatch(review, /Tier S and M: one `code-review`/)

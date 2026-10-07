@@ -9,8 +9,6 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Models:** pass `model` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` on every `rig:architect`, `rig:implementer` and `rig:reviewer` launch.
-
 **Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
 Request: $ARGUMENTS
@@ -34,7 +32,7 @@ If the slug starts with `adhoc-`, this is adoption of work done without /rig:sta
 4. **Record.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts new <kebab-slug> --type <type> --tier <S|M|L> --title "<title>"`. Then fill in `intent.md` in at most 40 lines covering problem, outcome (how we will check it), non-goals and risks.
    - Spike: also answer the question in `notes.md` in at most one page, then stop.
    - **Explicit defaults.** For each optional input you did not get (non-goals, risks, rollout), ask once with AskUserQuestion if it changes the tier or the gates; otherwise record the default you took in `## Decisions`. Never leave a guess unrecorded.
-5. **Tier S fast path** (any type except spike and greenfield). Ceremony must cost less than the change: write a minimal `plan.md` of 15 lines or fewer (`## Files` and `## Verification` only), then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill build <slug>` and follow it in this turn. Tier S builds through one Haiku `rig:implementer` (the build skill passes the model).
+5. **Tier S fast path** (any type except spike and greenfield). Ceremony must cost less than the change: write a minimal `plan.md` of 15 lines or fewer (`## Files` and `## Verification` only), then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill build <slug>` and follow it in this turn. Tier S builds through one Haiku implementer subagent (the build skill passes the model).
 6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates come from .sdlc/sensors.json "gates" (default: one `design` gate for tier M, L and greenfield that approves intent.md and design.md together, none for S; features go intent → design → autonomous build).
 
 7. **Feature and greenfield go straight to design.** Do not stop after intent.md: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill design <slug>` and follow it in this turn. The person is asked once, for intent.md and design.md together.
