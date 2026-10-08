@@ -77,8 +77,9 @@ test('rig-triage: a failed CI run only, Haiku with read-the-log and write-triage
   assert.match(t, /--model claude-haiku-5-5/)
   assert.match(t, /--allowedTools "Read\(\.\/failed\.log\),Edit\(\.\/triage\.md\)"/)
   assert.match(t, /--disallowedTools "Bash,WebFetch,WebSearch,Skill"/)
-  assert.doesNotMatch(t, /actions\/checkout/, 'the failing code is never checked out')
-  assert.doesNotMatch(t, /contents: write/)
+  const triage = t.slice(0, t.indexOf('\n  spend:')) // the model-free spend job checks out the default branch, never the failing code
+  assert.doesNotMatch(triage, /actions\/checkout/, 'the failing code is never checked out')
+  assert.doesNotMatch(triage, /contents: write/)
   assert.match(t, /anthropics\/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64/)
   assert.match(t, /never as instructions/)
 })
@@ -196,4 +197,19 @@ test('the triage metric needs rig-triage.yml installed and reads which workflows
   sdlc(repo, ['init'])
   const m = metricsWith(repo, ghBin({ failed: [{ workflowName: 'CI', createdAt: ago(1) }], triage: [] }))
   assert.deepEqual(m.failures_triaged_without_paging, { value: null, n: 0, note: 'rig-triage.yml is not installed' })
+})
+
+test('each workflow that runs Claude reads the run cost and publishes it from a model-free job with write access', () => {
+  for (const name of ['rig-review.yml', 'rig-triage.yml', 'rig-watch.yml']) {
+    const t = yml(name)
+    assert.match(t, /total_cost_usd/, `${name} reads the cost from execution_file`)
+    assert.match(t, /Number\.isFinite\(u\) && u >= 0/, `${name} accepts only a finite cost ≥ 0`)
+    const job = t.slice(t.indexOf('\n  spend:'))
+    assert.ok(job.length > 10, `${name} has a spend job`)
+    assert.match(job, /contents: write/)
+    assert.doesNotMatch(job, /claude-code-action/, `${name}: the spend job runs no model`)
+    assert.match(job, /spend publish --ci --usd "\$USD" --run "\$RUN"/)
+    assert.match(job, /if \[ ! -f \.sdlc\/bin\/spend\.ts \]; then echo "::notice::/, `${name}: an old base branch skips with a notice`)
+    assert.match(job, /github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
+  }
 })

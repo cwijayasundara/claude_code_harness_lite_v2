@@ -81,6 +81,8 @@ jobs:
     permissions:
       actions: read
       contents: read
+    outputs:
+      usd: ${{ steps.cost.outputs.usd }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -89,6 +91,7 @@ jobs:
         with:
           node-version: 22
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -106,6 +109,15 @@ jobs:
             ## Affected users and systems
             ## Constraints
             ## Open questions
+      # The run's cost, from the action's message log; only a finite number >= 0 leaves this job (spend governance spec §12.5).
+      - name: Read the run's cost
+        id: cost
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          usd=$(node -e 'try { const m = JSON.parse(require("fs").readFileSync(process.env.FILE, "utf8")); const r = [].concat(m).reverse().find(x => x && x.type === "result"); const u = r && r.total_cost_usd; if (typeof u === "number" && Number.isFinite(u) && u >= 0) console.log(u) } catch {}')
+          echo "usd=$usd" >> "$GITHUB_OUTPUT"
       - name: Write the draft intent (no model)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -180,3 +192,22 @@ jobs:
         run: |
           [ -n "$ROLLBACK" ] || { echo "::error::set the repository variable RIG_ROLLBACK_COMMAND"; exit 1; }
           sh -c "$ROLLBACK"
+  spend:
+    needs: diagnose
+    if: always() && needs.diagnose.outputs.usd != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish CI spend
+        env:
+          USD: ${{ needs.diagnose.outputs.usd }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}-watch
+        # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
+        run: |
+          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"
