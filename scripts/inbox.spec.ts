@@ -72,3 +72,17 @@ test('an empty or missing inbox lists nothing', () => {
   assert.deepEqual(inbox(), [])
   assert.match(sdlc(repo, ['inbox']).stdout, /intent inbox is empty/)
 })
+
+test('status names accepted intents that have no change yet; the per-turn band does not read the inbox', () => {
+  intent('one.md', 'status: accepted')
+  sdlc(repo, ['new', 'other', '--type', 'chore', '--tier', 'S'])
+  assert.match(sdlc(repo, ['status']).stdout, /^warn: intent one\.md is accepted and has no change: \/rig:start \.sdlc\/intent\/one\.md$/m)
+  assert.doesNotMatch(sdlc(repo, ['status', '--json', '--band']).stdout, /one\.md/)
+})
+
+test('metrics: inbox survival over decided intents; intent churn after design is reported', () => {
+  for (const [f, s] of [['a.md', 'accepted'], ['b.md', 'accepted'], ['c.md', 'accepted'], ['d.md', 'accepted'], ['e.md', 'closed'], ['f.md', 'draft']] as [string, string][]) intent(f, `status: ${s}`)
+  const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
+  assert.deepEqual({ value: m.inbox_survival.value, n: m.inbox_survival.n }, { value: 0.8, n: 5 })
+  assert.ok('intent_churn_after_design' in m)
+})

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { parseRules } from './model.ts'
+import { inboxEntries } from './inbox.ts'
 import {
   ROOT, SDLC, APPROVALS, USAGE, MIN_SAMPLE, exists, read, frontmatter, readJsonl, git, fail, out, optString, toPosix,
   listChanges, type Args, type Approval, type Change, type UsageRow,
@@ -81,6 +82,10 @@ export function cmdMetrics(args: Args): void {
   m.plan_lead_hours = median(changes.map(c => hours(c.intent.created, firstCommitTime(rel(c, 'intent.md')))))
   const decided = changes.filter(c => !c.next || c.stages.indexOf(c.next.stage) !== 0)
   m.intent_survival = share(decided.filter(c => exists(path.join(c.dir, 'plan.md')) || exists(path.join(c.dir, 'design.md')) || exists(path.join(c.dir, 'spec.md')) || c.type === 'bugfix').length, decided.length)
+  // intent_survival counts changes that got past intent; inbox_survival counts inbox ideas the product owner accepted
+  // (accepted or shipped) out of every decided one (closed included); drafts and unknown statuses are undecided.
+  const decidedInbox = inboxEntries().filter(e => e.status !== 'draft' && e.status !== 'unknown')
+  m.inbox_survival = share(decidedInbox.filter(e => e.status !== 'closed').length, decidedInbox.length)
   // Design
   m.intent_to_spec_hours = median(changes.map(c => hours(firstCommitTime(rel(c, 'intent.md')), firstCommitTime(rel(c, 'spec.md')))))
   m.spec_churn_after_plan = median(
@@ -91,6 +96,11 @@ export function cmdMetrics(args: Args): void {
         return firstPlan ? commitTimes(rel(c, 'spec.md')).filter(t => t > firstPlan).length : null
       }),
   )
+  // Commits to intent.md after the first design or spec commit: the "what" moving after the "how" began.
+  m.intent_churn_after_design = median(changes.map(c => {
+    const first = firstCommitTime(rel(c, 'design.md')) ?? firstCommitTime(rel(c, 'spec.md'))
+    return first ? commitTimes(rel(c, 'intent.md')).filter(t => t > first).length : null
+  }))
   // Build
   const reviewed = changes.filter(c => c.review.rounds)
   m.first_pass_share = share(reviewed.filter(c => Number(c.review.rounds) <= 1).length, reviewed.length)
