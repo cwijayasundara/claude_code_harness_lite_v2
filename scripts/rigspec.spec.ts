@@ -40,6 +40,10 @@ test('publish refuses a script, a symlink, a nested folder, a second change fold
   assert.notEqual(publishCheck(d => folder(d, 'Bad_Name', ['intent.md'])).code, 0, 'bad name')
 })
 
+test('publish refuses a dot-dot file name', () => {
+  assert.notEqual(publishCheck(d => folder(d, 'a', ['intent.md', '..evil'])).code, 0)
+})
+
 test('publish refuses an empty change directory', () => {
   assert.notEqual(publishCheck(() => {}).code, 0)
 })
@@ -52,6 +56,13 @@ test('privilege split: read-only model job with no persisted credentials; the pu
   assert.doesNotMatch(publish, /claude-code-action|claude -p/)
   assert.match(publish, /contents: write/)
   assert.match(publish, /pull-requests: write/)
+  const draft = yml.split(/^  draft:$/m)[1]?.split(/^  publish:$/m)[0] ?? ''
+  assert.match(draft, /persist-credentials: false/)
+  assert.match(draft, /claude-code-action/)
+  assert.doesNotMatch(draft, /permissions:|: write/)
+  assert.match(publish, /if: \$\{\{ !cancelled\(\)/)
+  assert.match(publish, /for f in intent\.md design\.md spec\.md plan\.md/)
+  assert.doesNotMatch(publish, /cp -R/)
 })
 
 test('the model job never builds and edits only change folders', () => {
