@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { makeRepo, sdlc, write } from './testkit.ts'
+import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 import { parseConfig } from './model.ts'
 import { evaluate, pointOf } from './watch.ts'
 
@@ -209,4 +209,25 @@ test('rig-watch: hourly, a read-only model job, a model-free publish job, and a 
   assert.match(rollbackJob, /if: needs\.watch\.outputs\.rollback == 'true'/)
   assert.match(rollbackJob, /vars\.RIG_ROLLBACK_COMMAND/)
   assert.doesNotMatch(yml, /run: .*\$\{\{/, 'no expression is interpolated into a one-line run script')
+})
+
+test('metrics: findings_merged_share and dismissal_rate per band, from breach intents', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const intent = (f: string, status: string) => write(repo, `.sdlc/intent/${f}`, `---\nstatus: ${status}\n---\n# x\n`)
+  intent('breach-p95-20261001.md', 'closed')
+  intent('breach-p95-20261002.md', 'closed')
+  intent('breach-p95-20261003.md', 'accepted')
+  intent('breach-ci-rate-20261001.md', 'accepted')
+  intent('breach-ci-rate-20261002.md', 'closed')
+  intent('breach-ci-rate-20261003.md', 'draft')
+  intent('not-a-breach.md', 'closed')
+  sdlc(repo, ['new', 'fix-p95', '--type', 'bugfix', '--tier', 'S', '--source', '.sdlc/intent/breach-p95-20261003.md'])
+  write(repo, '.sdlc/changes/fix-p95/ship.json', '{}')
+  gitIn(repo, 'add', '.')
+  gitIn(repo, 'commit', '-qm', 'ship')
+  const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
+  assert.deepEqual({ v: m.dismissal_rate.value, n: m.dismissal_rate.n }, { v: 3 / 5, n: 5 })
+  assert.deepEqual(m.dismissal_rate.by_band, { p95: Number((2 / 3).toFixed(3)), 'ci-rate': 0.5 })
+  assert.deepEqual({ v: m.findings_merged_share.value, n: m.findings_merged_share.n }, { v: 1 / 5, n: 5 })
 })

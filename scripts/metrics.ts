@@ -97,6 +97,16 @@ export function cmdMetrics(args: Args): void {
   // (accepted or shipped) out of every decided one (closed included); drafts and unknown statuses are undecided.
   const decidedInbox = inboxEntries().filter(e => e.status !== 'draft' && e.status !== 'unknown')
   m.inbox_survival = share(decidedInbox.filter(e => e.status !== 'closed').length, decidedInbox.length)
+  // Maintain (p.51): rig-watch's breach intents (.sdlc/intent/breach-<band>-<date>.md) a person decided: how many shipped as a fix,
+  // and how many were dismissed (closed), overall and per band. Dismissals also widen the band (watch.ts).
+  const breaches = decidedInbox.filter(e => /^breach-[a-z0-9-]+-\d{8}\.md$/.test(e.file))
+  const bandOf = (f: string): string => f.replace(/^breach-/, '').replace(/-\d{8}\.md$/, '')
+  m.findings_merged_share = share(breaches.filter(e => e.status === 'shipped').length, breaches.length)
+  const byBand = Object.fromEntries([...new Set(breaches.map(e => bandOf(e.file)))].map(b => {
+    const mine = breaches.filter(e => bandOf(e.file) === b)
+    return [b, Number((mine.filter(e => e.status === 'closed').length / mine.length).toFixed(3))]
+  }))
+  m.dismissal_rate = { ...share(breaches.filter(e => e.status === 'closed').length, breaches.length), by_band: byBand }
   // Design
   m.intent_to_spec_hours = median(changes.map(c => hours(firstCommitTime(rel(c, 'intent.md')), firstCommitTime(rel(c, 'spec.md')))))
   m.spec_churn_after_plan = median(
