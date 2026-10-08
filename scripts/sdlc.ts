@@ -20,6 +20,7 @@ import { runCommand, recordRun } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdEvals, lastRun } from './evals.ts'
 import { cmdInbox, pendingIntents } from './inbox.ts'
+import { cmdWatch, watchWarnings } from './watch.ts'
 import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
@@ -148,6 +149,7 @@ function cmdStatus(args: Args): void {
     if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
   }
   for (const e of pendingIntents()) warnings.push(`intent ${e.file} is accepted and has no change: ${skillRef('start')} .sdlc/intent/${e.file}`)
+  warnings.push(...watchWarnings())
   const stale = [...repoStale(ROOT), ...stalenessAll(changes.map(c => c.slug))]
   const open = changes.flatMap(c => openItems(c.slug))
   if (json) {
@@ -389,6 +391,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   metrics: cmdMetrics,
   evals: cmdEvals,
   inbox: cmdInbox,
+  watch: cmdWatch,
   scorecard: cmdScorecard,
   diff: cmdDiff,
   quality: cmdQuality,

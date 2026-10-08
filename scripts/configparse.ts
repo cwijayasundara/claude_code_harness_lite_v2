@@ -1,5 +1,5 @@
 // The sensors.json sections added after v0.3 (gates, levels, quality, ratchet, value) and v0.6 (points, scopes, ci, ...).
-import { LEVELS, QUALITY_CATEGORIES, RATCHET_NODES, isObject, isStringList, isStringMap, posInt, type GateKey, type Level, type QualityCategory, type RatchetNode, type Scope, type SensorConfig } from './model.ts'
+import { LEVELS, QUALITY_CATEGORIES, RATCHET_NODES, isObject, isStringList, isStringMap, posInt, type GateKey, type Level, type QualityCategory, type RatchetNode, type Scope, type SensorConfig, type Band } from './model.ts'
 
 const COUNT_RE = /^(?:exit|lines|json:[\w.]+)$/
 const nonNeg = (v: unknown): v is number => typeof v === 'number' && v >= 0
@@ -83,7 +83,8 @@ export function parseV6(value: Record<string, unknown>, config: SensorConfig, er
       else errors.push(`evals: unknown key "${k}"`)
     }
   }
-  if ('scopes' in value) parseScopes(value.scopes, config, errors)
+    if ('bands' in value) parseBands(value.bands, config, errors)
+    if ('scopes' in value) parseScopes(value.scopes, config, errors)
 }
 
 const SCOPE_KEYS = new Set(['name', 'root', 'fast', 'full', 'quality', 'deps'])
@@ -124,4 +125,37 @@ function parseScopes(raw: unknown, config: SensorConfig, errors: string[]): void
     for (const d of s.deps ?? []) if (!Object.hasOwn(parsed, d)) errors.push(`scopes["${glob}"]: deps entry "${d}" is not a declared scope glob`)
   }
   config.scopes = parsed
+}
+
+const BAND_ID = /^[a-z0-9][a-z0-9-]{0,40}$/
+const BAND_KEYS = new Set(['id', 'query', 'count', 'window', 'rules', 'step', 'minSd', 'tiers'])
+// Read-only commands only, and no quote or shell characters: the list is passed to the diagnosis step's --allowedTools.
+const READ_ONLY_BASH = /^Bash\((gh (run|pr|issue) (view|list)|git (log|show|diff|status|blame)|ls|cat|head|tail|wc)( [A-Za-z0-9_.\/=:-]+)*( \*)?\)$/
+const READ_ONLY_TOOL = (t: string): boolean => /^(Read|Grep|Glob)$/.test(t) || READ_ONLY_BASH.test(t)
+const ROUTES = new Set(['pull_request', 'runbook:rollback'])
+
+// Monitoring bands for `sdlc.ts watch` (playbook p.50). Tier-2 diagnosis tools must be read-only; tier 3 may only open a pull
+// request or start the rehearsed rollback.
+function parseBands(raw: unknown, config: SensorConfig, errors: string[]): void {
+  if (!Array.isArray(raw)) return void errors.push('bands must be a list of { id, query, count, window, step, tiers }')
+  const bands: Band[] = []
+  for (const [i, b] of raw.entries()) {
+    const at = `bands[${i}]`
+    if (!isObject(b)) { errors.push(`${at} must be an object`); continue }
+    for (const k of Object.keys(b)) if (!BAND_KEYS.has(k)) errors.push(`${at}: unknown key "${k}"`)
+    if (typeof b.id !== 'string' || !BAND_ID.test(b.id) || bands.some(x => x.id === b.id)) { errors.push(`${at}.id must be a unique kebab-case name`); continue }
+    if (typeof b.query !== 'string' || !b.query.trim()) { errors.push(`${at}.query must be a command that prints a number or a JSON list`); continue }
+    if ('count' in b && typeof b.count !== 'string') errors.push(`${at}.count must be a string`)
+    if ('window' in b && !(posInt(b.window) && b.window >= 5)) errors.push(`${at}.window must be a whole number of at least 5`)
+    if ('step' in b && !(typeof b.step === 'number' && b.step >= 0 && b.step <= 3)) errors.push(`${at}.step must be a number from 0 to 3 (σ per dismissal)`)
+    if ('minSd' in b && !(typeof b.minSd === 'number' && b.minSd >= 0)) errors.push(`${at}.minSd must be a number of at least 0 (the σ floor, in the metric's units)`)
+    if ('rules' in b && b.rules !== 'western_electric') errors.push(`${at}.rules must be "western_electric"`)
+    const tier = (n: string): Record<string, unknown> => (isObject(b.tiers) && isObject(b.tiers[n]) ? b.tiers[n] : {})
+    const tools = typeof tier('2').tools === 'string' && String(tier('2').tools).trim() ? String(tier('2').tools) : 'Read,Grep,Glob'
+    if (!tools.split(/,(?![^(]*\))/).every(t => READ_ONLY_TOOL(t.trim()))) errors.push(`${at}.tiers.2.tools must be read-only: Read, Grep, Glob, or Bash(<gh run|pr|issue view|list, git log|show|diff|status|blame, ls, cat, head, tail, wc> <plain arguments> *)`)
+    const routes = isStringList(tier('3').routes) ? tier('3').routes as string[] : ['pull_request']
+    for (const r of routes) if (!ROUTES.has(r)) errors.push(`${at}.tiers.3.routes: unknown route "${r}"`)
+    bands.push({ id: b.id, query: b.query, ...(typeof b.count === 'string' ? { count: b.count } : {}), window: posInt(b.window) && b.window >= 5 ? b.window : 30, step: typeof b.step === 'number' && b.step >= 0 && b.step <= 3 ? b.step : 0.5, minSd: typeof b.minSd === 'number' && b.minSd >= 0 ? b.minSd : 0, tools, routes })
+  }
+  config.bands = bands
 }

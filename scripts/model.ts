@@ -18,7 +18,8 @@ export type GateKey = 'S' | 'M' | 'L' | 'greenfield'
 export type Level = 'unit' | 'integration' | 'acceptance' | 'api'
 export type QualityCategory = 'lint' | 'types' | 'deps' | 'coupling' | 'complexity' | 'security' | 'perf'
 export type QualityCmd = { cmd: string; count: string }
-export type Scope = { name: string; root: string; fast?: Record<string, string>; full?: Record<string, string>; quality?: Partial<Record<QualityCategory, QualityCmd>>; deps?: string[] }
+  export type Band = { id: string; query: string; count?: string; window: number; step: number; minSd: number; tools: string; routes: string[] }
+  export type Scope = { name: string; root: string; fast?: Record<string, string>; full?: Record<string, string>; quality?: Partial<Record<QualityCategory, QualityCmd>>; deps?: string[] }
 export type RatchetNode = 'build' | 'test' | 'sensors' | 'pr-review'
 export const LEVELS: Level[] = ['unit', 'integration', 'acceptance', 'api']
 export const QUALITY_CATEGORIES: QualityCategory[] = ['lint', 'types', 'deps', 'coupling', 'complexity', 'security', 'perf']
@@ -45,6 +46,7 @@ export type SensorConfig = {
   points: Record<'S' | 'M' | 'L', number>
   idleGapMs: number
   evals: { minPass: number; maxErrors: number; maxTurns: number; timeoutMs: number }
+  bands: Band[]
   scopes: Record<string, Scope>
   scopeLimit: number
   ci: { scope: 'affected' | 'all' }
@@ -74,6 +76,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   points: { S: 5, M: 7, L: 11 },
   idleGapMs: 900_000,
   evals: { minPass: 0.9, maxErrors: 2, maxTurns: 30, timeoutMs: 600_000 },
+  bands: [],
   scopes: {},
   scopeLimit: 3,
   ci: { scope: 'affected' },
