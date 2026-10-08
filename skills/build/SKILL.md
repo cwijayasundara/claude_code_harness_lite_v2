@@ -9,7 +9,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role's `model` and `effort` on every launch: `rig:researcher` (researcher), `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread.
+**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role's `model` and `effort` on every launch: `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread. After a failed round, run that command again before the fix launch: the implementer route can rise.
 
 **Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
@@ -20,10 +20,10 @@ Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sd
 3. **For each remaining slice, in order** (parallel, at most 3, only when their `Files:` do not overlap):
    1. **Implement.** Tier M with ≤ 3 slices and ≤ 8 files: do it yourself, test first: write the failing test, record the red run with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run --expect-fail -- "<test command>"`, implement inside `## Files`, run the targeted tests quietly. Otherwise (tier S included, which runs on Haiku) launch one `rig:implementer` with a brief of ≤ 60 lines: slice goal, owned files, interface sketch, acceptance tests with B-numbers, the fast test command and the guides that apply.
    2. **Verify the slice.** Tier S and M: no model review. Run the slice's declared fast test command through the recorder (`node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts run -- "<command>"`), then `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record $0 build --slice N --checks`. The script checks that the run is green on the current tree, no sensor blocks and every changed file is in `## Files`; it prints `done`, or exits with what to fix (fix it, run the recorder again; never edit `ratchet.json`). The script commits the slice on `sdlc/$0` itself (only that slice's planned files); never commit slices yourself.
-      Tier L: launch `rig:reviewer` with `mode: slice`, the change folder, the slice number and the diff range for that slice.
+      Tier L: launch `rig:reviewer` with `routes['slice-review']` and `mode: slice`, the change folder, the slice number and the diff range for that slice.
    3. **Record (tier L).** Write the reply (a `verdict:` line and findings in the line format) to `.sdlc/changes/$0/review-slice-N.md` with the Write tool, then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record $0 build --slice N --from .sdlc/changes/$0/review-slice-N.md`. `--slice` is required when plan.md has more than one slice. It refuses a reply without a verdict; `changes-needed` needs a critical or high finding. It prints `continue`, `done` or `blocked`; on `done` the script commits the slice on `sdlc/$0` itself (only that slice's planned files), so never commit slices yourself:
       - `done`: next slice.
-      - `continue`: send only the critical and high findings to the same implementer, then run the slice review again.
+      - `continue`: send only the critical and high findings onward, then run the slice review again. Run `next $0 --json` again: if `routes.implementer` differs from the one the slice was launched with, launch a fresh `rig:implementer` with the new route and the findings; otherwise send them to the same implementer.
       - `blocked`: stop. Show the reason; the person decides (`/rig-approve $0 budget` lifts a budget, stall or cap block).
 4. Never edit `ratchet.json`, `events.jsonl` or `plan.md` to get past a round. Track progress in `.sdlc/STATE.md` only.
 

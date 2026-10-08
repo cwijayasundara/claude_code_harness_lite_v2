@@ -4,8 +4,8 @@
 
 - Role by tier routing: `scripts/routing.ts` picks model and effort per role and tier, cheapest above a per-role floor. Tier L code and slice reviews move from Opus to Sonnet; tier S PR reviews move from Haiku to Sonnet. `next --json` adds `routes`; `model` stays one release for vendored skills.
 - `routing` in `sensors.json` overrides a route; anything below the role's floor is clamped and `next` warns.
-- A failed build or fix round retries the implementer one step up (effort, then model).
-- New `researcher` agent (Haiku, low effort) for docs lookups.
+- A recorded failed round (a tier L build slice, or a test, sensors or pr-review fix round) retries the implementer one step up (effort, then model); skills re-read `next --json` before the fix launch. Tier S and M build slices whose script checks fail record no round and keep their route.
+- New `researcher` agent (Haiku, low effort, pinned in its file) for docs lookups, with `WebFetch` and `WebSearch` only: no Read, Edit, Write or Bash.
 - CI review: S Sonnet medium, M Sonnet high, L Opus high, with `--effort`; triage adds `--effort low`.
 - `metrics` reports `tokens_by_role` and `model_by_role`.
 - `routing` is in the vendored script list, so standalone repos get it.

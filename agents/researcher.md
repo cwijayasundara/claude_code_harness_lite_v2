@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Cheap docs researcher. Fetches and summarises external documentation (library APIs, CLI flags, release notes) for one question. Use instead of reading docs in the main thread. Never edits.
-tools: WebFetch, WebSearch, Read
+tools: WebFetch, WebSearch
 model: claude-haiku-5-5
 effort: low
 omitClaudeMd: true

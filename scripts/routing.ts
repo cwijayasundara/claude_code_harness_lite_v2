@@ -69,8 +69,8 @@ export function routes(type: ChangeType, tier: Tier, round = 0, override: Routin
   return { routes: all, warnings }
 }
 
-// Scout and triage are pinned in their own files: a per-launch alias could resolve to another model outside the template env.
-const PINNED: Record<string, string> = { scout: 'agents/scout.md', triage: 'templates/rig-triage.yml' }
+// Scout, researcher and triage are pinned in their own files: a per-launch alias could resolve to another model outside the template env.
+const PINNED: Record<string, string> = { scout: 'agents/scout.md', researcher: 'agents/researcher.md', triage: 'templates/rig-triage.yml' }
 
 // sensors.json "routing": { "<role>": { "<tier>": "model" | "model:effort" } }. Architect routes only tier L (S and M draft in the main thread).
 export function parseRouting(value: unknown, errors: string[]): RoutingOverride {

@@ -155,3 +155,4 @@ These replace the sections they name; the plan (`docs/superpowers/plans/2026-10-
 4. **§5.2: architect overrides name tier L only**; S and M draft in the main thread.
 5. **§4, §6: scout and triage stay pinned in their files**, not passed per launch: a per-call alias can resolve to another model outside the template env. Overrides for them are config errors.
 6. **§4 retry: the build retry counts the open slice's rounds** (`ratchet.ts` records build rounds per slice); a failed slice never lifts later slices.
+7. **§6 researcher tools: `WebFetch, WebSearch` only.** With `Read`, a page could steer it to read a repo file and send it out through a fetched URL; the caller's brief carries any versions it needs. The researcher is also pinned in its file like the scout (item 5).

@@ -19,11 +19,10 @@ if (!ARGS || typeof ARGS.slug !== 'string' || typeof ARGS.base !== 'string' || !
 if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(ARGS.slug)) throw new Error(`rig-review: unsafe change name ${JSON.stringify(ARGS.slug)}`)
 if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$/.test(ARGS.base)) throw new Error(`rig-review: unsafe base ${JSON.stringify(ARGS.base)}`)
 const REVIEWER = typeof ARGS.reviewer === 'string' && /^[A-Za-z0-9:_-]{1,60}$/.test(ARGS.reviewer) ? ARGS.reviewer : 'rig:reviewer'
-// Routes come from /rig:pr-review (sdlc.ts next --json). Only known aliases pass; a referee never runs below Sonnet (spec floor).
-const EFFORT = true // Task 0 step 3: the Workflow agent() accepts effort
+// Routes come from /rig:pr-review (sdlc.ts next --json). Only known aliases pass; a referee never runs below Sonnet (spec floor). agent() accepts effort.
 const pick = r => {
   const ok = r && typeof r === 'object' && ['sonnet', 'opus'].includes(r.model)
-  return ok ? { model: r.model, ...(EFFORT && ['low', 'medium', 'high'].includes(r.effort) ? { effort: r.effort } : {}) } : null
+  return ok ? { model: r.model, ...(['low', 'medium', 'high'].includes(r.effort) ? { effort: r.effort } : {}) } : null
 }
 const REVIEW_ROUTE = pick(ARGS.routes?.reviewer) ?? {}
 const REFEREE_ROUTE = pick(ARGS.routes?.referee) ?? { model: 'sonnet' }

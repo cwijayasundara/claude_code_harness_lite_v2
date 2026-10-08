@@ -44,9 +44,9 @@ test('an override above the floor is honoured; below it is clamped with a warnin
 })
 
 test('routes collects every role and every warning', () => {
-  const { routes: all, warnings } = routes('feature', 'M', 0, { reviewer: { M: { model: 'haiku' } }, researcher: { M: { model: 'sonnet' } } })
+  const { routes: all, warnings } = routes('feature', 'M', 0, { reviewer: { M: { model: 'haiku' } }, referee: { M: { model: 'opus' } } })
   assert.deepEqual(Object.keys(all).sort(), [...ROLES].sort())
-  assert.equal((all.researcher as { model: string }).model, 'sonnet')
+  assert.equal((all.referee as { model: string }).model, 'opus')
   assert.equal(warnings.length, 1)
 })
 
@@ -64,8 +64,9 @@ test('parseRouting accepts model and model:effort, and rejects everything else',
   parseRouting('haiku', notObject)
   assert.match(notObject[0] ?? '', /routing must be/)
   const pinned: string[] = []
-  parseRouting({ scout: { S: 'sonnet' }, triage: { L: 'opus' } }, pinned)
-  assert.equal(pinned.length, 2)
+  parseRouting({ scout: { S: 'sonnet' }, triage: { L: 'opus' }, researcher: { M: 'sonnet' } }, pinned)
+  assert.equal(pinned.length, 3)
+  assert.match(pinned[2] ?? '', /researcher.*pinned in agents\/researcher\.md/)
   assert.match(pinned[0] ?? '', /scout.*pinned in agents\/scout\.md/)
 })
 

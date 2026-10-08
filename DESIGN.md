@@ -37,7 +37,7 @@ The biggest lever is **bounded context**. Everything below follows from that.
 ```
 skills/      the stages, /rig:* (start intent design spec plan diagnose build test sensors pr pr-review
              incident next init rule metrics), prompts only
-agents/      scout (haiku, read-only) · researcher (haiku, docs) · architect (opus) · implementer (sonnet) · reviewer (opus)
+agents/      scout (haiku, read-only) · researcher (haiku, docs; WebFetch and WebSearch only) · architect (opus) · implementer (sonnet) · reviewer (opus)
              Each launch overrides the agent file's model and effort with its route.
 hooks/       hooks.json = five settings hooks plus two async lane hooks (`SubagentStart`, `SubagentStop`, observational), none on Bash (work in -p and CI) · register.ts = the optional mod
 scripts/     zero-dependency Node, no build step; sdlc.ts is the CLI; check.ts is the one checker

@@ -24,7 +24,7 @@ test('the scout runs on Haiku 5.5 by full ID, like the other agents', () => {
   assert.match(read('agents/scout.md'), /^model: claude-haiku-5-5$/m)
 })
 
-const MODELS = '**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role\'s `model` and `effort` on every launch: `rig:researcher` (researcher), `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread.'
+const MODELS = '**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role\'s `model` and `effort` on every launch: `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread. After a failed round, run that command again before the fix launch: the implementer route can rise.'
 
 test('every skill that launches architect, implementer or reviewer passes its role route, and none hardcodes one', () => {
   for (const name of fs.readdirSync(path.join(ROOT, 'skills'))) {
@@ -34,11 +34,13 @@ test('every skill that launches architect, implementer or reviewer passes its ro
   }
 })
 
-test('the researcher is a read-only Haiku agent that fetches docs', () => {
+test('the researcher is a read-only Haiku agent that fetches docs', async () => {
   const text = read('agents/researcher.md')
   assert.match(text, /^model: claude-haiku-5-5$/m)
   assert.match(text, /^effort: low$/m)
-  assert.match(text, /^tools: WebFetch, WebSearch, Read$/m)
+  const { TABLE } = await import('./routing.ts')
+  assert.deepEqual(TABLE.researcher.S, { model: 'haiku', effort: 'low' })
+  assert.match(text, /^tools: WebFetch, WebSearch$/m)
 })
 
 test('the scout and triage files match their pinned routes', async () => {
@@ -133,4 +135,8 @@ test('the CI review picker matches the routing table for the reviewer', () => {
 test('CI triage runs Haiku at low effort, as the triage route says', () => {
   assert.deepEqual(TABLE.triage.S, { model: 'haiku', effort: 'low' })
   assert.match(read('templates/rig-triage.yml'), /--model claude-haiku-5-5 --effort low --max-turns 5/)
+})
+
+test('build sends tier L findings to a fresh implementer when its route changed', () => {
+  assert.match(read('skills/build/SKILL.md'), /differs[^\n]*launch a fresh `rig:implementer`[^\n]*otherwise[^\n]*same implementer/)
 })
