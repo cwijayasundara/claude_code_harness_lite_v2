@@ -9,6 +9,7 @@ import {
 import { loadConfig } from './check.ts'
 import { readRatchet, spendUsd, block, readEvents } from './ratchet.ts'
 import type { SensorConfig, RatchetNode } from './model.ts'
+import { routes as routesFor, type Role, type Route } from './routing.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
   greenfield: ['intent', 'design', 'build', 'test', 'sensors', 'pr', 'pr-review'],
@@ -141,13 +142,13 @@ export function activeSlug(): string | null {
   return byMtime[0]?.slug ?? null
 }
 
-// The tier picks the model for every subagent a change launches (architect, implementer, reviewer); greenfield is always Opus.
-// Skills pass it as the Agent call's `model`, which takes precedence over the agent file's own.
+// Legacy (one release): the tier model that vendored skills from before role routing pass to every launch. Inbox shows it too.
+// Current skills read `routes` instead: the role and tier pick model and effort (scripts/routing.ts).
 export type ModelAlias = 'haiku' | 'sonnet' | 'opus'
 export const modelFor = (type: ChangeType, tier: Tier): ModelAlias => (type === 'greenfield' || tier === 'L' ? 'opus' : tier === 'M' ? 'sonnet' : 'haiku')
 
 export type Verdict = 'continue' | 'human' | 'blocked' | 'ready'
-export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number; model: ModelAlias }
+export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number; model: ModelAlias; routes: Record<Role, Route>; routeWarnings: string[] }
 export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
 const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
 
@@ -159,7 +160,10 @@ export function step(slug: string): Step {
   const round = node && BUDGETED.has(node) ? (ratchet.nodes[node as RatchetNode]?.rounds ?? 0) : 0
   // Finished build slices: partial progress inside a node that has not changed round.
   const progress = node === 'build' ? Object.values(ratchet.slices).filter(sl => sl.status === 'done').length : 0
-  const base = { slug, node, round, progress, command: nextCommand(change), model: modelFor(change.type, change.tier) }
+  const openSlice = Object.entries(ratchet.slices).filter(([, sl]) => sl.status === 'open').sort((a, b) => Number(a[0]) - Number(b[0]))[0]?.[1]
+  const retry = node === 'build' ? (openSlice?.rounds ?? 0) : round
+  const routed = routesFor(change.type, change.tier, retry, loadConfig().config.routing)
+  const base = { slug, node, round, progress, command: nextCommand(change), model: modelFor(change.type, change.tier), routes: routed.routes, routeWarnings: routed.warnings }
   // A change drafted from the inbox (source:) whose tier was not published (rig-spec carries no ratchet.json) waits for a person
   // to accept its tier and type before any node, so the fallback type (feature) never picks its path. Legacy changes keep L.
   const drift = change.intent.source && !isTier(ratchet.tier) ? tierDrift(slug) : null

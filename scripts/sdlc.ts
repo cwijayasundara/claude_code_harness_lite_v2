@@ -112,6 +112,7 @@ function cmdNext(args: Args): void {
   const slug = args.pos[0] ? checkSlug(args.pos[0]) : activeSlug()
   if (!slug) return out(args.opt.json ? JSON.stringify({ slug: null, node: null, verdict: 'ready', reason: 'no active change', command: `${skillRef('start')} "<what you want>"`, round: 0 }) : 'no active change')
   const s = step(slug)
+  if (s.routeWarnings.length) process.stderr.write(s.routeWarnings.join('\n') + '\n')
   if (s.verdict === 'ready') clearReady(slug)
   out(args.opt.json ? JSON.stringify(s) : `${s.verdict}: ${s.verdict === 'continue' || s.verdict === 'human' ? s.command : s.reason}`)
 }
