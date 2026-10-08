@@ -59,6 +59,16 @@ function ghPrs(): PullRequest[] | null {
   }
 }
 
+// gh JSON for the DORA, triage and rehearsal metrics: null when gh is missing, unauthenticated, has no remote or the call fails.
+function ghJson<T>(args: string[]): T[] | null {
+  try {
+    const v: unknown = JSON.parse(execFileSync('gh', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000 }))
+    return Array.isArray(v) ? v as T[] : null
+  } catch {
+    return null
+  }
+}
+
 function sumBy(rows: UsageRow[], key: (r: UsageRow) => string, value: (r: UsageRow) => number): Record<string, number> {
   const totals: Record<string, number> = {}
   for (const r of rows) totals[key(r)] = (totals[key(r)] ?? 0) + value(r)
@@ -160,6 +170,27 @@ export function cmdMetrics(args: Args): void {
   m.gate_wait_hours = median(waits)
   m.gate_violations_escaped = { value: incidents.filter(i => i.class === 'gate').length, n: incidents.length }
   m.managed_controls_in_force = managedFiles(MANAGED_DIR).length ? { value: controlsInForce(managedSettings(MANAGED_DIR)).length, n: 16 } : { value: null, n: 16, note: 'no managed settings file on this machine' }
+  // Deploy (DORA, p.46): deploys are GitHub deployments to the production environment (RIG_PRODUCTION_ENV, default production);
+  // lead time runs from a PR's opening to the first deploy at or after its merge. Restore time is from incident files.
+  const inWindow = (t?: string | null): t is string => Boolean(t) && Date.parse(t as string) >= since
+  const weeks = days / 7
+  const deploys = ghJson<{ created_at?: string }>(['api', '-X', 'GET', 'repos/{owner}/{repo}/deployments', '-f', `environment=${process.env.RIG_PRODUCTION_ENV || 'production'}`, '-f', 'per_page=100'])
+  const dTimes = (deploys ?? []).map(d => d.created_at).filter(inWindow).sort((a, b) => Date.parse(a) - Date.parse(b))
+  const perDeploy = (value: number): Metric => (dTimes.length < MIN_SAMPLE ? { value: null, n: dTimes.length } : { value, n: dTimes.length })
+  m.deployment_frequency_per_week = deploys ? perDeploy(Number((dTimes.length / weeks).toFixed(2))) : needsGh
+  m.lead_time_hours = deploys && prs
+    ? median(prs.filter(p => inWindow(p.mergedAt)).map(p => hours(p.createdAt, dTimes.find(t => Date.parse(t) >= Date.parse(p.mergedAt ?? '')))))
+    : needsGh
+  m.change_failure_rate = deploys ? perDeploy(Math.min(1, incidents.filter(i => i.escaped === 'true' && inWindow(i.detected)).length / Math.max(1, dTimes.length))) : needsGh
+  m.time_to_restore_hours = median(incidents.map(i => { const h = hours(i.detected, i.restored); return h !== null && h >= 0 ? h : null }))
+  // Leading (p.46): failed runs a triage answered, and the staging rollback rehearsal's record.
+  const failedRuns = ghJson<{ workflowName?: string; createdAt?: string }>(['run', 'list', '--status', 'failure', '--limit', '200', '--json', 'workflowName,createdAt'])
+  const triaged = ghJson<{ createdAt?: string }>(['run', 'list', '--workflow', 'rig-triage.yml', '--status', 'success', '--limit', '200', '--json', 'createdAt'])
+  const failedN = (failedRuns ?? []).filter(r => inWindow(r.createdAt) && r.workflowName !== 'rig-triage').length
+  m.failures_triaged_without_paging = failedRuns && triaged ? share(Math.min(failedN, (triaged ?? []).filter(r => inWindow(r.createdAt)).length), failedN) : needsGh
+  const rehearsals = ghJson<{ conclusion?: string; createdAt?: string }>(['run', 'list', '--workflow', 'rig-rehearse.yml', '--limit', '100', '--json', 'conclusion,createdAt'])
+  const rehearsed = (rehearsals ?? []).filter(r => inWindow(r.createdAt) && r.conclusion)
+  m.rollback_rehearsal_success = rehearsals ? { ...share(rehearsed.filter(r => r.conclusion === 'success').length, rehearsed.length), per_week: Number((rehearsed.length / weeks).toFixed(2)) } : needsGh
 
   // Cost, from the mod's usage log
   const usage = readJsonl<UsageRow>(USAGE).filter(r => Date.parse(r.at) >= since)

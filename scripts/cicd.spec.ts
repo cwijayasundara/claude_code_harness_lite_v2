@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { makeRepo, sdlc, write } from './testkit.ts'
 
 const ROOT = path.join(import.meta.dirname, '..')
 const tmpDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'rig-cicd-'))
@@ -63,9 +64,10 @@ test('rig-triage refuses credentials and neutralises mentions: a triage comment 
   assert.notEqual(leak.code, 0)
   assert.equal(leak.gh, '')
   assert.notEqual(post('Real: x ghs_testtoken\nEvidence: y\nNext: z\n').code, 0, 'the job token itself')
-  const ping = post('Flaky: a timeout; @oncall-team should look\nEvidence: "ETIMEDOUT"\nNext: re-run; cc @alice\n')
+  const ping = post('Flaky: a timeout; @oncall-team should look\nEvidence: "ETIMEDOUT" ![x](https://evil.example/p.png) <img src=x>\nNext: re-run; cc @alice\n')
   assert.equal(ping.code, 0, ping.out)
-  assert.doesNotMatch(ping.comment, /@oncall-team|@alice/)
+  assert.match(ping.comment, /\n```text\nFlaky: a timeout; @oncall-team should look\n[\s\S]*\n```\n?$/, 'the lines are posted inside a code fence: no mention, link, image or HTML renders')
+  assert.notEqual(post('Real: x\nEvidence: ```\nNext: z\n').code, 0, 'a fence in the text could break out, so it is refused')
 })
 
 test('rig-triage: a failed CI run only, Haiku with read-the-log and write-triage.md tools, no checkout, no shell', () => {
@@ -99,4 +101,66 @@ test('rig-rehearse: weekly and on demand, in the staging environment, no model, 
   assert.doesNotMatch(t, /claude/i)
   assert.match(t, /contents: read/)
   assert.match(t, /persist-credentials: false/)
+})
+
+// A fake gh answering the calls metrics makes, by the arguments it gets. Times are hours before now.
+const ago = (h: number): string => new Date(Date.now() - h * 3_600_000).toISOString()
+function ghBin(answers: { deployments?: unknown; prs?: unknown; failed?: unknown; triage?: unknown; rehearse?: unknown; fail?: boolean }): string {
+  const bin = tmpDir()
+  const say = (v: unknown) => `echo '${JSON.stringify(v ?? [])}'`
+  fs.writeFileSync(path.join(bin, 'gh'), answers.fail ? '#!/bin/sh\necho "HTTP 404" >&2\nexit 1\n' : `#!/bin/sh
+case "$*" in
+  *deployments*) ${say(answers.deployments)} ;;
+  "pr list"*) ${say(answers.prs)} ;;
+  *rig-triage.yml*) ${say(answers.triage)} ;;
+  *rig-rehearse.yml*) ${say(answers.rehearse)} ;;
+  "run list"*) ${say(answers.failed)} ;;
+  *) echo '[]' ;;
+esac
+`, { mode: 0o755 })
+  return bin
+}
+const metricsWith = (repo: string, bin: string) => JSON.parse(sdlc(repo, ['metrics', '--json'], { env: { PATH: `${bin}:${process.env.PATH}`, RIG_PRODUCTION_ENV: 'prod' } }).stdout).metrics
+
+test('DORA from gh and incidents: deploy frequency, lead time, change failure rate, time to restore', posix, () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const deploys = [10, 30, 50, 70, 90, 2000].map(h => ({ created_at: ago(h), environment: 'prod' })) // 2000h is outside the 30-day window
+  const prs = [[100, 95], [80, 75], [60, 55], [40, 35], [20, 15], [5, 4]].map(([open, merged], i) => ({ number: i + 1, createdAt: ago(open as number), mergedAt: ago(merged as number) }))
+  write(repo, '.sdlc/incidents/20261001-a.md', `---\nescaped: true\ndetected: ${ago(48)}\nrestored: ${ago(46)}\n---\n`)
+  write(repo, '.sdlc/incidents/20261001-b.md', `---\nescaped: false\ndetected: ${ago(30)}\nrestored: ${ago(29)}\n---\n`)
+  for (const [k, h] of [['c', 4], ['d', 3], ['e', 5]] as const) write(repo, `.sdlc/incidents/20261001-${k}.md`, `---\nescaped: false\ndetected: ${ago(200)}\nrestored: ${ago(200 - h)}\n---\n`)
+  write(repo, '.sdlc/incidents/20261001-f.md', `---\ndetected: ${ago(10)}\nrestored: ${ago(12)}\n---\n`)
+  write(repo, '.sdlc/incidents/20261001-g.md', `---\ndetected: ${ago(10)}\nrestored:\n---\n`)
+  const m = metricsWith(repo, ghBin({ deployments: deploys, prs }))
+  assert.deepEqual({ v: m.deployment_frequency_per_week.value, n: m.deployment_frequency_per_week.n }, { v: Number((5 / (30 / 7)).toFixed(2)), n: 5 })
+  // Each PR's lead time runs from open to the first deploy at or after its merge: 100→90 = 10h, 80→70 = 10h, 60→50 = 10h,
+  // 40→30 = 10h, 20→10 = 10h; the PR merged 4h ago has no deploy after it yet, so it is no sample.
+  assert.deepEqual({ v: m.lead_time_hours.value, n: m.lead_time_hours.n }, { v: 10, n: 5 })
+  assert.deepEqual({ v: m.change_failure_rate.value, n: m.change_failure_rate.n }, { v: 1 / 5, n: 5 })
+  assert.deepEqual({ v: m.time_to_restore_hours.value, n: m.time_to_restore_hours.n }, { v: 3, n: 5 }, '2, 1, 4, 3, 5: a restore before detection and a blank one are no samples')
+})
+
+test('triage and rehearsal from workflow runs', posix, () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const failed = [...Array.from({ length: 8 }, (_, i) => ({ workflowName: 'CI', createdAt: ago(i + 1) })), { workflowName: 'rig-triage', createdAt: ago(1) }, { workflowName: 'CI', createdAt: ago(2000) }]
+  const triage = Array.from({ length: 6 }, (_, i) => ({ createdAt: ago(i + 1) }))
+  const rehearse = [...['success', 'success', 'failure', 'success', 'success', 'success'].map((c, i) => ({ conclusion: c, createdAt: ago(24 * (i + 1)) })), { conclusion: '', createdAt: ago(1) }]
+  const m = metricsWith(repo, ghBin({ failed, triage, rehearse }))
+  assert.deepEqual({ v: m.failures_triaged_without_paging.value, n: m.failures_triaged_without_paging.n }, { v: 6 / 8, n: 8 }, 'rig-triage failures and old runs are not counted')
+  assert.deepEqual({ v: m.rollback_rehearsal_success.value, n: m.rollback_rehearsal_success.n }, { v: 5 / 6, n: 6 }, 'an in-progress run is not counted')
+  assert.equal(m.rollback_rehearsal_success.per_week, Number((6 / (30 / 7)).toFixed(2)))
+})
+
+test('metrics never crash without a usable gh: DORA and the workflow metrics read needs gh, restore time still counts', posix, () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const m = metricsWith(repo, ghBin({ fail: true }))
+  for (const k of ['deployment_frequency_per_week', 'lead_time_hours', 'change_failure_rate', 'failures_triaged_without_paging', 'rollback_rehearsal_success']) assert.equal(m[k].note, 'needs gh', k)
+  assert.equal(m.time_to_restore_hours.value, null)
+})
+
+test('the incident skill records when service was restored', () => {
+  assert.match(fs.readFileSync(path.join(ROOT, 'skills/incident/SKILL.md'), 'utf8'), /`restored:`/)
 })
