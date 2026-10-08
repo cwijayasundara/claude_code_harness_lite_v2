@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { UsageRow } from './core.ts'
 import { rollup, projection, levelOf, pressureOf, parseRollup, teamSpent, changeSpent, monthOf, prevMonth, changeBudgetText, DEFAULT_BUDGET, type Rollup } from './spend.ts'
+import { parseConfig } from './model.ts'
 
 const row = (at: string, usd: unknown, o: Partial<UsageRow> = {}): UsageRow => ({ at, kind: 'main', change: null, stage: null, usd: usd as number, ...o })
 const R = (id: string, month: string, usd: number, byChange: Record<string, number> = {}): Rollup => ({ id, month, through: `${month}-05T00:00:00.000Z`, usd, byDay: {}, byChange })
@@ -73,4 +74,15 @@ test('changeBudgetText says none set, a share, or how far over', () => {
   assert.equal(changeBudgetText(null), 'none set')
   assert.equal(changeBudgetText({ slug: 'x', spentUsd: 9.1, budgetUsd: 20, pct: 45.5, level: 'ok' }), '$9.10 of $20 (46%)')
   assert.equal(changeBudgetText({ slug: 'x', spentUsd: 23, budgetUsd: 20, pct: 115, level: 'over' }), '$23.00 of $20 (115%) · over by $3.00')
+})
+
+test('budget config: defaults, a full section, and errors for each bad field', () => {
+  assert.deepEqual(parseConfig('{}').config.budget, DEFAULT_BUDGET)
+  const full = parseConfig(JSON.stringify({ budget: { teamMonthlyUsd: 500, changeUsd: { S: 5, M: 20, L: 60 }, warnAt: [40, 70, 100], downshift: false } }))
+  assert.deepEqual(full.errors, [])
+  assert.deepEqual(full.config.budget, { teamMonthlyUsd: 500, changeUsd: { S: 5, M: 20, L: 60 }, warnAt: [40, 70, 100], downshift: false })
+  const bad = parseConfig(JSON.stringify({ budget: { teamMonthlyUsd: -1, changeUsd: { X: 5, M: 0 }, warnAt: [80, 50, 100], downshift: 'no', extra: 1 } })).errors.join('\n')
+  for (const want of ['budget.teamMonthlyUsd', 'budget.changeUsd: unknown tier "X"', 'budget.changeUsd.M', 'budget.warnAt', 'budget.downshift', 'budget: unknown key "extra"']) assert.match(bad, new RegExp(want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.match(parseConfig('{"budget": 5}').errors.join('\n'), /budget must be/)
+  assert.deepEqual(parseConfig(JSON.stringify({ budget: DEFAULT_BUDGET })).errors, [], 'the default round-trips')
 })

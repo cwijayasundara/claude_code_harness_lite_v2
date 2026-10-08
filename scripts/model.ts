@@ -57,6 +57,7 @@ export type SensorConfig = {
   ci: { scope: 'affected' | 'all' }
   affected: string
   sparseBase: boolean
+  budget: BudgetConfig
 }
 
 export const DEFAULT_CONFIG: SensorConfig = {
@@ -88,6 +89,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   ci: { scope: 'affected' },
   affected: '',
   sparseBase: false,
+  budget: structuredClone(DEFAULT_BUDGET),
 }
 
 export const SECRET_PATTERNS: [string, RegExp][] = [

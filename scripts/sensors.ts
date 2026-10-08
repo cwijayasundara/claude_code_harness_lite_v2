@@ -284,6 +284,17 @@ export function weakensConfig(beforeText: string, afterText: string): string[] {
   }
   if (b.githooks.prePush === 'ship' && a.githooks.prePush === 'off') reasons.push('githooks.prePush turned off')
   if (a.githooks.budgetMs > b.githooks.budgetMs) reasons.push(`githooks.budgetMs raised ${b.githooks.budgetMs} → ${a.githooks.budgetMs}`)
+  // A soft budget weakens when it is raised or removed, or when downshift is turned off (spend governance spec §5, §12).
+  const tb = b.budget.teamMonthlyUsd, ta = a.budget.teamMonthlyUsd
+  if (tb !== null && ta === null) reasons.push('budget.teamMonthlyUsd removed')
+  else if (tb !== null && ta !== null && ta > tb) reasons.push(`budget.teamMonthlyUsd raised ${tb} → ${ta}`)
+  for (const t of ['S', 'M', 'L'] as const) {
+    const x = b.budget.changeUsd[t], y = a.budget.changeUsd[t]
+    if (x !== undefined && y === undefined) reasons.push(`budget.changeUsd.${t} removed`)
+    else if (x !== undefined && y !== undefined && y > x) reasons.push(`budget.changeUsd.${t} raised ${x} → ${y}`)
+  }
+  if (a.budget.warnAt.some((v, i) => v > (b.budget.warnAt[i] ?? v))) reasons.push(`budget.warnAt raised ${b.budget.warnAt.join('/')} → ${a.budget.warnAt.join('/')}`)
+  if (b.budget.downshift && !a.budget.downshift) reasons.push('budget.downshift turned off')
   for (const l of removedFrom(Object.keys(b.levels), Object.keys(a.levels))) reasons.push(`levels.${l} removed`)
   for (const q of removedFrom(Object.keys(b.quality), Object.keys(a.quality))) reasons.push(`quality.${q} removed`)
   for (const l of Object.keys(a.levels) as (keyof typeof a.levels)[]) {
