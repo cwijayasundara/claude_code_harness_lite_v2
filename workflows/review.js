@@ -2,7 +2,7 @@ export const meta = {
   name: 'rig-review',
   description: 'Sharded whole-diff review: one reviewer per shard in ordered batches, then one referee per finding',
   whenToUse:
-    'Called by /rig:pr-review at tier L when the diff is larger than one shard. Requires args {slug, base, shards: [{name, files: [...]}], batchSize?, reviewer?}. Returns {verdict: pass|changes-needed|disputed|incomplete, lines, findings, disputed, dropped, discardedMalformed, discardedBlocking, failedShards, unreviewed, stats}; incomplete when a shard failed, a file was unreviewed or a blocking finding was discarded as malformed. Resumable: relaunch with identical args and resumeFromRunId and finished agents replay from the journal.',
+    'Called by /rig:pr-review at tier L when the diff is larger than one shard. Requires args {slug, base, shards: [{name, files: [...]}], batchSize?, reviewer?, routes?}. Returns {verdict: pass|changes-needed|disputed|incomplete, lines, findings, disputed, dropped, discardedMalformed, discardedBlocking, failedShards, unreviewed, stats}; incomplete when a shard failed, a file was unreviewed or a blocking finding was discarded as malformed. Resumable: relaunch with identical args and resumeFromRunId and finished agents replay from the journal.',
   phases: [
     { title: 'Review', detail: 'one reviewer per shard, in batches of 8 in shard order' },
     { title: 'Referee', detail: 'one Sonnet referee per finding except injection and security; only a medium finding it cannot re-derive is dropped, a critical or high one is kept as disputed' },
@@ -13,12 +13,19 @@ export const meta = {
 const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return null } })() : args
 
 if (!ARGS || typeof ARGS.slug !== 'string' || typeof ARGS.base !== 'string' || !Array.isArray(ARGS.shards)) {
-  throw new Error('rig-review requires args: {slug: "<change>", base: "<git ref>", shards: [{name, files: ["path", ...]}], batchSize?: number, reviewer?: "<agent type>"}')
+  throw new Error('rig-review requires args: {slug: "<change>", base: "<git ref>", shards: [{name, files: ["path", ...]}], batchSize?: number, reviewer?: "<agent type>", routes?: {reviewer?: {model, effort}, referee?: {model, effort}}}')
 }
 // The slug, the base and every file path come from the repository: refuse anything a shell or a prompt could read as syntax.
 if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(ARGS.slug)) throw new Error(`rig-review: unsafe change name ${JSON.stringify(ARGS.slug)}`)
 if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$/.test(ARGS.base)) throw new Error(`rig-review: unsafe base ${JSON.stringify(ARGS.base)}`)
 const REVIEWER = typeof ARGS.reviewer === 'string' && /^[A-Za-z0-9:_-]{1,60}$/.test(ARGS.reviewer) ? ARGS.reviewer : 'rig:reviewer'
+// Routes come from /rig:pr-review (sdlc.ts next --json). Only known aliases pass; a referee never runs below Sonnet (spec floor). agent() accepts effort.
+const pick = r => {
+  const ok = r && typeof r === 'object' && ['sonnet', 'opus'].includes(r.model)
+  return ok ? { model: r.model, ...(['low', 'medium', 'high'].includes(r.effort) ? { effort: r.effort } : {}) } : null
+}
+const REVIEW_ROUTE = pick(ARGS.routes?.reviewer) ?? {}
+const REFEREE_ROUTE = pick(ARGS.routes?.referee) ?? { model: 'sonnet' }
 const BATCH = Math.min(16, Math.max(1, Math.floor(Number(ARGS.batchSize) || 8)))
 
 // A deny-list for what no repository path should hold; the script single-quotes every path itself, so quotes and control characters are refused.
@@ -114,7 +121,7 @@ let discardedBlocking = 0
 for (let i = 0; i < shards.length; i += BATCH) {
   const batch = shards.slice(i, i + BATCH)
   const results = await parallel(
-    batch.map(s => () => agent(reviewPrompt(s), { phase: 'Review', label: `review:${s.name}`, agentType: REVIEWER, schema: FINDINGS })),
+    batch.map(s => () => agent(reviewPrompt(s), { phase: 'Review', label: `review:${s.name}`, agentType: REVIEWER, ...REVIEW_ROUTE, schema: FINDINGS })),
   )
   results.forEach((r, j) => {
     if (r && Array.isArray(r.findings)) {
@@ -145,7 +152,7 @@ const unique = [...best.values()]
 const refereed = unique.filter(f => f.category !== 'injection' && f.category !== 'security')
 phase('Referee')
 const answers = !refereed.length ? [] : await parallel(
-  refereed.map(f => () => agent(refereePrompt(f), { phase: 'Referee', label: `referee:${f.file}:${f.line}`, model: 'sonnet', schema: VERDICT })),
+  refereed.map(f => () => agent(refereePrompt(f), { phase: 'Referee', label: `referee:${f.file}:${f.line}`, ...REFEREE_ROUTE, schema: VERDICT })),
 )
 // A referee that failed to answer keeps its finding. A blocking finding it calls not real is disputed, never dropped; only medium ones are.
 const notReal = new Map()

@@ -212,6 +212,15 @@ test('metrics merge plugin and standalone agent names and ignore a negative cost
   assert.deepEqual(cost.tokens_by_agent_type, { 'rig:scout': 15 })
 })
 
+test('metrics report tokens by role and by role and model', () => {
+  run(['new', 'add-login', '--type', 'feature', '--tier', 'S'])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'rig:reviewer', stage: 'build', change: 'add-login', model: 'claude-sonnet-5-5', in: 10 })])
+  run(['log-usage', JSON.stringify({ kind: 'agent', agentType: 'rig:reviewer', stage: 'pr-review', change: 'add-login', model: 'claude-opus-5-5', in: 5 })])
+  const cost = JSON.parse(run(['metrics', '--json']).stdout).metrics.cost
+  assert.deepEqual(cost.tokens_by_role, { 'slice-review': 10, reviewer: 5 })
+  assert.deepEqual(cost.model_by_role, { 'slice-review': { 'claude-sonnet-5-5': 10 }, reviewer: { 'claude-opus-5-5': 5 } })
+})
+
 test('status warns when there is no origin remote to open a PR on', () => {
   run(['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   assert.match(run(['status']).stdout, /warn: no origin remote/)

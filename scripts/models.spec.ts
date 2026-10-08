@@ -1,4 +1,4 @@
-// Model routing (decision 4 of docs/ai-sdlc-harness-design.html): the tier picks the model; aliases are pinned to 5.5.
+// Model routing: the role and the tier pick model and effort (scripts/routing.ts); full IDs are pinned to 5.5.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -6,6 +6,8 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { makeRepo, gitIn, write } from './testkit.ts'
+import { TABLE } from './routing.ts'
+const out = (model: string, effort: string): string => `model=claude-${model}-5-5\neffort=${effort}`
 
 const ROOT = path.join(import.meta.dirname, '..')
 const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8')
@@ -22,14 +24,39 @@ test('the scout runs on Haiku 5.5 by full ID, like the other agents', () => {
   assert.match(read('agents/scout.md'), /^model: claude-haiku-5-5$/m)
 })
 
-const MODELS = '**Models:** pass `model` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` on every `rig:architect`, `rig:implementer` and `rig:reviewer` launch.'
+const MODELS = '**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role\'s `model` and `effort` on every launch: `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread. After a failed round, run that command again before the fix launch: the implementer route can rise.'
 
-test('every skill that launches architect, implementer or reviewer passes the tier model, and none hardcodes one', () => {
+test('every skill that launches architect, implementer or reviewer passes its role route, and none hardcodes one', () => {
   for (const name of fs.readdirSync(path.join(ROOT, 'skills'))) {
     const text = read(`skills/${name}/SKILL.md`)
     if (/rig:(architect|implementer|reviewer)/.test(text)) assert.ok(text.includes(MODELS), `${name} lacks the Models line`)
     assert.doesNotMatch(text, /model: (sonnet|opus|haiku)\b/, `${name} hardcodes a model`)
   }
+})
+
+test('the researcher is a read-only Haiku agent that fetches docs', async () => {
+  const text = read('agents/researcher.md')
+  assert.match(text, /^model: claude-haiku-5-5$/m)
+  assert.match(text, /^effort: low$/m)
+  const { TABLE } = await import('./routing.ts')
+  assert.deepEqual(TABLE.researcher.S, { model: 'haiku', effort: 'low' })
+  assert.match(text, /^tools: WebFetch, WebSearch$/m)
+})
+
+test('the scout and triage files match their pinned routes', async () => {
+  const { TABLE } = await import('./routing.ts')
+  const scout = read('agents/scout.md')
+  assert.deepEqual(TABLE.scout.S, { model: 'haiku', effort: 'low' })
+  assert.match(scout, /^model: claude-haiku-5-5$/m)
+  assert.match(scout, /^effort: low$/m)
+})
+
+test('design and spec send external docs questions to one researcher', () => {
+  for (const s of ['design', 'spec']) assert.match(read(`skills/${s}/SKILL.md`), /one `rig:researcher`/, s)
+})
+
+test('pr-review hands the reviewer and referee routes to the review workflow', () => {
+  assert.match(read('skills/pr-review/SKILL.md'), /routes: \{reviewer: routes\.reviewer, referee: routes\.referee\}/)
 })
 
 test('tier S builds through a Haiku implementer; tier S and M review through rig:reviewer, not code-review', () => {
@@ -66,31 +93,50 @@ const change = (slug: string, ratchet: string, intent = '---\nslug: x\ntype: fea
 }
 
 test('CI review model: S haiku, M sonnet, L opus', () => {
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}')), 'model=claude-haiku-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"M","type":"refactor"}')), 'model=claude-sonnet-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"L","type":"feature"}')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}')), out('sonnet', 'medium'))
+  assert.equal(pickModel(change('a', '{"tier":"M","type":"refactor"}')), out('sonnet', 'high'))
+  assert.equal(pickModel(change('a', '{"tier":"L","type":"feature"}')), out('opus', 'high'))
 })
 
 test('CI review model fails closed to Opus: greenfield, no change folder, two folders, unreadable ratchet', () => {
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"greenfield"}')), 'model=claude-opus-5-5')
-  assert.equal(pickModel(repo => write(repo, 'src/x.js', 'x\n')), 'model=claude-opus-5-5')
-  assert.equal(pickModel(repo => { change('a', '{"tier":"S"}')(repo); change('b', '{"tier":"S"}')(repo) }), 'model=claude-opus-5-5')
-  assert.equal(pickModel(change('a', 'not json')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"greenfield"}')), out('opus', 'high'))
+  assert.equal(pickModel(repo => write(repo, 'src/x.js', 'x\n')), out('opus', 'high'))
+  assert.equal(pickModel(repo => { change('a', '{"tier":"S"}')(repo); change('b', '{"tier":"S"}')(repo) }), out('opus', 'high'))
+  assert.equal(pickModel(change('a', 'not json')), out('opus', 'high'))
 })
 
 test('CI review model takes the stricter of intent.md and ratchet.json, as effective() does', () => {
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: L\n---\n')), 'model=claude-opus-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: greenfield\ntier: S\n---\n')), 'model=claude-opus-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: S\n---\n')), 'model=claude-haiku-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: "M"\n---\n')), 'model=claude-sonnet-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: L\n---\n')), out('opus', 'high'))
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: greenfield\ntier: S\n---\n')), out('opus', 'high'))
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: S\n---\n')), out('sonnet', 'medium'))
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\ntier: "M"\n---\n')), out('sonnet', 'high'))
 })
 
 test('CI review model fails closed on the intent: missing intent.md, no tier line, or a tier only in the body', () => {
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '')), 'model=claude-opus-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\n---\n')), 'model=claude-opus-5-5')
-  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '# no frontmatter\ntier: S\n')), 'model=claude-opus-5-5')
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '')), out('opus', 'high'))
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '---\ntype: feature\n---\n')), out('opus', 'high'))
+  assert.equal(pickModel(change('a', '{"tier":"S","type":"feature"}', '# no frontmatter\ntier: S\n')), out('opus', 'high'))
 })
 
 test('the CI review passes the picked model to Claude', () => {
   assert.match(read('templates/rig-review.yml'), /--model \$\{\{ steps\.model\.outputs\.model \}\}/)
+})
+
+test('the CI review picker matches the routing table for the reviewer', () => {
+  const block = read('templates/rig-review.yml')
+  for (const tier of ['S', 'M', 'L'] as const) {
+    const r = TABLE.reviewer[tier] as { model: string; effort: string }
+    const line = tier === 'L' ? `model=claude-${r.model}-5-5; effort=${r.effort}` : `${tier}) model=claude-${r.model}-5-5; effort=${r.effort} ;;`
+    assert.ok(block.includes(line), `rig-review.yml lacks "${line}"`)
+  }
+  assert.match(block, /--effort \$\{\{ steps\.model\.outputs\.effort \}\}/)
+})
+
+test('CI triage runs Haiku at low effort, as the triage route says', () => {
+  assert.deepEqual(TABLE.triage.S, { model: 'haiku', effort: 'low' })
+  assert.match(read('templates/rig-triage.yml'), /--model claude-haiku-5-5 --effort low --max-turns 5/)
+})
+
+test('build sends tier L findings to a fresh implementer when its route changed', () => {
+  assert.match(read('skills/build/SKILL.md'), /differs[^\n]*launch a fresh `rig:implementer`[^\n]*otherwise[^\n]*same implementer/)
 })

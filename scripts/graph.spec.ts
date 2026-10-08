@@ -175,3 +175,40 @@ test('the model follows the effective tier: lowering tier in intent.md does not 
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^tier: L$/m, 'tier: S'))
   assert.equal(stepOf('big').model, 'opus')
 })
+
+test('next --json carries routes for every role from the effective tier', () => {
+  sdlc(repo, ['new', 'rs', '--type', 'feature', '--tier', 'S'])
+  const s = stepOf('rs')
+  assert.deepEqual(s.routes.implementer, { model: 'haiku', effort: 'medium' })
+  assert.deepEqual(s.routes.reviewer, { model: 'sonnet', effort: 'medium' })
+  assert.equal(s.routes.architect, 'main')
+  assert.equal(s.model, 'haiku', 'the legacy tier model is kept for vendored skills')
+})
+
+test('lowering tier in intent.md on an L change keeps the L routes', () => {
+  sdlc(repo, ['new', 'rl', '--type', 'feature', '--tier', 'L'])
+  const f = path.join(repo, '.sdlc/changes/rl/intent.md')
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^tier: L$/m, 'tier: S'))
+  const s = stepOf('rl')
+  assert.deepEqual(s.routes.architect, { model: 'opus', effort: 'high' })
+  assert.deepEqual(s.routes.implementer, { model: 'sonnet', effort: 'high' })
+})
+
+test('an override below a floor is clamped and next warns naming the role', () => {
+  write(repo, '.sdlc/sensors.json', JSON.stringify({ routing: { reviewer: { S: 'haiku' } } }))
+  sdlc(repo, ['new', 'rw', '--type', 'feature', '--tier', 'S'])
+  const s = stepOf('rw')
+  assert.equal(s.routes.reviewer.model, 'sonnet')
+  assert.match(s.routeWarnings.join('\n'), /reviewer/)
+  assert.match(sdlc(repo, ['next', 'rw']).stderr, /reviewer.*floor/)
+})
+
+test('the build retry follows the open slice only: a failed earlier slice does not lift the next one', () => {
+  sdlc(repo, ['new', 'rt', '--type', 'chore', '--tier', 'S'])
+  const sl = (rounds: number, status: string) => ({ rounds, hashes: [], status })
+  const ratchet = (slices: object) => write(repo, '.sdlc/changes/rt/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: {}, slices, baseline: {} }))
+  ratchet({ 1: sl(1, 'done'), 2: sl(0, 'open') })
+  assert.deepEqual(stepOf('rt').routes.implementer, { model: 'haiku', effort: 'medium' })
+  ratchet({ 1: sl(0, 'done'), 2: sl(1, 'open') })
+  assert.deepEqual(stepOf('rt').routes.implementer, { model: 'haiku', effort: 'high' })
+})

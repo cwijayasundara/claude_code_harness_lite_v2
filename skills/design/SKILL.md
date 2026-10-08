@@ -9,13 +9,13 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` or variables); read files with Read and Grep; one-line commit messages.
 
-**Models:** pass `model` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` on every `rig:architect`, `rig:implementer` and `rig:reviewer` launch.
+**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role's `model` and `effort` on every launch: `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread. After a failed round, run that command again before the fix launch: the implementer route can rise.
 
 **Subagents:** run them in the foreground and wait; never end your turn while one is running.
 
 `intent.md` is written. This stage writes `design.md` and ends at the **one** human gate of a feature: the person approves intent.md and design.md together, and everything after (build, test, sensors, PR) runs on its own.
 
-1. **Find the files** with one or two `rig:scout` agents; do not read the codebase yourself.
+1. **Find the files** with one or two `rig:scout` agents; do not read the codebase yourself. For a question about an external library, API or tool, launch one `rig:researcher` instead of reading docs yourself.
 2. **Draft.** Tier S and M (not greenfield): write `design.md` yourself in the format of `${CLAUDE_PLUGIN_ROOT}/templates/design-format.md`. Tier L or greenfield: launch `rig:architect` (Opus) with a brief of at most 40 lines: the change folder `.sdlc/changes/$0/`, "write design.md", the format file `${CLAUDE_PLUGIN_ROOT}/templates/design-format.md`, the change type and the scout findings as `path:line` entries. Apply every policy skill (`.claude/skills/policy-*/SKILL.md`; list them with Glob and give the architect their paths): each conflict or gap is a `## Concerns` bullet `- [policy-<area>] <concern> → owner: <its owner:>`.
 3. **Check** with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`; fix size, code-block or `## Files` warnings (tier L: send back once).
 4. **Impact.** `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts check --at plan --slug $0`. Consumer references make the change tier L: name the repos, and put the consumer files in `## Files` and each consumer's test in `## Verification`.

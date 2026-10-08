@@ -28,7 +28,7 @@ The biggest lever is **bounded context**. Everything below follows from that.
 4. **Humans gate; models never self-approve.** Approval and waiver are human-only skills; approvals go stale when the artifact changes.
 5. **Deterministic checks decide; models advise.** Sensors, red-proof, scope and secrets are scripts at zero tokens; one inferential review per change.
 6. **Local equals CI.** One `check` entry point serves Stop, plan, ship, git hooks and CI. CI judges a PR with the base branch's checker and config, so a PR cannot weaken its own judge.
-7. **Right model for the job, pinned.** Sonnet main thread; the tier picks the subagents' model (S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5), passed per Agent call from `next --json`; Haiku scout. No skill sets `model:` (a switch re-reads the context uncached).
+7. **Right model for the job, pinned.** Sonnet main thread; the role and the tier pick each subagent's model and effort (`scripts/routing.ts`): Haiku reads (scout, researcher, triage), Sonnet writes code (Haiku at tier S), Opus plans and reviews tier L, and reviews never run on Haiku. Skills pass `routes` from `next --json`; a per-role floor clamps every override and retry. No skill sets `model:` (a switch re-reads the context uncached).
 8. **Bounded loops.** Review rounds, Stop blocks and spend are capped; past a cap the finding goes to `unresolved.json` and ship refuses it.
 9. **Every step ends with the next command.**
 
@@ -37,7 +37,8 @@ The biggest lever is **bounded context**. Everything below follows from that.
 ```
 skills/      the stages, /rig:* (start intent design spec plan diagnose build test sensors pr pr-review
              incident next init rule metrics), prompts only
-agents/      scout (haiku, read-only) · architect (opus) · implementer (sonnet) · reviewer (opus)
+agents/      scout (haiku, read-only) · researcher (haiku, docs; WebFetch and WebSearch only) · architect (opus) · implementer (sonnet) · reviewer (opus)
+             Each launch overrides the agent file's model and effort with its route.
 hooks/       hooks.json = five settings hooks plus two async lane hooks (`SubagentStart`, `SubagentStop`, observational), none on Bash (work in -p and CI) · register.ts = the optional mod
 scripts/     zero-dependency Node, no build step; sdlc.ts is the CLI; check.ts is the one checker
 templates/   CI workflows (rig-check, rig-review), settings.json, stacks.json, REVIEW.md
@@ -92,7 +93,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 |---|---|
 | Bounded context | Small fresh contexts per subagent (`omitClaudeMd` on scout; briefs of ≤ 60 lines); `/compact` rather than a handoff skill |
 | Sonnet main thread, Opus advisor **off** | Template sets `CLAUDE_CODE_DISABLE_ADVISOR_TOOL` (the advisor was a third of each run's cost; a user-level `advisorModel` otherwise still applies) |
-| Cheap subagents | implementer on Sonnet, scout on Haiku; Opus only for architect and reviewer |
+| Cheap subagents | routed by role and tier: tier L code on Sonnet, not Opus; Opus only for tier L plans and reviews; Haiku for reading |
 | One review per change | Findings below confidence 80 dropped; bounded fix rounds |
 | No "continue" prompting | `build` ends with a ready `/goal` line; `/rig-run` drives one node per turn |
 | Stamp, don't re-run | `verify` runs the plan's commands and the declared `full` commands once against the current tree and stamps `verification.md` with a tree stamp; ship and pre-push compare the stamp instead of re-running, and a stale stamp re-runs as before. CI reads no stamp |

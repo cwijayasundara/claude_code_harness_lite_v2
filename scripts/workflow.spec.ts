@@ -8,7 +8,7 @@ const SRC = fs.readFileSync(path.join(import.meta.dirname, '..', 'workflows', 'r
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...a: string[]) => (...b: unknown[]) => Promise<any>
 
 type Finding = { severity: string; category: string; file: string; line: number; problem: string; fix?: string; confidence?: number }
-type Opts = { phase?: string; label?: string; schema?: unknown; model?: string; agentType?: string }
+type Opts = { phase?: string; label?: string; schema?: unknown; model?: string; effort?: string; agentType?: string }
 
 async function run(args: unknown, agent: (prompt: string, o: Opts) => Promise<unknown>) {
   const sizes: number[] = []
@@ -239,4 +239,22 @@ test('backslashes and bidi or zero-width characters in a path drop the file (inc
   assert.ok(text.includes("git --literal-pathspecs diff 'abc123' -- 'ok.ts'"))
   assert.ok(!text.includes('\\') || !text.includes('a\\b'))
   assert.ok(!/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(text))
+})
+
+test('routes from args pick the reviewer and referee models; absent or hostile routes keep the defaults', async () => {
+  const go = async (routes: unknown) => {
+    const calls: Opts[] = []
+    await run({ ...base, routes, shards: [shard(1, ['src/a.ts'])] }, async (_p, o) => { calls.push(o); return o.phase === 'Review' ? { findings: [high('src/a.ts')] } : { real: true, why: 'y' } })
+    return { review: calls.find(c => c.phase === 'Review'), referee: calls.find(c => c.phase === 'Referee') }
+  }
+  const routed = await go({ reviewer: { model: 'opus', effort: 'high' }, referee: { model: 'sonnet', effort: 'high' } })
+  assert.equal(routed.review?.model, 'opus')
+  assert.equal(routed.referee?.model, 'sonnet')
+  assert.equal(routed.referee?.effort, 'high')
+  const none = await go(undefined)
+  assert.equal(none.review?.model, undefined, 'the agent file decides when no route is given')
+  assert.equal(none.referee?.model, 'sonnet')
+  const evil = await go({ reviewer: { model: 'x; rm -rf /' }, referee: { model: 'haiku' } })
+  assert.equal(evil.review?.model, undefined)
+  assert.equal(evil.referee?.model, 'sonnet', 'a referee is never below Sonnet')
 })

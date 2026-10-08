@@ -33,8 +33,8 @@ Thin layer with built-ins first; ceremony scales with risk; state lives in files
  ├────────────────────────────────────────────────────────────────────────┤
  │ SKILLS (16)    start design plan diagnose build test sensors pr …      │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
- │ AGENTS (4)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
- │                reviewer·opus                                         │  small fresh contexts
+ │ AGENTS (5)     scout·haiku  researcher·haiku  architect·opus           │  model routing:
+ │                implementer·sonnet  reviewer·opus (by role and tier)    │  small fresh contexts
  ├────────────────────────────────────────────────────────────────────────┤
  │ HOOKS          session-start · prompt-submit · post-edit · stop ·      │  guardrails: run in
  │                skill-failed                                            │  -p and CI, zero tokens
@@ -122,9 +122,9 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig:intent "<idea>"` | Anyone with an idea, in Claude Code or on claude.ai. Asks for the author and writes a draft `.sdlc/intent/<name>.md` for a product owner to accept (without a file system it shows the file to commit). | tokens |
 | `/rig:start "<task>"` | Any new task, or to resume one by slug, or an inbox file (`.sdlc/intent/<name>.md`); `--plan-only` stops before any build. Classifies type and tier, writes `intent.md`; tier S is built in the same turn. | tokens |
 | `/rig:next` | You are not sure what is next. Runs the next node, stops at a human gate. | tokens |
-| `/rig:design` · `/rig:plan` · `/rig:spec` | Writing the design (feature, greenfield), plan (refactor, migration, L bugfix) or spec. | Opus architect |
+| `/rig:design` · `/rig:plan` · `/rig:spec` | Writing the design (feature, greenfield), plan (refactor, migration, L bugfix) or spec. | Opus architect at tier L |
 | `/rig:diagnose` | Bugfix or incident: reproduce with a failing test, then the smallest fix. | tokens |
-| `/rig:build` | Approved design or plan: slice by slice, bounded review loop. | Sonnet + Opus review |
+| `/rig:build` | Approved design or plan: slice by slice, bounded review loop. | Sonnet; tier L slice review Sonnet high |
 | `/rig:test` · `/rig:sensors` | After build: run every test level, then the quality sensors against base. | mostly zero-token |
 | `/rig:pr` · `/rig:pr-review` | Ship: commit, push, open the PR, then review it, fix once and sweep review comments and failing checks to green (at most 3 rounds per run; pending checks end the run, rerun it later). | tokens |
 | `/rig:incident "<what broke>"` | Production is on fire. Records it and opens a bugfix-path change. | tokens |
@@ -195,7 +195,7 @@ Running one change's slices in parallel sessions is not supported yet: the slice
 | A skill fails to load | `skill-failed` | Hands the model the exact fallback command for that stage. |
 | You commit | git pre-commit | The staged diff goes through the Stop sensors and the fast commands; warnings print with their fix text, blocks refuse the commit (during a merge or rebase only the fast commands are skipped). |
 | You push | git pre-push | The branch's commits (against its merge-base with the trunk, as CI) go through the ship checks and the quality ratchet; warnings print with their fix text; `githooks.prePush: "off"` disables it. |
-| A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; Opus reviews a prepared diff; human-approval check on approval rows. |
+| A PR opens | CI `rig-check`, `rig-review` | The base branch's checker re-judges; the reviewer (S Sonnet medium, M Sonnet high, L Opus high) reads a prepared diff; human-approval check on approval rows. |
 
 **Safety.** No hook runs on Bash. Evidence is protected by `permissions` deny rules and by CI, which recomputes every verdict from the base branch's checker. A shell script can still write a file locally; CI plus branch protection is the boundary.
 
@@ -203,7 +203,7 @@ Running one change's slices in parallel sessions is not supported yet: the slice
 
 The harness lives in each repo it runs on, so a repo never depends on the plugin. You need the plugin only to initialise a repo and to upgrade it.
 
-**Requirements:** Node 22.18 or later (the scripts run as plain TypeScript with no build step), `git`, a POSIX shell (the git hooks are `sh`) and Claude Code 2.1.251 or later (model by tier depends on it: before that release `CLAUDE_CODE_SUBAGENT_MODEL` overrode the per-call `model`, so every subagent would run on Haiku 5.5). macOS and Linux are supported; Windows is not (see Status). The GitHub CLI `gh` is used by `/rig:pr`, the PR metrics and the CI approval check, and is optional otherwise.
+**Requirements:** Node 22.18 or later (the scripts run as plain TypeScript with no build step), `git`, a POSIX shell (the git hooks are `sh`) and Claude Code 2.1.251 or later (model by tier depends on it: before that release `CLAUDE_CODE_SUBAGENT_MODEL` overrode the per-call `model`, so every subagent would run on Haiku 5.5). Per-launch model aliases (`haiku`, `sonnet`, `opus`) resolve through `ANTHROPIC_DEFAULT_*_MODEL` in `templates/settings.json`; without them `haiku` can resolve to an older Haiku. macOS and Linux are supported; Windows is not (see Status). The GitHub CLI `gh` is used by `/rig:pr`, the PR metrics and the CI approval check, and is optional otherwise.
 
 1. Install the plugin for yourself (once per machine):
 
@@ -233,7 +233,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 
 **Opus advisor: off.** In the v0.3 trials an Opus advisor on the main thread was the largest single cost, about a third of each run. A user-level `advisorModel` still applies to every project, so the template turns the advisor off with `"env": { "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true" }`. Remove that line to opt back in. Opus still writes tier L specs and plans (architect) and reviews.
 
-**Gates by risk, not size.** Tier S has no human gate, and tier M has one (the design, approved once with the intent). Their build still reviews each slice in session (a bounded loop), then they walk test, sensors, pr and, when the PR review workflow is not installed, pr-review. Where the workflow is installed, the review of the PR runs there from `templates/rig-review.yml` (Opus with no shell or network, reading a prepared diff; a model-free step posts the comment after a credential check; fails only on a high-severity finding; needs a `CLAUDE_CODE_OAUTH_TOKEN` secret from `claude setup-token` for a Pro/Max plan, or an `ANTHROPIC_API_KEY`). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and an in-session `/code-review` plus the plan-contract check. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
+**Gates by risk, not size.** Tier S has no human gate, and tier M has one (the design, approved once with the intent). Their build still reviews each slice in session (a bounded loop), then they walk test, sensors, pr and, when the PR review workflow is not installed, pr-review. Where the workflow is installed, the review of the PR runs there from `templates/rig-review.yml` (S Sonnet medium, M Sonnet high, L Opus high, with no shell or network, reading a prepared diff; a model-free step posts the comment after a credential check; fails only on a high-severity finding; needs a `CLAUDE_CODE_OAUTH_TOKEN` secret from `claude setup-token` for a Pro/Max plan, or an `ANTHROPIC_API_KEY`). Tier L, and anything touching auth, payments, data, security or a public contract, keeps the spec and plan gates and an in-session `/code-review` plus the plan-contract check. A diff over `limits.diffLines` blocks at ship unless the person approved its plan.
 
 ## Cloud sessions
 
@@ -261,7 +261,7 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 | Part | Role |
 |---|---|
-| `skills/` (16) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. The tier picks the subagents' model (S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5) and each agent's own `model:` is the default when no tier applies; they start with their own small contexts. |
+| `skills/` (16) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. The role and the tier pick each subagent's model and effort (`scripts/routing.ts`; `next --json` carries `routes`) and each agent's own `model:` is the default when no route applies; they start with their own small contexts. |
 | `agents/scout.md` | Haiku 5.5, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md, plan.md and design.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |
@@ -279,7 +279,7 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 **Claude Tag on call.** When Claude Tag handles an incident in Slack, the on-call engineer runs `/rig:incident "<summary>" --escaped` and pastes the thread link as evidence: the incident file is the lessons file the playbook describes, and it feeds the same bugfix path and metrics as a breach from `rig-watch`.
 
-Each change's tier picks the model for every architect, implementer and reviewer launch: S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5 (`sdlc.ts next --json` carries it as `model`). The settings template pins the haiku, sonnet and opus aliases to those IDs.
+The role and the change's tier pick the model and effort for every launch (`routes` in `sdlc.ts next --json`; the legacy `model` stays one release): scout, researcher and triage Haiku low, implementer Haiku (S) to Sonnet (M, L), reviewers Sonnet (S, M) to Opus (L), architect Opus at tier L. Repos override with `routing` in `.sdlc/sensors.json`, clamped to per-role floors. The settings template pins the haiku, sonnet and opus aliases to those IDs.
 
 Artifacts live in **`.sdlc/`** at the repo root and are committed; `usage.jsonl` and `gates.jsonl` are gitignored. They are not under `.claude/`, which Claude Code protects: writes there always prompt, or are denied in headless runs, and allow rules can't change that.
 
