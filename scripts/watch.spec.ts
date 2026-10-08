@@ -282,8 +282,8 @@ test('rig-watch decide: a failed query is a job warning; tools with quotes or sh
 
 test('bands: tier-2 Bash tools must be known read-only commands with no shell or quote characters', () => {
   const errs = (tools: string): string => parseConfig(JSON.stringify({ bands: [{ id: 'a', query: 'x', tiers: { 2: { tools } } }] })).errors.join('\n')
-  for (const ok of ['Read,Grep,Glob', 'Read,Bash(gh run view *)', 'Bash(git log *),Bash(gh pr view *)', 'Bash(gh run list --limit 20 *)']) assert.equal(errs(ok), '', ok)
-  for (const bad of ['Bash(*)', 'Bash(sh -c *)', 'Bash(curl *)', 'Bash(git push *)', 'Bash(gh run view "x)', 'Bash(gh run view $(id))', 'Bash(git log; rm *)']) assert.match(errs(bad), /tiers\.2\.tools must be read-only/, bad)
+  for (const ok of ['Read,Grep,Glob', 'Read,Bash(gh run view *)', 'Bash(git status *),Bash(gh pr view *)', 'Bash(gh run list --limit 20 *)']) assert.equal(errs(ok), '', ok)
+  for (const bad of ['Bash(*)', 'Bash(sh -c *)', 'Bash(curl *)', 'Bash(git push *)', 'Bash(git diff *)', 'Bash(git log *)', 'Bash(git show *)', 'Bash(gh run view "x)', 'Bash(gh run view $(id))', 'Bash(git log; rm *)']) assert.match(errs(bad), /tiers\.2\.tools must be read-only/, bad)
 })
 
 test('a constant baseline caps at tier 2 until the band sets minSd; with minSd, dismissals tune it', () => {
