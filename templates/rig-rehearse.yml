@@ -1,0 +1,30 @@
+# rig rehearse (playbook p.46): rollback is the most rehearsed path, so this runs the team's rollback command in staging every
+# week and on demand. Copy to .github/workflows/, create a GitHub environment named `staging` holding what the command needs,
+# and set the repository variable RIG_ROLLBACK_COMMAND (for example `make rollback ENV=staging`). No model runs here. A red run
+# means the rollback is unproven; /rig:metrics reports the success rate as rollback_rehearsal_success.
+name: rig-rehearse
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+concurrency:
+  group: rig-rehearse
+  cancel-in-progress: false
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Roll back staging
+        env:
+          ROLLBACK: ${{ vars.RIG_ROLLBACK_COMMAND }}
+        run: |
+          # rehearse:start
+          [ -n "$ROLLBACK" ] || { echo "::error::set the repository variable RIG_ROLLBACK_COMMAND to your staging rollback command"; exit 1; }
+          sh -c "$ROLLBACK"
+          # rehearse:end

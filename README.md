@@ -273,6 +273,8 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 | `templates/rig-check.yml` | The required CI check, judged by the base branch's vendored checker. |
 | `templates/rig-review.yml` | One background Claude review per PR, for tier S and M and as a second look on L. |
 | `templates/managed-settings.json`, `templates/production-gate.sh` | For the platform team's managed settings: the playbook's p.42 example plus rig's own rules, and the p.41 production gate as a managed-only hook (see SECURITY.md). `/rig:metrics` reports `gate_wait_hours`, `gate_violations_escaped` and `managed_controls_in_force`. |
+| `templates/rig-triage.yml` | When a CI workflow fails, Haiku 5.5 reads the failed log and posts three lines (flaky or real, the evidence, the next step) to the PR. Name your CI workflows under `workflows:`. `/rig:metrics` reports `failures_triaged_without_paging`. |
+| `templates/rig-rehearse.yml` | Runs your staging rollback weekly and on demand: set the repository variable `RIG_ROLLBACK_COMMAND` and a `staging` environment. `/rig:metrics` reports `rollback_rehearsal_success` and DORA (`deployment_frequency_per_week`, `lead_time_hours`, `change_failure_rate` from GitHub deployments to `RIG_PRODUCTION_ENV`, and `time_to_restore_hours` from incidents' `restored`). |
 
 Each change's tier picks the model for every architect, implementer and reviewer launch: S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5 (`sdlc.ts next --json` carries it as `model`). The settings template pins the haiku, sonnet and opus aliases to those IDs.
 

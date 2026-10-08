@@ -16,6 +16,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
    - `severity:`
    - `escaped: true|false`
    - `detected:` ISO time
+   - `restored:` ISO time service was restored (leave it blank until then, and fill it in when it is); time to restore is measured from it
    - `intent_at:` now
 
    Body: symptoms, impact, evidence (log lines, links).
