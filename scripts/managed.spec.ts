@@ -166,3 +166,15 @@ test('metrics: gate waits pair a block with the next allow in the same session; 
   fs.copyFileSync(path.join(ROOT, 'templates', 'managed-settings.json'), path.join(dir, 'managed-settings.json'))
   assert.equal(JSON.parse(sdlc(repo, ['metrics', '--json'], { env: { RIG_MANAGED_DIR: dir } }).stdout).metrics.managed_controls_in_force.value, 16)
 })
+
+test('SECURITY.md documents the managed rollout, the gate install path and its limits', () => {
+  const sec = fs.readFileSync(path.join(ROOT, 'SECURITY.md'), 'utf8')
+  assert.match(sec, /templates\/managed-settings\.json/)
+  assert.match(sec, /production-gate\.sh[^\n]*root-owned/)
+  assert.match(sec, /`\.\/path`[^\n]*settings file's (own )?folder/)
+  assert.match(sec, /force-enable[^\n]*rig@/)
+  assert.match(sec, /text match/i)
+  assert.match(sec, /RELEASE_APPROVAL[^\n]*placeholder/)
+  assert.match(sec, /sdlc\.ts run --[^\n]*managed deny/, 'the sdlc.ts allow rule widens past the managed denies')
+  assert.match(sec, /github\.com[^\n]*egress/, 'the GitHub domains are an egress route')
+})
