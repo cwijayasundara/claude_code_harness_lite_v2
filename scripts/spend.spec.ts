@@ -212,3 +212,18 @@ test('notify toasts each newly crossed level once', () => {
   ledger(a, [spendRow(3)])
   assert.match(sdlc(a, ['spend', 'notify']).stdout, /rig budget tight/)
 })
+
+test('next --json carries pressure and budget; tight eases review effort; round caps do not move', () => {
+  const { a } = team()
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  const normal = JSON.parse(sdlc(a, ['next', 'add-login', '--json']).stdout)
+  assert.equal(normal.pressure, 'normal')
+  ledger(a, [spendRow(8.5)])
+  const tight = JSON.parse(sdlc(a, ['next', 'add-login', '--json']).stdout)
+  assert.equal(tight.pressure, 'tight')
+  assert.equal(tight.budget.level, 'tight')
+  assert.equal(tight.routes.reviewer.effort, 'medium')
+  assert.equal(tight.routes.implementer.effort, normal.routes.implementer.effort)
+  assert.equal(tight.round, normal.round)
+  assert.equal(JSON.parse(sdlc(a, ['status', '--json', '--band']).stdout).budget.spentUsd, 8.5)
+})

@@ -48,23 +48,25 @@ function up(x: { model: Model; effort: Effort }): { model: Model; effort: Effort
   return m < MODELS.length - 1 ? { model: MODELS[m + 1]!, effort: 'medium' } : x
 }
 
-export function route(role: Role, type: ChangeType, tier: Tier, round = 0, override: RoutingOverride = {}): { route: Route; warning?: string } {
+const EASED: Role[] = ['reviewer', 'referee', 'slice-review']
+export function route(role: Role, type: ChangeType, tier: Tier, round = 0, override: RoutingOverride = {}, pressure: Pressure = 'normal'): { route: Route; warning?: string } {
   const t: Tier = type === 'greenfield' ? 'L' : tier
   const base = TABLE[role][t]
   if (base === 'main') return { route: 'main' }
   const o = override[role]?.[t]
   let x = { model: o?.model ?? base.model, effort: o?.effort ?? base.effort }
   if (role === 'implementer') for (let i = 0; i < round; i++) x = up(x)
+  if (pressure === 'tight' && EASED.includes(role)) x = { model: x.model, effort: EFFORTS[Math.max(0, EFFORTS.indexOf(x.effort) - 1)]! }
   const floor = FLOOR[role][t]
   if (MODELS.indexOf(x.model) >= MODELS.indexOf(floor)) return { route: x }
   return { route: { model: floor, effort: x.effort }, warning: `routing: ${role} at tier ${t} cannot go below its floor ${floor}; using ${floor}` }
 }
 
-export function routes(type: ChangeType, tier: Tier, round = 0, override: RoutingOverride = {}): { routes: Record<Role, Route>; warnings: string[] } {
+export function routes(type: ChangeType, tier: Tier, round = 0, override: RoutingOverride = {}, pressure: Pressure = 'normal'): { routes: Record<Role, Route>; warnings: string[] } {
   const all = {} as Record<Role, Route>
   const warnings: string[] = []
   for (const role of ROLES) {
-    const r = route(role, type, tier, round, override)
+    const r = route(role, type, tier, round, override, pressure)
     all[role] = r.route
     if (r.warning) warnings.push(r.warning)
   }
