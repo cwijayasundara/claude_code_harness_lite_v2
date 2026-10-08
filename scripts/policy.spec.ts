@@ -32,3 +32,12 @@ test('the intent skill writes a draft inbox file in the playbook form and hands 
   assert.match(text, /status: accepted/)
   assert.ok(text.split('\n').length <= 60)
 })
+
+test('--plan-only stops start and design before approval, and every drafting skill states the concern format', () => {
+  assert.match(read('skills/start/SKILL.md'), /With `--plan-only`, tell the design skill so, and stop when it has written design\.md/)
+  assert.match(read('skills/start/SKILL.md'), /With `--plan-only`, do not resume a build/)
+  assert.match(read('skills/design/SKILL.md'), /do not ask for approval and do not build/)
+  for (const s of ['design', 'plan', 'spec']) assert.ok(read(`skills/${s}/SKILL.md`).includes('- [policy-<area>] <concern> → owner:'), s)
+  for (const s of ['plan', 'spec']) assert.match(read(`skills/${s}/SKILL.md`), /Approval is refused until/, s)
+  assert.match(read('skills/intent/SKILL.md'), /Without a file system \(claude\.ai\)/)
+})

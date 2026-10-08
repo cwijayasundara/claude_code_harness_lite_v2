@@ -9,8 +9,8 @@ allowed-tools: Read, Write, Glob, AskUserQuestion
 
 Idea: $ARGUMENTS
 
-1. **Listen first.** Restate the idea in two lines. Then ask what an analyst would, at most three questions in one AskUserQuestion: who is affected, what better looks like (how we will know), and what is out of scope or constrained (data, security, existing systems). Skip any the idea already answers.
-2. **Write** `.sdlc/intent/<kebab-name>.md` (lowercase letters, digits and hyphens; check with Glob that the name is free), at most 40 lines, in the originator's words:
+1. **Listen first.** Restate the idea in two lines. Then ask what an analyst would, at most three questions in one AskUserQuestion: who is affected (and the author's name and role, if you do not know it), what better looks like (how we will know), and what is out of scope or constrained (data, security, existing systems). Skip any the idea already answers.
+2. **Write** `.sdlc/intent/<kebab-name>.md` (lowercase letters, digits and hyphens; check with Glob that the name is free), at most 40 lines, in the originator's words. Without a file system (claude.ai), show the file instead and ask the person to commit it to .sdlc/intent/:
 
    ```
    ---

@@ -13,10 +13,10 @@ Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` o
 
 Request: $ARGUMENTS
 
-If the request ends with `--plan-only` (the rig-spec workflow passes it), drop it from the request and stop after intent.md, and design.md for a feature or greenfield change: never build in that run, whatever the tier.
+If the request ends with `--plan-only` (the rig-spec workflow passes it), drop it from the request and stop after intent.md, and design.md for a feature or greenfield change: never build in that run, whatever the tier, and end with `Next: review the pull request`.
 
 ## Resume
-If the request is empty or names an existing folder under `.sdlc/changes/`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts activate <slug>` (when named), then `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`, read that change's artifacts and `.sdlc/STATE.md`, and continue with the printed next command. Stop here.
+If the request is empty or names an existing folder under `.sdlc/changes/`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts activate <slug>` (when named), then `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status`, read that change's artifacts and `.sdlc/STATE.md`, and continue with the printed next command. Stop here. With `--plan-only`, do not resume a build: report the change's status and stop.
 If the slug starts with `adhoc-`, this is adoption of work done without /rig:start: fill intent.md from the diff (`node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts diff --trunk`), confirm type and tier with the person, then continue with the printed next command (the plan and gates apply).
 
 ## New change
@@ -38,6 +38,6 @@ If the slug starts with `adhoc-`, this is adoption of work done without /rig:sta
 5. **Tier S fast path** (not with `--plan-only`; any type except spike and greenfield). Ceremony must cost less than the change: write a minimal `plan.md` of 15 lines or fewer (`## Files` and `## Verification` only), then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill build <slug>` and follow it in this turn. Tier S builds through one Haiku implementer subagent (the build skill passes the model).
 6. **Path.** Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status` and show the person the path for this type and tier. Gates come from .sdlc/sensors.json "gates" (default: one `design` gate for tier M, L and greenfield that approves intent.md and design.md together, none for S; features go intent → design → autonomous build).
 
-7. **Feature and greenfield go straight to design.** Do not stop after intent.md: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill design <slug>` and follow it in this turn. The person is asked once, for intent.md and design.md together.
+7. **Feature and greenfield go straight to design.** Do not stop after intent.md: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill design <slug>` and follow it in this turn. The person is asked once, for intent.md and design.md together. With `--plan-only`, tell the design skill so, and stop when it has written design.md.
 
 End with exactly one line: `Next: <command from status>`.
