@@ -340,7 +340,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
     </article>
     <article class="card">
       <div class="tag">Parallel sessions (README only)</div>
-      <p>No code. A README section: <code>status</code> already prints each slice with its files; open one <code>claude --worktree sdlc/&lt;slug&gt;-&lt;n&gt;</code> per group of slices that share no file, 2–3 at a time, and run <code>/rig-build &lt;slug&gt;</code> in each. The slice checkpoint already refuses a file outside the slice's list, so sessions cannot collide. Lane events already count concurrent sessions per engineer.</p>
+      <p><em>Revised 2026-10-08 (M3 review): the original recipe here was not backed by the code — <code>status</code> does not list each slice's files, the checkpoint commits only on <code>sdlc/&lt;slug&gt;</code>, and slices share one <code>ratchet.json</code>.</em> The README now says running one change's slices in parallel sessions is not supported yet; separate changes can run side by side, each in its own checkout on its own <code>sdlc/&lt;slug&gt;</code> branch. Making slice-parallel builds real (a <code>--slice</code> filter and worktree-aware checkpoints) is future work.</p>
     </article>
   </div>
 

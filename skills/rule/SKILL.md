@@ -9,7 +9,7 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 
 A lesson is earned only by a real, recurring finding. It becomes a regular expression over **added lines** that blocks or warns, with a `why`; or, when no pattern can catch it, one line of CLAUDE.md the agent reads at every session start.
 
-1. **Evidence.** Find at least two real occurrences: review.md findings with this category, or `git log -p` hits. If there are fewer than two, stop and say the rule is not earned yet.
+1. **Evidence.** Find the same mistake on at least two different changes (at least two real occurrences): the same finding in two changes' review.md, or `git log -p` hits in two separate commits. If there are fewer than two, stop and say the rule is not earned yet.
 2. **Draft.** If the mistake shows in the added lines, draft one rule entry:
    `{ "id": "<kebab>", "pattern": "<regex>", "paths": ["<globs>"], "message": "<what to do instead>", "why": "<the incident or finding it traces to>", "action": "block" | "warn" }`
    - The pattern must match the bad lines and not the good ones. Show three lines it matches and three similar lines it must not.

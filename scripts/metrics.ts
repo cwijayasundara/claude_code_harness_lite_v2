@@ -208,8 +208,9 @@ export function cmdMetrics(args: Args): void {
   const findingsOf = (text: string): string => text.split(/^## /m).filter(sec => /^Findings\b/.test(sec)).join('\n')
   const CATEGORY = /^\s*-\s*\[severity:[^\]]*\]\s*\[category:\s*([\w-]+)/gim
   const categoriesOf = (c: Change): string[] => [...findingsOf(read(path.join(c.dir, 'review.md'))).matchAll(CATEGORY)].map(m => (m[1] ?? '').toLowerCase())
-  const categories = changes.flatMap(categoriesOf)
-  const byCategory = categories.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c]: (acc[c] ?? 0) + 1 }), {})
+  // Distinct changes per category: three findings in one change are one occurrence of the "twice" rule, not three.
+  const changesByCategory: Record<string, number> = {}
+  for (const c of changes) for (const cat of new Set(categoriesOf(c))) changesByCategory[cat] = (changesByCategory[cat] ?? 0) + 1
   // A category seen on an earlier change again: the signal the "twice" rule (/rig:rule) exists for. Only changes with findings count.
   const seen = new Set<string>()
   let repeats = 0
@@ -222,7 +223,7 @@ export function cmdMetrics(args: Args): void {
   const harness = {
     rule_fires: sumBy(fired.filter(e => Date.parse(e.at) >= since), r => r.rule ?? 'unknown', () => 1),
     prune_candidates: ruleIds.filter(id => !recent.has(id) && (introduced(id) ?? Infinity) < ninetyDays),
-    rule_suggestions: Object.entries(byCategory).filter(([, n]) => n >= 3).map(([c, n]) => `${c} (${n} findings): consider /rig:rule`),
+    rule_suggestions: Object.entries(changesByCategory).filter(([, n]) => n >= 2).map(([c, n]) => `${c} (${n} changes): consider /rig:rule`),
     skill_load_failures: events.filter(e => e.event === 'skill-load-failed' && Date.parse(e.at) >= since).length,
     unresolved: (() => {
       try {

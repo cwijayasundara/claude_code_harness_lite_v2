@@ -179,9 +179,9 @@ Results append to `.sdlc/evals/results.jsonl`, which you commit: it is the evide
 
 Policy skills live at `.claude/skills/policy-<area>/SKILL.md` with an `owner` and a `source`; `init --full` scaffolds `policy-security`. Design, plan and spec apply each one and record a conflict as `- [policy-<area>] <concern> → owner: <owner>` under `## Concerns`. Any `## Concerns…` or `### Concerns…` heading counts. Approval is refused until each concern ends ` → resolved: <decision> (<owner>)` (on an indented line below it also counts); a document without the section approves as before.
 
-### Parallel builds in worktrees
+### Parallel work
 
-`status` prints each slice with its files. For slices that share no file, open one `claude --worktree sdlc/<slug>-<n>` per group (start with 2–3) and run `/rig-build <slug>` in each. The slice checkpoint refuses a file outside the slice's `## Files`, so sessions cannot write each other's files. Lane events in `/rig:metrics` show how many sessions ran at once; add sessions only while review keeps up.
+Running one change's slices in parallel sessions is not supported yet: the slices share one `ratchet.json`, and the slice checkpoint commits only on `sdlc/<slug>`. Separate changes can run side by side, each in its own checkout on its own `sdlc/<slug>` branch.
 
 ### What fires when (the automatic edges)
 
