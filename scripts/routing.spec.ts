@@ -1,7 +1,7 @@
 // Role by tier routing: the table, floors, the retry step and overrides (spec 2026-10-08 §4, §5).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { route, routes, parseRouting, ROLES, TABLE, type Role, type Route } from './routing.ts'
+import { route, routes, parseRouting, roleOf, ROLES, TABLE, type Role, type Route } from './routing.ts'
 
 const r = (role: Role, tier: 'S' | 'M' | 'L', type = 'feature' as const, round = 0) => route(role, type, tier, round).route
 
@@ -67,4 +67,14 @@ test('parseRouting accepts model and model:effort, and rejects everything else',
   parseRouting({ scout: { S: 'sonnet' }, triage: { L: 'opus' } }, pinned)
   assert.equal(pinned.length, 2)
   assert.match(pinned[0] ?? '', /scout.*pinned in agents\/scout\.md/)
+})
+
+test('roleOf maps agent type and stage to a role; the reviewer splits by stage', () => {
+  assert.equal(roleOf('rig:scout', 'plan'), 'scout')
+  assert.equal(roleOf('rig-implementer', 'build'), 'implementer')
+  assert.equal(roleOf('implementer', 'test'), 'implementer')
+  assert.equal(roleOf('rig:reviewer', 'build'), 'slice-review')
+  assert.equal(roleOf('rig:reviewer', 'pr-review'), 'reviewer')
+  assert.equal(roleOf('general-purpose', 'build'), 'other')
+  assert.equal(roleOf(undefined, null), 'other')
 })

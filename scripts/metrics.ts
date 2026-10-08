@@ -14,6 +14,7 @@ import { valueHoursFor } from './scorecard.ts'
 import { pointsMetrics } from './points.ts'
 import { EVALS, RESULTS, type EvalResult } from './evals.ts'
 import { controlsInForce } from './preflight.ts'
+import { roleOf } from './routing.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -219,6 +220,9 @@ export function cmdMetrics(args: Args): void {
     usd_by_change: roundAll(sumBy(main, r => r.change ?? '(none)', r => r.usd ?? 0)),
     usd_by_stage: roundAll(sumBy(main, r => r.stage ?? '(none)', r => r.usd ?? 0)),
     tokens_by_agent_type: sumBy(agents, r => (r.agentType ?? 'unknown').replace(/^rig-/, 'rig:'), tokensOf),
+    tokens_by_role: sumBy(agents, r => roleOf(r.agentType, r.stage), tokensOf),
+    model_by_role: Object.fromEntries([...new Set(agents.map(r => roleOf(r.agentType, r.stage)))].map(role =>
+      [role, sumBy(agents.filter(r => roleOf(r.agentType, r.stage) === role), r => r.model ?? 'unknown', tokensOf)])),
     cache_hit_share: input ? Number((usage.reduce((s, r) => s + (r.cr ?? 0), 0) / input).toFixed(3)) : null,
     peak_context: main.reduce((p, r) => Math.max(p, r.ctx ?? 0), 0),
     turns_over_150k: main.filter(r => (r.ctx ?? 0) > 150_000).length,

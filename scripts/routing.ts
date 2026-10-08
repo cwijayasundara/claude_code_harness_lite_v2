@@ -97,3 +97,10 @@ export function parseRouting(value: unknown, errors: string[]): RoutingOverride 
   }
   return out
 }
+
+// The ledger records agent type and stage, not role; one reviewer agent serves two roles, split by the stage it ran in.
+export function roleOf(agentType: string | undefined, stage: string | null): Role | 'other' {
+  const name = (agentType ?? '').replace(/^rig[:-]/, '')
+  if (name === 'reviewer') return stage === 'build' ? 'slice-review' : 'reviewer'
+  return (ROLES as string[]).includes(name) ? (name as Role) : 'other'
+}
