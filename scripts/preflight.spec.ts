@@ -139,7 +139,7 @@ test('preflight runs every check even when the first fails, and writes one repor
   assert.equal(r.code, 1)
   const text = report()
   assert.match(text, /^result: fail$/m)
-  for (const id of ['stack', 'toolchain', 'commands', 'base', 'remote', 'consumers', 'protection']) assert.match(text, new RegExp(`\\| ${id} \\|`), id)
+  for (const id of ['stack', 'toolchain', 'commands', 'base', 'remote', 'consumers', 'protection', 'managed']) assert.match(text, new RegExp(`\\| ${id} \\|`), id)
   assert.match(text, /commands.*no "nope" script/)
   assert.match(text, /consumers.*billing.*git clone https:\/\/github\.com\/o\/billing\.git/)
   assert.match(text, /remote \| skip/, 'no origin remote is a skip, not a failure')

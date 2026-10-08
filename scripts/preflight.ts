@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { ROOT, SDLC, git, read, exists, now, out, fail, type Args } from './core.ts'
+import { ROOT, SDLC, MANAGED_DIR, git, read, exists, now, out, fail, managedSettings, managedFiles, type Args } from './core.ts'
 import { parseConfig, type SensorConfig } from './model.ts'
 import { requirements, hostVersion, parseVersion, satisfies, realRunner, type Runner, type Tool } from './toolchain.ts'
 
@@ -110,7 +110,7 @@ const reachReal = (u: string): boolean => spawnSync('git', ['-c', 'protocol.ext.
   env: { ...sshEnv(process.env, userSshCommand()), GIT_TERMINAL_PROMPT: '0' },
 }).status === 0
 
-type Opts = { root: string; run: Runner; reach: (u: string) => boolean; answers: Record<string, string> }
+type Opts = { root: string; run: Runner; reach: (u: string) => boolean; answers: Record<string, string>; managedDir?: string }
 
 function toolchain(o: Opts): Check {
   const reqs = requirements(o.root)
@@ -180,6 +180,40 @@ function protection(o: Opts): Check {
     : { id: 'protection', status: 'fail', line: 'the evidence deny rules are missing from .claude/settings.json', fix: 'run `sdlc.ts init --full` (it merges templates/settings.json)' }
 }
 
+// The 16 controls of the playbook's managed-settings worked example (p.42-43), each read from the merged managed settings.
+const get = (m: unknown, dotted: string): unknown => dotted.split('.').reduce<unknown>((v, k) => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>)[k] : undefined), m)
+const has = (list: unknown, ...rules: string[]): boolean => Array.isArray(list) && rules.every(r => list.includes(r))
+const nonEmpty = (v: unknown): boolean => Array.isArray(v) && v.length > 0
+const is = (dotted: string, want: unknown) => (m: unknown): boolean => get(m, dotted) === want
+export const CONTROLS: [string, (m: unknown) => boolean][] = [
+  ['deny secret reads', m => has(get(m, 'permissions.deny'), 'Read(.env*)')], ['deny network tools', m => has(get(m, 'permissions.deny'), 'WebFetch', 'Bash(curl *)', 'Bash(wget *)')],
+  ['allow the inner loop', m => nonEmpty(get(m, 'permissions.allow'))], ['disableBypassPermissionsMode', is('permissions.disableBypassPermissionsMode', 'disable')],
+  ['allowManagedPermissionRulesOnly', is('allowManagedPermissionRulesOnly', true)], ['sandbox.enabled', is('sandbox.enabled', true)],
+  ['sandbox.network.allowedDomains', m => Array.isArray(get(m, 'sandbox.network.allowedDomains'))], ['sandbox.failIfUnavailable', is('sandbox.failIfUnavailable', true)],
+  ['sandbox.allowUnsandboxedCommands off', is('sandbox.allowUnsandboxedCommands', false)], ['sandbox.credentials.files', m => nonEmpty(get(m, 'sandbox.credentials.files'))],
+  ['sandbox.credentials.envVars', m => nonEmpty(get(m, 'sandbox.credentials.envVars'))], ['allowManagedHooksOnly', is('allowManagedHooksOnly', true)],
+  ['disableSideloadFlags', is('disableSideloadFlags', true)], ['strictKnownMarketplaces', m => Array.isArray(get(m, 'strictKnownMarketplaces'))],
+  ['allowManagedMcpServersOnly', is('allowManagedMcpServersOnly', true)], ['requiredMinimumVersion', m => typeof get(m, 'requiredMinimumVersion') === 'string'],
+]
+export const controlsInForce = (m: unknown): string[] => CONTROLS.filter(([, ok]) => ok(m)).map(([name]) => name)
+
+// Advisory: which controls are in force, and whether the managed file would switch rig's own hooks or rules off.
+export function managedCheck(m: unknown, found: number): Check {
+  if (!found) return { id: 'managed', status: 'skip', line: 'no managed settings file on this machine (server-managed settings are not visible here)' }
+  const inForce = controlsInForce(m)
+  const rules = ['allow', 'ask', 'deny'].flatMap(k => { const v = get(m, `permissions.${k}`); return Array.isArray(v) ? v : [] }).filter((r): r is string => typeof r === 'string')
+  const plugins = get(m, 'enabledPlugins')
+  const rigOn = typeof plugins === 'object' && plugins !== null && Object.entries(plugins).some(([id, on]) => id.startsWith('rig@') && on === true)
+  const notes = [
+    get(m, 'allowManagedHooksOnly') === true && !rigOn ? "rig's hooks are off: allowManagedHooksOnly without rig force-enabled in enabledPlugins" : '',
+    get(m, 'allowManagedPermissionRulesOnly') === true && !has(get(m, 'permissions.deny'), 'Edit(./.sdlc/approvals.jsonl)') ? "rig's evidence rules are dropped: allowManagedPermissionRulesOnly without them in the managed file" : '',
+    ...rules.filter(r => /^\w+\(\/\.sdlc\//.test(r)).map(r => `${r} anchors at the managed settings folder: use ./`),
+  ].filter(Boolean)
+  const missing = CONTROLS.map(([n]) => n).filter(n => !inForce.includes(n))
+  const line = [`${inForce.length}/16 managed controls in force (${found} file${found === 1 ? '' : 's'})`, missing.length ? `missing: ${missing.join(', ')}` : '', ...notes].filter(Boolean).join('; ')
+  return missing.length || notes.length ? { id: 'managed', status: 'warn', line, fix: 'compare with templates/managed-settings.json and ask the platform team' } : { id: 'managed', status: 'pass', line }
+}
+
 const STACKS: [string, string][] = [['package.json', 'node'], ['go.mod', 'go'], ['pom.xml', 'java-maven'], ['pyproject.toml', 'python'], ['requirements.txt', 'python']]
 
 export function runPreflight(o: Opts): { checks: Check[]; open: string[]; result: 'pass' | 'fail' } {
@@ -189,6 +223,7 @@ export function runPreflight(o: Opts): { checks: Check[]; open: string[]; result
     ['stack', () => { const s = STACKS.filter(([f]) => exists(path.join(o.root, f))).map(([, n]) => n); return s.length ? { id: 'stack', status: 'pass', line: [...new Set(s)].join(', ') } : { id: 'stack', status: 'skip', line: 'no known manifest found' } }],
     ['toolchain', () => toolchain(o)], ['commands', () => commands(o, cfg().config, cfg().errors)], ['base', baseCheck],
     ['remote', () => checkRemote(git(['remote', 'get-url', 'origin']), o.reach)], ['consumers', () => consumers(o, cfg().config)], ['protection', () => protection(o)],
+    ['managed', () => { const dir = o.managedDir ?? MANAGED_DIR; return managedCheck(managedSettings(dir), managedFiles(dir).length) }],
   ]
   const checks = steps.map(([id, fn]): Check => {
     let c: Check

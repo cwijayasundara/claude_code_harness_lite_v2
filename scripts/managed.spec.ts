@@ -7,6 +7,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, write } from './testkit.ts'
 import { managedSettings, managedFiles } from './core.ts'
+import { managedCheck, controlsInForce, CONTROLS } from './preflight.ts'
 
 const ROOT = path.join(import.meta.dirname, '..')
 const tmpDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'rig-managed-'))
@@ -64,7 +65,7 @@ test('the managed template is the p.42 worked example with rig force-enabled and
   const gate = m.hooks.PreToolUse.find((g: { matcher?: string }) => g.matcher === 'Bash')
   assert.match(gate.hooks[0].command, /^\/etc\/claude-code\/gates\/production-gate\.sh$/, 'an admin-owned path, never the repo')
   assert.equal(m.env.RIG_PRODUCTION_ENV, 'production')
-  const [maj, min, patch] = String(m.requiredMinimumVersion).split('.').map(Number)
+  const [maj = 0, min = 0, patch = 0] = String(m.requiredMinimumVersion).split('.').map(Number)
   assert.ok(maj > 2 || (maj === 2 && (min > 1 || (min === 1 && patch >= 251))), 'rig needs 2.1.251 or later')
   assert.match(m.$comment, /tailor/i)
 })
@@ -111,4 +112,38 @@ test('the gate never fails open: no jq, no env name, no .sdlc, a symlinked log, 
   const row = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8').trim())
   assert.deepEqual([row.decision, row.session], ['block', ''], 'a session id outside the UUID charset is dropped')
   assert.equal(gate('deploy \\"production\\"', { CLAUDE_PROJECT_DIR: repo }).status, 2, 'escaped quotes in the command still match')
+})
+
+test('preflight managed: 16 controls from p.42; the template has all 16; never fails', () => {
+  assert.equal(CONTROLS.length, 16)
+  const full = tpl('managed-settings.json')
+  assert.equal(controlsInForce(full).length, 16)
+  assert.deepEqual(managedCheck(full, 1), { id: 'managed', status: 'pass', line: '16/16 managed controls in force (1 file)' })
+  assert.equal(managedCheck({}, 0).status, 'skip')
+  assert.match(managedCheck({}, 0).line, /server-managed settings are not visible here/)
+  const partial = managedCheck({ permissions: { disableBypassPermissionsMode: 'disable' }, sandbox: { enabled: true } }, 1)
+  assert.equal(partial.status, 'warn')
+  assert.match(partial.line, /^2\/16 managed controls in force/)
+  assert.match(partial.line, /missing: .*allowManagedHooksOnly/)
+  assert.ok(partial.fix?.includes('templates/managed-settings.json'))
+})
+
+test('preflight managed warns when the managed file would switch rig off or protect the wrong folder', () => {
+  const full = tpl('managed-settings.json')
+  const noRig = managedCheck({ ...full, enabledPlugins: {} }, 1)
+  assert.equal(noRig.status, 'warn')
+  assert.match(noRig.line, /rig's hooks are off: allowManagedHooksOnly without rig force-enabled/)
+  const noRules = managedCheck({ ...full, permissions: { ...full.permissions, deny: ['Read(.env*)'] } }, 1)
+  assert.match(noRules.line, /rig's evidence rules are dropped/)
+  const anchored = managedCheck({ ...full, permissions: { ...full.permissions, deny: [...full.permissions.deny, 'Edit(/.sdlc/approvals.jsonl)'] } }, 1)
+  assert.match(anchored.line, /Edit\(\/\.sdlc\/approvals\.jsonl\) anchors at the managed settings folder: use \.\//)
+})
+
+test('preflight reports the managed row from RIG_MANAGED_DIR and still passes without it', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  assert.match(sdlc(repo, ['preflight'], { env: { RIG_MANAGED_DIR: tmpDir() } }).stdout, /\| managed \| skip \|/)
+  const dir = tmpDir()
+  fs.copyFileSync(path.join(ROOT, 'templates', 'managed-settings.json'), path.join(dir, 'managed-settings.json'))
+  assert.match(sdlc(repo, ['preflight'], { env: { RIG_MANAGED_DIR: dir } }).stdout, /\| managed \| pass \| 16\/16/)
 })
