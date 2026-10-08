@@ -164,7 +164,7 @@ function cmdStatus(args: Args): void {
   const where = act ? `${act.slug} is at ${act.next ? (act.next.kind === 'approve' ? act.next.gate : act.next.stage) : 'done'}` : 'no active change'
   const ev = lastRun()
   const evalLine = ev ? `evals: ${ev.passed}/${ev.total} pass (${ev.rate.toFixed(2)}) → ${ev.verdict}, last run ${ev.run.slice(0, 10)}` : ''
-  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, `where: ${where}`, `stale: ${stale.length ? stale.join('; ') : 'nothing'}`, evalLine, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`), ...open.map(o => `open: ${o}`)].filter(Boolean).join('\n'))
+  out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, `where: ${where}`, `stale: ${stale.length ? stale.join('; ') : 'nothing'}`, evalLine, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : st?.verdict === 'human' ? `next: ${st.command}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`), ...open.map(o => `open: ${o}`)].filter(Boolean).join('\n'))
 }
 
 // A standalone repo's /rig-approve and /rig-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.

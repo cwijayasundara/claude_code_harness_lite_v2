@@ -40,4 +40,4 @@ If the slug starts with `adhoc-`, this is adoption of work done without /rig:sta
 
 7. **Feature and greenfield go straight to design.** Do not stop after intent.md: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill design <slug>` and follow it in this turn. The person is asked once, for intent.md and design.md together. With `--plan-only`, tell the design skill so, and stop when it has written design.md.
 
-End with exactly one line: `Next: <command from status>`.
+Otherwise end with exactly one line: `Next: <command from status>`.

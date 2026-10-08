@@ -41,6 +41,9 @@ test('--plan-only stops start and design before approval, and every drafting ski
   for (const s of ['design', 'plan', 'spec']) assert.ok(read(`skills/${s}/SKILL.md`).includes('- [policy-<area>] <concern> → owner:'), s)
   for (const s of ['plan', 'spec']) assert.match(read(`skills/${s}/SKILL.md`), /Approval is refused until/, s)
   assert.match(read('skills/intent/SKILL.md'), /Without a file system \(claude\.ai\)/)
+  // The closing line must not override the --plan-only ending: it applies only otherwise.
+  assert.match(read('skills/start/SKILL.md'), /Otherwise end with exactly one line: `Next: <command from status>`/)
+  assert.match(read('skills/design/SKILL.md'), /Otherwise end with: `Next: <command from status>`/)
 })
 
 test('new does not scaffold policy; plain init does not; init --full scaffolds once and never overwrites', () => {

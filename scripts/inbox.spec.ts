@@ -106,6 +106,15 @@ test('a published draft (source:, no ratchet.json) waits for /rig-approve tier b
   assert.equal(after.node, 'diagnose')
 })
 
+test('status names the same next command as next while a published draft waits for its tier', () => {
+  intent('fix-z.md', 'status: accepted\ntype: bugfix\ntier: S')
+  sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.sdlc/intent/fix-z.md'])
+  fs.rmSync(path.join(repo, '.sdlc/changes/fix-z/ratchet.json'))
+  const out = sdlc(repo, ['status']).stdout
+  assert.match(out, /^next: \/rig-approve fix-z tier S bugfix$/m)
+  assert.doesNotMatch(out, /^next: \/rig:design/m)
+})
+
 test('a legacy change with no source: and no recorded tier keeps the old behaviour', () => {
   sdlc(repo, ['new', 'old-y', '--type', 'bugfix', '--tier', 'S'])
   fs.rmSync(path.join(repo, '.sdlc/changes/old-y/ratchet.json'))
