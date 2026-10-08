@@ -86,3 +86,30 @@ test('metrics: inbox survival over decided intents; intent churn after design is
   assert.deepEqual({ value: m.inbox_survival.value, n: m.inbox_survival.n }, { value: 0.8, n: 5 })
   assert.ok('intent_churn_after_design' in m)
 })
+
+type StepJson = { verdict: string; node: string | null; reason: string; command: string }
+const next = (slug: string): StepJson => JSON.parse(sdlc(repo, ['next', slug, '--json']).stdout) as StepJson
+
+test('a published draft (source:, no ratchet.json) waits for /rig-approve tier before any node, then takes its own path', () => {
+  intent('fix-z.md', 'status: accepted\ntype: bugfix\ntier: S')
+  assert.equal(sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.sdlc/intent/fix-z.md']).code, 0)
+  fs.rmSync(path.join(repo, '.sdlc/changes/fix-z/ratchet.json'))
+  const waiting = next('fix-z')
+  assert.equal(waiting.verdict, 'human')
+  assert.match(waiting.command, /^\/rig-approve fix-z tier S bugfix$/)
+  assert.match(waiting.reason, /no recorded tier/)
+  const ok = sdlc(repo, ['approve', 'fix-z', 'tier', 'S', 'bugfix'], { env: { SDLC_HUMAN: '1' } })
+  assert.equal(ok.code, 0, ok.stderr)
+  const after = next('fix-z')
+  assert.equal(after.verdict, 'continue')
+  assert.notEqual(after.node, 'design')
+  assert.equal(after.node, 'diagnose')
+})
+
+test('a legacy change with no source: and no recorded tier keeps the old behaviour', () => {
+  sdlc(repo, ['new', 'old-y', '--type', 'bugfix', '--tier', 'S'])
+  fs.rmSync(path.join(repo, '.sdlc/changes/old-y/ratchet.json'))
+  const s = next('old-y')
+  assert.equal(s.verdict, 'continue')
+  assert.equal(s.node, 'design')
+})
