@@ -119,6 +119,14 @@ export function openQuestions(text: string): string[] {
   return [...new Set([...listed, ...prose])]
 }
 
+// Concerns a spec, plan or design flags against a policy skill: bullets under `## Concerns` other than "none" without a
+// `resolved:`. Approval needs none. A document with no Concerns section has none, so changes begun before it keep working.
+export function unresolvedConcerns(text: string): string[] {
+  const section = /^##\s+Concerns\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(text)?.[1] ?? ''
+  return section.split('\n').filter(l => /^\s*[-*]\s+/.test(l)).map(l => l.replace(/^\s*[-*]\s*/, '').trim())
+    .filter(l => l && !/^none\.?$/i.test(l) && !/\bresolved:/i.test(l))
+}
+
 // ---------- globs ----------
 
 // `**/` matches zero or more whole directories, `**` anything, `*` within one path segment.

@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { CHANGES, read, frontmatter, exists, isShipped, toPosix } from './core.ts'
-import { openQuestions } from './model.ts'
+import { openQuestions, unresolvedConcerns } from './model.ts'
 import { treeStamp } from './stamp.ts'
 import { sliceFiles } from './slices.ts'
 
@@ -39,7 +39,10 @@ export function repoStale(root: string): string[] {
 }
 
 export function openItems(slug: string): string[] {
-  return ['intent.md', 'spec.md', 'design.md', 'plan.md'].flatMap(f => openQuestions(read(path.join(CHANGES, slug, f))).map(q => `${slug}/${f}: ${q}`))
+  return ['intent.md', 'spec.md', 'design.md', 'plan.md'].flatMap(f => {
+    const text = read(path.join(CHANGES, slug, f))
+    return [...openQuestions(text).map(q => `${slug}/${f}: ${q}`), ...(f === 'intent.md' ? [] : unresolvedConcerns(text).map(c => `${slug}/${f}: concern: ${c}`))]
+  })
 }
 
 export function sliceWarnings(slug: string, planText: string, max = 5): string[] {
