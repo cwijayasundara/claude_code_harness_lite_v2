@@ -122,7 +122,11 @@ export function openQuestions(text: string): string[] {
 // Concerns a spec, plan or design flags against a policy skill: bullets under `## Concerns` other than "none" without a
 // `resolved:`. Approval needs none. A document with no Concerns section has none, so changes begun before it keep working.
 export function unresolvedConcerns(text: string): string[] {
-  const section = /^##\s+Concerns\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(text.replace(/\r\n?/g, '\n'))?.[1] ?? ''
+  // Any `## Concerns…` or `### Concerns…` heading opens the section (a variant must not fail open); it ends at the next heading of its level or above.
+  const t = text.replace(/\r\n?/g, '\n')
+  const head = /^(#{2,3})\s+Concerns\b[^\n]*\n/m.exec(t)
+  const rest = head ? t.slice(head.index + head[0].length) : ''
+  const section = rest.slice(0, new RegExp(`^#{1,${head?.[1]?.length ?? 2}}\\s`, 'm').exec(rest)?.index ?? rest.length)
   const items: { text: string; body: string; indent: number }[] = []
   for (const l of section.split('\n')) {
     const m = /^(\s*)(?:[-*]|\d+[.)])\s+(.*?)\s*$/.exec(l)

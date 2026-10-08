@@ -63,3 +63,16 @@ test('unresolvedConcerns: a nested item with its own owner: is a new concern, ne
   assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a → resolved: ok (@a)\n  - [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
   assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a\n  - resolved: ok (@a)\n'), [])
 })
+
+test('unresolvedConcerns: heading variants (## Concerns:, ## Concerns (policy), ### Concerns) still gate', () => {
+  for (const h of ['## Concerns:', '## Concerns (policy)', '### Concerns'])
+    assert.deepEqual(unresolvedConcerns(`# d\n${h}\n- [policy-a] x → owner: @a\n## Risks\n- r\n`), ['[policy-a] x → owner: @a'], h)
+  assert.deepEqual(unresolvedConcerns('## Concernsless\n- [policy-a] x → owner: @a\n'), [])
+})
+
+test('approve refuses a design whose ## Concerns: heading has an unresolved concern', () => {
+  design('## Concerns:\n- [policy-security] claim IDs appear in logs → owner: @sec\n')
+  const r = approve()
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /claim IDs appear in logs/)
+})
