@@ -16,6 +16,7 @@ import { appendEvent, block, unblock, readRatchet, readEvents } from './ratchet.
 import { runQuality } from './quality.ts'
 import { verificationFresh, sensorsFresh } from './stamp.ts'
 import { renderScorecard } from './scorecard.ts'
+import { publishQuietly } from './spend.ts'
 
 type ShippedRepo = { name: string; branch: string; commit: string }
 
@@ -167,6 +168,7 @@ export function cmdPr(args: Args): void {
     // Only sdlc/<slug> is ever pushed: never the trunk, never forced.
     if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) { block(slug, 'pr', `HEAD is not ${branch}; not pushing`); fail(`not pushing: HEAD is not ${branch} (blocked)`) }
     if (git(['push', '--no-verify', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('pushed nothing: git push failed (blocked)') }
+    publishQuietly()
     target = openPr(slug, title)
   }
   out(`pr ${slug} on ${git(['rev-parse', '--abbrev-ref', 'HEAD'])} at ${git(['rev-parse', '--short', 'HEAD'])}: ${code.length} code file(s) + artifacts; ${remote ? `PR ${target}` : 'no origin remote, local only'}. The change stays active for pr-review.`)
@@ -199,6 +201,7 @@ function resume(slug: string, message: string): void {
   if (git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) fail(`resuming ${slug} needs HEAD on ${branch}`)
   if (git(['remote', 'get-url', 'origin']) === null) fail(`cannot resume ${slug}: no origin remote`)
   if (git(['push', '--no-verify', '-u', 'origin', branch]) === null) { block(slug, 'pr', 'git push failed'); fail('git push failed (blocked)') }
+  publishQuietly()
   const url = openPr(slug, (message.split('\n')[0] ?? slug).slice(0, 200))
   unblock(slug, 'pr created', 'other')
   out(`resumed ${slug}: PR ${url}`)
@@ -238,6 +241,7 @@ function followup(slug: string, message: string): void {
   if (!gitLoud(['commit', '-q', '-m', message])) fail('git commit failed (nothing staged, or a commit hook refused it)')
   appendEvent(slug, { node: 'pr-review', verdict: 'followup', kind: 'followup' })
   if (git(['remote', 'get-url', 'origin']) !== null && !gitLoud(['push', 'origin', `sdlc/${slug}`])) { block(slug, 'pr-review', 'git push of the follow-up failed'); fail('push failed (blocked)') }
+  publishQuietly()
   out(`follow-up committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
 }
 

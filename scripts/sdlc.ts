@@ -27,6 +27,7 @@ import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor, installStandalone } from './vendor.ts'
 import { cmdVerify, cmdVerifyReport } from './verify.ts'
 import { cmdHooks, cmdCheckPush } from './githooks.ts'
+import { cmdSpend, publishQuietly } from './spend.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, readRatchet, writeRatchet, rawSpendUsd, unblock, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
@@ -394,11 +395,16 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   inbox: cmdInbox,
   watch: cmdWatch,
   scorecard: cmdScorecard,
+  spend: args => cmdSpend(args, () => {
+    const slug = typeof args.opt.change === 'string' ? checkSlug(args.opt.change) : activeSlug()
+    const c = slug ? loadChange(slug) : null
+    return { cfg: loadConfig().config.budget, change: c ? { slug: c.slug, tier: c.tier, type: c.type } : null }
+  }),
   diff: cmdDiff,
   quality: cmdQuality,
   shards: cmdShards,
   preflight: cmdPreflight,
-  check: args => (args.opt.at === 'push' ? cmdCheckPush(args) : cmdCheck(args)),
+  check: args => (args.opt.at === 'push' ? (cmdCheckPush(args), process.exitCode ? undefined : publishQuietly()) : cmdCheck(args)),
   'check-file': cmdCheckFile,
   vendor: cmdVendor,
   hooks: cmdHooks,

@@ -48,6 +48,7 @@ export type UsageRow = {
   usd?: number
   ctx?: number
   event?: string
+  id?: string
   skill?: string
   rule?: string
 }
@@ -373,7 +374,7 @@ const deepMerge = (a: Record<string, unknown>, b: Record<string, unknown>): Reco
 export const managedSettings = (dir = MANAGED_DIR): Record<string, unknown> =>
   managedFiles(dir).reduce<Record<string, unknown>>((acc, f) => { const v: unknown = JSON.parse(fs.readFileSync(f, 'utf8')); return isObj(v) ? deepMerge(acc, v) : acc }, {})
 
-const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json', 'gates.jsonl']
+const GITIGNORED = ['usage.jsonl', '.baseline', '.gate', 'unresolved.json', 'gates.jsonl', 'spend-cache.json', 'spend-fetched', 'budget-seen.json']
 
 // Parallel hooks (subagents) read-modify-write the same small state file: serialise them with a mkdir lock (stale after 10 s;
 // after 5 s of waiting, proceed rather than wedge the hook) and write by rename so a reader never sees half a file.
