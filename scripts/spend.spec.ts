@@ -239,3 +239,15 @@ test('full-route is human only and turns downshift off for one change; warnings 
   assert.equal(next.pressure, 'normal')
   assert.equal(next.budget.level, 'tight')
 })
+
+test('the scorecard has a change budget row and metrics a budget block', () => {
+  const { a } = team()
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  ledger(a, [spendRow(5, 'add-login')])
+  assert.match(sdlc(a, ['scorecard', 'add-login']).stdout, /\| Change budget \| \$5\.00 of \$4 \(125%\) · over by \$1\.00 \|/)
+  const m = JSON.parse(sdlc(a, ['metrics', '--json']).stdout).metrics.budget
+  assert.equal(m.spentUsd, 5)
+  assert.equal(m.budgetUsd, 10)
+  assert.equal(m.level, 'notice')
+  assert.equal(m.changeBudgetHits, 1)
+})

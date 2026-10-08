@@ -8,6 +8,7 @@ import { pointsOf } from './points.ts'
 import { readRuns } from './runs.ts'
 import { timing } from './timing.ts'
 import type { RatchetNode } from './model.ts'
+import { budgetView, changeBudgetText } from './spend.ts'
 
 export type Story = { slug: string; node: string | null; verdict: string; round: number; cap: number; tokens: number; tokensByNode: Record<string, number>; budgetByNode: Record<string, { spent: number; cap: number }>; usd: number; usdByNode: Record<string, number>; valueUsd: number; valueHours: number; autoApproved: number; escalations: number; levels: string; sensors: string; points: number; pointsSource: string; workMs: number; spanMs: number; idleMs: number; lastActivity: string | null }
 
@@ -73,6 +74,7 @@ const money = (n: number): string => `$${n.toLocaleString('en-US', { minimumFrac
 export function renderScorecard(slug: string): string {
   const s = story(slug)
   const { config } = loadConfig()
+  const change = loadChange(slug)
   const r = readRatchet(slug)
   const rounds = Object.entries(r.nodes).map(([n, st]) => `${n} ${st?.rounds ?? 0}`).join(', ') || 'none'
   const slices = Object.entries(r.slices).map(([id, st]) => `#${id} ${st.rounds}`).join(', ') || 'none'
@@ -87,6 +89,7 @@ export function renderScorecard(slug: string): string {
     `| Time | work ${dur(s.workMs)} · span ${dur(s.spanMs)} · idle ${dur(s.idleMs)} |`,
     `| Auto-approved tool calls | ${s.autoApproved} |`,
     `| Budget | ${Object.entries(s.budgetByNode).map(([n, b]) => `${n} ${money(b.spent)}/$${b.cap}`).join(', ') || 'none'} |`,
+    `| Change budget | ${changeBudgetText(budgetView(config.budget, { slug, tier: change.tier, type: change.type }).change)} |`,
     `| Escalations | ${s.escalations} |`,
     `| Tokens | ${s.tokens.toLocaleString('en-US')} |`,
     `| Cost | ${money(s.usd)} (${Object.entries(s.usdByNode).map(([n, u]) => `${n} ${money(u)}`).join(', ') || 'no turns logged'}) |`,
