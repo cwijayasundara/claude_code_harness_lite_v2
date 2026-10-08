@@ -1,7 +1,8 @@
 // `sdlc.ts watch`: the deterministic band detector (playbook p.49-50). For each band in .sdlc/sensors.json it runs the query, appends the
 // point to .sdlc/watch/<id>.jsonl and prints a tier from Western Electric rules: 0 nothing, 1 log, 2 diagnose, 3 act. No model.
 // A failed query records a miss and is tier 0: fail closed on action, open on observation. Dismissals tune the band: every breach
-// intent for it a person closed (.sdlc/intent/breach-<id>-<date>.md, status: closed) widens each threshold by the band's step, in σ.
+// intent for it a person closed (.sdlc/intent/breach-<id>-<date>.md, status: closed) widens each threshold by the band's step, in σ,
+// up to 2σ in all.
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -13,6 +14,7 @@ export const WATCH = path.join(SDLC, 'watch')
 type Row = { at: string; value?: number; miss?: true; tier?: number; rule?: string }
 export type Verdict = { id: string; tier: 0 | 1 | 2 | 3; value: number | null; mean: number | null; sd: number | null; rule: string; breach: string | null; tools: string; routes: string[] }
 const SPAN = 8 // the longest rule's run: the baseline excludes it, so a drift cannot hide inside its own mean
+const MAX_WIDEN = 2 // σ: dismissals tune a band but can never silence it
 
 // The query's number: plain, or with `count`, the share of a JSON list's items holding that value. Anything else is no point.
 export function pointOf(stdout: string, count?: string): number | null {
@@ -66,7 +68,7 @@ export function cmdWatch(args: Args): void {
       return { ...base, tier: 0, value: null, mean: null, sd: null, rule: 'query failed: no point recorded', breach: null }
     }
     const series = [...readJsonl<Row>(file).flatMap(p => (typeof p.value === 'number' ? [p.value] : [])), value]
-    const e = evaluate(series, b.window, b.step * dismissals(b.id))
+    const e = evaluate(series, b.window, Math.min(MAX_WIDEN, b.step * dismissals(b.id)))
     append(file, { at: now(), value, tier: e.tier, rule: e.rule })
     return { ...base, value, ...e, breach: e.tier >= 2 ? `breach-${b.id}-${day}` : null }
   })

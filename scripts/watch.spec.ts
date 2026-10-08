@@ -231,3 +231,16 @@ test('metrics: findings_merged_share and dismissal_rate per band, from breach in
   assert.deepEqual(m.dismissal_rate.by_band, { p95: Number((2 / 3).toFixed(3)), 'ci-rate': 0.5 })
   assert.deepEqual({ v: m.findings_merged_share.value, n: m.findings_merged_share.n }, { v: 1 / 5, n: 5 })
 })
+
+test('dismissals widen a band by at most 2σ in total, so closing breach intents can never silence it', () => {
+  const repo = watched(history, { step: 3 })
+  for (let d = 1; d <= 5; d++) write(repo, `.sdlc/intent/breach-p95-2026090${d}.md`, '---\nstatus: closed\n---\n# noise\n')
+  write(repo, 'value.txt', '16.5\n')
+  const [v] = watchJson(repo)
+  assert.equal(v.tier, 3, 'z 5.5 is beyond 3 + the 2σ cap')
+})
+
+test('rig-watch runs rig\'s own secrets scanner on the diagnosis before the intent is written', () => {
+  const step = yml.slice(yml.indexOf('- name: Write the draft intent (no model)'), yml.indexOf('# watch-intent:start'))
+  assert.match(step, /node --disable-warning=ExperimentalWarning \.sdlc\/bin\/sdlc\.ts secrets diagnosis\.md > \/dev\/null \|\| \{[^}]*exit 1; \}/)
+})

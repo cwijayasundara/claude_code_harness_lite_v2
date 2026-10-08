@@ -91,6 +91,7 @@ jobs:
           TIER: ${{ steps.decide.outputs.tier }}
           SUMMARY: ${{ steps.decide.outputs.summary }}
         run: |
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts secrets diagnosis.md > /dev/null || { echo "::error::the secrets scanner flagged diagnosis.md; not publishing it"; exit 1; }
           # watch-intent:start
           printf '%s' "$BREACH" | grep -qE '^breach-[a-z0-9-]+-[0-9]{8}$' || { echo "::error::bad breach id"; exit 1; }
           [ -s diagnosis.md ] || { echo "::error::no diagnosis.md"; exit 1; }
