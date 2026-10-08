@@ -32,6 +32,7 @@
   - `ratchet.usd`, round caps, implementer routing, retries and gates;
   - `FOLLOWUP_CAP` in `scripts/pr.ts`;
   - the CI review's tier picker.
+- **Commits:** end every commit message with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. The `git commit -m` lines below omit it for brevity; add it.
 - **Style:**
   - Match the surrounding code: dense one-line helpers, a comment only where the why is not obvious, no new dependencies.
   - Every new module starts with a one-line `//` purpose comment.
@@ -139,7 +140,7 @@ test('rollup counts main rows of the month only, buckets change: null as (none),
 test('projection scales by elapsed UTC days with a floor of one day', () => {
   assert.equal(projection(10, '2026-10-01T06:00:00.000Z'), 310)
   assert.equal(projection(100, '2026-10-16T00:00:00.000Z'), 206.6667)
-  assert.equal(projection(300, '2026-10-31T23:59:59.999Z'), 300.0001)
+  assert.equal(projection(300, '2026-10-31T23:59:59.999Z'), 300)
   assert.equal(monthOf('2026-10-08T17:00:00.000Z'), '2026-10')
   assert.equal(prevMonth('2026-01-03T00:00:00.000Z'), '2025-12')
 })
@@ -347,6 +348,7 @@ test('budget config: defaults, a full section, and errors for each bad field', (
   const bad = parseConfig(JSON.stringify({ budget: { teamMonthlyUsd: -1, changeUsd: { X: 5, M: 0 }, warnAt: [80, 50, 100], downshift: 'no', extra: 1 } })).errors.join('\n')
   for (const want of ['budget.teamMonthlyUsd', 'budget.changeUsd: unknown tier "X"', 'budget.changeUsd.M', 'budget.warnAt', 'budget.downshift', 'budget: unknown key "extra"']) assert.match(bad, new RegExp(want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   assert.match(parseConfig('{"budget": 5}').errors.join('\n'), /budget must be/)
+  assert.deepEqual(parseConfig(JSON.stringify({ budget: DEFAULT_BUDGET })).errors, [], 'the default round-trips')
 })
 ```
 
@@ -385,7 +387,7 @@ function parseBudget(raw: unknown, config: SensorConfig, errors: string[]): void
   if (!isObject(raw)) { errors.push('budget must be { teamMonthlyUsd, changeUsd: { S, M, L }, warnAt: [notice, tight, over], downshift }'); return }
   const pos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
   for (const k of Object.keys(raw)) if (!BUDGET_KEYS.has(k)) errors.push(`budget: unknown key "${k}"`)
-  if ('teamMonthlyUsd' in raw) { if (pos(raw.teamMonthlyUsd)) config.budget.teamMonthlyUsd = raw.teamMonthlyUsd; else errors.push('budget.teamMonthlyUsd must be a positive number of dollars') }
+  if ('teamMonthlyUsd' in raw) { if (raw.teamMonthlyUsd === null || pos(raw.teamMonthlyUsd)) config.budget.teamMonthlyUsd = raw.teamMonthlyUsd; else errors.push('budget.teamMonthlyUsd must be a positive number of dollars') }
   if ('changeUsd' in raw) {
     if (!isObject(raw.changeUsd)) errors.push('budget.changeUsd must map S, M and L to dollars')
     else for (const [t, d] of Object.entries(raw.changeUsd)) {
@@ -445,6 +447,7 @@ git commit -m "feat: budget section in sensors.json; raising a budget is a revie
 - Modify: `scripts/sdlc.ts` (`spend` command; publish after a non-blocking push check)
 - Modify: `scripts/pr.ts` (publish after a push)
 - Modify: `scripts/vendor.ts` (`VENDORED` gains `'spend'`)
+- Modify: `templates/settings.json` (deny model edits of the new state files)
 - Test: `scripts/spend.spec.ts`
 
 **Interfaces:**
@@ -500,9 +503,10 @@ test('a fresh clone without the ref counts this clone only and says so', () => {
 
 test('two clones publish; each sees the other, its own local rows count once, working tree and index untouched', () => {
   const { a, b } = team()
-  ledger(a, [spendRow(3, 'x')])
-  ledger(b, [spendRow(4, 'x'), spendRow(1)])
-  const before = gitIn(a, 'status', '--porcelain')
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  ledger(a, [spendRow(3, 'add-login')])
+  ledger(b, [spendRow(4, 'add-login'), spendRow(1)])
+  const before = gitIn(a, 'status', '--porcelain') // after `new`: publish itself must not change it
   assert.equal(sdlc(a, ['spend', 'publish']).code, 0)
   assert.equal(sdlc(b, ['spend', 'publish']).code, 0, 'B publishes on top of A (fetch, rebuild, push)')
   assert.equal(gitIn(a, 'status', '--porcelain'), before)
@@ -512,7 +516,7 @@ test('two clones publish; each sees the other, its own local rows count once, wo
   assert.equal(s.localOnly, false)
   assert.equal(s.sources.length, 1, 'B is the one other source')
   assert.equal(s.level, 'tight')
-  assert.equal(status(a, ['--change', 'x']).change.spentUsd, 7)
+  assert.equal(status(a, ['--change', 'add-login']).change.spentUsd, 7)
   const month = new Date().toISOString().slice(0, 7)
   assert.equal(lsRef(b).filter(p => p.startsWith(`${month}/`)).length, 2)
 })
@@ -734,6 +738,7 @@ export function publishQuietly(): void {
   try { const r = publish(); if (!r.ok) process.stderr.write(`warn: ${r.message}\n`) } catch (e) { process.stderr.write(`warn: spend: ${String(e)}\n`) }
 }
 
+// Within one process only (status computes the view once per change); each turn is a new process, so the cost per turn is one rev-parse and one ledger read.
 const viewMemo = new Map<string, BudgetView>()
 export function budgetView(cfg: BudgetConfig, change: { slug: string; tier: Tier; type: ChangeType } | null, nowIso = now()): BudgetView {
   const ref = readRef()
@@ -848,6 +853,16 @@ In `scripts/pr.ts`, call `publishQuietly()` right after each successful `git pus
 
 In `scripts/vendor.ts`, add `'spend'` to `VENDORED`, before `'sdlc'`.
 
+In `templates/settings.json` `permissions.deny`, after `"Edit(/.sdlc/usage.jsonl)",`, add:
+
+```json
+      "Edit(/.sdlc/spend-cache.json)",
+      "Edit(/.sdlc/spend-fetched)",
+      "Edit(/.sdlc/budget-seen.json)",
+```
+
+A model could otherwise zero the cached team total and silence warnings and downshift. If a spec test pins the deny list, add the three entries to its expectation.
+
 - [ ] **Step 6: Run the tests and confirm they pass**
 
 Run: `node --disable-warning=ExperimentalWarning --test scripts/spend.spec.ts scripts/githooks.spec.ts scripts/pr.spec.ts scripts/vendor.spec.ts && npm run typecheck`
@@ -856,7 +871,7 @@ Expected: PASS. If a githooks or pr test counts stderr lines and now sees `warn:
 - [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/spend.ts scripts/spend.spec.ts scripts/core.ts scripts/sdlc.ts scripts/pr.ts scripts/vendor.ts
+git add scripts/spend.ts scripts/spend.spec.ts scripts/core.ts scripts/sdlc.ts scripts/pr.ts scripts/vendor.ts templates/settings.json
 git commit -m "feat: refs/rig/spend publish, fetch and status across clones; publish after push and pr"
 ```
 
@@ -908,12 +923,11 @@ Append to `scripts/spend.spec.ts`:
 ```ts
 test('next --json carries pressure and budget; tight eases review effort; round caps do not move', () => {
   const { a } = team()
-  sdlc(a, ['init', '--defaults'])
-  sdlc(a, ['new', 'x', '--type', 'feature', '--tier', 'M', '--title', 'X'])
-  const normal = JSON.parse(sdlc(a, ['next', 'x', '--json']).stdout)
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  const normal = JSON.parse(sdlc(a, ['next', 'add-login', '--json']).stdout)
   assert.equal(normal.pressure, 'normal')
   ledger(a, [spendRow(8.5)])
-  const tight = JSON.parse(sdlc(a, ['next', 'x', '--json']).stdout)
+  const tight = JSON.parse(sdlc(a, ['next', 'add-login', '--json']).stdout)
   assert.equal(tight.pressure, 'tight')
   assert.equal(tight.budget.level, 'tight')
   assert.equal(tight.routes.reviewer.effort, 'medium')
@@ -923,7 +937,7 @@ test('next --json carries pressure and budget; tight eases review effort; round 
 })
 ```
 
-If `init --defaults` and `new … --title` do not match `sdlc.ts` today, create the change the way `scripts/graph.spec.ts` does (its `write(repo, '.sdlc/changes/…')` helpers). `ratcheted(repo, slug)` from `testkit.ts` is fine.
+`new <slug> --type <type> --tier <tier>` is how `scripts/checkpoint.spec.ts` creates a change; it leaves `.sdlc/sensors.json` alone, so the test's budget survives. Slugs need two or more characters (`SLUG_RE`).
 
 - [ ] **Step 2: Run them and confirm they fail**
 
@@ -992,7 +1006,7 @@ git commit -m "feat: budget pressure eases review effort; next and status carry 
 
 **Files:**
 - Modify: `scripts/sdlc.ts` (`cmdApprove`)
-- Modify: `hooks/register.ts` (usage text and argument hint)
+- Modify: `hooks/register.ts`, `scripts/vendor.ts` (usage text and argument hint)
 - Modify: `skills/next/SKILL.md` (one line)
 - Test: `scripts/spend.spec.ts`
 
@@ -1007,19 +1021,17 @@ Append to `scripts/spend.spec.ts`:
 ```ts
 test('full-route is human only and turns downshift off for one change; warnings stay', () => {
   const { a } = team()
-  sdlc(a, ['init', '--defaults'])
-  sdlc(a, ['new', 'x', '--type', 'feature', '--tier', 'M', '--title', 'X'])
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
   ledger(a, [spendRow(9)])
-  assert.equal(sdlc(a, ['approve', 'x', 'full-route']).code, 3, 'a model cannot grant it')
-  const r = sdlc(a, ['approve', 'x', 'full-route'], { env: { SDLC_HUMAN: '1' } })
-  assert.match(r.stdout, /approved x full-route/)
-  const next = JSON.parse(sdlc(a, ['next', 'x', '--json']).stdout)
+  assert.equal(sdlc(a, ['approve', 'add-login', 'full-route']).code, 3, 'a model cannot grant it')
+  const r = sdlc(a, ['approve', 'add-login', 'full-route'], { env: { SDLC_HUMAN: '1' } })
+  assert.match(r.stdout, /approved add-login full-route/)
+  const next = JSON.parse(sdlc(a, ['next', 'add-login', '--json']).stdout)
   assert.equal(next.pressure, 'normal')
   assert.equal(next.budget.level, 'tight')
 })
 ```
 
-(Use the same change-creation helper as Task 4 if `init` or `new` differ.)
 
 - [ ] **Step 2: Run it and confirm it fails**
 
@@ -1040,6 +1052,7 @@ Expected: FAIL, `nothing to approve: x/full-route does not exist`.
 
 - [ ] **Step 4: Update the user-facing text**
 
+- `scripts/vendor.ts` also carries this usage string (the generated standalone approve skill). Update it there too: `grep -rn 'impact|budget|tier' scripts hooks skills templates` must show only the new form.
 - In `hooks/register.ts`, change both `<intent|spec|plan|design|impact|budget|tier S|M|L [type]>` strings (the argument hint and the usage reply) to `<intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>`.
 - In `skills/next/SKILL.md`, add one line to the list after the `blocked` bullet:
   `- \`pressure: tight\` in the JSON means a soft budget is near its limit: routes already carry eased review effort; keep going. A person can run \`/rig-approve <slug> full-route\` to keep full routing for this change.`
@@ -1052,7 +1065,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/sdlc.ts hooks/register.ts skills/next/SKILL.md scripts/spend.spec.ts
+git add scripts/sdlc.ts scripts/vendor.ts hooks/register.ts skills/next/SKILL.md scripts/spend.spec.ts
 git commit -m "feat: /rig-approve <slug> full-route keeps full routing for one change"
 ```
 
@@ -1095,13 +1108,15 @@ Then add:
     await $.session.start(SESSION)
     await $.turn.start({} as never)
     const step = async (model: string, agentId?: string) => { const s = $.turn.step({ turnId: 't1', index: 0, model, messageCount: 1, ...(agentId ? { agentId } : {}) }); for await (const _ of s) { /* drain */ } return s.result }
+    const stepAt = async (index: number, model: string) => { const s = $.turn.step({ turnId: 't1', index, model, messageCount: 1 }); for await (const _ of s) { /* drain */ } return s.result }
     await step('claude-opus-5-5', 'a1')
+    await stepAt(1, 'claude-opus-5-5') // mid-turn: not switched yet
     await step('claude-sonnet-5-5')
     await step('claude-opus-5-5')
     world.pressure = 'normal'
     await $.turn.start({} as never)
     await step('claude-opus-5-5')
-    expect(models).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    expect(models).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'])
     expect(world.toasts.filter(t => t.includes('coordinator moved to Sonnet')).length).toBe(1)
   })
 
@@ -1165,6 +1180,7 @@ let coordinatorSwitched = false
 ```
 
 - In the `session.start` handler, reset `coordinatorSwitched = false`.
+- The `step` helper in the test sends `index: 0`, a turn's first step.
 - In `turn.start`, replace the status line with:
 
 ```ts
@@ -1178,7 +1194,8 @@ let coordinatorSwitched = false
   // so its cache is rebuilt once. Subagent steps keep the routes their launches picked.
   on('turn.step', async function* ($, e, next) {
     if (mod.aside || e.agentId || !/opus/i.test(e.model)) return yield* next(e)
-    if (!coordinatorSwitched && turnPressure === 'tight') {
+    // Only at a turn's first step: a turn's earlier Opus responses (and thinking) are never handed to Sonnet mid-loop.
+    if (!coordinatorSwitched && turnPressure === 'tight' && e.index === 0) {
       coordinatorSwitched = true
       $.ui.toast('rig: budget tight, coordinator moved to Sonnet for this session')
     }
@@ -1269,10 +1286,9 @@ Append to `scripts/spend.spec.ts`:
 ```ts
 test('the scorecard has a change budget row and metrics a budget block', () => {
   const { a } = team()
-  sdlc(a, ['init', '--defaults'])
-  sdlc(a, ['new', 'x', '--type', 'feature', '--tier', 'M', '--title', 'X'])
-  ledger(a, [spendRow(5, 'x')])
-  assert.match(sdlc(a, ['scorecard', 'x']).stdout, /\| Change budget \| \$5\.00 of \$4 \(125%\) · over by \$1\.00 \|/)
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  ledger(a, [spendRow(5, 'add-login')])
+  assert.match(sdlc(a, ['scorecard', 'add-login']).stdout, /\| Change budget \| \$5\.00 of \$4 \(125%\) · over by \$1\.00 \|/)
   const m = JSON.parse(sdlc(a, ['metrics', '--json']).stdout).metrics.budget
   assert.equal(m.spentUsd, 5)
   assert.equal(m.budgetUsd, 10)
@@ -1373,6 +1389,7 @@ test('each workflow that runs Claude reads the run cost and publishes it from a 
     assert.match(job, /contents: write/)
     assert.doesNotMatch(job, /claude-code-action/, `${name}: the spend job runs no model`)
     assert.match(job, /spend publish --ci --usd "\$USD" --run "\$RUN"/)
+    assert.match(job, /if \[ ! -f \.sdlc\/bin\/spend\.ts \]; then echo "::notice::/, `${name}: an old base branch skips with a notice`)
     assert.match(job, /github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
   }
 })
@@ -1422,7 +1439,10 @@ Expected: FAIL, `rig-review.yml reads the cost from execution_file`.
         env:
           USD: ${{ needs.review.outputs.usd }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}-review
-        run: node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN"
+        # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
+        run: |
+          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed""
 ```
 
 - [ ] **Step 5: Edit `templates/rig-triage.yml`**
@@ -1450,7 +1470,10 @@ Expected: FAIL, `rig-review.yml reads the cost from execution_file`.
         env:
           USD: ${{ needs.triage.outputs.usd }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}-triage
-        run: node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN"
+        # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
+        run: |
+          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed""
 ```
 
 - [ ] **Step 6: Edit `templates/rig-watch.yml`**
@@ -1476,7 +1499,10 @@ Expected: FAIL, `rig-review.yml reads the cost from execution_file`.
         env:
           USD: ${{ needs.diagnose.outputs.usd }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}-watch
-        run: node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN"
+        # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
+        run: |
+          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed""
 ```
 
 - [ ] **Step 7: Run the tests and confirm they pass**
