@@ -25,6 +25,9 @@ export type RatchetNode = 'build' | 'test' | 'sensors' | 'pr-review'
 export const LEVELS: Level[] = ['unit', 'integration', 'acceptance', 'api']
 export const QUALITY_CATEGORIES: QualityCategory[] = ['lint', 'types', 'deps', 'coupling', 'complexity', 'security', 'perf']
 export const RATCHET_NODES: RatchetNode[] = ['build', 'test', 'sensors', 'pr-review']
+// Soft budgets (spend governance spec §5). No budget set: spend shows, nothing warns or downshifts.
+export type BudgetConfig = { teamMonthlyUsd: number | null; changeUsd: Partial<Record<'S' | 'M' | 'L', number>>; warnAt: [number, number, number]; downshift: boolean }
+export const DEFAULT_BUDGET: BudgetConfig = { teamMonthlyUsd: null, changeUsd: {}, warnAt: [50, 80, 100], downshift: true }
 export type SensorConfig = {
   fast: Record<string, string>
   full: Record<string, string>

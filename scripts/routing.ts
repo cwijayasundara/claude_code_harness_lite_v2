@@ -7,6 +7,8 @@ export type Model = 'haiku' | 'sonnet' | 'opus'
 export type Effort = 'low' | 'medium' | 'high'
 export type Route = { model: Model; effort: Effort } | 'main'
 export type RoutingOverride = Partial<Record<Role, Partial<Record<Tier, { model: Model; effort?: Effort }>>>>
+// Budget pressure (spend governance spec §7): tight eases review effort one step; floors still clamp.
+export type Pressure = 'normal' | 'tight'
 
 export const ROLES: Role[] = ['scout', 'researcher', 'architect', 'implementer', 'slice-review', 'reviewer', 'referee', 'triage']
 const MODELS: Model[] = ['haiku', 'sonnet', 'opus']
