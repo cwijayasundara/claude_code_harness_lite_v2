@@ -368,7 +368,7 @@ function scaffoldPolicy(): string {
 
 const COMMANDS: Record<string, (args: Args) => void> = {
   stamp: () => out(treeStamp() ?? 'none'),
-  init: args => { cmdInit(args); const note = scaffoldPolicy(); if (note) out(note) },
+  init: args => { cmdInit(args); if (args.opt.full) { const note = scaffoldPolicy(); if (note) out(note) } },
   new: cmdNew,
   points: cmdPoints,
   activate: cmdActivate,
