@@ -32,20 +32,23 @@ test('publish accepts one change folder of rig files and outputs its name', () =
   assert.equal(r.slug, 'slug=claims-status')
 })
 
-test('publish refuses a script, a symlink, a nested folder, a second change folder and a bad name', () => {
-  assert.notEqual(publishCheck(d => folder(d, 'a', ['intent.md', 'run.sh'])).code, 0, 'script')
-  assert.notEqual(publishCheck(d => { folder(d, 'a', ['intent.md']); fs.symlinkSync('/etc/passwd', path.join(d, 'a', 'design.md')) }).code, 0, 'symlink')
-  assert.notEqual(publishCheck(d => { folder(d, 'a', ['intent.md']); fs.mkdirSync(path.join(d, 'a', 'sub')) }).code, 0, 'nested folder')
-  assert.notEqual(publishCheck(d => { folder(d, 'a', ['intent.md']); folder(d, 'b', ['intent.md']) }).code, 0, 'two folders')
-  assert.notEqual(publishCheck(d => folder(d, 'Bad_Name', ['intent.md'])).code, 0, 'bad name')
+function refused(setup: (dir: string) => void, reason: RegExp) {
+  const r = publishCheck(setup)
+  assert.notEqual(r.code, 0, r.err)
+  assert.match(r.err, reason)
+}
+
+test('publish refuses a script, a symlink, a nested folder and a dot-dot file name inside a valid change folder', () => {
+  refused(d => folder(d, 'abc', ['intent.md', 'run.sh']), /refusing .*run\.sh/)
+  refused(d => { folder(d, 'abc', ['intent.md']); fs.symlinkSync('/etc/passwd', path.join(d, 'abc', 'design.md')) }, /refusing .*design\.md/)
+  refused(d => { folder(d, 'abc', ['intent.md']); fs.mkdirSync(path.join(d, 'abc', 'sub')) }, /refusing .*sub/)
+  refused(d => folder(d, 'abc', ['intent.md', '..evil']), /refusing .*\.\.evil/)
 })
 
-test('publish refuses a dot-dot file name', () => {
-  assert.notEqual(publishCheck(d => folder(d, 'a', ['intent.md', '..evil'])).code, 0)
-})
-
-test('publish refuses an empty change directory', () => {
-  assert.notEqual(publishCheck(() => {}).code, 0)
+test('publish refuses a second change folder, a bad name and an empty change directory', () => {
+  refused(d => { folder(d, 'abc', ['intent.md']); folder(d, 'def', ['intent.md']) }, /exactly one change folder/)
+  refused(d => folder(d, 'Bad_Name', ['intent.md']), /bad change name/)
+  refused(() => {}, /exactly one change folder/)
 })
 
 test('privilege split: read-only model job with no persisted credentials; the publish job runs no model', () => {
@@ -60,7 +63,7 @@ test('privilege split: read-only model job with no persisted credentials; the pu
   assert.match(draft, /persist-credentials: false/)
   assert.match(draft, /claude-code-action/)
   assert.doesNotMatch(draft, /permissions:|: write/)
-  assert.match(publish, /if: \$\{\{ !cancelled\(\)/)
+  assert.match(publish, /if: \$\{\{ !cancelled\(\) && needs\.pick\.result == 'success'/)
   assert.match(publish, /for f in intent\.md design\.md spec\.md plan\.md/)
   assert.doesNotMatch(publish, /cp -R/)
 })

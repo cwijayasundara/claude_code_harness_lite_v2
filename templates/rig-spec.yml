@@ -82,7 +82,7 @@ jobs:
           path: handover/
   publish:
     needs: [pick, draft]
-    if: ${{ !cancelled() && needs.pick.outputs.pending != '[]' }}
+    if: ${{ !cancelled() && needs.pick.result == 'success' && needs.pick.outputs.pending != '[]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
