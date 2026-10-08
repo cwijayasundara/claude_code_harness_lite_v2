@@ -147,3 +147,22 @@ test('preflight reports the managed row from RIG_MANAGED_DIR and still passes wi
   fs.copyFileSync(path.join(ROOT, 'templates', 'managed-settings.json'), path.join(dir, 'managed-settings.json'))
   assert.match(sdlc(repo, ['preflight'], { env: { RIG_MANAGED_DIR: dir } }).stdout, /\| managed \| pass \| 16\/16/)
 })
+
+test('metrics: gate waits pair a block with the next allow in the same session; escaped gate violations; managed controls', () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const row = (h: number, decision: string, session: string) => JSON.stringify({ at: new Date(Date.UTC(2026, 9, 1, h)).toISOString(), decision, session })
+  write(repo, '.sdlc/gates.jsonl', [
+    row(0, 'block', 'a'), row(1, 'block', 'b'), row(2, 'block', 'a'), row(3, 'allow', 'a'), row(5, 'allow', 'b'),
+    row(6, 'block', 'c'), row(7, 'allow', ''), row(8, 'block', 'd'), row(9, 'allow', 'd'), row(10, 'block', 'e'),
+    row(11, 'block', 'f'), row(12, 'block', 'g'), row(13, 'allow', 'f'), row(17, 'allow', 'g'), '{ torn',
+  ].join('\n') + '\n')
+  for (const [f, cls] of [['1-x', 'gate'], ['2-y', 'perf'], ['3-z', 'gate']]) write(repo, `.sdlc/incidents/2026100${f}.md`, `---\ndetected: 2026-10-01T00:00:00Z\nclass: ${cls}\n---\n`)
+  const m = JSON.parse(sdlc(repo, ['metrics', '--json'], { env: { RIG_MANAGED_DIR: tmpDir() } }).stdout).metrics
+  assert.deepEqual({ value: m.gate_wait_hours.value, n: m.gate_wait_hours.n }, { value: 3, n: 5 }, 'a 3h, b 4h, d 1h, f 2h, g 5h (MIN_SAMPLE is 5); c and e never allowed; the empty session is dropped')
+  assert.deepEqual({ value: m.gate_violations_escaped.value, n: m.gate_violations_escaped.n }, { value: 2, n: 3 })
+  assert.equal(m.managed_controls_in_force.value, null)
+  const dir = tmpDir()
+  fs.copyFileSync(path.join(ROOT, 'templates', 'managed-settings.json'), path.join(dir, 'managed-settings.json'))
+  assert.equal(JSON.parse(sdlc(repo, ['metrics', '--json'], { env: { RIG_MANAGED_DIR: dir } }).stdout).metrics.managed_controls_in_force.value, 16)
+})
