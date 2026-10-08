@@ -193,6 +193,13 @@ function cmdApprove(args: Args): void {
     unblock(slug, 'person approved more budget')
     return out(`unblocked ${slug}: ${node} gets a fresh budget ($${spent.toFixed(2)} credited)`)
   }
+  if (stage === 'full-route') {
+    const r = readRatchet(slug)
+    r.fullRoute = true
+    writeRatchet(slug, r)
+    appendEvent(slug, { node: 'any', verdict: 'approved', kind: 'full-route', reason: 'a person turned budget downshift off for this change' })
+    return out(`approved ${slug} full-route: budget downshift is off for this change; budget warnings still show`)
+  }
   if (stage === 'tier') {
     // The person states the target; it is recorded only if intent.md says exactly that right now, so an edit made after
     // the person read it cannot be approved by accident. The recorded values are the person's arguments, never re-read.

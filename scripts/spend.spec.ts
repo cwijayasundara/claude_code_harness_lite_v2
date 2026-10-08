@@ -227,3 +227,15 @@ test('next --json carries pressure and budget; tight eases review effort; round 
   assert.equal(tight.round, normal.round)
   assert.equal(JSON.parse(sdlc(a, ['status', '--json', '--band']).stdout).budget.spentUsd, 8.5)
 })
+
+test('full-route is human only and turns downshift off for one change; warnings stay', () => {
+  const { a } = team()
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  ledger(a, [spendRow(9)])
+  assert.equal(sdlc(a, ['approve', 'add-login', 'full-route']).code, 3, 'a model cannot grant it')
+  const r = sdlc(a, ['approve', 'add-login', 'full-route'], { env: { SDLC_HUMAN: '1' } })
+  assert.match(r.stdout, /approved add-login full-route/)
+  const next = JSON.parse(sdlc(a, ['next', 'add-login', '--json']).stdout)
+  assert.equal(next.pressure, 'normal')
+  assert.equal(next.budget.level, 'tight')
+})

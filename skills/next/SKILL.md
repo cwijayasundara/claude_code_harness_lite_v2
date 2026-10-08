@@ -12,6 +12,7 @@ Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` o
    - `continue`: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill <node> <slug>` and follow it exactly, then, if a person is driving with `/rig-run`, run one node and stop; otherwise return to step 1 in this turn.
    - `human`: show `command` word for word and stop. Never approve for the person.
    - `blocked`: show `reason` and stop (a cap, stall or budget block; the person runs `/rig-approve <slug> budget`). A gate or level block that a fix or waiver clears shows as `continue` with `pending block` in the reason: run the node, which re-derives it.
+   - `pressure: tight` in the JSON means a soft budget is near its limit: routes already carry eased review effort; keep going. A person can run `/rig-approve <slug> full-route` to keep full routing for this change.
    - `ready`: say a person merges the PR, and suggest `/rig:start "<next task>"`.
 2. **No active change** (or `initialised` false in `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts status --json`): if not initialised, follow `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill init`. Otherwise ask the person in one question what they want to build, run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill start "<their answer>"` and follow the printed steps.
 

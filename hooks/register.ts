@@ -134,7 +134,7 @@ export const register: Register = on => {
       await $.command.register({ name: 'rig-status', description: 'rig: where every change stands and the next command (no model call)', immediate: true })
       // A standalone repo ships its own human-only /rig-approve and /rig-waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/rig-approve/SKILL.md'))) {
-        await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' })
+        await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' })
         await $.command.register({ name: 'rig-waive', description: 'rig: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
       await $.command.register({ name: 'rig-sensors', description: 'rig: what the sensors found, known-red and waivers (no model call)', immediate: true })
@@ -159,7 +159,7 @@ export const register: Register = on => {
     }
     const [slug, stage, ...more] = e.args.trim().split(/\s+/)
     const rest = stage === 'tier' ? more.slice(0, 2) : []
-    if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' }
+    if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' }
     const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
