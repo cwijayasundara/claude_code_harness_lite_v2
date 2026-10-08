@@ -1,5 +1,5 @@
 # rig triage (playbook p.45): when a CI workflow fails, Haiku 5.5 reads the failed log, says flaky or real, and posts three lines
-# to the PR, or to the run summary when the run has no PR (a fork's, or a push). Copy to .github/workflows/, name your CI
+# to the PR, or to the run summary when the run has no PR (a push). A fork's failure is not triaged. Copy to .github/workflows/, name your CI
 # workflows under `workflows:`, and list this file in CODEOWNERS. Auth: one secret, CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.
 # workflow_run runs with secrets even for a fork's failure, and the log is written by the failing code: so nothing is checked out,
 # the model can only read failed.log and write triage.md, and a model-free step posts after checking the shape and refusing
@@ -11,7 +11,8 @@ on:
     types: [completed]
 jobs:
   triage:
-    if: github.event.workflow_run.conclusion == 'failure'
+    # A fork's failure is skipped: claude-code-action refuses an actor without write access.
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -21,7 +22,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.event.workflow_run.id }}
-        run: gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 2000 > failed.log
+        run: |
+          # triage-fetch:start
+          set -o pipefail
+          gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --log-failed | tail -n 2000 > failed.log
+          [ -s failed.log ] || { echo "::error::the failed run has no log to triage"; exit 1; }
+          # triage-fetch:end
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -59,5 +65,5 @@ jobs:
             echo "::error::triage.md looks like it contains a credential; not posting it"; exit 1
           fi
           { echo '<!-- rig-triage -->'; echo "Triage of [the failed run]($RUN_URL):"; echo '```text'; cat triage.md; echo '```'; } > comment.md
-          if [ -n "$PR" ]; then gh pr comment "$PR" --body-file comment.md; else cat comment.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -n "$PR" ]; then gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file comment.md; else cat comment.md >> "$GITHUB_STEP_SUMMARY"; fi
           # triage-post:end

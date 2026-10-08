@@ -186,8 +186,11 @@ export function cmdMetrics(args: Args): void {
   // Leading (p.46): failed runs a triage answered, and the staging rollback rehearsal's record.
   const failedRuns = ghJson<{ workflowName?: string; createdAt?: string }>(['run', 'list', '--status', 'failure', '--limit', '200', '--json', 'workflowName,createdAt'])
   const triaged = ghJson<{ createdAt?: string }>(['run', 'list', '--workflow', 'rig-triage.yml', '--status', 'success', '--limit', '200', '--json', 'createdAt'])
-  const failedN = (failedRuns ?? []).filter(r => inWindow(r.createdAt) && r.workflowName !== 'rig-triage').length
-  m.failures_triaged_without_paging = failedRuns && triaged ? share(Math.min(failedN, (triaged ?? []).filter(r => inWindow(r.createdAt)).length), failedN) : needsGh
+  // The denominator is failures of the workflows rig-triage.yml watches (its `workflows: [...]`), read from the installed file.
+  const watched = /workflows:\s*\[([^\]]*)\]/.exec(read(path.join(ROOT, '.github', 'workflows', 'rig-triage.yml')))?.[1]?.split(',').map(w => w.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+  const failedN = (failedRuns ?? []).filter(r => inWindow(r.createdAt) && watched?.includes(r.workflowName ?? '')).length
+  m.failures_triaged_without_paging = !watched ? { value: null, n: 0, note: 'rig-triage.yml is not installed' }
+    : failedRuns && triaged ? share(Math.min(failedN, triaged.filter(r => inWindow(r.createdAt)).length), failedN) : needsGh
   const rehearsals = ghJson<{ conclusion?: string; createdAt?: string }>(['run', 'list', '--workflow', 'rig-rehearse.yml', '--limit', '100', '--json', 'conclusion,createdAt'])
   const rehearsed = (rehearsals ?? []).filter(r => inWindow(r.createdAt) && r.conclusion)
   m.rollback_rehearsal_success = rehearsals ? { ...share(rehearsed.filter(r => r.conclusion === 'success').length, rehearsed.length), per_week: Number((rehearsed.length / weeks).toFixed(2)) } : needsGh

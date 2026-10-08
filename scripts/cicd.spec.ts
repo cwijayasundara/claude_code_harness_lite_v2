@@ -22,17 +22,17 @@ function cut(file: string, marker: string): string {
   const indent = (lines[0] ?? '').match(/^ */)?.[0].length ?? 0
   return lines.map(l => l.slice(indent)).join('\n')
 }
-function runCut(file: string, marker: string, env: Record<string, string>, files: Record<string, string> = {}) {
+function runCut(file: string, marker: string, env: Record<string, string>, files: Record<string, string> = {}, ghBody = 'cat > /dev/null') {
   const dir = tmpDir()
   const bin = path.join(dir, 'bin')
   fs.mkdirSync(bin)
-  fs.writeFileSync(path.join(bin, 'gh'), '#!/bin/sh\necho "$@" >> "$GH_LOG"\ncat > /dev/null\n', { mode: 0o755 })
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" >> "$GH_LOG"\n${ghBody}\n`, { mode: 0o755 })
   for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), text)
   const summary = path.join(dir, 'summary.md')
   const ghLog = path.join(dir, 'gh.log')
-  const r = spawnSync('bash', ['-e', '-c', cut(file, marker)], { cwd: dir, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_STEP_SUMMARY: summary, GH_LOG: ghLog, GH_TOKEN: 'ghs_testtoken', ...env } })
+  const r = spawnSync('bash', ['-e', '-c', cut(file, marker)], { cwd: dir, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_STEP_SUMMARY: summary, GH_LOG: ghLog, GH_TOKEN: 'ghs_testtoken', GITHUB_REPOSITORY: 'o/r', ...env } })
   const read = (f: string): string => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '')
-  return { code: r.status, out: r.stdout + r.stderr, gh: read(ghLog), summary: read(summary), comment: read(path.join(dir, 'comment.md')) }
+  return { code: r.status, out: r.stdout + r.stderr, gh: read(ghLog), summary: read(summary), comment: read(path.join(dir, 'comment.md')), log: read(path.join(dir, 'failed.log')) }
 }
 
 const GOOD = 'Real: the date parser now rejects ISO weeks.\nEvidence: "RangeError: invalid week 53" at src/date.ts:41\nNext: fix parseWeek in src/date.ts and re-run.\n'
@@ -41,7 +41,7 @@ const post = (triage: string, env: Record<string, string> = { PR: '42' }) => run
 test('rig-triage posts three checked lines to the PR, or to the run summary when there is no PR', posix, () => {
   const r = post(GOOD)
   assert.equal(r.code, 0, r.out)
-  assert.match(r.gh, /^pr comment 42 --body-file comment\.md$/m)
+  assert.match(r.gh, /^pr comment 42 --repo o\/r --body-file comment\.md$/m, 'nothing is checked out, so gh needs the repository named')
   assert.match(r.comment, /^<!-- rig-triage -->\n/)
   assert.match(r.comment, /Real: the date parser/)
   assert.match(r.comment, /actions\/runs\/7/)
@@ -144,11 +144,12 @@ test('DORA from gh and incidents: deploy frequency, lead time, change failure ra
 test('triage and rehearsal from workflow runs', posix, () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
-  const failed = [...Array.from({ length: 8 }, (_, i) => ({ workflowName: 'CI', createdAt: ago(i + 1) })), { workflowName: 'rig-triage', createdAt: ago(1) }, { workflowName: 'CI', createdAt: ago(2000) }]
+  const failed = [...Array.from({ length: 8 }, (_, i) => ({ workflowName: 'CI', createdAt: ago(i + 1) })), { workflowName: 'rig-triage', createdAt: ago(1) }, { workflowName: 'rig-review', createdAt: ago(1) }, { workflowName: 'CI', createdAt: ago(2000) }]
+  write(repo, '.github/workflows/rig-triage.yml', 'on:\n  workflow_run:\n    workflows: [CI, "Build and test"]\n')
   const triage = Array.from({ length: 6 }, (_, i) => ({ createdAt: ago(i + 1) }))
   const rehearse = [...['success', 'success', 'failure', 'success', 'success', 'success'].map((c, i) => ({ conclusion: c, createdAt: ago(24 * (i + 1)) })), { conclusion: '', createdAt: ago(1) }]
   const m = metricsWith(repo, ghBin({ failed, triage, rehearse }))
-  assert.deepEqual({ v: m.failures_triaged_without_paging.value, n: m.failures_triaged_without_paging.n }, { v: 6 / 8, n: 8 }, 'rig-triage failures and old runs are not counted')
+  assert.deepEqual({ v: m.failures_triaged_without_paging.value, n: m.failures_triaged_without_paging.n }, { v: 6 / 8, n: 8 }, 'only failures of the workflows rig-triage watches, in the window, count')
   assert.deepEqual({ v: m.rollback_rehearsal_success.value, n: m.rollback_rehearsal_success.n }, { v: 5 / 6, n: 6 }, 'an in-progress run is not counted')
   assert.equal(m.rollback_rehearsal_success.per_week, Number((6 / (30 / 7)).toFixed(2)))
 })
@@ -156,6 +157,7 @@ test('triage and rehearsal from workflow runs', posix, () => {
 test('metrics never crash without a usable gh: DORA and the workflow metrics read needs gh, restore time still counts', posix, () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
+  write(repo, '.github/workflows/rig-triage.yml', 'on:\n  workflow_run:\n    workflows: [CI]\n')
   const m = metricsWith(repo, ghBin({ fail: true }))
   for (const k of ['deployment_frequency_per_week', 'lead_time_hours', 'change_failure_rate', 'failures_triaged_without_paging', 'rollback_rehearsal_success']) assert.equal(m[k].note, 'needs gh', k)
   assert.equal(m.time_to_restore_hours.value, null)
@@ -172,4 +174,24 @@ test('README and SECURITY.md describe rig-triage and rig-rehearse', () => {
   const sec = fs.readFileSync(path.join(ROOT, 'SECURITY.md'), 'utf8')
   assert.match(sec, /`rig-triage\.yml`[^\n]*workflow_run[^\n]*fork/)
   assert.match(sec, /`rig-rehearse\.yml`[^\n]*staging/)
+})
+
+test('rig-triage fetches the failed log with pipefail and refuses an empty one', posix, () => {
+  const ok = runCut('rig-triage.yml', 'triage-fetch', { RUN: '7' }, {}, 'echo "FAIL src/a.test.ts"')
+  assert.equal(ok.code, 0, ok.out)
+  assert.match(ok.log, /FAIL src\/a\.test\.ts/)
+  assert.match(ok.gh, /^run view 7 --repo o\/r --log-failed$/m)
+  assert.notEqual(runCut('rig-triage.yml', 'triage-fetch', { RUN: '7' }, {}, 'exit 1').code, 0, 'a failed fetch fails the job')
+  assert.notEqual(runCut('rig-triage.yml', 'triage-fetch', { RUN: '7' }, {}, 'true').code, 0, 'an empty log is never triaged')
+})
+
+test('rig-triage skips a fork\'s failure, which claude-code-action refuses (the actor has no write access)', () => {
+  assert.match(yml('rig-triage.yml'), /if: github\.event\.workflow_run\.conclusion == 'failure' && github\.event\.workflow_run\.head_repository\.full_name == github\.repository/)
+})
+
+test('the triage metric needs rig-triage.yml installed and reads which workflows it watches', posix, () => {
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  const m = metricsWith(repo, ghBin({ failed: [{ workflowName: 'CI', createdAt: ago(1) }], triage: [] }))
+  assert.deepEqual(m.failures_triaged_without_paging, { value: null, n: 0, note: 'rig-triage.yml is not installed' })
 })
