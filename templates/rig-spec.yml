@@ -4,8 +4,11 @@
 # Privilege split, as in rig-review.yml: the draft job runs the model with a read-only token and no persisted credentials and
 # hands the change folder over as an artifact; the publish job runs no model, accepts only rig's own files in one change
 # folder, then pushes a branch and opens the pull request. The draft job passes --plan-only, so nothing is ever built here.
-# Only the Markdown is published: ratchet.json and events.jsonl are rig's own records and are never carried into the PR, so
-# rig gates the change as tier L until a person runs /rig-approve <slug> tier <S|M|L> [type].
+# Only the Markdown a person reviews is published (intent, design, spec, plan, notes); rig's records (ratchet.json, events.jsonl,
+# impact.json, runs.jsonl, verification.md) never reach the PR, so the change waits for /rig-approve <slug> tier <S|M|L> <type>.
+# A PR opened with github.token triggers no pull_request workflows, so a required rig-check waits: push a commit to the PR
+# branch, close and reopen the PR, or give gh pr create a GitHub App or fine-grained token so checks run.
+# A run that pushed sdlc/intent-<name> but failed before gh pr create leaves the intent no longer pending: delete that branch to redraft.
 # Residual risk: the draft job holds the Anthropic credential and the model runs rig's commands there (the start and design
 # skills call sdlc.ts, and `check --at plan` runs declared commands). It cannot push. Run it on trusted-team repos.
 # Pin setup-node, upload-artifact and download-artifact to commit SHAs with Dependabot or Renovate, as the other actions are.
@@ -67,7 +70,7 @@ jobs:
           claude_args: >-
             --model ${{ steps.model.outputs.id }} --max-turns 60
             --allowedTools "Read(./**),Grep,Glob,Agent,Skill,Edit(./.sdlc/changes/**),Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts *)"
-            --disallowedTools "WebFetch,WebSearch,AskUserQuestion"
+            --disallowedTools "WebFetch,WebSearch,AskUserQuestion,Edit(./.sdlc/bin/**),Edit(./.sdlc/sensors.json),Edit(./.sdlc/rules.json),Edit(./.claude/**),Edit(./.github/**)"
           prompt: /rig-start .sdlc/intent/${{ matrix.intent.file }} --plan-only
       - name: Hand the change folder over
         env:
@@ -111,8 +114,9 @@ jobs:
           for f in "$dir/$slug"/* "$dir/$slug"/.[!.]* "$dir/$slug"/..?*; do
             [ -e "$f" ] || [ -L "$f" ] || continue
             if [ -L "$f" ] || [ -d "$f" ]; then echo "::error::refusing $f"; exit 1; fi
-            case "$(basename "$f")" in intent.md|design.md|spec.md|plan.md|ratchet.json|events.jsonl) ;; *) echo "::error::refusing $f"; exit 1 ;; esac
+            case "$(basename "$f")" in intent.md|design.md|spec.md|plan.md|notes.md|ratchet.json|events.jsonl|impact.json|runs.jsonl|verification.md) ;; *) echo "::error::refusing $f"; exit 1 ;; esac
           done
+          if git cat-file -e "HEAD:.sdlc/changes/$slug" 2>/dev/null; then echo "::error::change $slug already exists on the trunk"; exit 1; fi
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
           # publish-check:end
       - name: Push the branch and open the pull request
@@ -124,10 +128,10 @@ jobs:
           branch="sdlc/intent-${FILE%.md}"
           git switch -c "$branch"
           mkdir -p ".sdlc/changes/$SLUG"
-          for f in intent.md design.md spec.md plan.md; do
+          for f in intent.md design.md spec.md plan.md notes.md; do
             if [ -f "change/$SLUG/$f" ]; then cp "change/$SLUG/$f" ".sdlc/changes/$SLUG/"; fi
           done
           git add ".sdlc/changes/$SLUG"
           git -c user.name=rig-spec -c user.email=rig-spec@users.noreply.github.com commit -m "spec: draft $SLUG from .sdlc/intent/$FILE"
           git push origin "$branch"
-          gh pr create --head "$branch" --title "spec: $SLUG" --body "Drafted by rig-spec from .sdlc/intent/$FILE. Review intent.md and design.md and resolve every ## Concerns line with its owner; then approve with /rig-approve $SLUG design and an engineer runs /rig-start $SLUG. rig's own records (ratchet.json) are not published from the model job, so the change is gated as tier L until you run /rig-approve $SLUG tier <S|M|L> [type]. Review design.md's ## Verification commands like code: they run during the build."
+          gh pr create --head "$branch" --title "spec: $SLUG" --body "Drafted by rig-spec from .sdlc/intent/$FILE. Review the drafted files (intent.md, plus design.md or notes.md where present) and resolve every ## Concerns line with its owner; an engineer then runs /rig-start $SLUG. rig's own records (ratchet.json, impact.json) are not published from the model job, so the change waits for /rig-approve $SLUG tier <S|M|L> <type> before any other step. Review any ## Verification commands like code: they run during the build."
