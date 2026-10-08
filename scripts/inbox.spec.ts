@@ -113,3 +113,10 @@ test('a legacy change with no source: and no recorded tier keeps the old behavio
   assert.equal(s.verdict, 'continue')
   assert.equal(s.node, 'design')
 })
+
+test('status text names a waiting intent in a repo with no changes yet', () => {
+  intent('one.md', 'status: accepted')
+  const out = sdlc(repo, ['status']).stdout
+  assert.match(out, /no changes yet/)
+  assert.match(out, /warn: intent one\.md is accepted and has no change/)
+})

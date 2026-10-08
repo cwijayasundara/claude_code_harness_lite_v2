@@ -154,7 +154,7 @@ function cmdStatus(args: Args): void {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
     return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
   }
-  if (!changes.length) return out(`no changes yet: run ${skillRef('start')} "<what you want>"`)
+  if (!changes.length) return out([`no changes yet: run ${skillRef('start')} "<what you want>"`, ...warnings.map(w => `warn: ${w}`)].join('\n'))
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
   const rows = changes
     .sort((a, b) => (a.slug === active ? -1 : b.slug === active ? 1 : 0))
