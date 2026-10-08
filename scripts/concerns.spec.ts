@@ -49,3 +49,11 @@ test('unresolvedConcerns: numbered items, resolutions on their own line, ### sub
   assert.deepEqual(unresolvedConcerns('## Concerns\n### Security\n- [policy-a] x → owner: @a\n'), ['[policy-a] x → owner: @a'])
   assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] the old flag was unresolved: still open → owner: @a\n'), ['[policy-a] the old flag was unresolved: still open → owner: @a'])
 })
+
+test('unresolvedConcerns: indented and CRLF concerns are kept; same-indent siblings stay separate', () => {
+  assert.deepEqual(unresolvedConcerns('## Concerns\n  - [policy-a] x → owner: @a\n'), ['[policy-a] x → owner: @a'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n\t- [policy-a] x → owner: @a\n'), ['[policy-a] x → owner: @a'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\r\n- [policy-a] x → owner: @a\r\n- [policy-b] y → owner: @b → resolved: ok (@b)\r\n'), ['[policy-a] x → owner: @a'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a → resolved: ok (@a)\n- [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n  - [policy-a] x → owner: @a → resolved: ok (@a)\n  - [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
+})

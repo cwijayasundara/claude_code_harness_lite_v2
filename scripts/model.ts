@@ -122,12 +122,14 @@ export function openQuestions(text: string): string[] {
 // Concerns a spec, plan or design flags against a policy skill: bullets under `## Concerns` other than "none" without a
 // `resolved:`. Approval needs none. A document with no Concerns section has none, so changes begun before it keep working.
 export function unresolvedConcerns(text: string): string[] {
-  const section = /^##\s+Concerns\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(text)?.[1] ?? ''
-  const items: { text: string; body: string }[] = []
+  const section = /^##\s+Concerns\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(text.replace(/\r\n?/g, '\n'))?.[1] ?? ''
+  const items: { text: string; body: string; indent: number }[] = []
   for (const l of section.split('\n')) {
-    const top = /^(?:[-*]|\d+[.)])\s+(.*)$/.exec(l)
-    if (top) items.push({ text: (top[1] ?? '').trim(), body: l })
-    else if (/^\s+\S/.test(l) && items.length) items[items.length - 1]!.body += `\n${l}`
+    const m = /^(\s*)(?:[-*]|\d+[.)])\s+(.*?)\s*$/.exec(l)
+    const indent = (m?.[1] ?? /^\s*/.exec(l)?.[0] ?? '').length
+    const cur = items[items.length - 1]
+    if (m && (!cur || indent <= cur.indent)) items.push({ text: m[2] ?? '', body: l, indent })
+    else if (cur && l.trim() && indent > cur.indent) cur.body += `\n${l}`
   }
   return items.filter(i => i.text && !/^none\.?$/i.test(i.text) && !/\bresolved:/i.test(i.body)).map(i => i.text)
 }
