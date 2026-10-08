@@ -128,8 +128,10 @@ function parseScopes(raw: unknown, config: SensorConfig, errors: string[]): void
 }
 
 const BAND_ID = /^[a-z0-9][a-z0-9-]{0,40}$/
-const BAND_KEYS = new Set(['id', 'query', 'count', 'window', 'rules', 'step', 'tiers'])
-const READ_ONLY_TOOL = /^(Read|Grep|Glob|Bash\([^()]+\))$/
+const BAND_KEYS = new Set(['id', 'query', 'count', 'window', 'rules', 'step', 'minSd', 'tiers'])
+// Read-only commands only, and no quote or shell characters: the list is passed to the diagnosis step's --allowedTools.
+const READ_ONLY_BASH = /^Bash\((gh (run|pr|issue) (view|list)|git (log|show|diff|status|blame)|ls|cat|head|tail|wc)( [A-Za-z0-9_.\/=:-]+)*( \*)?\)$/
+const READ_ONLY_TOOL = (t: string): boolean => /^(Read|Grep|Glob)$/.test(t) || READ_ONLY_BASH.test(t)
 const ROUTES = new Set(['pull_request', 'runbook:rollback'])
 
 // Monitoring bands for `sdlc.ts watch` (playbook p.50). Tier-2 diagnosis tools must be read-only; tier 3 may only open a pull
@@ -146,13 +148,14 @@ function parseBands(raw: unknown, config: SensorConfig, errors: string[]): void 
     if ('count' in b && typeof b.count !== 'string') errors.push(`${at}.count must be a string`)
     if ('window' in b && !(posInt(b.window) && b.window >= 5)) errors.push(`${at}.window must be a whole number of at least 5`)
     if ('step' in b && !(typeof b.step === 'number' && b.step >= 0 && b.step <= 3)) errors.push(`${at}.step must be a number from 0 to 3 (σ per dismissal)`)
+    if ('minSd' in b && !(typeof b.minSd === 'number' && b.minSd >= 0)) errors.push(`${at}.minSd must be a number of at least 0 (the σ floor, in the metric's units)`)
     if ('rules' in b && b.rules !== 'western_electric') errors.push(`${at}.rules must be "western_electric"`)
     const tier = (n: string): Record<string, unknown> => (isObject(b.tiers) && isObject(b.tiers[n]) ? b.tiers[n] : {})
     const tools = typeof tier('2').tools === 'string' && String(tier('2').tools).trim() ? String(tier('2').tools) : 'Read,Grep,Glob'
-    if (!tools.split(/,(?![^(]*\))/).every(t => READ_ONLY_TOOL.test(t.trim()))) errors.push(`${at}.tiers.2.tools must be read-only: Read, Grep, Glob or Bash(<command> *)`)
+    if (!tools.split(/,(?![^(]*\))/).every(t => READ_ONLY_TOOL(t.trim()))) errors.push(`${at}.tiers.2.tools must be read-only: Read, Grep, Glob, or Bash(<gh run|pr|issue view|list, git log|show|diff|status|blame, ls, cat, head, tail, wc> <plain arguments> *)`)
     const routes = isStringList(tier('3').routes) ? tier('3').routes as string[] : ['pull_request']
     for (const r of routes) if (!ROUTES.has(r)) errors.push(`${at}.tiers.3.routes: unknown route "${r}"`)
-    bands.push({ id: b.id, query: b.query, ...(typeof b.count === 'string' ? { count: b.count } : {}), window: posInt(b.window) && b.window >= 5 ? b.window : 30, step: typeof b.step === 'number' && b.step >= 0 && b.step <= 3 ? b.step : 0.5, tools, routes })
+    bands.push({ id: b.id, query: b.query, ...(typeof b.count === 'string' ? { count: b.count } : {}), window: posInt(b.window) && b.window >= 5 ? b.window : 30, step: typeof b.step === 'number' && b.step >= 0 && b.step <= 3 ? b.step : 0.5, minSd: typeof b.minSd === 'number' && b.minSd >= 0 ? b.minSd : 0, tools, routes })
   }
   config.bands = bands
 }

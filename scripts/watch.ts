@@ -30,11 +30,14 @@ export function pointOf(stdout: string, count?: string): number | null {
 }
 
 // The tier for the newest point of `series` (oldest first). The baseline is up to `window` points before the last SPAN.
-export function evaluate(series: number[], window: number, widen = 0): { tier: 0 | 1 | 2 | 3; mean: number | null; sd: number | null; rule: string } {
+// `minSd` floors σ in the metric's units. A constant baseline with no floor has no scale: any change is at most tier 2 (diagnose, never act).
+export function evaluate(series: number[], window: number, widen = 0, minSd = 0): { tier: 0 | 1 | 2 | 3; mean: number | null; sd: number | null; rule: string } {
   const base = series.slice(0, -SPAN).slice(-window)
   if (base.length < MIN_SAMPLE) return { tier: 0, mean: null, sd: null, rule: `learning: ${base.length} of ${MIN_SAMPLE} baseline points` }
   const mean = base.reduce((a, b) => a + b, 0) / base.length
-  const sd = Math.sqrt(base.reduce((a, b) => a + (b - mean) ** 2, 0) / base.length) || Number.EPSILON
+  const spread = Math.max(Math.sqrt(base.reduce((a, b) => a + (b - mean) ** 2, 0) / base.length), minSd)
+  if (spread === 0) return series.slice(-SPAN).some(v => v !== mean) ? { tier: 2, mean, sd: 0, rule: 'constant baseline: set minSd to tune this band' } : { tier: 0, mean, sd: 0, rule: 'within band' }
+  const sd = spread
   const z = series.slice(-SPAN).map(v => (v - mean) / sd)
   const beyond = (k: number, n: number, of: number): boolean => z.length >= of && [1, -1].some(s => z.slice(-of).filter(x => x * s > k + widen).length >= n)
   const at = (tier: 0 | 1 | 2 | 3, rule: string) => ({ tier, mean, sd, rule })
@@ -68,7 +71,7 @@ export function cmdWatch(args: Args): void {
       return { ...base, tier: 0, value: null, mean: null, sd: null, rule: 'query failed: no point recorded', breach: null }
     }
     const series = [...readJsonl<Row>(file).flatMap(p => (typeof p.value === 'number' ? [p.value] : [])), value]
-    const e = evaluate(series, b.window, Math.min(MAX_WIDEN, b.step * dismissals(b.id)))
+    const e = evaluate(series, b.window, Math.min(MAX_WIDEN, b.step * dismissals(b.id)), b.minSd)
     append(file, { at: now(), value, tier: e.tier, rule: e.rule })
     return { ...base, value, ...e, breach: e.tier >= 2 ? `breach-${b.id}-${day}` : null }
   })

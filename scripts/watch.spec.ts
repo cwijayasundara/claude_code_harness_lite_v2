@@ -16,8 +16,8 @@ const posix = { skip: process.platform === 'win32' ? 'POSIX shell only' : false 
 test('bands: defaults, and every bad entry is a precise error', () => {
   const ok = parseConfig(JSON.stringify({ bands: [{ id: 'ci-failure-rate', query: 'gh run list --limit 50 --json conclusion', count: 'failure', tiers: { 2: { tools: 'Read,Grep,Bash(gh run view *)' }, 3: { routes: ['pull_request', 'runbook:rollback'] } } }] }))
   assert.deepEqual(ok.errors, [])
-  assert.deepEqual(ok.config.bands, [{ id: 'ci-failure-rate', query: 'gh run list --limit 50 --json conclusion', count: 'failure', window: 30, step: 0.5, tools: 'Read,Grep,Bash(gh run view *)', routes: ['pull_request', 'runbook:rollback'] }])
-  assert.deepEqual(parseConfig(JSON.stringify({ bands: [{ id: 'p95', query: 'cat p95.txt' }] })).config.bands[0], { id: 'p95', query: 'cat p95.txt', window: 30, step: 0.5, tools: 'Read,Grep,Glob', routes: ['pull_request'] })
+  assert.deepEqual(ok.config.bands, [{ id: 'ci-failure-rate', query: 'gh run list --limit 50 --json conclusion', count: 'failure', window: 30, step: 0.5, minSd: 0, tools: 'Read,Grep,Bash(gh run view *)', routes: ['pull_request', 'runbook:rollback'] }])
+  assert.deepEqual(parseConfig(JSON.stringify({ bands: [{ id: 'p95', query: 'cat p95.txt' }] })).config.bands[0], { id: 'p95', query: 'cat p95.txt', window: 30, step: 0.5, minSd: 0, tools: 'Read,Grep,Glob', routes: ['pull_request'] })
   const errs = (bands: unknown): string => parseConfig(JSON.stringify({ bands })).errors.join('\n')
   assert.match(errs({ id: 'x' }), /bands must be a list/)
   assert.match(errs([{ id: 'CI_rate', query: 'x' }]), /bands\[0\]\.id must be a unique kebab-case name/)
@@ -104,13 +104,13 @@ test('a failed query is tier 0 with no point; two misses in a row warn in status
 
 test('a person closing a breach intent widens that band only', () => {
   const repo = watched(history)
-  write(repo, 'value.txt', '14.5\n')
-  assert.equal(watchJson(repo)[0].tier, 3)
-  write(repo, '.sdlc/watch/p95.jsonl', history.map(v => JSON.stringify({ at: '2026-09-01T00:00:00Z', value: v })).join('\n') + '\n')
+  const reset = () => write(repo, '.sdlc/watch/p95.jsonl', history.map(v => JSON.stringify({ at: '2026-09-01T00:00:00Z', value: v })).join('\n') + '\n')
+  write(repo, 'value.txt', '14.25\n')
+  for (const d of [1, 2, 3]) write(repo, `.sdlc/intent/breach-other-2026090${d}.md`, '---\nstatus: closed\n---\n# another band\n')
+  assert.equal(watchJson(repo)[0].tier, 3, "another band's dismissals do not widen this one")
+  reset()
   write(repo, '.sdlc/intent/breach-p95-20260901.md', '---\nstatus: closed\n---\n# noise\n')
-  write(repo, '.sdlc/intent/breach-p95-20260902.md', '---\nstatus: closed\n---\n# noise\n')
-  write(repo, '.sdlc/intent/breach-other-20260902.md', '---\nstatus: closed\n---\n# another band\n')
-  assert.equal(watchJson(repo)[0].tier, 0, 'two dismissals at step 0.5 widen by 1σ: z 3.5 no longer trips')
+  assert.equal(watchJson(repo)[0].tier, 0, 'one dismissal at step 0.5: z 3.25 no longer trips')
 })
 
 test('watch with no bands says so; the evidence is denied to the Edit tool in both templates', () => {
@@ -148,16 +148,16 @@ const verdict = (tier: number, extra: Record<string, unknown> = {}) => JSON.stri
 test('rig-watch decide: tier 2 or above becomes a breach to diagnose; below that, nothing', posix, () => {
   const quiet = runCut('watch-decide', { 'watch.json': verdict(1) })
   assert.equal(quiet.code, 0, quiet.out)
-  assert.deepEqual(quiet.outputs, {})
+  assert.deepEqual(quiet.outputs, { rollback: 'false' })
   const r = runCut('watch-decide', { 'watch.json': verdict(2) })
   assert.equal(r.code, 0, r.out)
   assert.deepEqual(r.outputs, { breach: 'breach-p95-20261008', band: 'p95', tier: '2', tools: 'Read,Bash(gh run view *)', summary: '15 against mean 11 (sd 1): one point beyond 3σ', rollback: 'false' })
 })
 
 test('rig-watch decide: a breach already in the inbox or open as a branch is not raised twice; a bad id is refused', posix, () => {
-  assert.deepEqual(runCut('watch-decide', { 'watch.json': verdict(3), '.sdlc/intent/breach-p95-20261008.md': 'x' }).outputs, {})
+  assert.deepEqual(runCut('watch-decide', { 'watch.json': verdict(3), '.sdlc/intent/breach-p95-20261008.md': 'x' }).outputs, { rollback: 'false' })
   const branch = runCut('watch-decide', { 'watch.json': verdict(3) }, {}, 'case "$*" in *branches/rig-watch/breach-p95-20261008*) exit 0 ;; *) exit 1 ;; esac')
-  assert.deepEqual(branch.outputs, {})
+  assert.deepEqual(branch.outputs, { rollback: 'false' })
   const bad = runCut('watch-decide', { 'watch.json': verdict(3, { breach: 'breach-../../x-1' }) })
   assert.notEqual(bad.code, 0)
 })
@@ -196,17 +196,24 @@ test('rig-watch: hourly, a read-only model job, a model-free publish job, and a 
   assert.match(yml, /--model claude-haiku-5-5/)
   assert.match(yml, /node --disable-warning=ExperimentalWarning \.sdlc\/bin\/sdlc\.ts watch --json > watch\.json/)
   assert.match(yml, /actions\/cache@v4[\s\S]*path: \.sdlc\/watch/)
-  const watchJob = yml.slice(yml.indexOf('\n  watch:\n'), yml.indexOf('\n  publish:\n'))
+  const detectJob = yml.slice(yml.indexOf('\n  detect:\n'), yml.indexOf('\n  diagnose:\n'))
+  const diagnoseJob = yml.slice(yml.indexOf('\n  diagnose:\n'), yml.indexOf('\n  publish:\n'))
   const publishJob = yml.slice(yml.indexOf('\n  publish:\n'), yml.indexOf('\n  rollback:\n'))
   const rollbackJob = yml.slice(yml.indexOf('\n  rollback:\n'))
-  assert.match(watchJob, /contents: read/)
-  assert.doesNotMatch(watchJob, /contents: write|pull-requests: write/)
-  assert.match(watchJob, /persist-credentials: false/)
-  assert.match(watchJob, /claude-code-action/)
+  assert.ok([detectJob, diagnoseJob, publishJob, rollbackJob].every(j => j.length > 20), 'four jobs: detect, diagnose, publish, rollback')
+  assert.doesNotMatch(detectJob, /claude/i, 'detection and the rollback decision never wait on a model')
+  assert.match(detectJob, /actions\/cache@v4/)
+  assert.match(detectJob, /concurrency:/, 'only detection is serialised')
+  assert.doesNotMatch(yml.slice(0, yml.indexOf('\njobs:')), /concurrency:/, 'a rollback awaiting approval never blocks the next hour')
+  for (const j of [detectJob, diagnoseJob]) { assert.match(j, /contents: read/); assert.doesNotMatch(j, /contents: write|pull-requests: write/); assert.match(j, /persist-credentials: false/) }
+  assert.match(diagnoseJob, /claude-code-action/)
+  assert.match(diagnoseJob, /needs: detect/)
   assert.doesNotMatch(publishJob, /claude/i, 'the job that pushes runs no model')
+  assert.match(publishJob, /needs: \[detect, diagnose\]|needs: diagnose/)
   assert.match(publishJob, /contents: write/)
+  assert.match(rollbackJob, /needs: detect\n/, 'a failed diagnosis never skips the rollback')
   assert.match(rollbackJob, /environment: production/)
-  assert.match(rollbackJob, /if: needs\.watch\.outputs\.rollback == 'true'/)
+  assert.match(rollbackJob, /if: needs\.detect\.outputs\.rollback == 'true'/)
   assert.match(rollbackJob, /vars\.RIG_ROLLBACK_COMMAND/)
   assert.doesNotMatch(yml, /run: .*\$\{\{/, 'no expression is interpolated into a one-line run script')
 })
@@ -252,4 +259,40 @@ test('docs: rig-watch setup, the Claude Tag handoff and the security row', () =>
   assert.match(readme, /Claude Tag[^\n]*\/rig:incident/)
   const sec = fs.readFileSync(path.join(ROOT, 'SECURITY.md'), 'utf8')
   assert.match(sec, /`rig-watch\.yml`[^\n]*no model[^\n]*production/)
+})
+
+test('rig-watch decide: an already-raised band still rolls back at tier 3, and the next breaching band is raised', posix, () => {
+  const two = JSON.stringify([
+    { id: 'p95', tier: 3, value: 15, mean: 11, sd: 1, rule: 'one point beyond 3σ', breach: 'breach-p95-20261008', tools: 'Read', routes: ['pull_request', 'runbook:rollback'] },
+    { id: 'errors', tier: 2, value: 9, mean: 4, sd: 2, rule: 'two of three beyond 2σ', breach: 'breach-errors-20261008', tools: 'Read,Grep', routes: ['pull_request'] },
+  ])
+  const r = runCut('watch-decide', { 'watch.json': two, '.sdlc/intent/breach-p95-20261008.md': 'raised at tier 2 this morning' }, {}, 'case "$*" in *rig-rehearse*) echo success ;; *) exit 1 ;; esac')
+  assert.equal(r.code, 0, r.out)
+  assert.equal(r.outputs.rollback, 'true', 'escalation to tier 3 is not lost to the same-day dedupe')
+  assert.equal(r.outputs.breach, 'breach-errors-20261008', 'the second band is raised')
+})
+
+test('rig-watch decide: a failed query is a job warning; tools with quotes or shell characters are refused', posix, () => {
+  const miss = JSON.stringify([{ id: 'p95', tier: 0, value: null, mean: null, sd: null, rule: 'query failed: no point recorded', breach: null, tools: 'Read', routes: [] }])
+  assert.match(runCut('watch-decide', { 'watch.json': miss }).out, /::warning::band p95: query failed/)
+  const bad = runCut('watch-decide', { 'watch.json': verdict(2, { tools: 'Read" --permission-mode bypassPermissions "x' }) })
+  assert.notEqual(bad.code, 0)
+  assert.equal(bad.outputs.breach, undefined)
+})
+
+test('bands: tier-2 Bash tools must be known read-only commands with no shell or quote characters', () => {
+  const errs = (tools: string): string => parseConfig(JSON.stringify({ bands: [{ id: 'a', query: 'x', tiers: { 2: { tools } } }] })).errors.join('\n')
+  for (const ok of ['Read,Grep,Glob', 'Read,Bash(gh run view *)', 'Bash(git log *),Bash(gh pr view *)', 'Bash(gh run list --limit 20 *)']) assert.equal(errs(ok), '', ok)
+  for (const bad of ['Bash(*)', 'Bash(sh -c *)', 'Bash(curl *)', 'Bash(git push *)', 'Bash(gh run view "x)', 'Bash(gh run view $(id))', 'Bash(git log; rm *)']) assert.match(errs(bad), /tiers\.2\.tools must be read-only/, bad)
+})
+
+test('a constant baseline caps at tier 2 until the band sets minSd; with minSd, dismissals tune it', () => {
+  const flat = [...Array(20).fill(0), ...Array(7).fill(0), 1] as number[]
+  const capped = evaluate(flat, 30)
+  assert.equal(capped.tier, 2)
+  assert.match(capped.rule, /constant baseline: set minSd/)
+  assert.equal(evaluate(flat, 30, 0, 0.2).tier, 3, 'z 5 against the floor')
+  assert.equal(evaluate(flat, 30, 2, 0.2).tier, 0, 'two sigma of widening tunes it')
+  assert.equal(parseConfig(JSON.stringify({ bands: [{ id: 'a', query: 'x', minSd: 0.05 }] })).config.bands[0]?.minSd, 0.05)
+  assert.match(parseConfig(JSON.stringify({ bands: [{ id: 'a', query: 'x', minSd: -1 }] })).errors.join(), /minSd must be a number of at least 0/)
 })
