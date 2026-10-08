@@ -40,6 +40,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     pressure: 'normal',
     noStep: false,
     notify: '',
+    logUsage: '',
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -61,6 +62,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
       : sub === 'impact-status' ? JSON.stringify(world.impact)
       : sub === 'check-file' ? JSON.stringify(world.fileFindings)
       : sub === 'sensors' ? 'last gate: 0 block(s)'
+      : sub === 'log-usage' ? world.logUsage
       : 'approved add-login plan'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -187,6 +189,20 @@ describe('sdlc mod', () => {
     expect(row.kind).toBe('main')
     expect(row.usd).toBe(0.25)
     expect(row.out).toBe(200)
+  })
+
+  test('the first main turn is flagged for the context sensor, and only its rig: lines become toasts', async ($, on) => {
+    const world = worldOf(on, { contextTokens: 60_000 })
+    world.logUsage = 'rig: the first call of this session is 60k tokens before any work (limit 25k)\nnoise'
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    const turn = { answer: '', durationMs: 1, isAborted: false, reason: 'answer' as const }
+    await $.turn.complete({ ...turn, turnId: 't1' })
+    world.logUsage = ''
+    await $.turn.complete({ ...turn, turnId: 't2' })
+    const rows = world.runs.filter(r => r.argv.includes('log-usage')).map(r => JSON.parse(String(r.argv.at(-1))))
+    expect(rows.map(r => r.first)).toEqual([true, undefined])
+    expect(world.toasts).toEqual(['rig: the first call of this session is 60k tokens before any work (limit 25k)'])
   })
 
   test('a cost ledger that reset mid-session logs the new ledger, never a negative delta', async ($, on) => {

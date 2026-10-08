@@ -1,5 +1,5 @@
 {
-  "$comment": "Project settings for the sdlc harness. Merge into <project>/.claude/settings.json and commit. superpowers is off so sdlc routes all work (turn it on only for \"build\": \"sdd\"); turn off any other plugin your team does not use here too. Evidence is protected by these rules and by CI, which recomputes every verdict: a shell script can still write a file, so CI plus branch protection is the boundary.",
+  "$comment": "Project settings for the sdlc harness. Merge into <project>/.claude/settings.json and commit. superpowers is off so sdlc routes all work (turn it on only for \"build\": \"sdd\"); turn off any other plugin your team does not use here too. Evidence is protected by these rules and by CI, which recomputes every verdict: a shell script can still write a file, so CI plus branch protection is the boundary. ENABLE_STOP_REVIEW=0 turns off the security-guidance plugin's review on every Stop and SubagentStop (an agentic Opus review of the whole diff, twice, per turn): rig's reviewer or /security-review at the PR node is the one review per change; its commit and push reviews stay.",
   "enabledPlugins": {
     "superpowers@claude-plugins-official": false
   },
@@ -54,6 +54,7 @@
     ]
   },
   "env": {
+    "ENABLE_STOP_REVIEW": "0",
     "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "true",
     "CLAUDE_CODE_SUBAGENT_MODEL": "claude-haiku-5-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-5-5",

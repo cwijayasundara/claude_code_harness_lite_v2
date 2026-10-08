@@ -1,0 +1,7 @@
+{
+  "$comment": "Working on rig itself. rig is not enabled on this repo (no .sdlc/): superpowers skills route the work, CLAUDE.md pins the models and the one-review-per-change rule. ENABLE_STOP_REVIEW=0 stops the security-guidance plugin's per-turn Opus review; run /security-review once per PR instead. model: sonnet keeps the coordinator off Opus (CLAUDE.md); /model opus only by explicit choice.",
+  "model": "sonnet",
+  "env": {
+    "ENABLE_STOP_REVIEW": "0"
+  }
+}

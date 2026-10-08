@@ -14,6 +14,7 @@ import { loadConfig, runChecks, editFindings } from './check.ts'
 import { formatFindings, isSource, isTest, matchesAny, warnRow, type Finding, type SensorConfig } from './model.ts'
 import { sessionNote } from './githooks.ts'
 import { appendEvent, readEvents } from './ratchet.ts'
+import { treeStamp } from './stamp.ts'
 
 function readStdin(): HookInput {
   try {
@@ -123,13 +124,15 @@ function hookSkillFailed(input: HookInput): void {
 }
 
 export type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number>; warnRows?: string[]; shown?: boolean }
-export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; guides: Record<string, string[]>; last?: GateSummary }
+// trees: stamps of working trees on which the fast commands passed, kept across turns (the per-turn fields reset at each prompt).
+export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; guides: Record<string, string[]>; trees: string[]; last?: GateSummary }
 
 const GATE = path.join(SDLC, '.gate')
 const UNRESOLVED = path.join(SDLC, 'unresolved.json')
 const MAX_BLOCKS = 2
 const STOP_BUDGET_MS = 60_000
-const emptyGate = (): Gate => ({ turn: '', blocks: {}, passed: {}, tool: [], guides: {} })
+const PASSED_TREES = 20
+const emptyGate = (): Gate => ({ turn: '', blocks: {}, passed: {}, tool: [], guides: {}, trees: [] })
 
 export function readGate(): Gate {
   try {
@@ -138,7 +141,7 @@ export function readGate(): Gate {
     const obj = <T>(v: unknown, dflt: T): T => (v && typeof v === 'object' && !Array.isArray(v) ? (v as T) : dflt)
     return {
       turn: typeof g.turn === 'string' ? g.turn : d.turn, blocks: obj(g.blocks, d.blocks), passed: obj(g.passed, d.passed),
-      tool: Array.isArray(g.tool) ? g.tool.map(String) : d.tool, guides: obj(g.guides, d.guides),
+      tool: Array.isArray(g.tool) ? g.tool.map(String) : d.tool, guides: obj(g.guides, d.guides), trees: Array.isArray(g.trees) ? g.trees.map(String) : d.trees,
       ...(g.last && typeof g.last === 'object' ? { last: g.last as GateSummary } : {}),
     }
   } catch {
@@ -192,8 +195,12 @@ function hookStop(): void {
   const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.sdlc\/changes\/[^/]+\/ship\.json$/.test(f))
   // Harness files alone (onboarding writes CI workflows and settings) are not ad-hoc work.
   if (!slug && !shipped && diffs.some(d => isSource(d.file, config) && !isProtected(d.file))) slug = createAdhoc(tierFromDiff(diffs, config))
+  // The fast commands are keyed by the whole tree, not this turn's diff: a tree that already passed them (an edit undone, a
+  // file touched and restored, the same state reached from another turn) skips them, and only the sensors judge the diff.
+  const stamp = treeStamp()
+  const treePassed = stamp !== null && gate.trees.includes(stamp)
   const result = runChecks({
-    point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: 'fast', budgetMs: STOP_BUDGET_MS,
+    point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: treePassed ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
     before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null, ratchet: true,
   })
   const configBlocks: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
@@ -201,9 +208,10 @@ function hookStop(): void {
   const blocks = findings.filter(f => f.severity === 'block')
   gate.last = summarize(findings)
   // Write back only what this hook owns: edits recorded while the checks ran must survive.
-  const save = (): void => updateGate(g => { g.last = gate.last; if (gate.passed.main) g.passed.main = gate.passed.main; if (gate.blocks.main) g.blocks.main = gate.blocks.main })
+  const save = (): void => updateGate(g => { g.last = gate.last; if (gate.passed.main) g.passed.main = gate.passed.main; if (gate.blocks.main) g.blocks.main = gate.blocks.main; if (gate.trees !== g.trees) g.trees = gate.trees })
   if (!blocks.length) {
     gate.passed.main = hash
+    if (stamp && !treePassed) gate.trees = [...gate.trees, stamp].slice(-PASSED_TREES)
     save()
     if (exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
     const warns = gate.last?.warnRows ?? []

@@ -26,8 +26,8 @@ const turns = atom({ plugin: 'rig', key: 'turns' } as const, [] as TurnPoint[])
 const driverRunning = atom({ plugin: 'rig', key: 'driverRunning' } as const, false)
 const driverLast = atom({ plugin: 'rig', key: 'driverLast' } as const, '')
 
-let lastCostUsd = 0
-let warnedSoft = false
+let lastCostUsd = 0, warnedSoft = false
+let firstMainTurn = true // its ctx is the system prompt plus the prompt: the context sensor's "first call"
 let promptsSinceNudge = NUDGE_EVERY_PROMPTS
 // Change and stage as they stood when the current main turn started, so spend lands on the stage that incurred it.
 let turnChange: string | null = null
@@ -252,13 +252,14 @@ export const register: Register = on => {
         // A ledger below the last reading was reset (/clear starts a new one): everything on it is this turn's.
         row.usd = Number((costUsd >= lastCostUsd ? costUsd - lastCostUsd : costUsd).toFixed(4))
         row.ctx = session.context.tokens ?? 0
+        if (firstMainTurn) { row.first = true; firstMainTurn = false }
         lastCostUsd = costUsd
         if ((row.ctx as number) > SOFT_CONTEXT && !warnedSoft) {
           warnedSoft = true
           $.ui.toast(`Context at ${Math.round((row.ctx as number) / 1000)}k: finish this step, then /compact`)
         }
       }
-      await $.process.run(sdlc($, ['log-usage', JSON.stringify(row)]))
+      for (const line of (await $.process.run(sdlc($, ['log-usage', JSON.stringify(row)]))).stdout.split('\n').filter(l => l.startsWith('rig:'))) $.ui.toast(line) // the context sensor's warnings
       await update($, turns, h => [...h, turnPoint(usage, !!e.agentId, Number(row.usd ?? 0))].slice(-KEEP_TURNS))
       if (!e.agentId) status = await refreshBand($)
       const hot = (l?: string) => l === 'notice' || l === 'tight' || l === 'over'
