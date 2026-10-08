@@ -31,7 +31,7 @@ Thin layer with built-ins first; ceremony scales with risk; state lives in files
  ┌────────────────────────────────────────────────────────────────────────┐
  │ YOU            /rig:start  /rig:next  /rig-approve  /rig-waive         │  intent, approval
  ├────────────────────────────────────────────────────────────────────────┤
- │ SKILLS (14)    start design plan diagnose build test sensors pr …      │  the stages: prompts
+ │ SKILLS (16)    start design plan diagnose build test sensors pr …      │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
  │ AGENTS (4)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
  │                reviewer·opus                                         │  small fresh contexts
@@ -119,7 +119,8 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | Command | Use it when | Cost |
 |---|---|---|
 | `/rig:init` | First time in a repo. Writes CLAUDE.md, `.sdlc/`, and vendors the harness. | tokens, once |
-| `/rig:start "<task>"` | Any new task, or to resume one by slug. Classifies type and tier, writes `intent.md`; tier S is built in the same turn. | tokens |
+| `/rig:intent "<idea>"` | Anyone with an idea, in Claude Code or on claude.ai. Asks for the author and writes a draft `.sdlc/intent/<name>.md` for a product owner to accept (without a file system it shows the file to commit). | tokens |
+| `/rig:start "<task>"` | Any new task, or to resume one by slug, or an inbox file (`.sdlc/intent/<name>.md`); `--plan-only` stops before any build. Classifies type and tier, writes `intent.md`; tier S is built in the same turn. | tokens |
 | `/rig:next` | You are not sure what is next. Runs the next node, stops at a human gate. | tokens |
 | `/rig:design` · `/rig:plan` · `/rig:spec` | Writing the design (feature, greenfield), plan (refactor, migration, L bugfix) or spec. | Opus architect |
 | `/rig:diagnose` | Bugfix or incident: reproduce with a failing test, then the smallest fix. | tokens |
@@ -168,7 +169,15 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 
 Results append to `.sdlc/evals/results.jsonl`, which you commit: it is the evidence a person attaches to the PR (two branches that both ran evals merge it by keeping both sides). A result also depends on the runner's user-level Claude Code settings, not only on the repository.
 
-**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `preflight`, `points`, `shards`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `vendor`, `hooks`, `hook <event>`, `evals`. Skills and CI call these; so can you.
+**The script underneath** (`node .sdlc/bin/sdlc.ts <cmd>`): `status`, `next`, `inbox`, `check`, `check-file`, `diff`, `quality`, `ratchet`, `run`, `verify`, `verify-report`, `pr`, `pr-checks`, `scope-drift`, `secrets`, `preflight`, `points`, `shards`, `waive`, `approve`, `impact-status`, `metrics`, `scorecard`, `vendor`, `hooks`, `hook <event>`, `evals`. Skills and CI call these; so can you.
+
+### Intent inbox and policy skills
+
+`.sdlc/intent/<name>.md` holds ideas before a change exists. A person writes `status: draft | accepted | closed`; `shipped` is derived from the change whose intent.md names the file as `source:`. `sdlc.ts inbox [--pending] [--json]` lists them, and `status` names accepted ones with no change (also before any change exists). Accepting is a merge, so put `/.sdlc/intent/` in CODEOWNERS and the inbox's owners decide. The `intent` skill can also be uploaded to claude.ai for people who don't use Claude Code.
+
+`templates/rig-spec.yml` drafts each accepted intent after it merges to the trunk. A read-only model job runs `/rig-start … --plan-only` (`--plan-only` stops `start` and `design` before asking for approval and before any build; resuming under it reports status and stops). A model-free job accepts only rig's own files in one change folder, refuses a change the trunk already has, and publishes only the Markdown a person reviews (`intent.md`, `design.md`, `spec.md`, `plan.md`, `notes.md`) as a PR on `sdlc/intent-<name>`. rig's records (ratchet.json, impact.json and the rest) are not published, so the change waits for `/rig-approve <slug> tier <S|M|L> <type>` before any other step, and resuming it re-runs `check --at plan` to re-derive impact. A PR opened with `github.token` triggers no `pull_request` workflows, so a required `rig-check` waits: push a commit to the PR branch, close and reopen the PR, or give `gh pr create` a GitHub App or fine-grained token so checks run. If a run pushed the branch but failed before the PR opened, the intent is no longer pending: delete `sdlc/intent-<name>` to redraft it. One secret is needed: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`.
+
+Policy skills live at `.claude/skills/policy-<area>/SKILL.md` with an `owner` and a `source`; `init --full` scaffolds `policy-security`. Design, plan and spec apply each one and record a conflict as `- [policy-<area>] <concern> → owner: <owner>` under `## Concerns`. Any `## Concerns…` or `### Concerns…` heading counts. Approval is refused until each concern ends ` → resolved: <decision> (<owner>)` (on an indented line below it also counts); a document without the section approves as before.
 
 ### What fires when (the automatic edges)
 
@@ -248,7 +257,7 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 | Part | Role |
 |---|---|
-| `skills/` (15) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. The tier picks the subagents' model (S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5) and each agent's own `model:` is the default when no tier applies; they start with their own small contexts. |
+| `skills/` (16) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. The tier picks the subagents' model (S Haiku 5.5, M Sonnet 5.5, L and greenfield Opus 5.5) and each agent's own `model:` is the default when no tier applies; they start with their own small contexts. |
 | `agents/scout.md` | Haiku 5.5, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md, plan.md and design.md, the design-heavy steps. |
 | `agents/implementer.md` | **Sonnet 5.5**. The code generator: builds one slice test-first and reports real test output. |

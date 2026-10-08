@@ -12,13 +12,14 @@ import {
   WAIVERS, readJsonl, type Waiver, ensureGitignore, clearState, PLUGIN_ROOT, IS_VENDORED, skillRef, setActive, createChange, sanctionWrites, type Args, type Approval, type Change, type GatedStage, type UsageRow,
 } from './core.ts'
 import { PATHS, isChangeType, isTier, activeSlug, loadChange, nextCommand, step, tierDrift } from './graph.ts'
-import { formatFindings, openQuestions, SENSOR_NAMES, type Finding } from './model.ts'
+import { formatFindings, openQuestions, unresolvedConcerns, SENSOR_NAMES, type Finding } from './model.ts'
 import { readBaseline, branchDiff, turnDiff, type Snapshot } from './diffs.ts'
 import { cmdHook, readGate } from './hooks.ts'
 import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig } from './check.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdEvals, lastRun } from './evals.ts'
+import { cmdInbox, pendingIntents } from './inbox.ts'
 import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
@@ -82,17 +83,20 @@ function cmdInit(args: Args): void {
 
 function cmdNew(args: Args): void {
   const slug = args.pos[0]
-  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N]')
+  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N] [--source .sdlc/intent/<file>.md]')
   const type = optString(args, 'type') ?? 'feature'
   const tier = optString(args, 'tier') ?? 'M'
   if (!isChangeType(type)) fail(`unknown type "${type}"; one of ${Object.keys(PATHS).join(', ')}`)
   if (!isTier(tier)) fail('tier must be S, M or L')
+  // An inbox file only: a plain kebab .md name under .sdlc/intent/ that exists (no `..`, no other directory).
+  const source = optString(args, 'source')
+  if (source !== undefined && (!/^\.sdlc\/intent\/[a-z0-9][a-z0-9-]{0,60}\.md$/.test(source) || !exists(path.join(ROOT, source)))) fail(`--source must name an existing .sdlc/intent/<kebab-name>.md file, not "${source}"`)
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
   if (!exists(SDLC)) cmdInit({ pos: [], opt: {} })
   const explicit = args.opt.points !== undefined ? parsePoints(args.opt.points) : null
   const defaults = loadConfig().config.points
-  createChange(slug, type, tier, optString(args, 'title') ?? slug, { value: explicit ?? defaults[tier], set: explicit !== null })
+  createChange(slug, type, tier, optString(args, 'title') ?? slug, { value: explicit ?? defaults[tier], set: explicit !== null }, source)
   const other = otherChangeBranch(slug)
   out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})${other ? `\nwarning: ${other}` : ''}`)
 }
@@ -143,13 +147,14 @@ function cmdStatus(args: Args): void {
     if (stacked) warnings.push(stacked)
     if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
   }
+  for (const e of pendingIntents()) warnings.push(`intent ${e.file} is accepted and has no change: ${skillRef('start')} .sdlc/intent/${e.file}`)
   const stale = [...repoStale(ROOT), ...stalenessAll(changes.map(c => c.slug))]
   const open = changes.flatMap(c => openItems(c.slug))
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
     return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
   }
-  if (!changes.length) return out(`no changes yet: run ${skillRef('start')} "<what you want>"`)
+  if (!changes.length) return out([`no changes yet: run ${skillRef('start')} "<what you want>"`, ...warnings.map(w => `warn: ${w}`)].join('\n'))
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
   const rows = changes
     .sort((a, b) => (a.slug === active ? -1 : b.slug === active ? 1 : 0))
@@ -205,6 +210,8 @@ function cmdApprove(args: Args): void {
     const list = open.map(q => `  - ${q}`).join('\n')
     fail(`resolve the open question(s) in ${open.some(q => q.startsWith('intent.md:')) ? `${slug}/intent.md` : `${slug}/${artifact}`} before approving: answer each, or record the default under ## Decisions, and leave "## Open questions" as none:\n${list}`)
   }
+  const concerns = ['spec', 'plan', 'design'].includes(stage) ? unresolvedConcerns(read(file)) : []
+  if (concerns.length) fail(`resolve the concern(s) in ${slug}/${artifact} with their policy owners before approving: add " → resolved: <decision> (<owner>)" to each:\n${concerns.map(c => `  - ${c}`).join('\n')}`)
   const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
   if (stage === 'impact' && !exists(path.join(CHANGES, slug, 'impact.json'))) fail(`nothing to approve: ${slug}/impact.json does not exist (run check --at plan first)`)
   const row: Approval = { slug, stage, by, at: now(), digest: approvalDigest(slug, stage as GatedStage) }
@@ -348,9 +355,20 @@ function cmdSensors(): void {
   ].join('\n'))
 }
 
+// A starting policy skill for design and review to apply; only the person-run init writes it, and never over an existing one.
+function scaffoldPolicy(): string {
+  const rel = '.claude/skills/policy-security/SKILL.md'
+  const src = path.join(PLUGIN_ROOT, 'templates', 'policy-security.md')
+  if (exists(path.join(ROOT, rel)) || !exists(src)) return ''
+  fs.mkdirSync(path.dirname(path.join(ROOT, rel)), { recursive: true })
+  fs.copyFileSync(src, path.join(ROOT, rel))
+  sanctionWrites([rel])
+  return `wrote ${rel}: set its owner and source`
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   stamp: () => out(treeStamp() ?? 'none'),
-  init: cmdInit,
+  init: args => { cmdInit(args); if (args.opt.full) { const note = scaffoldPolicy(); if (note) out(note) } },
   new: cmdNew,
   points: cmdPoints,
   activate: cmdActivate,
@@ -370,6 +388,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   hook: cmdHook,
   metrics: cmdMetrics,
   evals: cmdEvals,
+  inbox: cmdInbox,
   scorecard: cmdScorecard,
   diff: cmdDiff,
   quality: cmdQuality,

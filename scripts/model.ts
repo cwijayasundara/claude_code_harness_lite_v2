@@ -119,6 +119,25 @@ export function openQuestions(text: string): string[] {
   return [...new Set([...listed, ...prose])]
 }
 
+// Concerns a spec, plan or design flags against a policy skill: bullets under `## Concerns` other than "none" without a
+// `resolved:`. Approval needs none. A document with no Concerns section has none, so changes begun before it keep working.
+export function unresolvedConcerns(text: string): string[] {
+  // Any `## Concerns…` or `### Concerns…` heading opens the section (a variant must not fail open); it ends at the next heading of its level or above.
+  const t = text.replace(/\r\n?/g, '\n')
+  const head = /^(#{2,3})\s+Concerns\b[^\n]*\n/m.exec(t)
+  const rest = head ? t.slice(head.index + head[0].length) : ''
+  const section = rest.slice(0, new RegExp(`^#{1,${head?.[1]?.length ?? 2}}\\s`, 'm').exec(rest)?.index ?? rest.length)
+  const items: { text: string; body: string; indent: number }[] = []
+  for (const l of section.split('\n')) {
+    const m = /^(\s*)(?:[-*]|\d+[.)])\s+(.*?)\s*$/.exec(l)
+    const indent = (m?.[1] ?? /^\s*/.exec(l)?.[0] ?? '').length
+    const cur = items[items.length - 1]
+    if (m && (!cur || indent <= cur.indent || /\bowner:/i.test(m[2] ?? ''))) items.push({ text: m[2] ?? '', body: l, indent })
+    else if (cur && l.trim() && indent > cur.indent) cur.body += `\n${l}`
+  }
+  return items.filter(i => i.text && !/^none\.?$/i.test(i.text) && !/\bresolved:/i.test(i.body)).map(i => i.text)
+}
+
 // ---------- globs ----------
 
 // `**/` matches zero or more whole directories, `**` anything, `*` within one path segment.
