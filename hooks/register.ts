@@ -129,6 +129,7 @@ export const register: Register = on => {
     mod.aside = await vendoredCopyActive($)
     if (mod.aside) return next(e)
     coordinatorSwitched = false
+    turnPressure = 'normal'
     await update($, driverRunning, () => false)
     await update($, driverLast, () => '')
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
@@ -205,7 +206,7 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (mod.aside) return next(e)
-    if (await isInitialised($)) { const s = await statusJson($); ({ change: turnChange, stage: turnStage } = stageOf(s)); turnPressure = s?.step?.pressure ?? 'normal' }
+    if (await isInitialised($)) { const s = await statusJson($); ({ change: turnChange, stage: turnStage } = stageOf(s)); turnPressure = s?.step?.pressure ?? s?.pressure ?? 'normal' }
     return next(e)
   })
 

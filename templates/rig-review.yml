@@ -29,6 +29,7 @@ jobs:
       pull-requests: write
     outputs:
       usd: ${{ steps.cost.outputs.usd }}
+      slug: ${{ steps.model.outputs.slug }}
     steps:
       - name: Fork PRs need a maintainer review
         if: github.event.pull_request.head.repo.full_name != github.repository
@@ -71,6 +72,8 @@ jobs:
               process.stdout.write(t)' ".sdlc/changes/$slugs")
             case "$tier" in S) model=claude-sonnet-5-5; effort=medium ;; M) model=claude-sonnet-5-5; effort=high ;; esac
           fi
+          # The one change this PR touches, so its CI cost counts toward that change's budget; anything doubtful is left out.
+          if [ -n "$slugs" ] && [ "$(printf '%s\n' "$slugs" | wc -l | tr -d ' ')" = 1 ] && printf '%s' "$slugs" | grep -Eq '^[a-z0-9][a-z0-9-]{1,60}$'; then echo "slug=$slugs" >> "$GITHUB_OUTPUT"; fi
           echo "model=$model" >> "$GITHUB_OUTPUT"
           echo "effort=$effort" >> "$GITHUB_OUTPUT"
           # model-by-tier:end
@@ -144,7 +147,8 @@ jobs:
         env:
           USD: ${{ needs.review.outputs.usd }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}-review
+          SLUG: ${{ needs.review.outputs.slug }}
         # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
         run: |
           if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
-          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" ${SLUG:+--slug "$SLUG"} || echo "::warning::rig spend publish failed"

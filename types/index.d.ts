@@ -4,7 +4,7 @@ export type StepInfo = { slug: string; node: string | null; verdict: 'continue' 
 export type FlowStep = { label: string; command: string; why: string; state: 'done' | 'current' | 'gate' | 'todo' }
 export type BudgetLevel = 'none' | 'ok' | 'notice' | 'tight' | 'over'
 export type BudgetBand = { month: string; spentUsd: number; projectedUsd: number; budgetUsd: number | null; pct: number | null; level: BudgetLevel; asOf: string | null; sources: { id: string; through: string }[]; localOnly: boolean; change: { slug: string; spentUsd: number; budgetUsd: number | null; pct: number | null; level: BudgetLevel } | null }
-export type Status = { initialised: boolean; flow?: FlowStep[]; active?: string | null; changes?: { slug: string; next?: { stage: string } | null }[]; sensors?: SensorBand | null; story?: Story | null; step?: StepInfo | null; budget?: BudgetBand | null }
+export type Status = { pressure?: 'normal' | 'tight'; initialised: boolean; flow?: FlowStep[]; active?: string | null; changes?: { slug: string; next?: { stage: string } | null }[]; sensors?: SensorBand | null; story?: Story | null; step?: StepInfo | null; budget?: BudgetBand | null }
 
 // One captured turn: tokens by kind and the turn's dollars from the session ledger (main turns only; 0 for agents).
 export type TurnPoint = { main: boolean; in: number; out: number; cr: number; cw: number; usd: number }

@@ -38,6 +38,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     afterQuality: null as unknown,
     budget: null as unknown,
     pressure: 'normal',
+    noStep: false,
     notify: '',
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -53,7 +54,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', flow: world.noFlow ? undefined : [{ label: 'init', command: '', why: '', state: 'done' }, { label: 'start', command: '', why: '', state: 'done' }, { label: 'design', command: '', why: '', state: 'done' }, { label: 'build', command: '', why: '', state: 'current' }, { label: 'test', command: '', why: '', state: 'todo' }, { label: 'sensors', command: '', why: '', state: 'todo' }, { label: 'pr', command: '', why: '', state: 'todo' }], changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
         budget: world.budget,
-        step: { ...(world.step as object), pressure: world.pressure } })
+        ...(world.noStep ? { step: null, pressure: world.pressure } : { step: { ...(world.step as object), pressure: world.pressure } }) })
       : sub === 'spend' ? world.notify
       : sub === 'next' ? JSON.stringify(world.step)
       : sub === 'metrics' ? 'value/cost 9.5x'
@@ -614,6 +615,25 @@ describe('sdlc mod', () => {
     await step('claude-opus-5-5')
     expect(models).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'])
     expect(world.toasts.filter(t => t.includes('coordinator moved to Sonnet')).length).toBe(1)
+  })
+
+  test('with no active change the top-level team pressure still moves an Opus coordinator, and a new session starts normal', async ($, on) => {
+    const world = worldOf(on)
+    world.noStep = true
+    world.pressure = 'tight'
+    const models: string[] = []
+    on('turn.step', async function* (_$: unknown, e: { model: string; turnId: string; index: number }) { models.push(e.model); return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null } } as never)
+    on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }) as never)
+    await $.session.start(SESSION)
+    await $.turn.start({ text: '', turnId: 't1' })
+    const s = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+    for await (const _ of s) { /* drain */ }
+    expect(models).toEqual(['claude-sonnet-5-5'])
+    world.pressure = 'normal'
+    await $.session.start(SESSION) // reset: no stale tight pressure before the first turn.start
+    const s2 = $.turn.step({ turnId: 't2', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+    for await (const _ of s2) { /* drain */ }
+    expect(models.at(-1)).toBe('claude-opus-5-5')
   })
 
   test('normal pressure never rewrites the model', async ($, on) => {

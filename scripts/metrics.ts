@@ -15,7 +15,7 @@ import { pointsMetrics } from './points.ts'
 import { EVALS, RESULTS, type EvalResult } from './evals.ts'
 import { controlsInForce } from './preflight.ts'
 import { roleOf } from './routing.ts'
-import { budgetView, fetchRef, readRef, peekId, changeSpent } from './spend.ts'
+import { safeBudgetView, fetchRef, readRef, peekId, changeSpent } from './spend.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -245,12 +245,13 @@ export function cmdMetrics(args: Args): void {
   const { config } = loadConfig()
   // Budget (spend governance spec §6): the team month across every clone that published, and changes in the window over their budget.
   fetchRef()
-  const bv = budgetView(config.budget, null)
+  const bv = safeBudgetView(config.budget, null)
   const ref = readRef()
   const ledgerRows = readJsonl<UsageRow>(USAGE)
+  const selfId = peekId()
   const changeBudgetHits = changes.filter(c => {
     const b = config.budget.changeUsd[c.type === 'greenfield' ? 'L' : c.tier]
-    return b !== undefined && changeSpent(ref.files, peekId(), ledgerRows, c.slug) >= b
+    return b !== undefined && changeSpent(ref.files, selfId, ledgerRows, c.slug) >= b
   }).length
   const budget = { month: bv.month, spentUsd: bv.spentUsd, projectedUsd: bv.projectedUsd, budgetUsd: bv.budgetUsd, level: bv.level, sources: bv.sources.length + 1, changeBudgetHits }
   const slugs = new Set(changes.map(c => c.slug))

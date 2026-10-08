@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { SDLC, USAGE, ROOT, read, readJsonl, writeAtomic, now, out, fail, type Args, type ChangeType, type Tier, type UsageRow } from './core.ts'
+import { SDLC, USAGE, SLUG_RE, ROOT, read, readJsonl, writeAtomic, now, out, fail, type Args, type ChangeType, type Tier, type UsageRow } from './core.ts'
 import { DEFAULT_BUDGET, type BudgetConfig } from './model.ts'
 import type { Pressure } from './routing.ts'
 
@@ -20,6 +20,8 @@ export type BudgetView = { month: string; spentUsd: number; projectedUsd: number
 export const HOT: Level[] = ['tight', 'over']
 const round4 = (n: number): number => Number(n.toFixed(4))
 const usdOf = (r: UsageRow): number => (typeof r.usd === 'number' && Number.isFinite(r.usd) ? Math.max(0, r.usd) : 0)
+// Slugs and days are user data: read and bump the maps through own keys only, so "constructor" or "toString" is just a name.
+const own = (m: Record<string, number>, k: string): number => (Object.hasOwn(m, k) ? (m[k] ?? 0) : 0)
 const dollars = (n: number): string => `$${n.toFixed(2)}`
 const cap = (n: number): string => (Number.isInteger(n) ? `$${n}` : dollars(n))
 
@@ -33,11 +35,11 @@ export function rollup(rows: UsageRow[], id: string, month: string, through: str
     if (row.kind !== 'main' || monthOf(row.at) !== month) continue
     const d = usdOf(row), day = row.at.slice(0, 10), change = row.change ?? '(none)'
     r.usd += d
-    r.byDay[day] = (r.byDay[day] ?? 0) + d
-    r.byChange[change] = (r.byChange[change] ?? 0) + d
+    r.byDay[day] = own(r.byDay, day) + d
+    r.byChange[change] = own(r.byChange, change) + d
   }
   r.usd = round4(r.usd)
-  for (const m of [r.byDay, r.byChange]) for (const k of Object.keys(m)) m[k] = round4(m[k] ?? 0)
+  for (const m of [r.byDay, r.byChange]) for (const k of Object.keys(m)) m[k] = round4(own(m, k))
   return r
 }
 
@@ -66,8 +68,11 @@ const ID_RE = /^(?:[0-9a-f]{12}|ci)$/
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0
 const numMap = (v: unknown): boolean => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every(finite)
 export function parseRollup(text: string): Rollup | null {
+  try { return asRollup(JSON.parse(text)) } catch { return null }
+}
+function asRollup(parsed: unknown): Rollup | null {
   try {
-    const v = JSON.parse(text) as Record<string, unknown>
+    const v = parsed as Record<string, unknown>
     if (!v || typeof v !== 'object' || typeof v.id !== 'string' || !ID_RE.test(v.id) || typeof v.month !== 'string' || !/^\d{4}-\d{2}$/.test(v.month)) return null
     if (typeof v.through !== 'string' || !finite(v.usd) || !numMap(v.byDay) || !numMap(v.byChange)) return null
     if (v.runs !== undefined && !(Array.isArray(v.runs) && v.runs.every(x => typeof x === 'string'))) return null
@@ -83,7 +88,7 @@ export function teamSpent(files: Rollup[], selfId: string | null, local: Rollup)
 }
 export function changeSpent(files: Rollup[], selfId: string | null, rows: UsageRow[], slug: string): number {
   const mine = rows.filter(r => r.kind === 'main' && r.change === slug).reduce((s, r) => s + usdOf(r), 0)
-  return round4(files.filter(f => f.id !== selfId).reduce((s, f) => s + (f.byChange[slug] ?? 0), 0) + mine)
+  return round4(files.filter(f => f.id !== selfId).reduce((s, f) => s + own(f.byChange, slug), 0) + mine)
 }
 
 export function changeBudgetText(c: ChangeBudget | null): string {
@@ -122,7 +127,10 @@ export function cloneId(): string {
 export function readRef(): { tip: string | null; files: Rollup[]; bad: string[] } {
   const tip = g(['rev-parse', '--verify', '-q', `${SPEND_REF}^{commit}`])
   if (!tip) return { tip: null, files: [], bad: [] }
-  try { const c = JSON.parse(read(CACHE)) as { tip: string; files: Rollup[]; bad: string[] }; if (c.tip === tip) return c } catch { /* rebuild */ }
+  try {
+    const c = JSON.parse(read(CACHE)) as { tip: string; files: unknown; bad: unknown }
+    if (c.tip === tip && Array.isArray(c.files) && c.files.every(f => asRollup(f) !== null) && Array.isArray(c.bad) && c.bad.every(b => typeof b === 'string')) return c as { tip: string; files: Rollup[]; bad: string[] }
+  } catch { /* rebuild */ }
   const files: Rollup[] = []
   const bad: string[] = []
   for (const p of (g(['ls-tree', '-r', '--name-only', tip]) ?? '').split('\n').filter(Boolean)) {
@@ -154,12 +162,16 @@ function cloneEntries(nowIso: string): Entry[] {
 }
 
 // CI adds one run at a time; the run key makes a re-run a no-op.
-function ciEntries(tip: string | null, ci: { usd: number; run: string; slug?: string }, nowIso: string): Entry[] | null {
+// A string result is a refusal: an unreadable ci.json is never overwritten.
+function ciEntries(tip: string | null, ci: { usd: number; run: string; slug?: string }, nowIso: string): Entry[] | null | string {
   const month = monthOf(nowIso), p = `${month}/ci.json`
-  const cur = (tip ? parseRollup(g(['show', `${tip}:${p}`]) ?? '') : null) ?? { id: 'ci', month, through: nowIso, usd: 0, byDay: {}, byChange: {}, runs: [] }
+  const have = tip ? g(['show', `${tip}:${p}`]) : null
+  const parsed = have === null ? null : parseRollup(have)
+  if (have !== null && parsed === null) return 'spend: ci.json on the ref is malformed; not overwritten'
+  const cur = parsed ?? { id: 'ci', month, through: nowIso, usd: 0, byDay: {}, byChange: {}, runs: [] }
   if ((cur.runs ?? []).includes(ci.run)) return null
   const day = nowIso.slice(0, 10), change = ci.slug ?? '(none)'
-  return [{ path: p, text: json({ ...cur, through: nowIso, usd: round4(cur.usd + ci.usd), byDay: { ...cur.byDay, [day]: round4((cur.byDay[day] ?? 0) + ci.usd) }, byChange: { ...cur.byChange, [change]: round4((cur.byChange[change] ?? 0) + ci.usd) }, runs: [...(cur.runs ?? []), ci.run] }) }]
+  return [{ path: p, text: json({ ...cur, through: nowIso, usd: round4(cur.usd + ci.usd), byDay: { ...cur.byDay, [day]: round4(own(cur.byDay, day) + ci.usd) }, byChange: { ...cur.byChange, [change]: round4(own(cur.byChange, change) + ci.usd) }, runs: [...(cur.runs ?? []), ci.run] }) }]
 }
 
 // Plumbing on a temporary index: the working tree and the real index are never touched.
@@ -179,15 +191,24 @@ function commitEntries(tip: string | null, entries: Entry[]): string | null {
   }
 }
 
+const unchanged = (tip: string | null, e: Entry): boolean => {
+  const cur = tip ? parseRollup(g(['show', `${tip}:${e.path}`]) ?? '') : null, next = parseRollup(e.text)
+  return cur !== null && next !== null && JSON.stringify({ ...cur, through: '' }) === JSON.stringify({ ...next, through: '' })
+}
+
 export function publish(o: { ci?: { usd: number; run: string; slug?: string } } = {}, nowIso = now()): { ok: boolean; message: string } {
   if (g(['remote', 'get-url', 'origin']) === null) return { ok: false, message: 'spend: no origin remote; nothing published' }
   for (let attempt = 0; attempt < 2; attempt++) {
     const fetched = fetchRef()
     if (attempt > 0 && !fetched) break
     const tip = g(['rev-parse', '--verify', '-q', `${SPEND_REF}^{commit}`])
-    const entries = o.ci ? ciEntries(tip, o.ci, nowIso) : cloneEntries(nowIso)
-    if (entries === null) return { ok: true, message: 'spend: this CI run is already counted' }
-    if (!entries.length) return { ok: true, message: 'spend: nothing to publish' }
+    const built = o.ci ? ciEntries(tip, o.ci, nowIso) : cloneEntries(nowIso)
+    if (typeof built === 'string') return { ok: false, message: built }
+    if (built === null) return { ok: true, message: 'spend: this CI run is already counted' }
+    if (!built.length) return { ok: true, message: 'spend: nothing to publish' }
+    // Only `through` moves when no row is new: skip the commit and the push.
+    const entries = built.filter(e => !unchanged(tip, e))
+    if (!entries.length) return { ok: true, message: 'spend: nothing changed' }
     const commit = commitEntries(tip, entries)
     if (!commit) return { ok: false, message: 'spend: could not build the spend commit' }
     // --no-verify: a push from inside the pre-push hook must not run the hook again.
@@ -234,6 +255,14 @@ export function budgetView(cfg: BudgetConfig, change: { slug: string; tier: Tier
   return view
 }
 
+// For the paths that must never fail (next, band, pr, metrics): a spend error warns once and reads as no budget.
+export function safeBudgetView(cfg: BudgetConfig, change: { slug: string; tier: Tier; type: ChangeType } | null, nowIso = now()): BudgetView {
+  try { return budgetView(cfg, change, nowIso) } catch (e) {
+    process.stderr.write(`warn: spend: ${e instanceof Error ? e.message : String(e)}\n`)
+    return { month: monthOf(nowIso), spentUsd: 0, projectedUsd: 0, budgetUsd: null, pct: null, level: 'none', asOf: null, sources: [], localOnly: true, change: change ? { slug: change.slug, spentUsd: 0, budgetUsd: null, pct: null, level: 'none' } : null }
+  }
+}
+
 const RANK: Level[] = ['none', 'ok', 'notice', 'tight', 'over']
 const newly = (lv: Level, seen: Level[]): Level[] => RANK.slice(2, RANK.indexOf(lv) + 1).filter(l => !seen.includes(l))
 // One message per newly crossed level: once per level per month for the team, once per level per change.
@@ -250,19 +279,21 @@ export function crossings(view: BudgetView): string[] {
   }
   const c = view.change
   if (c && c.budgetUsd !== null) {
-    const n = newly(c.level, seen.changes[c.slug] ?? [])
-    if (n.length) { seen.changes[c.slug] = [...(seen.changes[c.slug] ?? []), ...n]; msgs.push(`rig budget ${c.level}: ${c.slug} ${changeBudgetText(c)}`) }
+    const had = Object.hasOwn(seen.changes, c.slug) ? seen.changes[c.slug] ?? [] : []
+    const n = newly(c.level, had)
+    if (n.length) { seen.changes[c.slug] = [...had, ...n]; msgs.push(`rig budget ${c.level}: ${c.slug} ${changeBudgetText(c)}`) }
   }
   try { writeAtomic(SEEN, JSON.stringify(seen)) } catch { /* no .sdlc */ }
   return msgs
 }
 
-function statusText(v: BudgetView, fetched: boolean, bad: string[]): string {
+function statusText(v: BudgetView, fetch: 'ok' | 'failed' | 'none', bad: string[]): string {
   const share = v.budgetUsd === null ? 'no team budget set' : `${dollars(v.spentUsd)} of ${cap(v.budgetUsd)} (${Math.round(v.pct ?? 0)}%), projected ${dollars(v.projectedUsd)} · ${v.level}`
   const lines = [`spend ${v.month}: ${v.budgetUsd === null ? `${dollars(v.spentUsd)}, projected ${dollars(v.projectedUsd)} (${share})` : share}`]
   lines.push(`sources: ${[...v.sources.map(s => `${s.id} through ${s.through.slice(0, 16)}Z`), 'this clone (local ledger)'].join(', ')}`)
   if (v.localOnly) lines.push('team total: this clone only (no refs/rig/spend fetched yet)')
-  else if (!fetched) lines.push(`fetch failed; using the copy from ${v.asOf ?? 'an unknown time'}`)
+  else if (fetch === 'failed') lines.push(`fetch failed; using the copy from ${v.asOf ?? 'an unknown time'}`)
+  else if (fetch === 'none') lines.push(`using the cached copy from ${v.asOf ?? 'an unknown time'}`)
   for (const p of bad) lines.push(`warn: skipped ${p}: not a valid spend file`)
   if (v.change) lines.push(`change ${v.change.slug}: ${changeBudgetText(v.change)}${v.change.budgetUsd === null ? '' : ` · ${v.change.level}`}`)
   return lines.join('\n')
@@ -272,20 +303,28 @@ export type SpendContext = () => { cfg: BudgetConfig; change: { slug: string; ti
 // sdlc.ts passes the config and change in: spend.ts never imports graph.ts or check.ts (they import it).
 export function cmdSpend(args: Args, ctx: SpendContext): void {
   const sub = args.pos[0]
+  if (sub !== 'status' && sub !== 'notify' && sub !== 'publish') fail('usage: spend (status [--json] [--change <slug>] [--no-fetch] | publish [--ci --usd <n> --run <id> [--slug <slug>]] | notify)')
+  try { run(args, ctx, sub) } catch (e) { process.stderr.write(`warn: spend: ${e instanceof Error ? e.message : String(e)}\n`) }
+}
+
+function run(args: Args, ctx: SpendContext, sub: string): void {
   if (sub === 'publish') {
     if (!args.opt.ci) { const r = publish(); return r.ok ? out(r.message) : void process.stderr.write(`warn: ${r.message}\n`) }
     const usd = Number(args.opt.usd)
     const run = typeof args.opt.run === 'string' ? args.opt.run : ''
     if (args.opt.usd === undefined || args.opt.usd === true || !Number.isFinite(usd) || usd < 0 || !run) return void process.stderr.write('warn: spend: --ci needs --usd <finite number >= 0> and --run <id>; nothing published\n')
-    const r = publish({ ci: { usd, run, slug: typeof args.opt.slug === 'string' ? args.opt.slug : undefined } })
+    const raw = args.opt.slug
+    const slug = typeof raw === 'string' && SLUG_RE.test(raw) ? raw : undefined
+    if (raw !== undefined && slug === undefined) process.stderr.write('warn: spend: --slug is not a valid change slug; counted under (none)\n')
+    const r = publish({ ci: { usd, run, slug } })
     return r.ok ? out(r.message) : void process.stderr.write(`warn: ${r.message}\n`)
   }
-  if (sub !== 'status' && sub !== 'notify') fail('usage: spend (status [--json] [--change <slug>] [--no-fetch] | publish [--ci --usd <n> --run <id> [--slug <slug>]] | notify)')
-  const fetched = sub === 'status' && !args.opt['no-fetch'] ? fetchRef() : false
+  const attempt = sub === 'status' && !args.opt['no-fetch'] && g(['remote', 'get-url', 'origin']) !== null
+  const fetched = attempt ? fetchRef() : false
   const { cfg, change } = ctx()
-  const view = budgetView(cfg, change)
+  const view = safeBudgetView(cfg, change)
   if (sub === 'notify') { const m = crossings(view); if (m.length) out(m.join('\n')); return }
   const { bad } = readRef()
   for (const p of bad) process.stderr.write(`warn: skipped ${p}: not a valid spend file\n`)
-  out(args.opt.json ? JSON.stringify(view) : statusText(view, fetched, bad))
+  out(args.opt.json ? JSON.stringify(view) : statusText(view, !attempt ? 'none' : fetched ? 'ok' : 'failed', bad))
 }

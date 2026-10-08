@@ -27,7 +27,7 @@ import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor, installStandalone } from './vendor.ts'
 import { cmdVerify, cmdVerifyReport } from './verify.ts'
 import { cmdHooks, cmdCheckPush } from './githooks.ts'
-import { budgetView, cmdSpend, publishQuietly, type BudgetView } from './spend.ts'
+import { safeBudgetView, pressureOf, cmdSpend, publishQuietly, type BudgetView, type Pressure } from './spend.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, readRatchet, writeRatchet, rawSpendUsd, unblock, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
@@ -130,11 +130,13 @@ function cmdStatus(args: Args): void {
   if (named && exists(path.join(CHANGES, named)) && step(named).verdict === 'ready') clearReady(named)
   const active = activeSlug()
   // --band, the mod's every-turn read: the active change only, without the warnings and staleness that walk every change and stamp the tree.
-  const budgetOf = (st: { budget: BudgetView } | null): BudgetView => st?.budget ?? budgetView(loadConfig().config.budget, null)
+  const budgetOf = (st: { budget: BudgetView } | null): BudgetView => st?.budget ?? safeBudgetView(loadConfig().config.budget, null)
+  // Team pressure with no active change rides at the top level; with one, step.pressure (which honours full-route) wins.
+  const pressureTop = (st: { pressure: Pressure } | null): Pressure => st?.pressure ?? pressureOf(budgetOf(null), loadConfig().config.budget, false)
   const lean = json && args.opt.band ? (active ? loadChange(active) : null) : undefined
   if (lean !== undefined) {
     const st = active ? step(active) : null
-    return out(JSON.stringify({ initialised: true, active, changes: lean ? [{ slug: lean.slug, next: lean.next }] : [], sensors: sensorStatus(), story: active ? story(active) : null, step: st, budget: budgetOf(st), flow: flowOf(true, lean) }))
+    return out(JSON.stringify({ initialised: true, active, changes: lean ? [{ slug: lean.slug, next: lean.next }] : [], sensors: sensorStatus(), story: active ? story(active) : null, step: st, budget: budgetOf(st), pressure: pressureTop(st), flow: flowOf(true, lean) }))
   }
   const changes = listChanges().map(loadChange)
   const warnings: string[] = []
@@ -161,7 +163,7 @@ function cmdStatus(args: Args): void {
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
     const st = active ? step(active) : null
-    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: st, budget: budgetOf(st), flow: flowOf(true, active ? loadChange(active) : null) }))
+    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: st, budget: budgetOf(st), pressure: pressureTop(st), flow: flowOf(true, active ? loadChange(active) : null) }))
   }
   if (!changes.length) return out([`no changes yet: run ${skillRef('start')} "<what you want>"`, ...warnings.map(w => `warn: ${w}`)].join('\n'))
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')

@@ -10,7 +10,7 @@ import { loadConfig } from './check.ts'
 import { readRatchet, spendUsd, block, readEvents } from './ratchet.ts'
 import type { SensorConfig, RatchetNode } from './model.ts'
 import { routes as routesFor, type Role, type Route } from './routing.ts'
-import { budgetView, pressureOf, type BudgetView, type Pressure } from './spend.ts'
+import { safeBudgetView, pressureOf, type BudgetView, type Pressure } from './spend.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
   greenfield: ['intent', 'design', 'build', 'test', 'sensors', 'pr', 'pr-review'],
@@ -164,7 +164,7 @@ export function step(slug: string): Step {
   const openSlice = Object.entries(ratchet.slices).filter(([, sl]) => sl.status === 'open').sort((a, b) => Number(a[0]) - Number(b[0]))[0]?.[1]
   const retry = node === 'build' ? (openSlice?.rounds ?? 0) : round
   const { config } = loadConfig()
-  const budget = budgetView(config.budget, { slug, tier: change.tier, type: change.type })
+  const budget = safeBudgetView(config.budget, { slug, tier: change.tier, type: change.type })
   // Budget pressure eases review effort only; round caps and ratchet.usd never move (spend governance spec §12.1).
   const pressure = pressureOf(budget, config.budget, ratchet.fullRoute === true)
   const routed = routesFor(change.type, change.tier, retry, config.routing, pressure)

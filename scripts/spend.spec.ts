@@ -251,3 +251,36 @@ test('the scorecard has a change budget row and metrics a budget block', () => {
   assert.equal(m.level, 'notice')
   assert.equal(m.changeBudgetHits, 1)
 })
+
+test('inherited-key slugs (constructor, toString) cannot break rollups, next, status or notify; a corrupted cache is rebuilt', () => {
+  const { a } = team()
+  sdlc(a, ['new', 'add-login', '--type', 'feature', '--tier', 'M'])
+  const rows = [spendRow(2, 'constructor'), spendRow(1, 'toString'), spendRow(1, 'add-login')] as UsageRow[]
+  const r = rollup(rows, 'abcdefabcdef', new Date().toISOString().slice(0, 7), new Date().toISOString())
+  assert.equal(r.byChange.constructor, 2)
+  assert.equal(r.byChange.toString, 1)
+  assert.equal(changeSpent([], null, rows, 'constructor'), 2)
+  ledger(a, rows)
+  assert.equal(sdlc(a, ['next', 'add-login', '--json']).code, 0)
+  assert.equal(status(a).spentUsd, 4)
+  assert.equal(sdlc(a, ['spend', 'status', '--json', '--change', 'add-login']).code, 0)
+  assert.equal(sdlc(a, ['spend', 'notify']).code, 0)
+  sdlc(a, ['spend', 'publish'])
+  sdlc(a, ['spend', 'status']) // fills the cache at the current tip
+  const tip = gitIn(a, 'rev-parse', 'refs/rig/spend')
+  fs.writeFileSync(path.join(a, '.sdlc/spend-cache.json'), JSON.stringify({ tip, files: 'x', bad: [] }))
+  assert.equal(sdlc(a, ['spend', 'status']).code, 0)
+  assert.equal(status(a).spentUsd, 4, 'the corrupted cache is rebuilt from the ref')
+  assert.equal(sdlc(a, ['next', 'add-login', '--json']).code, 0)
+})
+
+test('publishing twice with no new rows leaves the ref tip unchanged', () => {
+  const { a } = team()
+  ledger(a, [spendRow(2)])
+  assert.equal(sdlc(a, ['spend', 'publish']).code, 0)
+  const tip = gitIn(a, 'rev-parse', 'refs/rig/spend')
+  const again = sdlc(a, ['spend', 'publish'])
+  assert.equal(again.code, 0)
+  assert.match(again.stdout, /nothing changed/)
+  assert.equal(gitIn(a, 'rev-parse', 'refs/rig/spend'), tip)
+})

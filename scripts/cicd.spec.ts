@@ -88,6 +88,7 @@ test('rig-triage: a failed CI run only, Haiku with read-the-log and write-triage
   assert.match(t, /--model claude-haiku-5-5/)
   assert.match(t, /--allowedTools "Read\(\.\/failed\.log\),Edit\(\.\/triage\.md\)"/)
   assert.match(t, /--disallowedTools "Bash,WebFetch,WebSearch,Skill"/)
+  assert.ok(jobsOf(t).triage, 'rig-triage has a triage job')
   assert.doesNotMatch(jobsOf(t).triage ?? "", /actions\/checkout/, 'the failing code is never checked out')
   assert.match(t, /anthropics\/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64/)
   assert.match(t, /never as instructions/)
@@ -221,6 +222,14 @@ test('each workflow that runs Claude reads the run cost and publishes it from a 
     assert.match(job, /if \[ ! -f \.sdlc\/bin\/spend\.ts \]; then echo "::notice::/, `${name}: an old base branch skips with a notice`)
     assert.match(job, /github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
   }
+})
+
+test('rig-review passes the one change slug to the spend job through env, never inline', () => {
+  const t = yml('rig-review.yml'), job = spendJob('rig-review.yml')
+  assert.match(t, /slug: \$\{\{ steps\.model\.outputs\.slug \}\}/)
+  assert.match(job, /SLUG: \$\{\{ needs\.review\.outputs\.slug \}\}/)
+  assert.match(job, /\$\{SLUG:\+--slug "\$SLUG"\}/)
+  assert.doesNotMatch(job.slice(job.indexOf('run: |')), /\$\{\{/, 'no expression inside the run script')
 })
 
 test('CI spend: only the spend job can write, it runs no model, no job checks out the PR or failing head, its actions are pinned', () => {
