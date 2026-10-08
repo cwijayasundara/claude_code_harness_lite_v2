@@ -5,7 +5,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 import type { Band, Status, TurnPoint } from '../types'
 import { parseStatus, sdlcArgv, money, kilo, spark, gauge, heat, spendPerTurn, tokenMix, stack, subway } from './shared'
-import { HARD_CONTEXT } from './band'
+import { HARD_CONTEXT, budgetText, budgetColor } from './band'
 
 export const MAP_PANE = 'rig-map'
 const SPARK_TURNS = 24
@@ -21,7 +21,7 @@ async function refresh($: EngineInterface): Promise<void> {
   const change = status?.active ?? null
   const stage = status?.changes?.find(c => c.slug === change)?.next?.stage ?? (change ? 'done' : null)
   const session = await $.session.usage()
-  await update($, band, () => ({ change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow }))
+  await update($, band, () => ({ change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow, budget: status?.budget ?? null }))
 }
 
 export function registerMission(on: On): void {
@@ -73,6 +73,7 @@ export function registerMission(on: On): void {
         <Text dimColor>{`out ${kilo(mix.out)} · in ${kilo(mix.fresh)} · cache write ${kilo(mix.cw)} · cache read ${kilo(mix.cr)} · hit ${Math.round(mix.hit * 100)}%`}</Text>
         <Text> </Text>
         <Text>{story ? `this change  ${kilo(story.tokens)} tok · ${money(story.usd)}${dear ? ` · dearest ${dear[0]} ${money(dear[1])}` : ''}` : 'this change  no story yet'}</Text>
+        {b.budget && budgetText(b.budget) ? <Text color={budgetColor(b.budget)}>{`budget ${budgetText(b.budget).replace(/^ · /, '')}`}</Text> : null}
         <Box><Button key="refresh" label="Refresh" onPress={() => refresh($)} /></Box>
       </Box>
     )

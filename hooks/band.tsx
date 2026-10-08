@@ -1,7 +1,7 @@
 // The band above the prompt and the /rig-sensors pane: what the sensors saw, at zero tokens.
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
-import type { Band, SensorBand, Story, StepInfo, FlowStep, TurnPoint } from '../types'
+import type { Band, BudgetBand, SensorBand, Story, StepInfo, FlowStep, TurnPoint } from '../types'
 import { mod, sdlcArgv, spark, spendPerTurn, subway, gauge, heat, tokenMix } from './shared'
 
 export const SOFT_CONTEXT = 120_000
@@ -25,6 +25,21 @@ export function sensorText(s: SensorBand | null): string {
 const kilo = (n = 0): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 const usd = (v?: number): string => { const n = v ?? 0; return `$${n.toLocaleString('en-US', { minimumFractionDigits: n < 100 ? 2 : 0, maximumFractionDigits: n < 100 ? 2 : 0 })}` }
 const cap = (n: number): string => (Number.isInteger(n) ? `$${n}` : usd(n))
+
+const ago = (iso: string, nowMs: number): string => { const h = Math.floor((nowMs - Date.parse(iso)) / 3_600_000); return h >= 24 ? `${Math.floor(h / 24)}d` : `${h}h` }
+// Team and change budget; empty when none is set. The cached ref's age shows past an hour, so an old copy never reads as current.
+export const budgetText = (b?: BudgetBand | null, nowMs = Date.now()): string => {
+  if (!b) return ''
+  const team = b.budgetUsd !== null ? `team ${cap(b.spentUsd)}/${cap(b.budgetUsd)} · proj ${cap(b.projectedUsd)}` : ''
+  const change = b.change && b.change.budgetUsd !== null ? `change ${usd(b.change.spentUsd)}/${cap(b.change.budgetUsd)}` : ''
+  if (!team && !change) return ''
+  const age = b.localOnly ? ' · this clone only' : b.asOf && nowMs - Date.parse(b.asOf) > 3_600_000 ? ` · as of ${ago(b.asOf, nowMs)} ago` : ''
+  return ` · ${[team, change].filter(Boolean).join(' · ')}${age}`
+}
+export const budgetColor = (b?: BudgetBand | null): string | undefined => {
+  const levels = [b?.level, b?.change?.level]
+  return levels.includes('over') ? 'red' : levels.includes('tight') ? 'yellow' : undefined
+}
 
 export function storyText(s: Story | null): string {
   if (!s) return ''
@@ -92,6 +107,7 @@ export function registerBand(on: On): void {
           <Text color={heat(frac)}>{gauge(frac, 8)} {kilo(current.contextTokens)}</Text>
           <Text dimColor> · {usd(current.sessionUsd)}{trail ? ` ${trail}` : ''}{history.length ? ` · cache ${hit}%` : ''}{current.contextTokens >= HARD_CONTEXT ? ' · run /compact' : ''}</Text>
           <Text color={sensorColor} dimColor={!sensorColor}>{sensorText(current.sensors)} </Text>
+          <Text color={budgetColor(current.budget)} dimColor={!budgetColor(current.budget)}>{budgetText(current.budget)} </Text>
           <Button key="hide" label="Hide" onPress={() => update($, isHidden, () => true)} />
         </Box>
       </Box>
