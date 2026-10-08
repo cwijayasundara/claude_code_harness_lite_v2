@@ -108,3 +108,6 @@ export const KEEP_TURNS = 48
 
 export const turnPoint = (usage: Usage, isAgent: boolean, usd: number): TurnPoint =>
   ({ main: !isAgent, in: usage?.input_tokens ?? 0, out: usage?.output_tokens ?? 0, cr: usage?.cache_read_input_tokens ?? 0, cw: usage?.cache_creation_input_tokens ?? 0, usd })
+
+// The coordinator's model under budget pressure: pinned like templates/settings.json, never an alias (DESIGN.md principle 7).
+export const COORDINATOR_DOWNSHIFT = 'claude-sonnet-5-5'

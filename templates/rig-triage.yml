@@ -1,7 +1,7 @@
 # rig triage (playbook p.45): when a CI workflow fails, Haiku 5.5 reads the failed log, says flaky or real, and posts three lines
 # to the PR, or to the run summary when the run has no PR (a push). A fork's failure is not triaged. Copy to .github/workflows/, name your CI
 # workflows under `workflows:`, and list this file in CODEOWNERS. Auth: one secret, CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.
-# workflow_run runs with secrets even for a fork's failure, and the log is written by the failing code: so nothing is checked out,
+# workflow_run runs with secrets even for a fork's failure, and the log is written by the failing code: so the failing code is never checked out (only the model-free spend job checks out the default branch),
 # the model can only read failed.log and write triage.md, and a model-free step posts after checking the shape and refusing
 # credentials; the lines are posted in a code fence, so no mention, link, image or HTML in them renders. Actions are pinned to commit SHAs.
 name: rig-triage
@@ -17,6 +17,8 @@ jobs:
     permissions:
       actions: read
       pull-requests: write
+    outputs:
+      usd: ${{ steps.cost.outputs.usd }}
     steps:
       - name: Fetch the failed steps' log
         env:
@@ -29,6 +31,7 @@ jobs:
           [ -s failed.log ] || { echo "::error::the failed run has no log to triage"; exit 1; }
           # triage-fetch:end
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -43,6 +46,16 @@ jobs:
             Flaky: or Real: then the likely cause in one sentence (flaky: timing, network, ordering; real: the change broke it)
             Evidence: the one log line that shows it, quoted
             Next: what to do (re-run, or the file and the fix to look at)
+      # The run's cost, from the action's message log; only a finite number >= 0 leaves this job (spend governance spec §12.5).
+      - name: Read the run's cost
+        id: cost
+        if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
+        env:
+          FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          usd=$(node -e 'try { const m = JSON.parse(require("fs").readFileSync(process.env.FILE, "utf8")); const r = [].concat(m).reverse().find(x => x && x.type === "result"); const u = r && r.total_cost_usd; if (typeof u === "number" && Number.isFinite(u) && u >= 0) console.log(u) } catch {}')
+          echo "usd=$usd" >> "$GITHUB_OUTPUT"
       - name: Check and post the triage
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,3 +80,24 @@ jobs:
           { echo '<!-- rig-triage -->'; echo "Triage of [the failed run]($RUN_URL):"; echo '```text'; cat triage.md; echo '```'; } > comment.md
           if [ -n "$PR" ]; then gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file comment.md; else cat comment.md >> "$GITHUB_STEP_SUMMARY"; fi
           # triage-post:end
+  spend:
+    needs: triage
+    if: always() && needs.triage.outputs.usd != '' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Publish CI spend
+        env:
+          USD: ${{ needs.triage.outputs.usd }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}-triage
+        # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
+        run: |
+          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"

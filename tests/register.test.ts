@@ -1,7 +1,7 @@
 // Tests for the sdlc mod (hooks/register.ts). Run with: claude plugin test .
 import { describe, expect, test, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { storyText, storyPaneText } from '../hooks/band'
+import { storyText, storyPaneText, budgetText } from '../hooks/band'
 import type { Story, StepInfo, TurnPoint, FlowStep } from '../types'
 import { subway, spark, gauge, spendPerTurn, tokenMix, stack, stateChange } from '../hooks/shared'
 
@@ -36,6 +36,10 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     rejectSubmit: false,
     answer: 'Not yet',
     afterQuality: null as unknown,
+    budget: null as unknown,
+    pressure: 'normal',
+    noStep: false,
+    notify: '',
   }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => {
@@ -49,7 +53,9 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     const stdout =
       sub === 'status' ? JSON.stringify({ initialised: true, active: 'add-login', flow: world.noFlow ? undefined : [{ label: 'init', command: '', why: '', state: 'done' }, { label: 'start', command: '', why: '', state: 'done' }, { label: 'design', command: '', why: '', state: 'done' }, { label: 'build', command: '', why: '', state: 'current' }, { label: 'test', command: '', why: '', state: 'todo' }, { label: 'sensors', command: '', why: '', state: 'todo' }, { label: 'pr', command: '', why: '', state: 'todo' }], changes: [{ slug: 'add-login', next: { stage: 'build' } }], sensors: world.sensors,
         story: world.partial ? { slug: 'add-login', node: 'build', verdict: 'continue', round: 1, cap: 2 } : { slug: 'add-login', node: 'build', verdict: world.verdict, round: 1, cap: 2, tokens: 412000, tokensByNode: { build: 412000 }, budgetByNode: { build: { spent: 1.5, cap: 6 }, test: { spent: 0.5, cap: 2 } }, usd: 2.16, usdByNode: { build: 2.16 }, valueUsd: 1200, valueHours: 12, autoApproved: 14, escalations: 0, levels: '', sensors: 'not run' },
-        step: world.step })
+        budget: world.budget,
+        ...(world.noStep ? { step: null, pressure: world.pressure } : { step: { ...(world.step as object), pressure: world.pressure } }) })
+      : sub === 'spend' ? world.notify
       : sub === 'next' ? JSON.stringify(world.step)
       : sub === 'metrics' ? 'value/cost 9.5x'
       : sub === 'impact-status' ? JSON.stringify(world.impact)
@@ -588,5 +594,68 @@ describe('sdlc mod', () => {
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, reason: 'answer', turnId: 't2' })
     expect(world.prompts.length).toBe(2)
     expect(world.toasts.at(-1)).toContain('no progress')
+  })
+
+  test('under tight pressure an Opus main loop moves to pinned Sonnet once and stays; subagents and Sonnet sessions are untouched', async ($, on) => {
+    const world = worldOf(on)
+    world.pressure = 'tight'
+    const models: string[] = []
+    on('turn.step', async function* (_$: unknown, e: { model: string; turnId: string; index: number }) { models.push(e.model); return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null } } as never)
+    on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }) as never)
+    await $.session.start(SESSION)
+    await $.turn.start({ text: '', turnId: 't1' })
+    const step = async (model: string, agentId?: string) => { const s = $.turn.step({ turnId: 't1', index: 0, model, messageCount: 1, ...(agentId ? { agentId } : {}) }); for await (const _ of s) { /* drain */ } return s.result }
+    const stepAt = async (index: number, model: string) => { const s = $.turn.step({ turnId: 't1', index, model, messageCount: 1 }); for await (const _ of s) { /* drain */ } return s.result }
+    await step('claude-opus-5-5', 'a1')
+    await stepAt(1, 'claude-opus-5-5') // mid-turn: not switched yet
+    await step('claude-sonnet-5-5')
+    await step('claude-opus-5-5')
+    world.pressure = 'normal'
+    await $.turn.start({ text: '', turnId: 't1' })
+    await step('claude-opus-5-5')
+    expect(models).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    expect(world.toasts.filter(t => t.includes('coordinator moved to Sonnet')).length).toBe(1)
+  })
+
+  test('with no active change the top-level team pressure still moves an Opus coordinator, and a new session starts normal', async ($, on) => {
+    const world = worldOf(on)
+    world.noStep = true
+    world.pressure = 'tight'
+    const models: string[] = []
+    on('turn.step', async function* (_$: unknown, e: { model: string; turnId: string; index: number }) { models.push(e.model); return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null } } as never)
+    on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }) as never)
+    await $.session.start(SESSION)
+    await $.turn.start({ text: '', turnId: 't1' })
+    const s = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+    for await (const _ of s) { /* drain */ }
+    expect(models).toEqual(['claude-sonnet-5-5'])
+    world.pressure = 'normal'
+    await $.session.start(SESSION) // reset: no stale tight pressure before the first turn.start
+    const s2 = $.turn.step({ turnId: 't2', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+    for await (const _ of s2) { /* drain */ }
+    expect(models.at(-1)).toBe('claude-opus-5-5')
+  })
+
+  test('normal pressure never rewrites the model', async ($, on) => {
+    worldOf(on)
+    const models: string[] = []
+    on('turn.step', async function* (_$: unknown, e: { model: string; turnId: string; index: number }) { models.push(e.model); return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null } } as never)
+    on('turn.start', (_$: unknown, e: { turnId: string }) => ({ turnId: e.turnId }) as never)
+    await $.session.start(SESSION)
+    await $.turn.start({ text: '', turnId: 't1' })
+    const s = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+    for await (const _ of s) { /* drain */ }
+    expect(models).toEqual(['claude-opus-5-5'])
+  })
+
+  test('a budget crossing toasts what spend notify prints; the band shows team and change spend with its age', async ($, on) => {
+    const world = worldOf(on)
+    world.budget = { month: '2026-10', spentUsd: 212, projectedUsd: 470, budgetUsd: 500, pct: 42.4, level: 'notice', asOf: '2026-10-01T00:00:00.000Z', sources: [], localOnly: false, change: { slug: 'add-login', spentUsd: 9, budgetUsd: 20, pct: 45, level: 'ok' } }
+    world.notify = 'rig budget notice: team $212.00 of $500 this month (42%), projected $470.00\n'
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start(SESSION)
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    expect(world.toasts.some(t => t.startsWith('rig budget notice'))).toBe(true)
+    expect(budgetText(world.budget as never, Date.parse('2026-10-01T05:00:00.000Z'))).toBe(' · team $212/$500 · proj $470 · change $9.00/$20 · as of 5h ago')
   })
 })

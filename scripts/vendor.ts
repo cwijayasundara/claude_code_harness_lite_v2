@@ -5,7 +5,7 @@ import path from 'node:path'
 import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, type Args } from './core.ts'
 import { writeHookScripts, installHooks } from './githooks.ts'
 
-export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'checkpoint', 'slices', 'stale', 'shards', 'quality', 'basetree', 'configparse', 'routing', 'scopes', 'toolchain', 'preflight', 'levels', 'verify', 'hooks', 'metrics', 'evals', 'inbox', 'watch', 'scorecard', 'points', 'timing', 'flow', 'pr', 'sdlc', 'githooks', 'vendor']
+export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'checkpoint', 'slices', 'stale', 'shards', 'quality', 'basetree', 'configparse', 'routing', 'scopes', 'toolchain', 'preflight', 'levels', 'verify', 'hooks', 'metrics', 'evals', 'inbox', 'watch', 'scorecard', 'points', 'timing', 'flow', 'pr', 'spend', 'sdlc', 'githooks', 'vendor']
 const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number; async?: boolean }[] }
 
@@ -74,7 +74,7 @@ function vendorStandalone(written: string[], version: string): void {
     const src = path.join(PLUGIN_ROOT, 'skills', name, 'SKILL.md')
     if (fs.existsSync(src)) writeFile(`.claude/skills/rig-${name}/SKILL.md`, forProject(read(src)), written)
   }
-  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <design|spec|plan|impact|budget|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
+  writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <design|spec|plan|impact|budget|full-route|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
   writeFile('.claude/skills/rig-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'agents')).filter(f => f.endsWith('.md'))) {
     writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)

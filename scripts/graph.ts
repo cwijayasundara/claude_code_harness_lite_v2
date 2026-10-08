@@ -10,6 +10,7 @@ import { loadConfig } from './check.ts'
 import { readRatchet, spendUsd, block, readEvents } from './ratchet.ts'
 import type { SensorConfig, RatchetNode } from './model.ts'
 import { routes as routesFor, type Role, type Route } from './routing.ts'
+import { safeBudgetView, pressureOf, type BudgetView, type Pressure } from './spend.ts'
 
 export const PATHS: Record<ChangeType, Stage[]> = {
   greenfield: ['intent', 'design', 'build', 'test', 'sensors', 'pr', 'pr-review'],
@@ -148,7 +149,7 @@ export type ModelAlias = 'haiku' | 'sonnet' | 'opus'
 export const modelFor = (type: ChangeType, tier: Tier): ModelAlias => (type === 'greenfield' || tier === 'L' ? 'opus' : tier === 'M' ? 'sonnet' : 'haiku')
 
 export type Verdict = 'continue' | 'human' | 'blocked' | 'ready'
-export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number; model: ModelAlias; routes: Record<Role, Route>; routeWarnings: string[] }
+export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number; model: ModelAlias; routes: Record<Role, Route>; routeWarnings: string[]; pressure: Pressure; budget: BudgetView }
 export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
 const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
 
@@ -162,8 +163,12 @@ export function step(slug: string): Step {
   const progress = node === 'build' ? Object.values(ratchet.slices).filter(sl => sl.status === 'done').length : 0
   const openSlice = Object.entries(ratchet.slices).filter(([, sl]) => sl.status === 'open').sort((a, b) => Number(a[0]) - Number(b[0]))[0]?.[1]
   const retry = node === 'build' ? (openSlice?.rounds ?? 0) : round
-  const routed = routesFor(change.type, change.tier, retry, loadConfig().config.routing)
-  const base = { slug, node, round, progress, command: nextCommand(change), model: modelFor(change.type, change.tier), routes: routed.routes, routeWarnings: routed.warnings }
+  const { config } = loadConfig()
+  const budget = safeBudgetView(config.budget, { slug, tier: change.tier, type: change.type })
+  // Budget pressure eases review effort only; round caps and ratchet.usd never move (spend governance spec §12.1).
+  const pressure = pressureOf(budget, config.budget, ratchet.fullRoute === true)
+  const routed = routesFor(change.type, change.tier, retry, config.routing, pressure)
+  const base = { slug, node, round, progress, command: nextCommand(change), model: modelFor(change.type, change.tier), routes: routed.routes, routeWarnings: routed.warnings, pressure, budget }
   // A change drafted from the inbox (source:) whose tier was not published (rig-spec carries no ratchet.json) waits for a person
   // to accept its tier and type before any node, so the fallback type (feature) never picks its path. Legacy changes keep L.
   const drift = change.intent.source && !isTier(ratchet.tier) ? tierDrift(slug) : null
@@ -176,7 +181,7 @@ export function step(slug: string): Step {
   if (blocked && !pending) return { ...base, verdict: 'blocked', reason: `${blocked.node}: ${blocked.reason}` }
   if (change.next.kind === 'approve') return { ...base, verdict: 'human', reason: base.command + pending }
   if (node && BUDGETED.has(node)) {
-    const cap = loadConfig().config.ratchet.usd[node as RatchetNode]
+    const cap = config.ratchet.usd[node as RatchetNode]
     const spent = spendUsd(slug, node)
     if (spent > cap) {
       const reason = `budget: ${node} spent $${spent.toFixed(2)} of $${cap}`

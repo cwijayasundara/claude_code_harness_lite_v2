@@ -15,6 +15,7 @@ import { pointsMetrics } from './points.ts'
 import { EVALS, RESULTS, type EvalResult } from './evals.ts'
 import { controlsInForce } from './preflight.ts'
 import { roleOf } from './routing.ts'
+import { safeBudgetView, fetchRef, readRef, peekId, changeSpent } from './spend.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -242,6 +243,17 @@ export function cmdMetrics(args: Args): void {
     fix_rounds_per_change: perChange(e => e.filter(x => x.verdict === 'continue').length),
   }
   const { config } = loadConfig()
+  // Budget (spend governance spec §6): the team month across every clone that published, and changes in the window over their budget.
+  fetchRef()
+  const bv = safeBudgetView(config.budget, null)
+  const ref = readRef()
+  const ledgerRows = readJsonl<UsageRow>(USAGE)
+  const selfId = peekId()
+  const changeBudgetHits = changes.filter(c => {
+    const b = config.budget.changeUsd[c.type === 'greenfield' ? 'L' : c.tier]
+    return b !== undefined && changeSpent(ref.files, selfId, ledgerRows, c.slug) >= b
+  }).length
+  const budget = { month: bv.month, spentUsd: bv.spentUsd, projectedUsd: bv.projectedUsd, budgetUsd: bv.budgetUsd, level: bv.level, sources: bv.sources.length + 1, changeBudgetHits }
   const slugs = new Set(changes.map(c => c.slug))
   const windowUsd = main.filter(r => slugs.has(r.change ?? '')).reduce((n, r) => n + (r.usd ?? 0), 0)
   const valueUsd = changes.reduce((n, c) => n + valueHoursFor(c.slug, c.tier, config.value.hours) * config.value.rate, 0)
@@ -294,8 +306,8 @@ export function cmdMetrics(args: Args): void {
     })(),
   }
 
-  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, harness, autonomy, ratchet: ratchetM, economics, points: pointsM } }, null, 2))
+  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, budget, harness, autonomy, ratchet: ratchetM, economics, points: pointsM } }, null, 2))
   const fmt = (v: Metric): string => (v.value === null ? `unmeasured (n=${v.n}${v.note ? ', ' + v.note : ''})` : `${Number(v.value.toFixed(2))} (n=${v.n})`)
   const rows = Object.entries(m).map(([k, v]) => `${k.padEnd(30)} ${fmt(v)}`)
-  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2), '', 'points (shipped in the window; unmeasured below 5 shipped changes)', JSON.stringify(pointsM, null, 2)].join('\n'))
+  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), '', 'budget (soft; every clone that published plus this one)', JSON.stringify(budget, null, 2), '', 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2), '', 'points (shipped in the window; unmeasured below 5 shipped changes)', JSON.stringify(pointsM, null, 2)].join('\n'))
 }

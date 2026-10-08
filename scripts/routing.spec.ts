@@ -79,3 +79,19 @@ test('roleOf maps agent type and stage to a role; the reviewer splits by stage',
   assert.equal(roleOf('general-purpose', 'build'), 'other')
   assert.equal(roleOf(undefined, null), 'other')
 })
+
+test('tight pressure eases reviewer, referee and slice-review by one effort step; models, floors and other roles unchanged', () => {
+  for (const t of ['S', 'M', 'L'] as const) {
+    for (const role of ROLES) {
+      const n = route(role, 'feature', t, 0, {}, 'normal').route
+      const p = route(role, 'feature', t, 0, {}, 'tight').route
+      if (n === 'main' || p === 'main') { assert.deepEqual(p, n); continue }
+      assert.equal(p.model, n.model, `${role} ${t} keeps its model`)
+      const eased = ['reviewer', 'referee', 'slice-review'].includes(role)
+      const want = eased ? (({ high: 'medium', medium: 'low', low: 'low' }) as const)[n.effort] : n.effort
+      assert.equal(p.effort, want, `${role} ${t}`)
+    }
+  }
+  assert.deepEqual(route('implementer', 'feature', 'S', 2, {}, 'tight').route, route('implementer', 'feature', 'S', 2).route, 'retries untouched')
+  assert.deepEqual(route('reviewer', 'feature', 'S', 0, { reviewer: { S: { model: 'haiku' } } }, 'tight').route, { model: 'sonnet', effort: 'low' }, 'floor still clamps')
+})

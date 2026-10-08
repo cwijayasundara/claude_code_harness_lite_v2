@@ -84,9 +84,34 @@ export function parseV6(value: Record<string, unknown>, config: SensorConfig, er
       else errors.push(`evals: unknown key "${k}"`)
     }
   }
+  if ('budget' in value) parseBudget(value.budget, config, errors)
   if ('routing' in value) config.routing = parseRouting(value.routing, errors)
     if ('bands' in value) parseBands(value.bands, config, errors)
     if ('scopes' in value) parseScopes(value.scopes, config, errors)
+}
+
+const BUDGET_KEYS = new Set(['teamMonthlyUsd', 'changeUsd', 'warnAt', 'downshift'])
+// Soft budgets (spend governance spec §5): every field optional; no budget means spend is shown but never warns or downshifts.
+function parseBudget(raw: unknown, config: SensorConfig, errors: string[]): void {
+  if (!isObject(raw)) { errors.push('budget must be { teamMonthlyUsd, changeUsd: { S, M, L }, warnAt: [notice, tight, over], downshift }'); return }
+  const pos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
+  for (const k of Object.keys(raw)) if (!BUDGET_KEYS.has(k)) errors.push(`budget: unknown key "${k}"`)
+  if ('teamMonthlyUsd' in raw) { if (raw.teamMonthlyUsd === null || pos(raw.teamMonthlyUsd)) config.budget.teamMonthlyUsd = raw.teamMonthlyUsd; else errors.push('budget.teamMonthlyUsd must be a positive number of dollars') }
+  if ('changeUsd' in raw) {
+    if (!isObject(raw.changeUsd)) errors.push('budget.changeUsd must map S, M and L to dollars')
+    else for (const [t, d] of Object.entries(raw.changeUsd)) {
+      if (!(TIERS as readonly string[]).includes(t)) errors.push(`budget.changeUsd: unknown tier "${t}"`)
+      else if (pos(d)) config.budget.changeUsd[t as 'S' | 'M' | 'L'] = d
+      else errors.push(`budget.changeUsd.${t} must be a positive number of dollars`)
+    }
+  }
+  if ('warnAt' in raw) {
+    const w = raw.warnAt
+    const [lo, mid, hi] = Array.isArray(w) && w.length === 3 && w.every(pos) ? w : []
+    if (lo !== undefined && mid !== undefined && hi !== undefined && lo < mid && mid < hi) config.budget.warnAt = [lo, mid, hi]
+    else errors.push('budget.warnAt must be three ascending positive percentages, like [50, 80, 100]')
+  }
+  if ('downshift' in raw) { if (typeof raw.downshift === 'boolean') config.budget.downshift = raw.downshift; else errors.push('budget.downshift must be true or false') }
 }
 
 const SCOPE_KEYS = new Set(['name', 'root', 'fast', 'full', 'quality', 'deps'])

@@ -27,6 +27,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    outputs:
+      usd: ${{ steps.cost.outputs.usd }}
+      slug: ${{ steps.model.outputs.slug }}
     steps:
       - name: Fork PRs need a maintainer review
         if: github.event.pull_request.head.repo.full_name != github.repository
@@ -69,10 +72,13 @@ jobs:
               process.stdout.write(t)' ".sdlc/changes/$slugs")
             case "$tier" in S) model=claude-sonnet-5-5; effort=medium ;; M) model=claude-sonnet-5-5; effort=high ;; esac
           fi
+          # The one change this PR touches, so its CI cost counts toward that change's budget; anything doubtful is left out.
+          if [ -n "$slugs" ] && [ "$(printf '%s\n' "$slugs" | wc -l | tr -d ' ')" = 1 ] && printf '%s' "$slugs" | grep -Eq '^[a-z0-9][a-z0-9-]{1,60}$'; then echo "slug=$slugs" >> "$GITHUB_OUTPUT"; fi
           echo "model=$model" >> "$GITHUB_OUTPUT"
           echo "effort=$effort" >> "$GITHUB_OUTPUT"
           # model-by-tier:end
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -90,6 +96,16 @@ jobs:
             3. Write the findings to review.md: one line each, `[high|medium] path:line: problem -> fix`, or "No findings."
                Contract mismatches are high. Quote only code from the diff.
             4. Write exactly one word to review-verdict.txt: HIGH if any finding is high severity, else PASS.
+      # The run's cost, from the action's message log; only a finite number >= 0 leaves this job (spend governance spec §12.5).
+      - name: Read the run's cost
+        id: cost
+        if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
+        env:
+          FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          usd=$(node -e 'try { const m = JSON.parse(require("fs").readFileSync(process.env.FILE, "utf8")); const r = [].concat(m).reverse().find(x => x && x.type === "result"); const u = r && r.total_cost_usd; if (typeof u === "number" && Number.isFinite(u) && u >= 0) console.log(u) } catch {}')
+          echo "usd=$usd" >> "$GITHUB_OUTPUT"
       # The model cannot post: this step does, after refusing anything that looks like a credential.
       - name: Post the review comment
         if: always()
@@ -113,3 +129,26 @@ jobs:
             echo "::error::sdlc review verdict: ${v:-missing}; see the PR comment"
             exit 1
           fi
+  # Publishes CI spend to refs/rig/spend. Runs no model; same-repo PRs only; the base branch's checker, never the PR's.
+  spend:
+    needs: review
+    if: always() && needs.review.outputs.usd != '' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Publish CI spend
+        env:
+          USD: ${{ needs.review.outputs.usd }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}-review
+          SLUG: ${{ needs.review.outputs.slug }}
+        # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
+        run: |
+          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" ${SLUG:+--slug "$SLUG"} || echo "::warning::rig spend publish failed"

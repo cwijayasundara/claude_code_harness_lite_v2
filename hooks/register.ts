@@ -11,7 +11,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Band, Status, StepInfo, TurnPoint } from '../types'
-import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod, money, kilo, turnPoint, KEEP_TURNS } from './shared'
+import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod, money, kilo, turnPoint, KEEP_TURNS, COORDINATOR_DOWNSHIFT } from './shared'
 import { PANE_ID, STORY_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 import { registerMission } from './mission'
@@ -32,6 +32,7 @@ let promptsSinceNudge = NUDGE_EVERY_PROMPTS
 // Change and stage as they stood when the current main turn started, so spend lands on the stage that incurred it.
 let turnChange: string | null = null
 let turnStage: string | null = null
+let turnPressure: 'normal' | 'tight' = 'normal', coordinatorSwitched = false
 const agentTypes = new Map<string, string>()
 
 const sdlc = ($: EngineInterface, args: string[]): string[] => sdlcArgv($.plugin.root, ...args)
@@ -48,7 +49,7 @@ async function refreshBand($: EngineInterface): Promise<Status | null> {
   const status = await statusJson($)
   const { change, stage } = stageOf(status)
   const session = await $.session.usage()
-  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow }
+  const value: Band = { change, stage, contextTokens: session.context.tokens ?? 0, sessionUsd: session.cost?.usd ?? 0, sensors: status?.sensors ?? null, story: status?.story ?? null, step: status?.step ?? null, flow: status?.flow, budget: status?.budget ?? null }
   await update($, band, () => value)
   $.ui.status(`rig${stage ? ` · ${stage}` : ''} · ${money(value.sessionUsd)} · ${kilo(value.contextTokens)} ctx`)
   return status
@@ -127,6 +128,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     mod.aside = await vendoredCopyActive($)
     if (mod.aside) return next(e)
+    coordinatorSwitched = false
+    turnPressure = 'normal'
     await update($, driverRunning, () => false)
     await update($, driverLast, () => '')
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
@@ -134,7 +137,7 @@ export const register: Register = on => {
       await $.command.register({ name: 'rig-status', description: 'rig: where every change stands and the next command (no model call)', immediate: true })
       // A standalone repo ships its own human-only /rig-approve and /rig-waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/rig-approve/SKILL.md'))) {
-        await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' })
+        await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' })
         await $.command.register({ name: 'rig-waive', description: 'rig: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
       await $.command.register({ name: 'rig-sensors', description: 'rig: what the sensors found, known-red and waivers (no model call)', immediate: true })
@@ -159,7 +162,7 @@ export const register: Register = on => {
     }
     const [slug, stage, ...more] = e.args.trim().split(/\s+/)
     const rest = stage === 'tier' ? more.slice(0, 2) : []
-    if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|tier S|M|L [type]>' }
+    if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' }
     const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
@@ -203,8 +206,15 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (mod.aside) return next(e)
-    if (await isInitialised($)) ({ change: turnChange, stage: turnStage } = stageOf(await statusJson($)))
+    if (await isInitialised($)) { const s = await statusJson($); ({ change: turnChange, stage: turnStage } = stageOf(s)); turnPressure = s?.step?.pressure ?? s?.pressure ?? 'normal' }
     return next(e)
+  })
+
+  // Budget downshift (spend spec §7): an Opus main loop moves to pinned Sonnet once under pressure and stays; subagents keep their routes.
+  on('turn.step', async function* ($, e, next) {
+    if (mod.aside || e.agentId || !/opus/i.test(e.model)) return yield* next(e)
+    if (!coordinatorSwitched && turnPressure === 'tight' && e.index === 0) { coordinatorSwitched = true; $.ui.toast('rig: budget tight, coordinator moved to Sonnet for this session') }
+    return yield* next(coordinatorSwitched ? { ...e, model: COORDINATOR_DOWNSHIFT } : e)
   })
 
   on('agent.spawn', async ($, e, next) => {
@@ -251,6 +261,8 @@ export const register: Register = on => {
       await $.process.run(sdlc($, ['log-usage', JSON.stringify(row)]))
       await update($, turns, h => [...h, turnPoint(usage, !!e.agentId, Number(row.usd ?? 0))].slice(-KEEP_TURNS))
       if (!e.agentId) status = await refreshBand($)
+      const hot = (l?: string) => l === 'notice' || l === 'tight' || l === 'over'
+      if (!e.agentId && (hot(status?.budget?.level) || hot(status?.budget?.change?.level))) for (const line of (await $.process.run(sdlc($, ['spend', 'notify']))).stdout.split('\n').filter(Boolean)) $.ui.toast(line)
     } catch (err) {
       $.ui.log(`usage capture skipped: ${String(err)}`)
     }

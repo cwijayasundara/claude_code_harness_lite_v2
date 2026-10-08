@@ -184,6 +184,15 @@ test('weakensConfig names every loosening and nothing else', () => {
   assert.deepEqual(weakensConfig(before, '{ broken'), ['sensors.json no longer parses'])
 })
 
+test('weakensConfig flags raising or removing a budget, raising warnAt and turning downshift off; lowering is fine', () => {
+  const cfg = (b: unknown) => JSON.stringify({ budget: b })
+  const base = { teamMonthlyUsd: 500, changeUsd: { M: 20 }, warnAt: [50, 80, 100], downshift: true }
+  const r = weakensConfig(cfg(base), cfg({ teamMonthlyUsd: 900, changeUsd: {}, warnAt: [50, 90, 100], downshift: false })).join('\n')
+  for (const want of ['budget.teamMonthlyUsd raised 500 → 900', 'budget.changeUsd.M removed', 'budget.warnAt raised', 'budget.downshift turned off']) assert.ok(r.includes(want), `${want} in:\n${r}`)
+  assert.ok(weakensConfig(cfg(base), cfg({})).join('\n').includes('budget.teamMonthlyUsd removed'))
+  assert.deepEqual(weakensConfig(cfg(base), cfg({ ...base, teamMonthlyUsd: 300, changeUsd: { M: 10, S: 3 }, warnAt: [40, 70, 90] })), [])
+})
+
 test('onlyKnownRedRemoved accepts the ratchet and nothing more', () => {
   const before = J({ fast: { lint: 'x' }, knownRed: ['fast.lint'] })
   assert.ok(onlyKnownRedRemoved(before, J({ fast: { lint: 'x' }, knownRed: [] })))

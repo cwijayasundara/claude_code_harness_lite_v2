@@ -27,6 +27,7 @@ import { flowOf, flowLine } from './flow.ts'
 import { cmdVendor, installStandalone } from './vendor.ts'
 import { cmdVerify, cmdVerifyReport } from './verify.ts'
 import { cmdHooks, cmdCheckPush } from './githooks.ts'
+import { safeBudgetView, pressureOf, cmdSpend, publishQuietly, type BudgetView, type Pressure } from './spend.ts'
 import { cmdPr, cmdPrChecks, otherChangeBranch } from './pr.ts'
 import { cmdRatchet, readRatchet, writeRatchet, rawSpendUsd, unblock, appendEvent } from './ratchet.ts'
 import { cmdQuality } from './quality.ts'
@@ -129,8 +130,14 @@ function cmdStatus(args: Args): void {
   if (named && exists(path.join(CHANGES, named)) && step(named).verdict === 'ready') clearReady(named)
   const active = activeSlug()
   // --band, the mod's every-turn read: the active change only, without the warnings and staleness that walk every change and stamp the tree.
+  const budgetOf = (st: { budget: BudgetView } | null): BudgetView => st?.budget ?? safeBudgetView(loadConfig().config.budget, null)
+  // Team pressure with no active change rides at the top level; with one, step.pressure (which honours full-route) wins.
+  const pressureTop = (st: { pressure: Pressure } | null): Pressure => st?.pressure ?? pressureOf(budgetOf(null), loadConfig().config.budget, false)
   const lean = json && args.opt.band ? (active ? loadChange(active) : null) : undefined
-  if (lean !== undefined) return out(JSON.stringify({ initialised: true, active, changes: lean ? [{ slug: lean.slug, next: lean.next }] : [], sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, lean) }))
+  if (lean !== undefined) {
+    const st = active ? step(active) : null
+    return out(JSON.stringify({ initialised: true, active, changes: lean ? [{ slug: lean.slug, next: lean.next }] : [], sensors: sensorStatus(), story: active ? story(active) : null, step: st, budget: budgetOf(st), pressure: pressureTop(st), flow: flowOf(true, lean) }))
+  }
   const changes = listChanges().map(loadChange)
   const warnings: string[] = []
   for (const c of changes) {
@@ -155,7 +162,8 @@ function cmdStatus(args: Args): void {
   const open = changes.flatMap(c => openItems(c.slug))
   if (json) {
     const summary = changes.map(c => ({ slug: c.slug, type: c.type, tier: c.tier, points: pointsOf(c.slug).points, next: c.next, command: nextCommand(c) }))
-    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: active ? step(active) : null, flow: flowOf(true, active ? loadChange(active) : null) }))
+    const st = active ? step(active) : null
+    return out(JSON.stringify({ initialised: true, active, changes: summary, warnings, stale, open, sensors: sensorStatus(), story: active ? story(active) : null, step: st, budget: budgetOf(st), pressure: pressureTop(st), flow: flowOf(true, active ? loadChange(active) : null) }))
   }
   if (!changes.length) return out([`no changes yet: run ${skillRef('start')} "<what you want>"`, ...warnings.map(w => `warn: ${w}`)].join('\n'))
   const label = (c: Change): string => (c.next ? (c.next.kind === 'approve' && c.next.gate === 'impact' ? 'impact' : c.next.stage) + (c.next.kind === 'approve' ? ' (awaiting approval)' : '') : 'done')
@@ -186,6 +194,13 @@ function cmdApprove(args: Args): void {
     writeRatchet(slug, r)
     unblock(slug, 'person approved more budget')
     return out(`unblocked ${slug}: ${node} gets a fresh budget ($${spent.toFixed(2)} credited)`)
+  }
+  if (stage === 'full-route') {
+    const r = readRatchet(slug)
+    r.fullRoute = true
+    writeRatchet(slug, r)
+    appendEvent(slug, { node: 'any', verdict: 'approved', kind: 'full-route', reason: 'a person turned budget downshift off for this change' })
+    return out(`approved ${slug} full-route: budget downshift is off for this change; budget warnings still show`)
   }
   if (stage === 'tier') {
     // The person states the target; it is recorded only if intent.md says exactly that right now, so an edit made after
@@ -394,11 +409,16 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   inbox: cmdInbox,
   watch: cmdWatch,
   scorecard: cmdScorecard,
+  spend: args => cmdSpend(args, () => {
+    const slug = typeof args.opt.change === 'string' ? checkSlug(args.opt.change) : activeSlug()
+    const c = slug ? loadChange(slug) : null
+    return { cfg: loadConfig().config.budget, change: c ? { slug: c.slug, tier: c.tier, type: c.type } : null }
+  }),
   diff: cmdDiff,
   quality: cmdQuality,
   shards: cmdShards,
   preflight: cmdPreflight,
-  check: args => (args.opt.at === 'push' ? cmdCheckPush(args) : cmdCheck(args)),
+  check: args => (args.opt.at === 'push' ? (cmdCheckPush(args), process.exitCode ? undefined : publishQuietly()) : cmdCheck(args)),
   'check-file': cmdCheckFile,
   vendor: cmdVendor,
   hooks: cmdHooks,
