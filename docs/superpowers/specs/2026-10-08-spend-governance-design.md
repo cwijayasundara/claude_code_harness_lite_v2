@@ -203,3 +203,22 @@ Never run rig on this repo. Verify with typecheck, `scripts/*.spec.ts`, `claude 
 - `DESIGN.md`: principle 7 notes the budget switch as the one sanctioned mid-session model change. A section on spend governance.
 - `CHANGELOG.md`.
 - `skills/metrics/SKILL.md`: the `budget` block.
+
+## 12. Amendments (2026-10-08, while planning)
+
+Planning found facts that change parts of this spec. Where an amendment and an earlier section disagree, the amendment wins.
+
+1. **No round-cap lever (§7).** A node that runs out of rounds blocks with kind `cap` and needs `/rig-approve <slug> budget` (`recordRound`, `step()`). Lowering caps under pressure would therefore stop work, which §2 rules out. With the default caps (`build: 2`, `pr-review: 1`) the pr-review half would change nothing anyway. The lever is removed. Downshift is now: review roles one effort step lower, plus the coordinator switch when the session runs Opus. With default settings the saving is modest. The main value of this spec is visibility.
+2. **Clone id (§4.1).** The id is a random 12-hex value per clone, not a hash of the email. Two clones on one machine with the same email would otherwise overwrite each other's file. The id is stored in the ledger itself as a row `{ kind: "event", event: "spend-id", id }`, so the id and the ledger cannot come apart. If the ledger is deleted, the next id starts a new file with only new rows, so nothing is counted twice.
+3. **No `byRole` (§4.1).** `roleOf` keys off `agentType`, and main rows have none, so main-row dollars cannot be split by role. `sdlc.ts metrics` already reports tokens by role locally. The rollup has `id`, `month`, `through`, `usd`, `byDay`, `byChange`, and for `ci` only, `runs`.
+4. **Spend push skips hooks.** `spend publish` pushes with `--no-verify`. A push from inside the pre-push hook would otherwise run the hook again.
+5. **CI cost (§4.3).** The pinned action has no cost output. It has `execution_file`, the run's message log, whose `result` message carries `total_cost_usd`.
+   - A step after the Claude step reads that value. It accepts only a finite number ≥ 0 and passes it out as a job output.
+   - A separate `spend` job runs no model. It has `contents: write`, runs only for same-repo PRs or events, runs the base branch's `sdlc.ts`, fetches the ref explicitly, and publishes.
+   - Reruns are skipped, keyed by `<run id>-<attempt>-<job>` in the `ci` file's `runs` list.
+   - Runs on a subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) report a notional cost, and it is counted as reported. The README says so.
+6. **No background fetch from the mod (§6).** A hook cannot be relied on to keep an un-awaited process running. Fetches happen in `spend publish` (every push), `spend status` and `metrics`. The band reads the cached ref, so team spend is as fresh as the clone's last push or status, and the band shows how old it is.
+7. **Pinned coordinator model (§7).** The switch resends with the full id `claude-sonnet-5-5`, matching `templates/settings.json`, never the alias. Only main-loop steps (no `agentId`) are rewritten.
+8. **Testing (§10).** The two-machine scenario runs in `scripts/spend.spec.ts`, with two clones of one bare remote, rather than in the integration sandbox. `npm run test:integration:self` must still pass unchanged.
+9. **Remote ref check (§9.3).** Whether GitHub accepts pushes to `refs/rig/spend` is checked by a person on a scratch repo before the CI task, both locally and from Actions. If it is refused, the fallback is the branch `rig-spend`, pushed the same way. Only the ref name constant changes.
+10. **Sources shown.** `spend status` lists each counted file's id and `through` time, so a clone that never publishes (hooks not installed) shows up as missing rather than silently lowering the total. `sdlc.ts pr` also publishes, so a clone without git hooks still publishes when it ships.
