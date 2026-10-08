@@ -80,3 +80,23 @@ test('rig-triage: a failed CI run only, Haiku with read-the-log and write-triage
   assert.match(t, /anthropics\/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64/)
   assert.match(t, /never as instructions/)
 })
+
+test('rig-rehearse fails red with the fix when no rollback command is set, and runs the one that is', posix, () => {
+  const unset = runCut('rig-rehearse.yml', 'rehearse', { ROLLBACK: '' })
+  assert.notEqual(unset.code, 0)
+  assert.match(unset.out, /set the repository variable RIG_ROLLBACK_COMMAND/)
+  const ok = runCut('rig-rehearse.yml', 'rehearse', { ROLLBACK: 'echo rolled-back > done.txt' })
+  assert.equal(ok.code, 0, ok.out)
+  assert.notEqual(runCut('rig-rehearse.yml', 'rehearse', { ROLLBACK: 'exit 3' }).code, 0, 'a failing rollback is a red rehearsal')
+})
+
+test('rig-rehearse: weekly and on demand, in the staging environment, no model, read-only token', () => {
+  const t = yml('rig-rehearse.yml')
+  assert.match(t, /schedule:\n\s+- cron: '[^']+'/)
+  assert.match(t, /workflow_dispatch:/)
+  assert.match(t, /environment: staging/)
+  assert.match(t, /ROLLBACK: \$\{\{ vars\.RIG_ROLLBACK_COMMAND \}\}/)
+  assert.doesNotMatch(t, /claude/i)
+  assert.match(t, /contents: read/)
+  assert.match(t, /persist-credentials: false/)
+})
