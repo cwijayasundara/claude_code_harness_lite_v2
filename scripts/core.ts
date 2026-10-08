@@ -390,11 +390,11 @@ export function clearState(shipped: string): void {
   fs.writeFileSync(STATE, `---\nchange:\n---\n# State\n\nNo active change. Last shipped: ${shipped}.\n`)
 }
 
-export const intentTemplate = (slug: string, type: ChangeType, tier: Tier, title: string, points?: number): string => `---
+export const intentTemplate = (slug: string, type: ChangeType, tier: Tier, title: string, points?: number, source?: string): string => `---
 slug: ${slug}
 type: ${type}
 tier: ${tier}
-${points ? `points: ${points}\n` : ''}created: ${now()}
+${source ? `source: ${source}\n` : ''}${points ? `points: ${points}\n` : ''}created: ${now()}
 ---
 # ${title}
 
@@ -417,12 +417,12 @@ ${points ? `points: ${points}\n` : ''}created: ${now()}
 none
 `
 
-export function createChange(slug: string, type: ChangeType, tier: Tier, title: string, points?: { value: number; set: boolean }): void {
+export function createChange(slug: string, type: ChangeType, tier: Tier, title: string, points?: { value: number; set: boolean }, source?: string): void {
   const dir = path.join(CHANGES, slug)
   if (!exists(SDLC)) fs.mkdirSync(CHANGES, { recursive: true })
   ensureGitignore()
   fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'intent.md'), intentTemplate(slug, type, tier, title, points?.value))
+  fs.writeFileSync(path.join(dir, 'intent.md'), intentTemplate(slug, type, tier, title, points?.value, source))
   // Evidence written by sdlc itself: a change with a versioned ratchet.json is a v0.4 change; one without is legacy.
   // The tier and type are recorded here because intent.md is model-writable: it may raise them, only a person lowers them.
   fs.writeFileSync(path.join(dir, 'ratchet.json'), JSON.stringify({ version: 4, tier, type, ...(points?.set ? { points: points.value } : {}), nodes: {}, slices: {}, baseline: {} }, null, 2) + '\n')

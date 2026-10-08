@@ -82,17 +82,20 @@ function cmdInit(args: Args): void {
 
 function cmdNew(args: Args): void {
   const slug = args.pos[0]
-  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N]')
+  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N] [--source .sdlc/intent/<file>.md]')
   const type = optString(args, 'type') ?? 'feature'
   const tier = optString(args, 'tier') ?? 'M'
   if (!isChangeType(type)) fail(`unknown type "${type}"; one of ${Object.keys(PATHS).join(', ')}`)
   if (!isTier(tier)) fail('tier must be S, M or L')
+  // An inbox file only: a plain kebab .md name under .sdlc/intent/ that exists (no `..`, no other directory).
+  const source = optString(args, 'source')
+  if (source !== undefined && (!/^\.sdlc\/intent\/[a-z0-9][a-z0-9-]{0,60}\.md$/.test(source) || !exists(path.join(ROOT, source)))) fail(`--source must name an existing .sdlc/intent/<kebab-name>.md file, not "${source}"`)
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
   if (!exists(SDLC)) cmdInit({ pos: [], opt: {} })
   const explicit = args.opt.points !== undefined ? parsePoints(args.opt.points) : null
   const defaults = loadConfig().config.points
-  createChange(slug, type, tier, optString(args, 'title') ?? slug, { value: explicit ?? defaults[tier], set: explicit !== null })
+  createChange(slug, type, tier, optString(args, 'title') ?? slug, { value: explicit ?? defaults[tier], set: explicit !== null }, source)
   const other = otherChangeBranch(slug)
   out(`created ${toPosix(path.relative(ROOT, dir))}/intent.md (type ${type}, tier ${tier})${other ? `\nwarning: ${other}` : ''}`)
 }
