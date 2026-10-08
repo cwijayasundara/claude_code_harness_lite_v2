@@ -3,7 +3,7 @@
 # workflows under `workflows:`, and list this file in CODEOWNERS. Auth: one secret, CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.
 # workflow_run runs with secrets even for a fork's failure, and the log is written by the failing code: so nothing is checked out,
 # the model can only read failed.log and write triage.md, and a model-free step posts after checking the shape and refusing
-# credentials; @mentions are defused so a triage never pages anyone. Actions are pinned to commit SHAs.
+# credentials; the lines are posted in a code fence, so no mention, link, image or HTML in them renders. Actions are pinned to commit SHAs.
 name: rig-triage
 on:
   workflow_run:
@@ -49,7 +49,8 @@ jobs:
           [ -f triage.md ] || { echo "::error::no triage.md"; exit 1; }
           lines=$(grep -c . triage.md || true)
           if [ "$lines" != 3 ] || ! sed -n 1p triage.md | grep -qE '^(Flaky|Real): .' || ! sed -n 2p triage.md | grep -q '^Evidence: ' \
-             || ! sed -n 3p triage.md | grep -q '^Next: ' || ! awk 'length > 300 { bad = 1 } END { exit bad }' triage.md; then
+             || ! sed -n 3p triage.md | grep -q '^Next: ' || ! awk 'length > 300 { bad = 1 } END { exit bad }' triage.md \
+             || grep -q '```' triage.md; then
             echo "::error::triage.md is not three short Flaky/Real, Evidence, Next lines; not posting it"; exit 1
           fi
           leaked() { [ -n "$1" ] && grep -qF -- "$1" triage.md; }
@@ -57,6 +58,6 @@ jobs:
              || grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|AKIA[0-9A-Z]{16}|BEGIN [A-Z ]*PRIVATE KEY' triage.md; then
             echo "::error::triage.md looks like it contains a credential; not posting it"; exit 1
           fi
-          { echo '<!-- rig-triage -->'; echo "Triage of [the failed run]($RUN_URL):"; echo; sed 's/@/@\&#8203;/g; s/$/  /' triage.md; } > comment.md
+          { echo '<!-- rig-triage -->'; echo "Triage of [the failed run]($RUN_URL):"; echo '```text'; cat triage.md; echo '```'; } > comment.md
           if [ -n "$PR" ]; then gh pr comment "$PR" --body-file comment.md; else cat comment.md >> "$GITHUB_STEP_SUMMARY"; fi
           # triage-post:end
