@@ -2,12 +2,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, write } from './testkit.ts'
 import { parseConfig } from './model.ts'
 import { evaluate, pointOf } from './watch.ts'
 
 const ROOT = path.join(import.meta.dirname, '..')
+const tmpDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'rig-watch-'))
+const posix = { skip: process.platform === 'win32' ? 'POSIX shell only' : false }
 
 test('bands: defaults, and every bad entry is a precise error', () => {
   const ok = parseConfig(JSON.stringify({ bands: [{ id: 'ci-failure-rate', query: 'gh run list --limit 50 --json conclusion', count: 'failure', tiers: { 2: { tools: 'Read,Grep,Bash(gh run view *)' }, 3: { routes: ['pull_request', 'runbook:rollback'] } } }] }))
@@ -116,4 +120,93 @@ test('watch with no bands says so; the evidence is denied to the Edit tool in bo
   const tpl = (f: string) => JSON.parse(fs.readFileSync(path.join(ROOT, 'templates', f), 'utf8')).permissions.deny as string[]
   assert.ok(tpl('settings.json').includes('Edit(/.sdlc/watch/*.jsonl)'))
   assert.ok(tpl('managed-settings.json').includes('Edit(./.sdlc/watch/*.jsonl)'))
+})
+
+const yml = fs.readFileSync(path.join(ROOT, 'templates', 'rig-watch.yml'), 'utf8')
+// A script cut from between its markers, dedented, run with bash -e in a fresh folder with a fake gh first on PATH.
+function runCut(marker: string, files: Record<string, string>, env: Record<string, string> = {}, gh = 'exit 1') {
+  const start = yml.indexOf(`# ${marker}:start`)
+  const end = yml.indexOf(`# ${marker}:end`)
+  assert.ok(start >= 0 && end > start, `rig-watch.yml carries both ${marker} markers`)
+  const lines = yml.slice(start, end).split('\n')
+  const indent = (lines[0] ?? '').match(/^ */)?.[0].length ?? 0
+  const dir = tmpDir()
+  const bin = path.join(dir, '.bin')
+  fs.mkdirSync(bin)
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" >> "${dir}/gh.log"\n${gh}\n`, { mode: 0o755 })
+  for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text) }
+  const output = path.join(dir, 'output.txt')
+  const r = spawnSync('bash', ['-e', '-c', lines.map(l => l.slice(indent)).join('\n')], { cwd: dir, encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH}`, GITHUB_OUTPUT: output, GITHUB_REPOSITORY: 'o/r', GH_TOKEN: 'ghs_testtoken', ...env } })
+  const outputs = Object.fromEntries((fs.existsSync(output) ? fs.readFileSync(output, 'utf8') : '').split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]))
+  return { code: r.status, out: r.stdout + r.stderr, outputs, dir }
+}
+const verdict = (tier: number, extra: Record<string, unknown> = {}) => JSON.stringify([
+  { id: 'calm', tier: 1, value: 11, mean: 11, sd: 1, rule: 'within band', breach: null, tools: 'Read', routes: ['pull_request'] },
+  { id: 'p95', tier, value: 15, mean: 11, sd: 1, rule: 'one point beyond 3σ', breach: tier >= 2 ? 'breach-p95-20261008' : null, tools: 'Read,Bash(gh run view *)', routes: ['pull_request'], ...extra },
+])
+
+test('rig-watch decide: tier 2 or above becomes a breach to diagnose; below that, nothing', posix, () => {
+  const quiet = runCut('watch-decide', { 'watch.json': verdict(1) })
+  assert.equal(quiet.code, 0, quiet.out)
+  assert.deepEqual(quiet.outputs, {})
+  const r = runCut('watch-decide', { 'watch.json': verdict(2) })
+  assert.equal(r.code, 0, r.out)
+  assert.deepEqual(r.outputs, { breach: 'breach-p95-20261008', band: 'p95', tier: '2', tools: 'Read,Bash(gh run view *)', summary: '15 against mean 11 (sd 1): one point beyond 3σ', rollback: 'false' })
+})
+
+test('rig-watch decide: a breach already in the inbox or open as a branch is not raised twice; a bad id is refused', posix, () => {
+  assert.deepEqual(runCut('watch-decide', { 'watch.json': verdict(3), '.sdlc/intent/breach-p95-20261008.md': 'x' }).outputs, {})
+  const branch = runCut('watch-decide', { 'watch.json': verdict(3) }, {}, 'case "$*" in *branches/rig-watch/breach-p95-20261008*) exit 0 ;; *) exit 1 ;; esac')
+  assert.deepEqual(branch.outputs, {})
+  const bad = runCut('watch-decide', { 'watch.json': verdict(3, { breach: 'breach-../../x-1' }) })
+  assert.notEqual(bad.code, 0)
+})
+
+test('rig-watch decide: tier 3 rolls back only with the route and a green last rehearsal', posix, () => {
+  const rehearsal = (c: string) => `case "$*" in *rig-rehearse*) echo ${c} ;; *) exit 1 ;; esac`
+  const routes = { routes: ['pull_request', 'runbook:rollback'] }
+  assert.equal(runCut('watch-decide', { 'watch.json': verdict(3, routes) }, {}, rehearsal('success')).outputs.rollback, 'true')
+  const red = runCut('watch-decide', { 'watch.json': verdict(3, routes) }, {}, rehearsal('failure'))
+  assert.equal(red.outputs.rollback, 'false')
+  assert.match(red.out, /last rollback rehearsal did not pass/)
+  assert.equal(runCut('watch-decide', { 'watch.json': verdict(3, routes) }, {}, 'exit 1').outputs.rollback, 'false', 'unreadable rehearsal: no rollback')
+  assert.equal(runCut('watch-decide', { 'watch.json': verdict(3) }, {}, rehearsal('success')).outputs.rollback, 'false', 'no rollback route')
+  assert.equal(runCut('watch-decide', { 'watch.json': verdict(2, routes) }, {}, rehearsal('success')).outputs.rollback, 'false', 'tier 2 never rolls back')
+})
+
+const DIAG = '## Problem\np95 rose to 15 ms.\n## Proposed outcome\nBack under 12.\n## Affected users and systems\nCheckout.\n## Constraints\nNone.\n## Open questions\nWhich deploy?\n'
+const intentEnv = { BREACH: 'breach-p95-20261008', BAND: 'p95', TIER: '3', SUMMARY: '15 against mean 11 (sd 1): one point beyond 3σ' }
+
+test('rig-watch intent: a checked diagnosis becomes a draft Stage 1 intent; credentials, oversize and bad ids are refused', posix, () => {
+  const r = runCut('watch-intent', { 'diagnosis.md': DIAG }, intentEnv)
+  assert.equal(r.code, 0, r.out)
+  const text = fs.readFileSync(path.join(r.dir, 'intent/breach-p95-20261008.md'), 'utf8')
+  assert.match(text, /^---\nstatus: draft\nsource: rig-watch\nband: p95\nband_tier: 3\ndetected: \d{4}-\d\d-\d\dT[\d:]+Z\n---\n# Intent: p95 left its band\n/)
+  assert.match(text, /Detector: 15 against mean 11/)
+  assert.match(text, /## Open questions\nWhich deploy\?/)
+  assert.notEqual(runCut('watch-intent', { 'diagnosis.md': `${DIAG}token sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA\n` }, intentEnv).code, 0)
+  assert.notEqual(runCut('watch-intent', { 'diagnosis.md': `${DIAG}ghs_testtoken\n` }, intentEnv).code, 0)
+  assert.notEqual(runCut('watch-intent', { 'diagnosis.md': 'x'.repeat(8001) }, intentEnv).code, 0)
+  assert.notEqual(runCut('watch-intent', { 'diagnosis.md': '' }, intentEnv).code, 0)
+  assert.notEqual(runCut('watch-intent', { 'diagnosis.md': DIAG }, { ...intentEnv, BREACH: '../x' }).code, 0)
+})
+
+test('rig-watch: hourly, a read-only model job, a model-free publish job, and a rollback behind the production environment', () => {
+  assert.match(yml, /schedule:\n\s+- cron: '[^']+'/)
+  assert.match(yml, /--model claude-haiku-5-5/)
+  assert.match(yml, /node --disable-warning=ExperimentalWarning \.sdlc\/bin\/sdlc\.ts watch --json > watch\.json/)
+  assert.match(yml, /actions\/cache@v4[\s\S]*path: \.sdlc\/watch/)
+  const watchJob = yml.slice(yml.indexOf('\n  watch:\n'), yml.indexOf('\n  publish:\n'))
+  const publishJob = yml.slice(yml.indexOf('\n  publish:\n'), yml.indexOf('\n  rollback:\n'))
+  const rollbackJob = yml.slice(yml.indexOf('\n  rollback:\n'))
+  assert.match(watchJob, /contents: read/)
+  assert.doesNotMatch(watchJob, /contents: write|pull-requests: write/)
+  assert.match(watchJob, /persist-credentials: false/)
+  assert.match(watchJob, /claude-code-action/)
+  assert.doesNotMatch(publishJob, /claude/i, 'the job that pushes runs no model')
+  assert.match(publishJob, /contents: write/)
+  assert.match(rollbackJob, /environment: production/)
+  assert.match(rollbackJob, /if: needs\.watch\.outputs\.rollback == 'true'/)
+  assert.match(rollbackJob, /vars\.RIG_ROLLBACK_COMMAND/)
+  assert.doesNotMatch(yml, /run: .*\$\{\{/, 'no expression is interpolated into a one-line run script')
 })
