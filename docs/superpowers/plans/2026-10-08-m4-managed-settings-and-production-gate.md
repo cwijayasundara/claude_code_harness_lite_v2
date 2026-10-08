@@ -473,9 +473,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `managedSettings(dir)` and `managedFiles(dir)` from Task 1 (`core.ts`).
 - Produces:
-  - `export const CONTROLS: [string, (m: Record<string, any>) => boolean][]`, 16 entries.
-  - `export function managedCheck(m: Record<string, unknown>, found: number): Check`.
-  - `export function controlsInForce(m: Record<string, unknown>): string[]`, the names in force. Task 5 uses it.
+  - `export const CONTROLS: [string, (m: unknown) => boolean][]`, 16 entries.
+  - `export function managedCheck(m: unknown, found: number): Check`.
+  - `export function controlsInForce(m: unknown): string[]`, the names in force. Task 5 uses it.
   - `Opts` gains an optional `managedDir?: string`; when it is absent, `MANAGED_DIR` is used.
 
 - [ ] **Step 1: Write the failing tests**
@@ -534,28 +534,32 @@ Add `MANAGED_DIR, managedSettings, managedFiles` to the `./core.ts` import. Add 
 
 ```ts
 // The 16 controls of the playbook's managed-settings worked example (p.42-43), each read from the merged managed settings.
-type M = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+const get = (m: unknown, dotted: string): unknown => dotted.split('.').reduce<unknown>((v, k) => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>)[k] : undefined), m)
 const has = (list: unknown, ...rules: string[]): boolean => Array.isArray(list) && rules.every(r => list.includes(r))
-export const CONTROLS: [string, (m: M) => boolean][] = [
-  ['deny secret reads', m => has(m.permissions?.deny, 'Read(.env*)')], ['deny network tools', m => has(m.permissions?.deny, 'WebFetch', 'Bash(curl *)', 'Bash(wget *)')],
-  ['allow the inner loop', m => Array.isArray(m.permissions?.allow) && m.permissions.allow.length > 0], ['disableBypassPermissionsMode', m => m.permissions?.disableBypassPermissionsMode === 'disable'],
-  ['allowManagedPermissionRulesOnly', m => m.allowManagedPermissionRulesOnly === true], ['sandbox.enabled', m => m.sandbox?.enabled === true],
-  ['sandbox.network.allowedDomains', m => Array.isArray(m.sandbox?.network?.allowedDomains)], ['sandbox.failIfUnavailable', m => m.sandbox?.failIfUnavailable === true],
-  ['sandbox.allowUnsandboxedCommands off', m => m.sandbox?.allowUnsandboxedCommands === false], ['sandbox.credentials.files', m => Array.isArray(m.sandbox?.credentials?.files) && m.sandbox.credentials.files.length > 0],
-  ['sandbox.credentials.envVars', m => Array.isArray(m.sandbox?.credentials?.envVars) && m.sandbox.credentials.envVars.length > 0], ['allowManagedHooksOnly', m => m.allowManagedHooksOnly === true],
-  ['disableSideloadFlags', m => m.disableSideloadFlags === true], ['strictKnownMarketplaces', m => Array.isArray(m.strictKnownMarketplaces)],
-  ['allowManagedMcpServersOnly', m => m.allowManagedMcpServersOnly === true], ['requiredMinimumVersion', m => typeof m.requiredMinimumVersion === 'string'],
+const nonEmpty = (v: unknown): boolean => Array.isArray(v) && v.length > 0
+const is = (dotted: string, want: unknown) => (m: unknown): boolean => get(m, dotted) === want
+export const CONTROLS: [string, (m: unknown) => boolean][] = [
+  ['deny secret reads', m => has(get(m, 'permissions.deny'), 'Read(.env*)')], ['deny network tools', m => has(get(m, 'permissions.deny'), 'WebFetch', 'Bash(curl *)', 'Bash(wget *)')],
+  ['allow the inner loop', m => nonEmpty(get(m, 'permissions.allow'))], ['disableBypassPermissionsMode', is('permissions.disableBypassPermissionsMode', 'disable')],
+  ['allowManagedPermissionRulesOnly', is('allowManagedPermissionRulesOnly', true)], ['sandbox.enabled', is('sandbox.enabled', true)],
+  ['sandbox.network.allowedDomains', m => Array.isArray(get(m, 'sandbox.network.allowedDomains'))], ['sandbox.failIfUnavailable', is('sandbox.failIfUnavailable', true)],
+  ['sandbox.allowUnsandboxedCommands off', is('sandbox.allowUnsandboxedCommands', false)], ['sandbox.credentials.files', m => nonEmpty(get(m, 'sandbox.credentials.files'))],
+  ['sandbox.credentials.envVars', m => nonEmpty(get(m, 'sandbox.credentials.envVars'))], ['allowManagedHooksOnly', is('allowManagedHooksOnly', true)],
+  ['disableSideloadFlags', is('disableSideloadFlags', true)], ['strictKnownMarketplaces', m => Array.isArray(get(m, 'strictKnownMarketplaces'))],
+  ['allowManagedMcpServersOnly', is('allowManagedMcpServersOnly', true)], ['requiredMinimumVersion', m => typeof get(m, 'requiredMinimumVersion') === 'string'],
 ]
-export const controlsInForce = (m: M): string[] => CONTROLS.filter(([, ok]) => ok(m)).map(([name]) => name)
+export const controlsInForce = (m: unknown): string[] => CONTROLS.filter(([, ok]) => ok(m)).map(([name]) => name)
 
 // Advisory: which controls are in force, and whether the managed file would switch rig's own hooks or rules off.
-export function managedCheck(m: M, found: number): Check {
+export function managedCheck(m: unknown, found: number): Check {
   if (!found) return { id: 'managed', status: 'skip', line: 'no managed settings file on this machine (server-managed settings are not visible here)' }
   const inForce = controlsInForce(m)
-  const rules = [...(m.permissions?.allow ?? []), ...(m.permissions?.ask ?? []), ...(m.permissions?.deny ?? [])].filter((r: unknown): r is string => typeof r === 'string')
+  const rules = ['allow', 'ask', 'deny'].flatMap(k => { const v = get(m, `permissions.${k}`); return Array.isArray(v) ? v : [] }).filter((r): r is string => typeof r === 'string')
+  const plugins = get(m, 'enabledPlugins')
+  const rigOn = typeof plugins === 'object' && plugins !== null && Object.entries(plugins).some(([id, on]) => id.startsWith('rig@') && on === true)
   const notes = [
-    m.allowManagedHooksOnly === true && !Object.entries(m.enabledPlugins ?? {}).some(([id, on]) => id.startsWith('rig@') && on === true) ? "rig's hooks are off: allowManagedHooksOnly without rig force-enabled in enabledPlugins" : '',
-    m.allowManagedPermissionRulesOnly === true && !has(m.permissions?.deny, 'Edit(./.sdlc/approvals.jsonl)') ? "rig's evidence rules are dropped: allowManagedPermissionRulesOnly without them in the managed file" : '',
+    get(m, 'allowManagedHooksOnly') === true && !rigOn ? "rig's hooks are off: allowManagedHooksOnly without rig force-enabled in enabledPlugins" : '',
+    get(m, 'allowManagedPermissionRulesOnly') === true && !has(get(m, 'permissions.deny'), 'Edit(./.sdlc/approvals.jsonl)') ? "rig's evidence rules are dropped: allowManagedPermissionRulesOnly without them in the managed file" : '',
     ...rules.filter(r => /^\w+\(\/\.sdlc\//.test(r)).map(r => `${r} anchors at the managed settings folder: use ./`),
   ].filter(Boolean)
   const missing = CONTROLS.map(([n]) => n).filter(n => !inForce.includes(n))
@@ -570,7 +574,7 @@ In `runPreflight`'s `steps`, append after `['protection', () => protection(o)]`:
     ['managed', () => { const dir = o.managedDir ?? MANAGED_DIR; return managedCheck(managedSettings(dir), managedFiles(dir).length) }],
 ```
 
-If `typecheck` rejects `any`, use `type M = Record<string, any>` with `// biome-ignore`, or whatever the repo already does. Check `grep -n "any" scripts/*.ts`. The fallback is `unknown` plus narrow casts, and the executor rules on it in the ledger.
+The repo uses no `any`: settings are read through `get()` with `unknown`.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -614,12 +618,13 @@ test('metrics: gate waits pair a block with the next allow in the same session; 
   const row = (h: number, decision: string, session: string) => JSON.stringify({ at: new Date(Date.UTC(2026, 9, 1, h)).toISOString(), decision, session })
   write(repo, '.sdlc/gates.jsonl', [
     row(0, 'block', 'a'), row(1, 'block', 'b'), row(2, 'block', 'a'), row(3, 'allow', 'a'), row(5, 'allow', 'b'),
-    row(6, 'block', 'c'), row(7, 'allow', ''), row(8, 'block', 'd'), row(9, 'allow', 'd'), row(10, 'block', 'e'), '{ torn',
+    row(6, 'block', 'c'), row(7, 'allow', ''), row(8, 'block', 'd'), row(9, 'allow', 'd'), row(10, 'block', 'e'),
+    row(11, 'block', 'f'), row(12, 'block', 'g'), row(13, 'allow', 'f'), row(17, 'allow', 'g'), '{ torn',
   ].join('\n') + '\n')
   for (const [f, cls] of [['1-x', 'gate'], ['2-y', 'perf'], ['3-z', 'gate']]) write(repo, `.sdlc/incidents/2026100${f}.md`, `---\ndetected: 2026-10-01T00:00:00Z\nclass: ${cls}\n---\n`)
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-managed-'))
   const m = JSON.parse(sdlc(repo, ['metrics', '--json'], { env: { RIG_MANAGED_DIR: empty } }).stdout).metrics
-  assert.deepEqual({ value: m.gate_wait_hours.value, n: m.gate_wait_hours.n }, { value: 3, n: 3 }, 'a: 0→3 = 3h, b: 1→5 = 4h, d: 8→9 = 1h; c and e never allowed; empty session dropped')
+  assert.deepEqual({ value: m.gate_wait_hours.value, n: m.gate_wait_hours.n }, { value: 3, n: 5 }, 'a 3h, b 4h, d 1h, f 2h, g 5h (MIN_SAMPLE is 5); c and e never allowed; the empty session is dropped')
   assert.deepEqual({ value: m.gate_violations_escaped.value, n: m.gate_violations_escaped.n }, { value: 2, n: 3 })
   assert.equal(m.managed_controls_in_force.value, null)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-managed-'))
@@ -628,7 +633,7 @@ test('metrics: gate waits pair a block with the next allow in the same session; 
 })
 ```
 
-Check `MIN_SAMPLE` in `core.ts` before running. If it is above 3, add more sessions so n ≥ `MIN_SAMPLE`, keep the median at 3, and ledger the change.
+`MIN_SAMPLE` is 5 (core.ts:86), so the test seeds five waits.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
