@@ -244,3 +244,12 @@ test('rig-watch runs rig\'s own secrets scanner on the diagnosis before the inte
   const step = yml.slice(yml.indexOf('- name: Write the draft intent (no model)'), yml.indexOf('# watch-intent:start'))
   assert.match(step, /node --disable-warning=ExperimentalWarning \.sdlc\/bin\/sdlc\.ts secrets diagnosis\.md > \/dev\/null \|\| \{[^}]*exit 1; \}/)
 })
+
+test('docs: rig-watch setup, the Claude Tag handoff and the security row', () => {
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8')
+  assert.match(readme, /`templates\/rig-watch\.yml`[^\n]*bands/)
+  assert.match(readme, /`watch`/)
+  assert.match(readme, /Claude Tag[^\n]*\/rig:incident/)
+  const sec = fs.readFileSync(path.join(ROOT, 'SECURITY.md'), 'utf8')
+  assert.match(sec, /`rig-watch\.yml`[^\n]*no model[^\n]*production/)
+})
