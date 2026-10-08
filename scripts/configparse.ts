@@ -1,5 +1,6 @@
 // The sensors.json sections added after v0.3 (gates, levels, quality, ratchet, value) and v0.6 (points, scopes, ci, ...).
 import { LEVELS, QUALITY_CATEGORIES, RATCHET_NODES, isObject, isStringList, isStringMap, posInt, type GateKey, type Level, type QualityCategory, type RatchetNode, type Scope, type SensorConfig, type Band } from './model.ts'
+import { parseRouting } from './routing.ts'
 
 const COUNT_RE = /^(?:exit|lines|json:[\w.]+)$/
 const nonNeg = (v: unknown): v is number => typeof v === 'number' && v >= 0
@@ -83,6 +84,7 @@ export function parseV6(value: Record<string, unknown>, config: SensorConfig, er
       else errors.push(`evals: unknown key "${k}"`)
     }
   }
+  if ('routing' in value) config.routing = parseRouting(value.routing, errors)
     if ('bands' in value) parseBands(value.bands, config, errors)
     if ('scopes' in value) parseScopes(value.scopes, config, errors)
 }

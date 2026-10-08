@@ -1,5 +1,6 @@
 // The pure data model for sensors: diffs, globs, config, rules and findings. No fs, git or process access.
 import { parseV4, parseV6 } from './configparse.ts'
+import type { RoutingOverride } from './routing.ts'
 export type Line = { n: number; text: string }
 export type FileStatus = 'A' | 'M' | 'D' | 'R'
 export type FileDiff = { file: string; from?: string; status: FileStatus; added: Line[]; removed: Line[]; binary?: true; oversize?: true }
@@ -46,6 +47,7 @@ export type SensorConfig = {
   points: Record<'S' | 'M' | 'L', number>
   idleGapMs: number
   evals: { minPass: number; maxErrors: number; maxTurns: number; timeoutMs: number }
+  routing: RoutingOverride
   bands: Band[]
   scopes: Record<string, Scope>
   scopeLimit: number
@@ -76,6 +78,7 @@ export const DEFAULT_CONFIG: SensorConfig = {
   points: { S: 5, M: 7, L: 11 },
   idleGapMs: 900_000,
   evals: { minPass: 0.9, maxErrors: 2, maxTurns: 30, timeoutMs: 600_000 },
+  routing: {},
   bands: [],
   scopes: {},
   scopeLimit: 3,

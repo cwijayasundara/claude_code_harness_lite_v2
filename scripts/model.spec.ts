@@ -264,3 +264,12 @@ test('evals settings: defaults, overrides and precise errors', () => {
   assert.match(errs({ bogus: 1 }), /evals: unknown key "bogus"/)
   assert.match(errs('yes'), /evals must be \{ minPass, maxErrors, maxTurns, timeoutMs \}/)
 })
+
+test('routing in sensors.json: parsed into overrides, bad entries are config errors', () => {
+  assert.deepEqual(parseConfig('').config.routing, {})
+  const ok = parseConfig(JSON.stringify({ routing: { implementer: { S: 'sonnet:high' } } }))
+  assert.deepEqual(ok.errors, [])
+  assert.deepEqual(ok.config.routing, { implementer: { S: { model: 'sonnet', effort: 'high' } } })
+  assert.match(parseConfig(JSON.stringify({ routing: { implementer: { S: 'gpt' } } })).errors[0] ?? '', /routing\.implementer\.S/)
+  assert.match(parseConfig(JSON.stringify({ routing: [] })).errors[0] ?? '', /routing must be/)
+})
