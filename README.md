@@ -126,7 +126,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig:diagnose` | Bugfix or incident: reproduce with a failing test, then the smallest fix. | tokens |
 | `/rig:build` | Approved design or plan: slice by slice, bounded review loop. | Sonnet + Opus review |
 | `/rig:test` · `/rig:sensors` | After build: run every test level, then the quality sensors against base. | mostly zero-token |
-| `/rig:pr` · `/rig:pr-review` | Ship: commit, push, open the PR, then review it and wait for green checks. | tokens |
+| `/rig:pr` · `/rig:pr-review` | Ship: commit, push, open the PR, then review it, fix once and sweep review comments and failing checks to green (at most 3 rounds per run; pending checks end the run, rerun it later). | tokens |
 | `/rig:incident "<what broke>"` | Production is on fire. Records it and opens a bugfix-path change. | tokens |
 
 **Look, at zero tokens** (mod; no model call)
@@ -154,7 +154,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 
 | Command | Use it when |
 |---|---|
-| `/rig:rule "<what recurs>"` | The agent broke the same convention twice: promote it to a mechanical rule. |
+| `/rig:rule "<what recurs>"` | The agent made the same mistake twice: promote it to a mechanical rule, or, when no pattern can catch it, to one line of CLAUDE.md's `## Things Claude gets wrong`, which you add. `/rig:pr-review` suggests it when a finding's category repeats. |
 | `/rig:metrics [days]` | You want the 12 playbook metrics plus cost per change, stage and agent. |
 | `node .sdlc/bin/sdlc.ts evals` | Before merging a change to CLAUDE.md, a skill, a hook, the guides or rules: runs `.sdlc/evals/*.json` with `claude -p` in a throwaway worktree and prints a pass rate against `evals.minPass` (advisory). `--seed` drafts evals from shipped changes; `--only <id>` runs one. Eval definitions are protected files: run it in the sandbox. |
 
@@ -178,6 +178,10 @@ Results append to `.sdlc/evals/results.jsonl`, which you commit: it is the evide
 `templates/rig-spec.yml` drafts each accepted intent after it merges to the trunk. A read-only model job runs `/rig-start … --plan-only` (`--plan-only` stops `start` and `design` before asking for approval and before any build; resuming under it reports status and stops). A model-free job accepts only rig's own files in one change folder, refuses a change the trunk already has, and publishes only the Markdown a person reviews (`intent.md`, `design.md`, `spec.md`, `plan.md`, `notes.md`) as a PR on `sdlc/intent-<name>`. rig's records (ratchet.json, impact.json and the rest) are not published, so the change waits for `/rig-approve <slug> tier <S|M|L> <type>` before any other step, and resuming it re-runs `check --at plan` to re-derive impact. A PR opened with `github.token` triggers no `pull_request` workflows, so a required `rig-check` waits: push a commit to the PR branch, close and reopen the PR, or give `gh pr create` a GitHub App or fine-grained token so checks run. If a run pushed the branch but failed before the PR opened, the intent is no longer pending: delete `sdlc/intent-<name>` to redraft it. One secret is needed: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`.
 
 Policy skills live at `.claude/skills/policy-<area>/SKILL.md` with an `owner` and a `source`; `init --full` scaffolds `policy-security`. Design, plan and spec apply each one and record a conflict as `- [policy-<area>] <concern> → owner: <owner>` under `## Concerns`. Any `## Concerns…` or `### Concerns…` heading counts. Approval is refused until each concern ends ` → resolved: <decision> (<owner>)` (on an indented line below it also counts); a document without the section approves as before.
+
+### Parallel work
+
+Running one change's slices in parallel sessions is not supported yet: the slices share one `ratchet.json`, and the slice checkpoint commits only on `sdlc/<slug>`. Separate changes can run side by side, each in its own checkout on its own `sdlc/<slug>` branch.
 
 ### What fires when (the automatic edges)
 

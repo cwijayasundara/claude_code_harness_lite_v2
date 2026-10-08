@@ -172,7 +172,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <tr><td class="k">Main thread (skills)</td><td>Sonnet</td><td colspan="3">unchanged: Sonnet 5.5 from the template</td><td>A person may start a tier S session with <code>claude --model claude-haiku-5-5</code>; README says so.</td></tr>
       <tr><td class="k">scout (code search)</td><td>Haiku 4.5</td><td colspan="3">Haiku 5.5, every tier</td><td>Not tied to a change's risk; same role, far stronger model (GDPval 735 → 1620).</td></tr>
       <tr><td class="k">General subagents<small>CLAUDE_CODE_SUBAGENT_MODEL</small></td><td>Sonnet</td><td colspan="3">Haiku 5.5, every tier</td><td>Custom subagents with no <code>model:</code> of their own (verifier, summaries). Built-in Explore and Plan keep their own model; the env var does not move them. Requires Claude Code 2.1.251+, where a per-call <code>model</code> beats this env var.</td></tr>
-      <tr><td class="k">pr-review sweep, rig-triage, watch diagnosis (new)</td><td>—</td><td colspan="3">Haiku 5.5, every tier</td><td>Repetitive sweeps and read-only diagnosis; the tier gate (code owner, review) still sits after them.</td></tr>
+      <tr><td class="k">rig-triage, watch diagnosis (new)</td><td>—</td><td colspan="3">Haiku 5.5, every tier</td><td>Read-only diagnosis; the tier gate (code owner, review) still sits after them. <em>Revised 2026-10-08 (M3): the pr-review sweep's fix runs change code, so they take the tier's model like every other implementer.</em></td></tr>
       <tr><td class="k">Eval runner (new)</td><td>—</td><td colspan="3">the model under test</td><td>An eval tests the configuration with the model the team ships; the scorer is deterministic.</td></tr>
     </tbody>
   </table>
@@ -340,7 +340,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
     </article>
     <article class="card">
       <div class="tag">Parallel sessions (README only)</div>
-      <p>No code. A README section: <code>status</code> already prints each slice with its files; open one <code>claude --worktree sdlc/&lt;slug&gt;-&lt;n&gt;</code> per group of slices that share no file, 2–3 at a time, and run <code>/rig-build &lt;slug&gt;</code> in each. The slice checkpoint already refuses a file outside the slice's list, so sessions cannot collide. Lane events already count concurrent sessions per engineer.</p>
+      <p><em>Revised 2026-10-08 (M3 review): the original recipe here was not backed by the code — <code>status</code> does not list each slice's files, the checkpoint commits only on <code>sdlc/&lt;slug&gt;</code>, and slices share one <code>ratchet.json</code>.</em> The README now says running one change's slices in parallel sessions is not supported yet; separate changes can run side by side, each in its own checkout on its own <code>sdlc/&lt;slug&gt;</code> branch. Making slice-parallel builds real (a <code>--slice</code> filter and worktree-aware checkpoints) is future work.</p>
     </article>
   </div>
 

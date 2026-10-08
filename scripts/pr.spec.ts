@@ -116,6 +116,41 @@ test('a follow-up commits review fixes on the same branch', () => {
   assert.equal(gitIn(repo, 'rev-parse', '--abbrev-ref', 'HEAD'), 'sdlc/tiny')
 })
 
+test('follow-up pushes are capped at four per change (the review fix plus three sweep rounds); a person lifts the cap', () => {
+  ready('tiny')
+  sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  for (let i = 1; i <= 4; i++) {
+    write(repo, 'src/app.js', `v${i}\n`)
+    const ok = sdlc(repo, ['pr', 'tiny', '--followup', '--message', `fix: round ${i}`])
+    assert.equal(ok.code, 0, ok.stderr)
+  }
+  write(repo, 'src/app.js', 'v5\n')
+  const capped = sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: round 5'])
+  assert.notEqual(capped.code, 0)
+  assert.match(capped.stderr, /4 follow-up pushes used/)
+  assert.match(capped.stderr, /\/rig-approve tiny budget/)
+  assert.equal(gitIn(repo, 'log', '-1', '--format=%s'), 'fix: round 4', 'the fifth push is not committed')
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).verdict, 'blocked')
+  assert.equal(sdlc(repo, ['approve', 'tiny', 'budget'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+  assert.equal(sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: round 5']).code, 0, 'approving the budget allows more')
+})
+
+test('the follow-up cap resets only on a person approving more budget, never on another unblock', () => {
+  ready('tiny')
+  sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
+  for (let i = 1; i <= 4; i++) {
+    write(repo, 'src/app.js', `w${i}\n`)
+    assert.equal(sdlc(repo, ['pr', 'tiny', '--followup', '--message', `fix: w${i}`]).code, 0)
+  }
+  // Any other code path that clears a block (a gate, a level, a pr resume) writes an unblocked event with its own reason.
+  fs.appendFileSync(path.join(repo, '.sdlc/changes/tiny/events.jsonl'), JSON.stringify({ at: new Date().toISOString(), node: 'any', verdict: 'unblocked', reason: 'pr created' }) + '\n')
+  write(repo, 'src/app.js', 'w5\n')
+  const r = sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: w5'])
+  assert.notEqual(r.code, 0, 'an unblock that was not a budget approval does not reset the count')
+  assert.match(r.stderr, /4 follow-up pushes used/)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/ratchet.json'), 'utf8')).blocked?.kind, 'cap')
+})
+
 test('a follow-up pushes to the same branch when there is a remote', () => {
   ready('tiny')
   const bare = withRemote()

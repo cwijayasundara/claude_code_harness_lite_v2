@@ -303,7 +303,10 @@ test('metrics report rule fires, prune candidates and recurring review categorie
   run(['check', '--at', 'ship'])
   const h = JSON.parse(run(['metrics', '--json']).stdout).metrics.harness
   assert.equal(h.rule_fires['no-print'], 1) // 3 matching lines, one fire
-  assert.match(h.rule_suggestions.join('\n'), /coupling \(3 findings\)/)
+  assert.deepEqual(h.rule_suggestions, [], 'three findings in one change are one occurrence, not a recurring mistake')
+  run(['new', 'a2', '--type', 'feature', '--tier', 'S'])
+  write('.sdlc/changes/a2/review.md', '## Findings\n- [severity: medium] [category: coupling] d\n')
+  assert.match(JSON.parse(run(['metrics', '--json']).stdout).metrics.harness.rule_suggestions.join('\n'), /coupling \(2 changes\)/)
   assert.ok(Array.isArray(h.prune_candidates))
   assert.equal(h.skill_load_failures, 1)
 })

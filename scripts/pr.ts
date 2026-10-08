@@ -12,7 +12,7 @@ import { loadConfig, runChecks } from './check.ts'
 import { branchDiff, showAt } from './diffs.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { formatFindings, SENSOR_NAMES, type SensorConfig } from './model.ts'
-import { appendEvent, block, unblock, readRatchet } from './ratchet.ts'
+import { appendEvent, block, unblock, readRatchet, readEvents } from './ratchet.ts'
 import { runQuality } from './quality.ts'
 import { verificationFresh, sensorsFresh } from './stamp.ts'
 import { renderScorecard } from './scorecard.ts'
@@ -220,15 +220,23 @@ function gitLoud(argv: string[]): boolean {
   } catch { return false }
 }
 
+const FOLLOWUP_CAP = 4
 function followup(slug: string, message: string): void {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (!prDone(slug)) fail(`no follow-up yet: the pr node of ${slug} is not done (run pr ${slug} --message ... first)`)
+  // The review's fix round plus three sweep rounds, counted since a person last approved more budget (sdlc.ts approve writes that
+  // reason; no other unblock resets it): a bound that holds across reruns.
+  const events = readEvents(slug)
+  const since = events.map(e => e.verdict === 'unblocked' && e.reason === 'person approved more budget').lastIndexOf(true)
+  const used = events.slice(since + 1).filter(e => e.kind === 'followup').length
+  if (used >= FOLLOWUP_CAP) { block(slug, 'pr-review', `cap: ${used} follow-up pushes used`, 'cap'); fail(`blocked: ${used} follow-up pushes used on ${slug}; a person decides, and /rig-approve ${slug} budget allows more`) }
   if (head !== `sdlc/${slug}`) fail(`follow-ups go on sdlc/${slug}; HEAD is ${head}`)
   const r = scopeDrift(slug, defaultBase())
   if (r.drift.length) fail(`scope drift, not committing: ${r.drift.join(', ')}`)
   const code = r.changed.filter(f => !f.startsWith('.sdlc/'))
   if (git(['add', '--', toPosix(path.relative(ROOT, path.join(CHANGES, slug))), ...code]) === null) fail('git add failed')
   if (!gitLoud(['commit', '-q', '-m', message])) fail('git commit failed (nothing staged, or a commit hook refused it)')
+  appendEvent(slug, { node: 'pr-review', verdict: 'followup', kind: 'followup' })
   if (git(['remote', 'get-url', 'origin']) !== null && !gitLoud(['push', 'origin', `sdlc/${slug}`])) { block(slug, 'pr-review', 'git push of the follow-up failed'); fail('push failed (blocked)') }
   out(`follow-up committed on sdlc/${slug} at ${git(['rev-parse', '--short', 'HEAD'])}`)
 }
