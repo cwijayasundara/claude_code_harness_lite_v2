@@ -92,6 +92,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 | Lever | Mechanism |
 |---|---|
 | Bounded context | Small fresh contexts per subagent (`omitClaudeMd` on scout; briefs of ≤ 60 lines); `/compact` rather than a handoff skill |
+| Context sensor: a session whose first call is over 25k tokens, or a turn over 150k, gets a toast naming the cause (`scripts/context.ts`); `metrics` counts heavy starts and the background model sessions plugins spawn | Live guard for the 50% finding above, not a retrospective; two review systems per turn is the single biggest waste found (proposal 2026-10-08) |
 | Sonnet main thread, Opus advisor **off** | Template sets `CLAUDE_CODE_DISABLE_ADVISOR_TOOL` (the advisor was a third of each run's cost; a user-level `advisorModel` otherwise still applies) |
 | Cheap subagents | routed by role and tier: tier L code on Sonnet, not Opus; Opus only for tier L plans and reviews; Haiku for reading |
 | One review per change | Findings below confidence 80 dropped; bounded fix rounds |

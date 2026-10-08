@@ -47,6 +47,7 @@ export type UsageRow = {
   cw?: number
   usd?: number
   ctx?: number
+  first?: boolean // the session's first main turn: its ctx is the system prompt plus the prompt, before any work
   event?: string
   id?: string
   skill?: string

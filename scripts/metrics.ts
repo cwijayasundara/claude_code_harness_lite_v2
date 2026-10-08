@@ -16,6 +16,7 @@ import { EVALS, RESULTS, type EvalResult } from './evals.ts'
 import { controlsInForce } from './preflight.ts'
 import { roleOf } from './routing.ts'
 import { safeBudgetView, fetchRef, readRef, peekId, changeSpent } from './spend.ts'
+import { backgroundSessions, FIRST_CALL_LIMIT } from './context.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -227,8 +228,29 @@ export function cmdMetrics(args: Args): void {
     cache_hit_share: input ? Number((usage.reduce((s, r) => s + (r.cr ?? 0), 0) / input).toFixed(3)) : null,
     peak_context: main.reduce((p, r) => Math.max(p, r.ctx ?? 0), 0),
     turns_over_150k: main.filter(r => (r.ctx ?? 0) > 150_000).length,
+    // The context sensor: the heaviest first call of a session (system prompt plus prompt) and how many sessions started over the limit.
+    first_call_context: main.filter(r => r.first).reduce((p, r) => Math.max(p, r.ctx ?? 0), 0),
+    heavy_session_starts: main.filter(r => r.first && (r.ctx ?? 0) > FIRST_CALL_LIMIT).length,
     opus_token_share: written ? Number((opusWritten / written).toFixed(3)) : null,
   }
+
+  // Background sessions (proposal 2026-10-08 §3.3.3): model sessions a hook or plugin spawned in this project (sdk-py and the like),
+  // which no usage row records. Per change: the sessions that started while the change was open (intent created to ship, or now).
+  const bg = backgroundSessions(ROOT, since)
+  const spanOf = (c: Change): [number, number] => {
+    const start = Date.parse(String(c.intent.created ?? '')) || 0
+    const ship = path.join(c.dir, 'ship.json')
+    let end = Date.now()
+    try { end = Date.parse(String((JSON.parse(read(ship)) as { at?: string }).at ?? '')) || fs.statSync(ship).mtimeMs } catch { /* open change */ }
+    return [start, end]
+  }
+  const bgPerChange: Record<string, number> = {}
+  for (const c of changes) {
+    const [a, b] = spanOf(c)
+    const n = bg.sessions.filter(s => { const t = Date.parse(s.at); return t >= a && t <= b }).length
+    if (n) bgPerChange[c.slug] = n
+  }
+  const background = { sessions: bg.total, by_entrypoint: bg.by_entrypoint, per_change: bgPerChange, note: bg.total ? 'model sessions spawned by hooks or plugins (not in usd_total); one explicit review per change is the target' : undefined }
 
   const evs = changes.map(c => ({ c, e: readJsonlSafe(path.join(c.dir, 'events.jsonl')) }))
   const perChange = (f: (e: Ev[]) => number): Metric => median(evs.map(x => f(x.e)))
@@ -306,8 +328,8 @@ export function cmdMetrics(args: Args): void {
     })(),
   }
 
-  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, budget, harness, autonomy, ratchet: ratchetM, economics, points: pointsM } }, null, 2))
+  if (args.opt.json) return out(JSON.stringify({ days, changes: changes.length, metrics: { ...m, cost, background, budget, harness, autonomy, ratchet: ratchetM, economics, points: pointsM } }, null, 2))
   const fmt = (v: Metric): string => (v.value === null ? `unmeasured (n=${v.n}${v.note ? ', ' + v.note : ''})` : `${Number(v.value.toFixed(2))} (n=${v.n})`)
   const rows = Object.entries(m).map(([k, v]) => `${k.padEnd(30)} ${fmt(v)}`)
-  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), '', 'budget (soft; every clone that published plus this one)', JSON.stringify(budget, null, 2), '', 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2), '', 'points (shipped in the window; unmeasured below 5 shipped changes)', JSON.stringify(pointsM, null, 2)].join('\n'))
+  out([`sdlc metrics, last ${days} days, ${changes.length} change(s)`, ...rows, '', 'cost', JSON.stringify(cost, null, 2), '', 'background sessions (hook- or plugin-spawned model sessions in ~/.claude/projects; not in usd_total)', JSON.stringify(background, null, 2), '', 'budget (soft; every clone that published plus this one)', JSON.stringify(budget, null, 2), '', 'harness (fire counts come from this machine\'s usage.jsonl; treat prune candidates as suggestions to confirm)', JSON.stringify(harness, null, 2), '', 'autonomy', JSON.stringify(autonomy, null, 2), '', 'ratchet', JSON.stringify(ratchetM, null, 2), '', 'economics (value is an estimate: tier hours x rate)', JSON.stringify(economics, null, 2), '', 'points (shipped in the window; unmeasured below 5 shipped changes)', JSON.stringify(pointsM, null, 2)].join('\n'))
 }

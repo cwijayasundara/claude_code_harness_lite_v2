@@ -35,6 +35,7 @@ import { cmdShards } from './shards.ts'
 import { treeStamp } from './stamp.ts'
 import { stalenessAll, openItems, sliceWarnings, repoStale } from './stale.ts'
 import { cmdPreflight } from './preflight.ts'
+import { contextWarnings, enabledPlugins } from './context.ts'
 
 // ---------- commands ----------
 
@@ -276,6 +277,9 @@ function cmdLogUsage(args: Args): void {
   const change = row.change ?? current
   const stage = row.change ? row.stage ?? null : current ? 'intent' : null
   fs.appendFileSync(USAGE, JSON.stringify({ at: now(), ...row, change, stage }) + '\n')
+  // The context sensor: one line per warning, which the mod shows as a toast and the band's log keeps.
+  const warnings = contextWarnings(row, row.first ? enabledPlugins(undefined, ROOT) : [])
+  if (warnings.length) out(warnings.join('\n'))
 }
 
 // ---------- main ----------
