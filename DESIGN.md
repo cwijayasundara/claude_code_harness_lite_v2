@@ -35,7 +35,7 @@ The biggest lever is **bounded context**. Everything below follows from that.
 ## 3. Architecture
 
 ```
-skills/      the stages, /rig:* (start design spec plan diagnose build test sensors pr pr-review
+skills/      the stages, /rig:* (start intent design spec plan diagnose build test sensors pr pr-review
              incident next init rule metrics), prompts only
 agents/      scout (haiku, read-only) · architect (opus) · implementer (sonnet) · reviewer (opus)
 hooks/       hooks.json = five settings hooks plus two async lane hooks (`SubagentStart`, `SubagentStop`, observational), none on Bash (work in -p and CI) · register.ts = the optional mod
@@ -74,6 +74,7 @@ Gates are configured in `gates` in `.sdlc/sensors.json`. A `tier` sensor blocks 
 
 ```
 .sdlc/
+├── intent/          <name>.md  ideas before a change exists; status draft|accepted|closed (shipped is derived)
 ├── changes/<slug>/  intent.md  spec.md  design.md/plan.md (## Files, ## Slices, ## Verification; no code)
 │                    verification.md (generated)  review*.md  runs.jsonl  ratchet.json  events.jsonl
 │                    pr.md  ship.json  approvals/waivers rows
@@ -111,7 +112,7 @@ Evidence files (approvals, waivers, `runs.jsonl`, `verification.md`, `ratchet.js
 
 ## 7. Measurement
 
-`metrics` reports the playbook's 12 leading and lagging metrics (from git, `gh`, approvals and incidents; `unmeasured` when n < 5) plus cost per change, stage and agent. Dollars come from the delta of the session cost ledger, which includes advisor and classifier calls; the scorecard adds spend against budget and an estimated value (`value` hours × rate). Cost capture needs the mod: headless `-p` runs record usd 0. Evals (`sdlc.ts evals`) are run by a person, never by CI: `eval_pass_rate` is the last run's pass share, and `incident_to_eval_hours` is how long an incident takes to become an eval. Eval definitions (`.sdlc/evals/*.json`) are protected harness files, since one can grant `claude -p` tools and run shell checks; `--seed` sanctions its own writes, and `/rig:diagnose` writes an incident eval with the person's approval.
+`metrics` reports the playbook's 12 leading and lagging metrics (from git, `gh`, approvals and incidents; `unmeasured` when n < 5) plus cost per change, stage and agent. Dollars come from the delta of the session cost ledger, which includes advisor and classifier calls; the scorecard adds spend against budget and an estimated value (`value` hours × rate). Cost capture needs the mod: headless `-p` runs record usd 0. Evals (`sdlc.ts evals`) are run by a person, never by CI: `eval_pass_rate` is the last run's pass share, and `incident_to_eval_hours` is how long an incident takes to become an eval. `inbox_survival` is the share of decided inbox ideas that were accepted or shipped (beside `intent_survival`, which counts changes past intent), and `intent_churn_after_design` is the median number of intent.md commits after the first design or spec commit. Eval definitions (`.sdlc/evals/*.json`) are protected harness files, since one can grant `claude -p` tools and run shell checks; `--seed` sanctions its own writes, and `/rig:diagnose` writes an incident eval with the person's approval.
 
 ## 8. What the trials showed
 
