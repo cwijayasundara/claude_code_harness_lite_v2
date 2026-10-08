@@ -3,7 +3,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, write } from './testkit.ts'
+import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
 let repo: string
 beforeEach(() => { repo = makeRepo() })
@@ -27,4 +27,48 @@ test('new --source records the inbox file in intent.md and refuses paths outside
 test('new without --source writes no source line', () => {
   sdlc(repo, ['new', 'plain', '--type', 'chore', '--tier', 'S'])
   assert.doesNotMatch(fs.readFileSync(path.join(repo, '.sdlc/changes/plain/intent.md'), 'utf8'), /^source:/m)
+})
+
+type Entry = { file: string; status: string; change: string | null; type: string | null; tier: string | null; model: string }
+const inbox = (...args: string[]): Entry[] => JSON.parse(sdlc(repo, ['inbox', '--json', ...args]).stdout) as Entry[]
+
+test('inbox lists every intent with its status; shipped comes from the change that names it', () => {
+  intent('a-draft.md', 'status: draft')
+  intent('b-closed.md', 'status: closed')
+  intent('c-shipped.md', 'status: accepted')
+  intent('d-odd.md', 'status: maybe')
+  sdlc(repo, ['new', 'c-change', '--type', 'chore', '--tier', 'S', '--source', '.sdlc/intent/c-shipped.md'])
+  write(repo, '.sdlc/changes/c-change/ship.json', '{}')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'ship c')
+  assert.deepEqual(inbox().map(e => [e.file, e.status, e.change]), [
+    ['a-draft.md', 'draft', null], ['b-closed.md', 'closed', null], ['c-shipped.md', 'shipped', 'c-change'], ['d-odd.md', 'unknown', null],
+  ])
+})
+
+test('--pending: accepted, no change, a kebab name, and no rig-spec branch on the remote yet', () => {
+  intent('one.md', 'status: accepted\ntier: M\ntype: feature')
+  intent('two.md', 'status: accepted')
+  intent('three.md', 'status: draft')
+  intent('Has Space.md', 'status: accepted')
+  intent('four.md', 'status: accepted')
+  sdlc(repo, ['new', 'four-change', '--type', 'chore', '--tier', 'S', '--source', '.sdlc/intent/four.md'])
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'inbox')
+  gitIn(repo, 'update-ref', 'refs/remotes/origin/sdlc/intent-two', 'HEAD')
+  assert.deepEqual(inbox('--pending').map(e => e.file), ['one.md'])
+})
+
+test('the model follows the intent tier: Opus for greenfield, a missing tier or an invalid one', () => {
+  intent('s.md', 'status: accepted\ntier: S')
+  intent('m.md', 'status: accepted\ntier: M')
+  intent('g.md', 'status: accepted\ntier: S\ntype: greenfield')
+  intent('x.md', 'status: accepted')
+  intent('bad.md', 'status: accepted\ntier: XL')
+  assert.deepEqual(Object.fromEntries(inbox().map(e => [e.file, e.model])), { 'bad.md': 'opus', 'g.md': 'opus', 'm.md': 'sonnet', 's.md': 'haiku', 'x.md': 'opus' })
+})
+
+test('an empty or missing inbox lists nothing', () => {
+  assert.deepEqual(inbox(), [])
+  assert.match(sdlc(repo, ['inbox']).stdout, /intent inbox is empty/)
 })

@@ -19,6 +19,7 @@ import { cmdCheck, cmdCheckFile, cmdImpactStatus, loadConfig } from './check.ts'
 import { runCommand, recordRun } from './runs.ts'
 import { cmdMetrics } from './metrics.ts'
 import { cmdEvals, lastRun } from './evals.ts'
+import { cmdInbox } from './inbox.ts'
 import { cmdPoints, parsePoints, pointsOf } from './points.ts'
 import { cmdScorecard, story } from './scorecard.ts'
 import { flowOf, flowLine } from './flow.ts'
@@ -373,6 +374,7 @@ const COMMANDS: Record<string, (args: Args) => void> = {
   hook: cmdHook,
   metrics: cmdMetrics,
   evals: cmdEvals,
+  inbox: cmdInbox,
   scorecard: cmdScorecard,
   diff: cmdDiff,
   quality: cmdQuality,
