@@ -172,7 +172,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <tr><td class="k">Main thread (skills)</td><td>Sonnet</td><td colspan="3">unchanged: Sonnet 5.5 from the template</td><td>A person may start a tier S session with <code>claude --model claude-haiku-5-5</code>; README says so.</td></tr>
       <tr><td class="k">scout (code search)</td><td>Haiku 4.5</td><td colspan="3">Haiku 5.5, every tier</td><td>Not tied to a change's risk; same role, far stronger model (GDPval 735 → 1620).</td></tr>
       <tr><td class="k">General subagents<small>CLAUDE_CODE_SUBAGENT_MODEL</small></td><td>Sonnet</td><td colspan="3">Haiku 5.5, every tier</td><td>Custom subagents with no <code>model:</code> of their own (verifier, summaries). Built-in Explore and Plan keep their own model; the env var does not move them. Requires Claude Code 2.1.251+, where a per-call <code>model</code> beats this env var.</td></tr>
-      <tr><td class="k">pr-review sweep, rig-triage, watch diagnosis (new)</td><td>—</td><td colspan="3">Haiku 5.5, every tier</td><td>Repetitive sweeps and read-only diagnosis; the tier gate (code owner, review) still sits after them.</td></tr>
+      <tr><td class="k">rig-triage, watch diagnosis (new)</td><td>—</td><td colspan="3">Haiku 5.5, every tier</td><td>Read-only diagnosis; the tier gate (code owner, review) still sits after them. <em>Revised 2026-10-08 (M3): the pr-review sweep's fix runs change code, so they take the tier's model like every other implementer.</em></td></tr>
       <tr><td class="k">Eval runner (new)</td><td>—</td><td colspan="3">the model under test</td><td>An eval tests the configuration with the model the team ships; the scorer is deterministic.</td></tr>
     </tbody>
   </table>
