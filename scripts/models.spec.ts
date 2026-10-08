@@ -22,14 +22,37 @@ test('the scout runs on Haiku 5.5 by full ID, like the other agents', () => {
   assert.match(read('agents/scout.md'), /^model: claude-haiku-5-5$/m)
 })
 
-const MODELS = '**Models:** pass `model` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` on every `rig:architect`, `rig:implementer` and `rig:reviewer` launch.'
+const MODELS = '**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role\'s `model` and `effort` on every launch: `rig:researcher` (researcher), `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread.'
 
-test('every skill that launches architect, implementer or reviewer passes the tier model, and none hardcodes one', () => {
+test('every skill that launches architect, implementer or reviewer passes its role route, and none hardcodes one', () => {
   for (const name of fs.readdirSync(path.join(ROOT, 'skills'))) {
     const text = read(`skills/${name}/SKILL.md`)
     if (/rig:(architect|implementer|reviewer)/.test(text)) assert.ok(text.includes(MODELS), `${name} lacks the Models line`)
     assert.doesNotMatch(text, /model: (sonnet|opus|haiku)\b/, `${name} hardcodes a model`)
   }
+})
+
+test('the researcher is a read-only Haiku agent that fetches docs', () => {
+  const text = read('agents/researcher.md')
+  assert.match(text, /^model: claude-haiku-5-5$/m)
+  assert.match(text, /^effort: low$/m)
+  assert.match(text, /^tools: WebFetch, WebSearch, Read$/m)
+})
+
+test('the scout and triage files match their pinned routes', async () => {
+  const { TABLE } = await import('./routing.ts')
+  const scout = read('agents/scout.md')
+  assert.deepEqual(TABLE.scout.S, { model: 'haiku', effort: 'low' })
+  assert.match(scout, /^model: claude-haiku-5-5$/m)
+  assert.match(scout, /^effort: low$/m)
+})
+
+test('design and spec send external docs questions to one researcher', () => {
+  for (const s of ['design', 'spec']) assert.match(read(`skills/${s}/SKILL.md`), /one `rig:researcher`/, s)
+})
+
+test('pr-review hands the reviewer and referee routes to the review workflow', () => {
+  assert.match(read('skills/pr-review/SKILL.md'), /routes: \{reviewer: routes\.reviewer, referee: routes\.referee\}/)
 })
 
 test('tier S builds through a Haiku implementer; tier S and M review through rig:reviewer, not code-review', () => {
