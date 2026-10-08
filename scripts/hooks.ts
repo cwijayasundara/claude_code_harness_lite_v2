@@ -251,7 +251,8 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
 type SettingsHooks = { hooks?: Record<string, { hooks?: { command?: unknown }[] }[]> }
 export function runsOwnHook(name: string): boolean {
   if (IS_VENDORED) return false
-  if (managedSettings().allowManagedHooksOnly === true) return false
+  // RIG_MANAGED_HOOKS_ONLY is the template's marker for server-managed settings, which are not visible on disk.
+  if (process.env.RIG_MANAGED_HOOKS_ONLY === '1' || managedSettings().allowManagedHooksOnly === true) return false
   try {
     const { hooks = {} } = JSON.parse(read(path.join(ROOT, '.claude', 'settings.json')) || '{}') as SettingsHooks
     const own = new RegExp(`\\.sdlc/bin/sdlc\\.ts"? hook ${name}$`)

@@ -198,7 +198,8 @@ export const CONTROLS: [string, (m: unknown) => boolean][] = [
 export const controlsInForce = (m: unknown): string[] => CONTROLS.filter(([, ok]) => ok(m)).map(([name]) => name)
 
 // Advisory: which controls are in force, and whether the managed file would switch rig's own hooks or rules off.
-export function managedCheck(m: unknown, found: number): Check {
+const runnable = (file: string): boolean => { try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile() } catch { return false } }
+export function managedCheck(m: unknown, found: number, canRun: (file: string) => boolean = runnable): Check {
   if (!found) return { id: 'managed', status: 'skip', line: 'no managed settings file on this machine (server-managed settings are not visible here)' }
   const inForce = controlsInForce(m)
   const rules = ['allow', 'ask', 'deny'].flatMap(k => { const v = get(m, `permissions.${k}`); return Array.isArray(v) ? v : [] }).filter((r): r is string => typeof r === 'string')
@@ -208,6 +209,10 @@ export function managedCheck(m: unknown, found: number): Check {
     get(m, 'allowManagedHooksOnly') === true && !rigOn ? "rig's hooks are off: allowManagedHooksOnly without rig force-enabled in enabledPlugins" : '',
     get(m, 'allowManagedPermissionRulesOnly') === true && !has(get(m, 'permissions.deny'), 'Edit(./.sdlc/approvals.jsonl)') ? "rig's evidence rules are dropped: allowManagedPermissionRulesOnly without them in the managed file" : '',
     ...rules.filter(r => /^\w+\(\/\.sdlc\//.test(r)).map(r => `${r} anchors at the managed settings folder: use ./`),
+    // A hook whose script is missing exits 126/127, which Claude Code treats as a non-blocking error: the gate would allow everything.
+    ...Object.values((get(m, 'hooks') ?? {}) as Record<string, unknown>).flatMap(g => (Array.isArray(g) ? g : []) as { hooks?: { command?: unknown }[] }[])
+      .flatMap(g => g.hooks ?? []).map(h => (typeof h.command === 'string' ? h.command.trim().split(/\s+/)[0] ?? '' : '')).filter(c => c.startsWith('/') && !canRun(c))
+      .map(c => `managed hook ${c} is missing or not executable: Claude Code then allows every command`),
   ].filter(Boolean)
   const missing = CONTROLS.map(([n]) => n).filter(n => !inForce.includes(n))
   const line = [`${inForce.length}/16 managed controls in force (${found} file${found === 1 ? '' : 's'})`, missing.length ? `missing: ${missing.join(', ')}` : '', ...notes].filter(Boolean).join('; ')

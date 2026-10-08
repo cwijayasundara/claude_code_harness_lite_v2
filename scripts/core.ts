@@ -363,7 +363,8 @@ export const MANAGED_DIR = process.env.RIG_MANAGED_DIR || (process.platform === 
   : process.platform === 'win32' ? 'C:\\Program Files\\ClaudeCode' : '/etc/claude-code')
 export function managedFiles(dir = MANAGED_DIR): string[] {
   const d = path.join(dir, 'managed-settings.d')
-  const drops = exists(d) ? fs.readdirSync(d).filter(f => f.endsWith('.json')).sort().map(f => path.join(d, f)) : []
+  let drops: string[] = []
+  try { drops = fs.readdirSync(d).filter(f => f.endsWith('.json')).sort().map(f => path.join(d, f)) } catch { /* none, or unreadable */ }
   return [path.join(dir, 'managed-settings.json'), ...drops].filter(f => { try { JSON.parse(fs.readFileSync(f, 'utf8')); return true } catch { return false } })
 }
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)

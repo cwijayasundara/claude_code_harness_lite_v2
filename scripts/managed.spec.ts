@@ -118,7 +118,7 @@ test('preflight managed: 16 controls from p.42; the template has all 16; never f
   assert.equal(CONTROLS.length, 16)
   const full = tpl('managed-settings.json')
   assert.equal(controlsInForce(full).length, 16)
-  assert.deepEqual(managedCheck(full, 1), { id: 'managed', status: 'pass', line: '16/16 managed controls in force (1 file)' })
+  assert.deepEqual(managedCheck(full, 1, () => true), { id: 'managed', status: 'pass', line: '16/16 managed controls in force (1 file)' })
   assert.equal(managedCheck({}, 0).status, 'skip')
   assert.match(managedCheck({}, 0).line, /server-managed settings are not visible here/)
   const partial = managedCheck({ permissions: { disableBypassPermissionsMode: 'disable' }, sandbox: { enabled: true } }, 1)
@@ -139,13 +139,13 @@ test('preflight managed warns when the managed file would switch rig off or prot
   assert.match(anchored.line, /Edit\(\/\.sdlc\/approvals\.jsonl\) anchors at the managed settings folder: use \.\//)
 })
 
-test('preflight reports the managed row from RIG_MANAGED_DIR and still passes without it', () => {
+test('preflight reports the managed row from RIG_MANAGED_DIR, skipping when there is none', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   assert.match(sdlc(repo, ['preflight'], { env: { RIG_MANAGED_DIR: tmpDir() } }).stdout, /\| managed \| skip \|/)
   const dir = tmpDir()
   fs.copyFileSync(path.join(ROOT, 'templates', 'managed-settings.json'), path.join(dir, 'managed-settings.json'))
-  assert.match(sdlc(repo, ['preflight'], { env: { RIG_MANAGED_DIR: dir } }).stdout, /\| managed \| pass \| 16\/16/)
+  assert.match(sdlc(repo, ['preflight'], { env: { RIG_MANAGED_DIR: dir } }).stdout, /\| managed \| warn \| 16\/16 [^|]*production-gate\.sh is missing or not executable/, 'the gate script is not installed on this machine')
 })
 
 test('metrics: gate waits pair a block with the next allow in the same session; escaped gate violations; managed controls', () => {
@@ -177,4 +177,52 @@ test('SECURITY.md documents the managed rollout, the gate install path and its l
   assert.match(sec, /RELEASE_APPROVAL[^\n]*placeholder/)
   assert.match(sec, /sdlc\.ts run --[^\n]*managed deny/, 'the sdlc.ts allow rule widens past the managed denies')
   assert.match(sec, /github\.com[^\n]*egress/, 'the GitHub domains are an egress route')
+})
+
+// Final-review fixes.
+test('preflight warns when a managed hook script is missing or not executable: Claude Code then allows every command', () => {
+  const full = tpl('managed-settings.json')
+  const r = managedCheck(full, 1, () => false)
+  assert.equal(r.status, 'warn')
+  assert.match(r.line, /managed hook \/etc\/claude-code\/gates\/production-gate\.sh is missing or not executable/)
+  assert.equal(managedCheck(full, 1, () => true).status, 'pass')
+})
+
+test('the RIG_MANAGED_HOOKS_ONLY marker keeps the plugin hooks on when managed settings come from the server (not visible locally)', () => {
+  assert.equal(tpl('managed-settings.json').env.RIG_MANAGED_HOOKS_ONLY, '1')
+  const repo = makeRepo()
+  sdlc(repo, ['init'])
+  sdlc(repo, ['vendor', '--standalone'])
+  write(repo, 'src/key.js', 'const key = "AKIAABCDEFGHIJKLMNOP"\n')
+  const r = sdlc(repo, ['hook', 'post-edit'], { input: JSON.stringify({ tool_input: { file_path: path.join(repo, 'src/key.js') } }), env: { RIG_MANAGED_DIR: tmpDir(), RIG_MANAGED_HOOKS_ONLY: '1' } })
+  assert.equal(r.code, 2)
+})
+
+test('an unreadable managed-settings.d never crashes the hooks', () => {
+  const dir = tmpDir()
+  fs.writeFileSync(path.join(dir, 'managed-settings.d'), 'not a folder')
+  assert.deepEqual(managedSettings(dir), {})
+})
+
+test('the gate reads every command key, needs only sh/sed/grep/date/cat, hides log errors and routes approval to the same session', posix, () => {
+  const repo = makeRepo()
+  const raw = (input: string, env: Record<string, string> = {}) => spawnSync('/bin/sh', [GATE], { input, encoding: 'utf8', env: { PATH: process.env.PATH ?? '', CLAUDE_PROJECT_DIR: repo, ...env } })
+  assert.equal(raw('{"tool_input":{"command":"./deploy.sh production"},"command":"ls"}').status, 2, 'a later command key cannot hide the real one')
+  const bin = tmpDir()
+  for (const t of ['sed', 'grep', 'date', 'cat']) fs.symlinkSync(spawnSync('/bin/sh', ['-c', `command -v ${t}`], { encoding: 'utf8' }).stdout.trim(), path.join(bin, t))
+  assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo, PATH: bin }).status, 2, 'no jq, no node on PATH')
+  fs.mkdirSync(path.join(repo, '.sdlc'))
+  fs.writeFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), '')
+  fs.chmodSync(path.join(repo, '.sdlc', 'gates.jsonl'), 0o444)
+  const r = gate('deploy production', { CLAUDE_PROJECT_DIR: repo })
+  assert.equal(r.status, 2, 'an unwritable log never changes the decision')
+  assert.doesNotMatch(r.stderr, /denied|gates\.jsonl/i, 'and its error never reaches Claude')
+  assert.match(r.stderr, /claude --resume/, 'approval resumes the same session, so the wait can be measured')
+})
+
+test('SECURITY.md: settings env can switch the gate off; the sandbox, not the deny list, bounds the network', () => {
+  const sec = fs.readFileSync(path.join(ROOT, 'SECURITY.md'), 'utf8')
+  assert.match(sec, /RELEASE_APPROVAL[^\n]*\.claude\/settings\.json[^\n]*env/)
+  assert.match(sec, /sandbox[^\n]*not the deny list/i)
+  assert.match(sec, /RIG_MANAGED_HOOKS_ONLY/)
 })
