@@ -72,7 +72,7 @@ test('tier L plan needs approval; approval is human-only and goes stale on edit'
 test('new writes .sdlc/.gitignore even when .sdlc already exists', () => {
   fs.mkdirSync(path.join(repo, '.sdlc'))
   run(['new', 'x-change', '--type', 'chore', '--tier', 'S'])
-  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/.gitignore'), 'utf8'), 'usage.jsonl\n.baseline\n.gate\nunresolved.json\n')
+  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/.gitignore'), 'utf8'), 'usage.jsonl\n.baseline\n.gate\nunresolved.json\ngates.jsonl\n')
 })
 
 test('tier S chore has no gates and skips spec and plan', () => {

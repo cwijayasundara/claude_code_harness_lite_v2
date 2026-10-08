@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { parseRules } from './model.ts'
 import { inboxEntries } from './inbox.ts'
 import {
-  ROOT, SDLC, APPROVALS, USAGE, MIN_SAMPLE, exists, read, frontmatter, readJsonl, git, fail, out, optString, toPosix,
+  ROOT, SDLC, APPROVALS, MANAGED_DIR, managedSettings, managedFiles, USAGE, MIN_SAMPLE, exists, read, frontmatter, readJsonl, git, fail, out, optString, toPosix,
   listChanges, type Args, type Approval, type Change, type UsageRow,
 } from './core.ts'
 import { loadChange } from './graph.ts'
@@ -13,6 +13,7 @@ import { loadConfig } from './check.ts'
 import { valueHoursFor } from './scorecard.ts'
 import { pointsMetrics } from './points.ts'
 import { EVALS, RESULTS, type EvalResult } from './evals.ts'
+import { controlsInForce } from './preflight.ts'
 
 type Ev = { verdict: string; kind?: string; node: string; round?: number }
 const readJsonlSafe = (p: string): Ev[] => readJsonl<Ev>(p)
@@ -148,6 +149,17 @@ export function cmdMetrics(args: Args): void {
     const ev = evalSources.find(e => e.source === `incident:${i.file}`)
     return ev ? hours(i.detected, firstCommitTime(ev.rel)) : null
   }))
+  // Govern: the production gate's log (.sdlc/gates.jsonl, written only by the managed hook) and the managed settings on this machine.
+  const waits: (number | null)[] = []
+  const open = new Map<string, string>()
+  for (const g of readJsonl<{ at?: string; decision?: string; session?: string }>(path.join(SDLC, 'gates.jsonl'))) {
+    if (!g.session || !g.at) continue
+    if (g.decision === 'block' && !open.has(g.session)) open.set(g.session, g.at)
+    if (g.decision === 'allow' && open.has(g.session)) { waits.push(hours(open.get(g.session), g.at)); open.delete(g.session) }
+  }
+  m.gate_wait_hours = median(waits)
+  m.gate_violations_escaped = { value: incidents.filter(i => i.class === 'gate').length, n: incidents.length }
+  m.managed_controls_in_force = managedFiles(MANAGED_DIR).length ? { value: controlsInForce(managedSettings(MANAGED_DIR)).length, n: 16 } : { value: null, n: 16, note: 'no managed settings file on this machine' }
 
   // Cost, from the mod's usage log
   const usage = readJsonl<UsageRow>(USAGE).filter(r => Date.parse(r.at) >= since)

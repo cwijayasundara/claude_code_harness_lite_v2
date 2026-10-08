@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, git, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
-  scanSecrets, planProblems, relPosix, sha, withLock, writeAtomic, type Args, type HookInput,
+  managedSettings, scanSecrets, planProblems, relPosix, sha, withLock, writeAtomic, type Args, type HookInput,
 } from './core.ts'
 import { activeSlug, loadChange, nextCommand, createAdhoc } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
@@ -246,10 +246,13 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
 }
 
 // A standalone repo registers its own copy's hooks in .claude/settings.json. The plugin's copy of a hook steps aside only
-// when the project registers that same hook, so none runs twice and none is lost; unreadable settings keep the plugin's.
+// when the project registers that same hook, so none runs twice and none is lost; unreadable settings keep the plugin's, and so does
+// managed allowManagedHooksOnly, which blocks project hooks (only a force-enabled plugin's hooks run).
 type SettingsHooks = { hooks?: Record<string, { hooks?: { command?: unknown }[] }[]> }
 export function runsOwnHook(name: string): boolean {
   if (IS_VENDORED) return false
+  // RIG_MANAGED_HOOKS_ONLY is the template's marker for server-managed settings, which are not visible on disk.
+  if (process.env.RIG_MANAGED_HOOKS_ONLY === '1' || managedSettings().allowManagedHooksOnly === true) return false
   try {
     const { hooks = {} } = JSON.parse(read(path.join(ROOT, '.claude', 'settings.json')) || '{}') as SettingsHooks
     const own = new RegExp(`\\.sdlc/bin/sdlc\\.ts"? hook ${name}$`)
