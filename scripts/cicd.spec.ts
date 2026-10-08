@@ -104,7 +104,9 @@ test('rig-rehearse: weekly and on demand, in the staging environment, no model, 
 })
 
 // A fake gh answering the calls metrics makes, by the arguments it gets. Times are hours before now.
-const ago = (h: number): string => new Date(Date.now() - h * 3_600_000).toISOString()
+// One clock reading for every fixture time, so intervals between them are exact (no drift between calls).
+const NOW = Date.now()
+const ago = (h: number): string => new Date(NOW - h * 3_600_000).toISOString()
 function ghBin(answers: { deployments?: unknown; prs?: unknown; failed?: unknown; triage?: unknown; rehearse?: unknown; fail?: boolean }): string {
   const bin = tmpDir()
   const say = (v: unknown) => `echo '${JSON.stringify(v ?? [])}'`
