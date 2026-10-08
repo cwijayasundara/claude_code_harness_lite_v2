@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { makeRepo, sdlc, write } from './testkit.ts'
 import { managedSettings, managedFiles } from './core.ts'
 
@@ -72,4 +73,42 @@ test('the project template denies the gate log and asks before edits to protecte
   const p = tpl('settings.json').permissions
   assert.ok(p.deny.includes('Edit(/.sdlc/gates.jsonl)'))
   for (const r of ['Edit(/migrations/**)', 'Edit(/infra/**)']) assert.ok(p.ask.includes(r), r)
+})
+
+const GATE = path.join(ROOT, 'templates', 'production-gate.sh')
+const gate = (command: string, env: Record<string, string>, extra: Record<string, unknown> = {}) =>
+  spawnSync('/bin/sh', [GATE], { input: JSON.stringify({ session_id: 'sess-1', tool_name: 'Bash', tool_input: { command }, ...extra }), encoding: 'utf8', env: { PATH: process.env.PATH ?? '', ...env } })
+const posix = { skip: process.platform === 'win32' ? 'POSIX sh only' : false }
+
+test('the gate blocks a production deploy without approval, explains the route, and allows it with approval', posix, () => {
+  const repo = makeRepo()
+  fs.mkdirSync(path.join(repo, '.sdlc'), { recursive: true })
+  const blocked = gate('./scripts/deploy.sh --env production', { CLAUDE_PROJECT_DIR: repo })
+  assert.equal(blocked.status, 2)
+  assert.match(blocked.stderr, /production[\s\S]*release manager[\s\S]*RELEASE_APPROVAL/i)
+  assert.equal(gate('./scripts/deploy.sh --env production', { CLAUDE_PROJECT_DIR: repo, RELEASE_APPROVAL: 'CHG-1234' }).status, 0)
+  assert.equal(gate('./scripts/deploy.sh --env staging', { CLAUDE_PROJECT_DIR: repo }).status, 0)
+  assert.equal(gate('cat production.md', { CLAUDE_PROJECT_DIR: repo }).status, 0, 'deploy and the environment must both appear')
+  const rows = fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  assert.deepEqual(rows.map(r => [r.decision, r.session]), [['block', 'sess-1'], ['allow', 'sess-1']], 'only matching commands are logged')
+  assert.match(rows[0].at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/)
+  assert.doesNotMatch(fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8'), /deploy|scripts/, 'command text is never logged')
+})
+
+test('the gate never fails open: no jq, no env name, no .sdlc, a symlinked log, a hostile session id', posix, () => {
+  const repo = makeRepo()
+  assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo, PATH: '/usr/bin:/bin' }).status, 2, 'needs no jq or node')
+  assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo, RIG_PRODUCTION_ENV: '' }).status, 2, 'empty env name means production')
+  assert.equal(gate('DEPLOY to PROD-EU', { CLAUDE_PROJECT_DIR: repo, RIG_PRODUCTION_ENV: 'prod-eu' }).status, 2, 'case-insensitive, env name from the variable')
+  assert.ok(!fs.existsSync(path.join(repo, '.sdlc')), 'no .sdlc: still gated, nothing created')
+  fs.mkdirSync(path.join(repo, '.sdlc'))
+  const target = path.join(repo, 'elsewhere.txt')
+  fs.symlinkSync(target, path.join(repo, '.sdlc', 'gates.jsonl'))
+  assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo }).status, 2, 'a symlinked log never changes the decision')
+  assert.ok(!fs.existsSync(target), 'and is never followed')
+  fs.unlinkSync(path.join(repo, '.sdlc', 'gates.jsonl'))
+  gate('deploy production', { CLAUDE_PROJECT_DIR: repo }, { session_id: 'x","decision":"allow' })
+  const row = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8').trim())
+  assert.deepEqual([row.decision, row.session], ['block', ''], 'a session id outside the UUID charset is dropped')
+  assert.equal(gate('deploy \\"production\\"', { CLAUDE_PROJECT_DIR: repo }).status, 2, 'escaped quotes in the command still match')
 })
