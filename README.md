@@ -33,8 +33,8 @@ Thin layer with built-ins first; ceremony scales with risk; state lives in files
  ├────────────────────────────────────────────────────────────────────────┤
  │ SKILLS (16)    start design plan diagnose build test sensors pr …      │  the stages: prompts
  ├────────────────────────────────────────────────────────────────────────┤
- │ AGENTS (4)     scout·haiku  architect·opus  implementer·sonnet         │  model routing:
- │                reviewer·opus                                         │  small fresh contexts
+ │ AGENTS (5)     scout·haiku  researcher·haiku  architect·opus           │  model routing:
+ │                implementer·sonnet  reviewer·opus (by role and tier)  │  small fresh contexts
  ├────────────────────────────────────────────────────────────────────────┤
  │ HOOKS          session-start · prompt-submit · post-edit · stop ·      │  guardrails: run in
  │                skill-failed                                            │  -p and CI, zero tokens

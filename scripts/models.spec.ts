@@ -1,4 +1,4 @@
-// Model routing (decision 4 of docs/ai-sdlc-harness-design.html): the tier picks the model; aliases are pinned to 5.5.
+// Model routing: the role and the tier pick model and effort (scripts/routing.ts); full IDs are pinned to 5.5.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'

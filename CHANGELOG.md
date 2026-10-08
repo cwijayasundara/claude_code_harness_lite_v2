@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Role by tier routing: `scripts/routing.ts` picks model and effort per role and tier, cheapest above a per-role floor. Tier L code and slice reviews move from Opus to Sonnet; tier S PR reviews move from Haiku to Sonnet. `next --json` adds `routes`; `model` stays one release for vendored skills.
+- `routing` in `sensors.json` overrides a route; anything below the role's floor is clamped and `next` warns.
+- A failed build or fix round retries the implementer one step up (effort, then model).
+- New `researcher` agent (Haiku, low effort) for docs lookups.
+- CI review: S Sonnet medium, M Sonnet high, L Opus high, with `--effort`; triage adds `--effort low`.
+- `metrics` reports `tokens_by_role` and `model_by_role`.
+- `routing` is in the vendored script list, so standalone repos get it.
 - **The "twice" rule.** `/rig:rule` promotes a mistake seen at least twice to a regex rule or, when no pattern can catch it, to one line of CLAUDE.md's `## Things Claude gets wrong` (the person adds it). `/rig:pr-review` ends with `Next: /rig:rule "<category>"` when a finding's category appeared in another change; `metrics` adds `repeat_findings`.
 - **Review sweep.** `/rig:pr-review` fixes once, then sweeps review comments and failing checks to green: at most 3 rounds per run, fixes only inside the plan's `## Files` with the tier's model, comments and check output treated as data; pending checks end the run (rerun later, never sleep-polled); the pr-review budget still blocks.
 - `pr --followup` allows four follow-up pushes per change (the review's fix plus three sweep rounds) and then blocks until `/rig-approve <slug> budget`, a bound that holds across reruns and without the mod. A rerun of `/rig:pr-review` resumes the sweep instead of reviewing the whole branch again; the sweep reads only comments posted since the last follow-up by people with write access (never rig's own), reads failing logs with `gh run view --log-failed`, and restates each item as a file change before the implementer sees it. `rule_suggestions` counts distinct changes (two or more).
