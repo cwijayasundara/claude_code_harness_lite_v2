@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { makeRepo, sdlc, write } from './testkit.ts'
 
 const ROOT = path.join(import.meta.dirname, '..')
 const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8')
@@ -40,4 +41,20 @@ test('--plan-only stops start and design before approval, and every drafting ski
   for (const s of ['design', 'plan', 'spec']) assert.ok(read(`skills/${s}/SKILL.md`).includes('- [policy-<area>] <concern> → owner:'), s)
   for (const s of ['plan', 'spec']) assert.match(read(`skills/${s}/SKILL.md`), /Approval is refused until/, s)
   assert.match(read('skills/intent/SKILL.md'), /Without a file system \(claude\.ai\)/)
+})
+
+test('init scaffolds policy-security once, with owner and source to fill in; new does not', () => {
+  const repo = makeRepo()
+  const file = path.join(repo, '.claude/skills/policy-security/SKILL.md')
+  sdlc(repo, ['new', 'x', '--type', 'chore', '--tier', 'S'])
+  assert.equal(fs.existsSync(file), false, 'new initialises .sdlc but writes no policy skill')
+  const r = sdlc(repo, ['init'])
+  assert.match(r.stdout, /wrote \.claude\/skills\/policy-security\/SKILL\.md: set its owner and source/)
+  const text = fs.readFileSync(file, 'utf8')
+  assert.match(text, /^name: policy-security$/m)
+  assert.match(text, /^owner: /m)
+  assert.match(text, /^source: /m)
+  write(repo, '.claude/skills/policy-security/SKILL.md', 'mine\n')
+  sdlc(repo, ['init'])
+  assert.equal(fs.readFileSync(file, 'utf8'), 'mine\n', 'an existing policy skill is never overwritten')
 })

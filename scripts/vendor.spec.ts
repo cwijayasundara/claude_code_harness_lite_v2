@@ -25,7 +25,7 @@ test('vendor --cloud writes project skills, agents and hooks with no plugin refe
   sdlc(repo, ['init'])
   write(repo, '.claude/settings.json', JSON.stringify({ model: 'claude-sonnet-5-5', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] } }))
   assert.equal(sdlc(repo, ['vendor', '--cloud']).code, 0)
-  const skills = walk(path.join(repo, '.claude/skills')).filter(f => f.endsWith('SKILL.md'))
+  const skills = walk(path.join(repo, '.claude/skills')).filter(f => f.endsWith('SKILL.md') && /\/rig-[a-z-]+\/SKILL\.md$/.test(f))
   const agents = walk(path.join(repo, '.claude/agents'))
   assert.ok(skills.some(f => f.endsWith('rig-next/SKILL.md')) && skills.length >= 10, `${skills.length} skills`)
   assert.ok(agents.some(f => f.endsWith('rig-scout.md')), 'scout agent')

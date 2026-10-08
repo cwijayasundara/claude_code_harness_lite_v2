@@ -355,9 +355,20 @@ function cmdSensors(): void {
   ].join('\n'))
 }
 
+// A starting policy skill for design and review to apply; only the person-run init writes it, and never over an existing one.
+function scaffoldPolicy(): string {
+  const rel = '.claude/skills/policy-security/SKILL.md'
+  const src = path.join(PLUGIN_ROOT, 'templates', 'policy-security.md')
+  if (exists(path.join(ROOT, rel)) || !exists(src)) return ''
+  fs.mkdirSync(path.dirname(path.join(ROOT, rel)), { recursive: true })
+  fs.copyFileSync(src, path.join(ROOT, rel))
+  sanctionWrites([rel])
+  return `wrote ${rel}: set its owner and source`
+}
+
 const COMMANDS: Record<string, (args: Args) => void> = {
   stamp: () => out(treeStamp() ?? 'none'),
-  init: cmdInit,
+  init: args => { cmdInit(args); const note = scaffoldPolicy(); if (note) out(note) },
   new: cmdNew,
   points: cmdPoints,
   activate: cmdActivate,
