@@ -123,8 +123,13 @@ export function openQuestions(text: string): string[] {
 // `resolved:`. Approval needs none. A document with no Concerns section has none, so changes begun before it keep working.
 export function unresolvedConcerns(text: string): string[] {
   const section = /^##\s+Concerns\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m.exec(text)?.[1] ?? ''
-  return section.split('\n').filter(l => /^\s*[-*]\s+/.test(l)).map(l => l.replace(/^\s*[-*]\s*/, '').trim())
-    .filter(l => l && !/^none\.?$/i.test(l) && !/\bresolved:/i.test(l))
+  const items: { text: string; body: string }[] = []
+  for (const l of section.split('\n')) {
+    const top = /^(?:[-*]|\d+[.)])\s+(.*)$/.exec(l)
+    if (top) items.push({ text: (top[1] ?? '').trim(), body: l })
+    else if (/^\s+\S/.test(l) && items.length) items[items.length - 1]!.body += `\n${l}`
+  }
+  return items.filter(i => i.text && !/^none\.?$/i.test(i.text) && !/\bresolved:/i.test(i.body)).map(i => i.text)
 }
 
 // ---------- globs ----------

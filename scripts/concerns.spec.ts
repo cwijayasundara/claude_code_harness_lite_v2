@@ -40,3 +40,12 @@ test('a design written before Concerns existed (no section) is approved as befor
   const r = approve()
   assert.equal(r.code, 0, r.stderr)
 })
+
+test('unresolvedConcerns: numbered items, resolutions on their own line, ### subheadings, and "unresolved:" text', () => {
+  assert.deepEqual(unresolvedConcerns('## Concerns\n1. [policy-a] x → owner: @a\n'), ['[policy-a] x → owner: @a'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n2) [policy-a] x → owner: @a\n'), ['[policy-a] x → owner: @a'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a\n  - resolved: ok (@a)\n'), [])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a\n  → resolved: ok (@a)\n- [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n### Security\n- [policy-a] x → owner: @a\n'), ['[policy-a] x → owner: @a'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] the old flag was unresolved: still open → owner: @a\n'), ['[policy-a] the old flag was unresolved: still open → owner: @a'])
+})
