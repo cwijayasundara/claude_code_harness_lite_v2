@@ -164,3 +164,12 @@ test('metrics never crash without a usable gh: DORA and the workflow metrics rea
 test('the incident skill records when service was restored', () => {
   assert.match(fs.readFileSync(path.join(ROOT, 'skills/incident/SKILL.md'), 'utf8'), /`restored:`/)
 })
+
+test('README and SECURITY.md describe rig-triage and rig-rehearse', () => {
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8')
+  assert.match(readme, /`templates\/rig-triage\.yml`/)
+  assert.match(readme, /`templates\/rig-rehearse\.yml`[^\n]*RIG_ROLLBACK_COMMAND/)
+  const sec = fs.readFileSync(path.join(ROOT, 'SECURITY.md'), 'utf8')
+  assert.match(sec, /`rig-triage\.yml`[^\n]*workflow_run[^\n]*fork/)
+  assert.match(sec, /`rig-rehearse\.yml`[^\n]*staging/)
+})
