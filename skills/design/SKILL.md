@@ -25,4 +25,4 @@ If the run is `--plan-only` (the rig-spec workflow), stop after design.md and it
 
 Otherwise ask for the single approval. The sdlc mod shows an Approve / Not yet dialog when this turn ends, and approving it starts the build. Without the mod, tell the person to run `/rig-approve $0 design`.
 
-End with: `Next: <command from status>`.
+Otherwise end with: `Next: <command from status>`.
