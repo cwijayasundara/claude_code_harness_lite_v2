@@ -80,7 +80,7 @@ git commit -m "docs: role by tier routing pre-flight results
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-**Pre-flight results:** (fill in) Haiku ID: ___ · Haiku effort: yes/no · alias resolves to: ___ · Workflow agent effort: yes/no
+**Pre-flight results (2026-10-08):** Haiku ID: `claude-haiku-5-5` resolves · Haiku effort: yes (`--effort low` ok) · alias `haiku` resolves to `claude-haiku-5-5` with and without the template env (CLI) · Workflow `agent()` effort: yes (`opts.effort`). So `EFFORT = true` in Task 5 and its effort assertion applies.
 
 ---
 
@@ -634,7 +634,7 @@ After the `REVIEWER` const (line 21):
 
 ```js
 // Routes come from /rig:pr-review (sdlc.ts next --json). Only known aliases pass; a referee never runs below Sonnet (spec floor).
-const EFFORT = false // Task 0 step 3: true when the Workflow agent() accepts effort
+const EFFORT = true // Task 0 step 3: the Workflow agent() accepts effort
 const pick = r => {
   const ok = r && typeof r === 'object' && ['sonnet', 'opus'].includes(r.model)
   return ok ? { model: r.model, ...(EFFORT && ['low', 'medium', 'high'].includes(r.effort) ? { effort: r.effort } : {}) } : null
