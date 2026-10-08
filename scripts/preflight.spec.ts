@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 import { parseVersion, satisfies, requirements, hostVersion, realRunner } from './toolchain.ts'
-import { resolveCommand, httpsFallback, checkRemote, parseAnswers, runPreflight, sshEnv } from './preflight.ts'
+import { resolveCommand, httpsFallback, checkRemote, parseAnswers, runPreflight, sshEnv, modelAliasCheck } from './preflight.ts'
 
 const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'rig-pf-'))
 
@@ -246,4 +246,49 @@ test('status flags a missing or older PREFLIGHT.md for an initialised repo', () 
   const t = new Date(Date.now() - 600_000); fs.utimesSync(path.join(repo, '.sdlc/PREFLIGHT.md'), t, t)
   write(repo, '.sdlc/sensors.json', '{"limits":{"fileLines":400}}')
   assert.match(sdlc(repo, ['status']).stdout, /PREFLIGHT\.md is older than \.sdlc\/sensors\.json/)
+})
+
+const K = { H: 'ANTHROPIC_DEFAULT_HAIKU_MODEL', S: 'ANTHROPIC_DEFAULT_SONNET_MODEL', O: 'ANTHROPIC_DEFAULT_OPUS_MODEL' }
+
+test('model aliases: all three pinned in one env passes and names each value', () => {
+  const c = modelAliasCheck([{ [K.H]: 'h1', [K.S]: 's1', [K.O]: 'o1' }])
+  assert.equal(c.id, 'models'); assert.equal(c.status, 'pass')
+  assert.equal(c.line, 'model aliases pinned: haiku h1, sonnet s1, opus o1')
+})
+
+test('model aliases: later envs override earlier ones', () => {
+  const c = modelAliasCheck([{ [K.H]: 'h1', [K.S]: 's1' }, { [K.O]: 'o1', [K.H]: 'h2' }])
+  assert.equal(c.status, 'pass')
+  assert.equal(c.line, 'model aliases pinned: haiku h2, sonnet s1, opus o1')
+})
+
+test('model aliases: one missing key warns naming only that key, with a fix', () => {
+  const c = modelAliasCheck([{ [K.H]: 'h1', [K.O]: 'o1' }])
+  assert.equal(c.status, 'warn')
+  assert.match(c.line, /^model aliases not pinned: ANTHROPIC_DEFAULT_SONNET_MODEL; per-launch/)
+  assert.doesNotMatch(c.line, /HAIKU_MODEL|OPUS_MODEL/)
+  assert.match(c.fix ?? '', /templates\/settings\.json/)
+})
+
+test('model aliases: non-string values and undefined envs count as missing', () => {
+  const c = modelAliasCheck([undefined, { [K.H]: 5, [K.S]: null, [K.O]: 'o1' }])
+  assert.equal(c.status, 'warn')
+  assert.match(c.line, /not pinned: ANTHROPIC_DEFAULT_HAIKU_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL;/)
+})
+
+test('runPreflight includes a models check and reads settings files as data', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-home-'))
+  const saved = Object.values(K).map(k => process.env[k])
+  Object.values(K).forEach(k => { delete process.env[k] })
+  try {
+    const run = (): { id: string; status: string }[] => runPreflight({ root: repo, home, run: () => null, reach: () => false, answers: {} }).checks
+    assert.equal(run().find(c => c.id === 'models')?.status, 'warn')
+    fs.mkdirSync(path.join(home, '.claude'))
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ env: { [K.H]: 'h', [K.S]: 's', [K.O]: 'o' } }))
+    assert.equal(run().find(c => c.id === 'models')?.status, 'pass')
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{not json')
+    assert.equal(run().find(c => c.id === 'models')?.status, 'warn')
+  } finally {
+    Object.values(K).forEach((k, i) => { if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i] })
+  }
 })

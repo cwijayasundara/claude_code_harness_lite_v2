@@ -110,7 +110,7 @@ const reachReal = (u: string): boolean => spawnSync('git', ['-c', 'protocol.ext.
   env: { ...sshEnv(process.env, userSshCommand()), GIT_TERMINAL_PROMPT: '0' },
 }).status === 0
 
-type Opts = { root: string; run: Runner; reach: (u: string) => boolean; answers: Record<string, string>; managedDir?: string }
+type Opts = { root: string; run: Runner; reach: (u: string) => boolean; answers: Record<string, string>; managedDir?: string; home?: string }
 
 function toolchain(o: Opts): Check {
   const reqs = requirements(o.root)
@@ -221,6 +221,37 @@ export function managedCheck(m: unknown, found: number, canRun: (file: string) =
 
 const STACKS: [string, string][] = [['package.json', 'node'], ['go.mod', 'go'], ['pom.xml', 'java-maven'], ['pyproject.toml', 'python'], ['requirements.txt', 'python']]
 
+const MODEL_KEYS: [string, string][] = [['haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'], ['sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL']]
+
+// Advisory: per-launch aliases (haiku, sonnet, opus) resolve through these env settings; unset, haiku was seen resolving to Haiku 4.5. envs: lowest to highest precedence.
+export function modelAliasCheck(envs: Array<Record<string, unknown> | undefined>): Check {
+  const merged: Record<string, unknown> = {}
+  for (const e of envs) for (const [k, v] of Object.entries(e ?? {})) if (typeof v === 'string') merged[k] = v
+  const val = (k: string): string | undefined => (typeof merged[k] === 'string' ? (merged[k] as string) : undefined)
+  const missing = MODEL_KEYS.filter(([, k]) => !val(k)).map(([, k]) => k)
+  return missing.length
+    ? { id: 'models', status: 'warn', line: `model aliases not pinned: ${missing.join(', ')}; per-launch aliases may resolve to older models (haiku resolved to Haiku 4.5 without them)`, fix: 'add the env block from templates/settings.json (ANTHROPIC_DEFAULT_*_MODEL) to .claude/settings.json or ~/.claude/settings.json' }
+    : { id: 'models', status: 'pass', line: `model aliases pinned: ${MODEL_KEYS.map(([n, k]) => `${n} ${val(k)}`).join(', ')}` }
+}
+
+// The env block of a settings file, read as data. Unreadable or malformed counts as none.
+function settingsEnv(file: string): Record<string, unknown> | undefined {
+  try {
+    const env = (JSON.parse(read(file) || '{}') as { env?: unknown }).env
+    return env && typeof env === 'object' && !Array.isArray(env) ? (env as Record<string, unknown>) : undefined
+  } catch { return undefined }
+}
+
+function modelAliases(o: Opts): Check {
+  const proc = Object.fromEntries(MODEL_KEYS.map(([, k]) => [k, process.env[k]]).filter(([, v]) => v !== undefined))
+  return modelAliasCheck([
+    settingsEnv(path.join(o.home ?? os.homedir(), '.claude', 'settings.json')),
+    settingsEnv(path.join(o.root, '.claude', 'settings.json')),
+    settingsEnv(path.join(o.root, '.claude', 'settings.local.json')),
+    proc,
+  ])
+}
+
 export function runPreflight(o: Opts): { checks: Check[]; open: string[]; result: 'pass' | 'fail' } {
   let parsed: ReturnType<typeof parseConfig> | null = null
   const cfg = (): ReturnType<typeof parseConfig> => (parsed ??= parseConfig(read(path.join(o.root, '.sdlc', 'sensors.json'))))
@@ -229,6 +260,7 @@ export function runPreflight(o: Opts): { checks: Check[]; open: string[]; result
     ['toolchain', () => toolchain(o)], ['commands', () => commands(o, cfg().config, cfg().errors)], ['base', baseCheck],
     ['remote', () => checkRemote(git(['remote', 'get-url', 'origin']), o.reach)], ['consumers', () => consumers(o, cfg().config)], ['protection', () => protection(o)],
     ['managed', () => { const dir = o.managedDir ?? MANAGED_DIR; return managedCheck(managedSettings(dir), managedFiles(dir).length) }],
+    ['models', () => modelAliases(o)],
   ]
   const checks = steps.map(([id, fn]): Check => {
     let c: Check

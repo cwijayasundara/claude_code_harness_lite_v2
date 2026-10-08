@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `sdlc.ts preflight` warns when `ANTHROPIC_DEFAULT_*_MODEL` are not set, since per-launch model aliases then may resolve to older models.
 - Role by tier routing: `scripts/routing.ts` picks model and effort per role and tier, cheapest above a per-role floor. Tier L code and slice reviews move from Opus to Sonnet; tier S PR reviews move from Haiku to Sonnet. `next --json` adds `routes`; `model` stays one release for vendored skills.
 - `routing` in `sensors.json` overrides a route; anything below the role's floor is clamped and `next` warns.
 - A recorded failed round (a tier L build slice, or a test, sensors or pr-review fix round) retries the implementer one step up (effort, then model); skills re-read `next --json` before the fix launch. Tier S and M build slices whose script checks fail record no round and keep their route.
