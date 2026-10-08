@@ -147,6 +147,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 | `/rig-approve <slug> design\|spec\|plan` | The artifact as written. Stale if it changes afterwards. |
 | `/rig-approve <slug> impact` | A cross-repo impact set. |
 | `/rig-approve <slug> budget` | A higher spend cap. |
+| `/rig-approve <slug> full-route` | Full routing for one change: turns budget downshift off for it. |
 | `/rig-approve <slug> tier S\|M\|L [type]` | A tier or type edit. The recorded tier is a floor, so only a person lowers it. |
 | `/rig-waive <sensor> <file\|*> <reason>` | One sensor finding on the active change. |
 
@@ -280,6 +281,22 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 **Claude Tag on call.** When Claude Tag handles an incident in Slack, the on-call engineer runs `/rig:incident "<summary>" --escaped` and pastes the thread link as evidence: the incident file is the lessons file the playbook describes, and it feeds the same bugfix path and metrics as a breach from `rig-watch`.
 
 The role and the change's tier pick the model and effort for every launch (`routes` in `sdlc.ts next --json`; the legacy `model` stays one release): scout, researcher and triage Haiku low, implementer Haiku (S) to Sonnet (M, L), reviewers Sonnet (S, M) to Opus (L), architect Opus at tier L. Repos override with `routing` in `.sdlc/sensors.json`, clamped to per-role floors. The settings template pins the haiku, sonnet and opus aliases to those IDs.
+
+### Budgets
+
+Spend is shown always; budgets add levels and a light downshift. Budgets never pause or block work.
+
+- **Config:** an optional `budget` block in `.sdlc/sensors.json`; every field is optional.
+  ```json
+  "budget": { "teamMonthlyUsd": 500, "changeUsd": { "S": 5, "M": 20, "L": 60 }, "warnAt": [50, 80, 100], "downshift": true }
+  ```
+  Raising or removing a budget, raising `warnAt` or setting `downshift: false` is a reviewed harness edit.
+- **`sdlc.ts spend status [--json] [--change <slug>] [--no-fetch]`:** team spend this month, the projected month total, the budget and the percentage, plus the change's own spend. It lists the sources counted (each clone's id and `through` time) so a clone that never publishes shows up as missing. It prints `this clone only` when no remote copy exists, and the age of the cached copy when the fetch fails. Team totals come from `refs/rig/spend` (one `<YYYY-MM>/<id>.json` file per clone per month, plus `ci`; main-loop rows only), published after a passing pre-push check and after `sdlc.ts pr`; `spend publish` and `spend notify` run by hand. Setup caveat, pending a person's check on a scratch repo: that GitHub accepts pushes to `refs/rig/spend` (the fallback is a branch named `rig-spend`).
+- **Levels:** notice at 50%, tight at 80%, over at 100% of the monthly or the change budget; a projection that will cross 50% raises notice only. The band shows the level, a toast fires once per level per month, the mission pane has a budget line, the PR scorecard has a "Change budget" row and `metrics` has a `budget` block.
+- **Downshift (tight or over):** reviewer, referee and slice-review effort drops one step (models and role floors unchanged), and an Opus main loop moves to the pinned `claude-sonnet-5-5` once per session, at a turn's first step. With the default settings (Sonnet main thread) expect modest savings; the main value is visibility.
+- **Opt-outs:** `budget.downshift: false` (a reviewed edit, for everyone) or `/rig-approve <slug> full-route` (one change, human only). Warnings still show.
+- **Not a stop:** the separate runaway guard is `ratchet.usd`, which pauses a node and is credited with `/rig-approve <slug> budget`. The two share no state.
+- **CI cost:** `rig-review`, `rig-triage` and `rig-watch` read `total_cost_usd` from the Claude action's `execution_file` and publish it from a model-free `spend` job (`contents: write`). On a subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) the cost is notional and counted as reported.
 
 Artifacts live in **`.sdlc/`** at the repo root and are committed; `usage.jsonl` and `gates.jsonl` are gitignored. They are not under `.claude/`, which Claude Code protects: writes there always prompt, or are denied in headless runs, and allow rules can't change that.
 

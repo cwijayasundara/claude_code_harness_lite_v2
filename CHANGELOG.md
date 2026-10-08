@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Spend governance.** Budgets add visibility and a light downshift; nothing pauses or blocks. `sdlc.ts spend status [--json] [--change] [--no-fetch]`, `spend publish` (also after a passing pre-push check and after `sdlc.ts pr`) and `spend notify`; team spend rolls up per clone per month on `refs/rig/spend` (main rows only, sources listed).
+- `budget` in `sensors.json` (`teamMonthlyUsd`, `changeUsd` by tier, `warnAt` 50/80/100, `downshift`); raising or removing a budget is a reviewed edit.
+- Budget shows in the band (with toasts once per level), the mission pane, the PR scorecard "Change budget" row and a `metrics` `budget` block.
+- Downshift when tight: reviewer, referee and slice-review effort one step lower, and an Opus main loop moves to pinned `claude-sonnet-5-5` once per session. No round-cap lever.
+- `/rig-approve <slug> full-route` keeps full routing for one change; `budget.downshift: false` turns it off for everyone. `ratchet.usd` and `/rig-approve <slug> budget` stay the separate runaway pause.
+- CI: `rig-review`, `rig-triage` and `rig-watch` publish their run cost (`total_cost_usd` from the action's `execution_file`) from a model-free `spend` job; subscription-token runs report a notional cost, counted as reported.
 - `sdlc.ts preflight` warns when `ANTHROPIC_DEFAULT_*_MODEL` are not set, since per-launch model aliases then may resolve to older models.
 - Role by tier routing: `scripts/routing.ts` picks model and effort per role and tier, cheapest above a per-role floor. Tier L code and slice reviews move from Opus to Sonnet; tier S PR reviews move from Haiku to Sonnet. `next --json` adds `routes`; `model` stays one release for vendored skills.
 - `routing` in `sensors.json` overrides a route; anything below the role's floor is clamped and `next` warns.
