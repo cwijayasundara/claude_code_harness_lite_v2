@@ -206,8 +206,19 @@ export function cmdMetrics(args: Args): void {
   }
   const recent = new Set(fired.filter(e => Date.parse(e.at) >= ninetyDays).map(e => e.rule))
   const findingsOf = (text: string): string => text.split(/^## /m).filter(sec => /^Findings\b/.test(sec)).join('\n')
-  const categories = changes.flatMap(c => [...findingsOf(read(path.join(c.dir, 'review.md'))).matchAll(/^\s*-\s*\[severity:[^\]]*\]\s*\[category:\s*([\w-]+)/gim)].map(m => (m[1] ?? '').toLowerCase()))
+  const CATEGORY = /^\s*-\s*\[severity:[^\]]*\]\s*\[category:\s*([\w-]+)/gim
+  const categoriesOf = (c: Change): string[] => [...findingsOf(read(path.join(c.dir, 'review.md'))).matchAll(CATEGORY)].map(m => (m[1] ?? '').toLowerCase())
+  const categories = changes.flatMap(categoriesOf)
   const byCategory = categories.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c]: (acc[c] ?? 0) + 1 }), {})
+  // A category seen on an earlier change again: the signal the "twice" rule (/rig:rule) exists for. Only changes with findings count.
+  const seen = new Set<string>()
+  let repeats = 0
+  const withFindings = [...changes].sort((a, b) => String(a.intent.created).localeCompare(String(b.intent.created)) || a.slug.localeCompare(b.slug)).map(c => new Set(categoriesOf(c))).filter(s => s.size)
+  for (const cats of withFindings) {
+    if ([...cats].some(c => seen.has(c))) repeats++
+    for (const c of cats) seen.add(c)
+  }
+  m.repeat_findings = share(repeats, withFindings.length)
   const harness = {
     rule_fires: sumBy(fired.filter(e => Date.parse(e.at) >= since), r => r.rule ?? 'unknown', () => 1),
     prune_candidates: ruleIds.filter(id => !recent.has(id) && (introduced(id) ?? Infinity) < ninetyDays),
