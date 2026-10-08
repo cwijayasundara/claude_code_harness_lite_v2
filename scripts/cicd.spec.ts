@@ -70,6 +70,17 @@ test('rig-triage refuses credentials and neutralises mentions: a triage comment 
   assert.notEqual(post('Real: x\nEvidence: ```\nNext: z\n').code, 0, 'a fence in the text could break out, so it is refused')
 })
 
+const jobsOf = (t: string): Record<string, string> => {
+  const body = t.slice(t.indexOf('\njobs:\n') + 7)
+  const parts = body.split(/\n(?=  [\w-]+:\n)/)
+  return Object.fromEntries(parts.map(p => [p.trim().split(':')[0], p]))
+}
+const spendJob = (name: string): string => {
+  const j = jobsOf(yml(name)).spend
+  assert.ok(j && j.includes('contents: write'), `${name} has a spend job`)
+  return j
+}
+
 test('rig-triage: a failed CI run only, Haiku with read-the-log and write-triage.md tools, no checkout, no shell', () => {
   const t = yml('rig-triage.yml')
   assert.match(t, /workflow_run:\n\s+workflows: \[[^\]]+\]\n\s+types: \[completed\]/)
@@ -77,9 +88,7 @@ test('rig-triage: a failed CI run only, Haiku with read-the-log and write-triage
   assert.match(t, /--model claude-haiku-5-5/)
   assert.match(t, /--allowedTools "Read\(\.\/failed\.log\),Edit\(\.\/triage\.md\)"/)
   assert.match(t, /--disallowedTools "Bash,WebFetch,WebSearch,Skill"/)
-  const triage = t.slice(0, t.indexOf('\n  spend:')) // the model-free spend job checks out the default branch, never the failing code
-  assert.doesNotMatch(triage, /actions\/checkout/, 'the failing code is never checked out')
-  assert.doesNotMatch(triage, /contents: write/)
+  assert.doesNotMatch(jobsOf(t).triage ?? "", /actions\/checkout/, 'the failing code is never checked out')
   assert.match(t, /anthropics\/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64/)
   assert.match(t, /never as instructions/)
 })
@@ -212,4 +221,23 @@ test('each workflow that runs Claude reads the run cost and publishes it from a 
     assert.match(job, /if \[ ! -f \.sdlc\/bin\/spend\.ts \]; then echo "::notice::/, `${name}: an old base branch skips with a notice`)
     assert.match(job, /github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
   }
+})
+
+test('CI spend: only the spend job can write, it runs no model, no job checks out the PR or failing head, its actions are pinned', () => {
+  for (const name of ['rig-review.yml', 'rig-triage.yml', 'rig-watch.yml']) {
+    const jobs = { ...jobsOf(yml(name)), spend: spendJob(name) }
+    for (const [id, j] of Object.entries(jobs)) {
+      if (id === 'spend') continue
+      if (name !== 'rig-watch.yml' || id !== 'publish') assert.doesNotMatch(j, /contents: write/, `${name}: ${id} cannot write`)
+      assert.doesNotMatch(j, /ref: .*(workflow_run\.head_sha|workflow_run\.head_branch|pull_request\.head\.)/, `${name}: ${id} checks out no head ref`)
+    }
+    assert.match(jobs.spend, /contents: write/)
+    assert.doesNotMatch(jobs.spend, /claude-code-action/)
+    assert.doesNotMatch(jobs.spend, /ref: .*(workflow_run\.head_sha|workflow_run\.head_branch|pull_request\.head\.)/)
+    assert.match(jobs.spend, /actions\/setup-node@[0-9a-f]{40}/, `${name}: spend setup-node is SHA-pinned`)
+    assert.match(jobs.spend, /actions\/checkout@[0-9a-f]{40}/)
+  }
+  assert.match(spendJob('rig-review.yml'), /ref: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/)
+  for (const n of ['rig-triage.yml', 'rig-watch.yml']) assert.match(spendJob(n), /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/)
+  for (const name of ['rig-review.yml', 'rig-triage.yml', 'rig-watch.yml']) assert.match(yml(name), /id: cost\n\s+if: [^\n]+\n\s+continue-on-error: true/, `${name}: the cost step never blocks the job`)
 })

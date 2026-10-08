@@ -97,6 +97,7 @@ jobs:
       - name: Read the run's cost
         id: cost
         if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
         env:
           FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
@@ -136,7 +137,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.base.ref }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Publish CI spend

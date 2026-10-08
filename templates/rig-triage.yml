@@ -1,7 +1,7 @@
 # rig triage (playbook p.45): when a CI workflow fails, Haiku 5.5 reads the failed log, says flaky or real, and posts three lines
 # to the PR, or to the run summary when the run has no PR (a push). A fork's failure is not triaged. Copy to .github/workflows/, name your CI
 # workflows under `workflows:`, and list this file in CODEOWNERS. Auth: one secret, CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.
-# workflow_run runs with secrets even for a fork's failure, and the log is written by the failing code: so nothing is checked out,
+# workflow_run runs with secrets even for a fork's failure, and the log is written by the failing code: so the failing code is never checked out (only the model-free spend job checks out the default branch),
 # the model can only read failed.log and write triage.md, and a model-free step posts after checking the shape and refusing
 # credentials; the lines are posted in a code fence, so no mention, link, image or HTML in them renders. Actions are pinned to commit SHAs.
 name: rig-triage
@@ -50,6 +50,7 @@ jobs:
       - name: Read the run's cost
         id: cost
         if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
         env:
           FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
@@ -89,7 +90,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.repository.default_branch }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Publish CI spend

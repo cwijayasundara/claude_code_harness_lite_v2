@@ -113,6 +113,7 @@ jobs:
       - name: Read the run's cost
         id: cost
         if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
         env:
           FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
@@ -192,6 +193,7 @@ jobs:
         run: |
           [ -n "$ROLLBACK" ] || { echo "::error::set the repository variable RIG_ROLLBACK_COMMAND"; exit 1; }
           sh -c "$ROLLBACK"
+  # The diagnose model could in principle alter its own execution log, so the recorded cost is advisory; only a finite number >= 0 crosses, and budgets are soft.
   spend:
     needs: diagnose
     if: always() && needs.diagnose.outputs.usd != ''
@@ -200,7 +202,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Publish CI spend
