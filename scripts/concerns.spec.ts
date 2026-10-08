@@ -57,3 +57,9 @@ test('unresolvedConcerns: indented and CRLF concerns are kept; same-indent sibli
   assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a → resolved: ok (@a)\n- [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
   assert.deepEqual(unresolvedConcerns('## Concerns\n  - [policy-a] x → owner: @a → resolved: ok (@a)\n  - [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
 })
+
+test('unresolvedConcerns: a nested item with its own owner: is a new concern, never folded into a resolved parent', () => {
+  assert.deepEqual(unresolvedConcerns('## Concerns\n\t- [policy-a] x → owner: @a → resolved: ok (@a)\n  - [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a → resolved: ok (@a)\n  - [policy-b] y → owner: @b\n'), ['[policy-b] y → owner: @b'])
+  assert.deepEqual(unresolvedConcerns('## Concerns\n- [policy-a] x → owner: @a\n  - resolved: ok (@a)\n'), [])
+})

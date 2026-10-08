@@ -128,7 +128,7 @@ export function unresolvedConcerns(text: string): string[] {
     const m = /^(\s*)(?:[-*]|\d+[.)])\s+(.*?)\s*$/.exec(l)
     const indent = (m?.[1] ?? /^\s*/.exec(l)?.[0] ?? '').length
     const cur = items[items.length - 1]
-    if (m && (!cur || indent <= cur.indent)) items.push({ text: m[2] ?? '', body: l, indent })
+    if (m && (!cur || indent <= cur.indent || /\bowner:/i.test(m[2] ?? ''))) items.push({ text: m[2] ?? '', body: l, indent })
     else if (cur && l.trim() && indent > cur.indent) cur.body += `\n${l}`
   }
   return items.filter(i => i.text && !/^none\.?$/i.test(i.text) && !/\bresolved:/i.test(i.body)).map(i => i.text)
