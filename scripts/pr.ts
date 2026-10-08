@@ -224,10 +224,12 @@ const FOLLOWUP_CAP = 4
 function followup(slug: string, message: string): void {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (!prDone(slug)) fail(`no follow-up yet: the pr node of ${slug} is not done (run pr ${slug} --message ... first)`)
-  // The review's fix round plus three sweep rounds, counted since a person last lifted a block: a bound that holds across reruns.
+  // The review's fix round plus three sweep rounds, counted since a person last approved more budget (sdlc.ts approve writes that
+  // reason; no other unblock resets it): a bound that holds across reruns.
   const events = readEvents(slug)
-  const used = events.slice(events.map(e => e.verdict).lastIndexOf('unblocked') + 1).filter(e => e.kind === 'followup').length
-  if (used >= FOLLOWUP_CAP) { block(slug, 'pr-review', `cap: ${used} follow-up pushes used`); fail(`blocked: ${used} follow-up pushes used on ${slug}; a person decides, and /rig-approve ${slug} budget allows more`) }
+  const since = events.map(e => e.verdict === 'unblocked' && e.reason === 'person approved more budget').lastIndexOf(true)
+  const used = events.slice(since + 1).filter(e => e.kind === 'followup').length
+  if (used >= FOLLOWUP_CAP) { block(slug, 'pr-review', `cap: ${used} follow-up pushes used`, 'cap'); fail(`blocked: ${used} follow-up pushes used on ${slug}; a person decides, and /rig-approve ${slug} budget allows more`) }
   if (head !== `sdlc/${slug}`) fail(`follow-ups go on sdlc/${slug}; HEAD is ${head}`)
   const r = scopeDrift(slug, defaultBase())
   if (r.drift.length) fail(`scope drift, not committing: ${r.drift.join(', ')}`)
