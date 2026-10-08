@@ -144,3 +144,14 @@ Verification: `npm run typecheck`, `node --disable-warning=ExperimentalWarning -
 ## 11. Docs to update
 
 DESIGN.md §2 principle 7 and the cost table row "Cheap subagents"; README agent diagram (adds `researcher`, routing by role and tier); CHANGELOG.
+
+## 12. Amendments (2026-10-08, while planning)
+
+These replace the sections they name; the plan (`docs/superpowers/plans/2026-10-08-role-by-tier-routing.md`) implements them.
+
+1. **§5.3, §6 (CI): no `sdlc.ts route` CLI.** `rig-review.yml` runs with secrets on a PR whose head the author controls; running that head's `.sdlc/bin/sdlc.ts` would execute PR code with secrets. The inline picker stays (it reads files as data); it takes the reviewer table (S Sonnet medium, M Sonnet high, L Opus high) and passes `--effort`. A test ties it to `routing.ts`.
+2. **§5.1: `Step.model` keeps today's tier model for one release**, not the implementer route. Old vendored skills pass `model` to architect, implementer and reviewer; the implementer route would drop their tier L architect and reviewer to Sonnet.
+3. **§7: role is derived, not tagged.** Metrics map `agentType` plus `stage` to a role (`rig:reviewer` at `build` is `slice-review`, elsewhere `reviewer`). No description prefix. Workflow referee turns count as `other`.
+4. **§5.2: architect overrides name tier L only**; S and M draft in the main thread.
+5. **§4, §6: scout and triage stay pinned in their files**, not passed per launch: a per-call alias can resolve to another model outside the template env. Overrides for them are config errors.
+6. **§4 retry: the build retry counts the open slice's rounds** (`ratchet.ts` records build rounds per slice); a failed slice never lifts later slices.

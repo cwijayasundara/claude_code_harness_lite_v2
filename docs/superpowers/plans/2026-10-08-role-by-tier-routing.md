@@ -27,6 +27,10 @@
 2. **`Step.model` keeps today's tier model (`modelFor`) for one release**, not `routes.implementer.model`. Old vendored skills pass `model` to architect, implementer *and* reviewer; giving them Sonnet at tier L would silently drop the tier L architect and reviewer from Opus. `modelFor` stays (marked legacy) and `inbox.ts` keeps using it.
 3. **Role in the ledger is derived, not tagged.** `metrics` maps `agentType` plus `stage` to a role (`rig:reviewer` at `build` is `slice-review`, elsewhere `reviewer`). No description prefix, no hook change. Referee turns inside the workflow carry no `rig:` agent type and count as `other`.
 4. **Overrides for `architect` may name tier L only**, since S and M draft in the main thread; an S or M architect override is a config error.
+5. **`scout` and `triage` stay pinned in their own files** (`agents/scout.md`, `rig-triage.yml`), not passed per launch. A per-call `model` is an alias (`haiku`), and outside the template's env the alias resolved to Haiku 4.5 in a real session, which would drop the scout from its pinned ID. Tests tie both files to `TABLE`, and a `routing` override for either is a config error.
+6. **The build retry counts the open slice's rounds**, not `nodes.build.rounds`: `ratchet.ts:71` records build rounds per slice, and `nodes.build.rounds` never rises. A failed slice raises only its own retry, never later slices.
+
+The spec carries these as a dated amendment (§12), added with this plan.
 
 ## Review Focus
 
@@ -35,6 +39,7 @@
 - The CI picker and `routing.ts` disagree after someone edits one: a test fails. Pinned in Task 6.
 - Hostile workflow args (`routes: {referee: {model: "x; rm"}}`): ignored, defaults used. Pinned in Task 5.
 - A retry at the ceiling (L implementer after two failed rounds): stops at Opus high, never errors. Pinned in Task 1.
+- One failed slice early in a tier L build: only that slice retries on a bigger model; the next slice is back on Sonnet. Pinned in Task 3.
 
 ---
 
@@ -52,6 +57,16 @@ Expected: `ok`. If it errors with an unknown model, stop and ask the person whic
 Run: `claude -p --model claude-haiku-5-5 --effort low --max-turns 1 "reply ok"`
 Expected: `ok`. If it errors, stop and ask the person: every Haiku route in the table carries an effort, so a Haiku without effort changes the design (spec §8 check 2), not just a flag.
 
+- [ ] **Step 2b: Does the alias resolve to the pinned ID under the template env?**
+
+Skills pass aliases (`sonnet`, `opus`, `haiku`) per launch. In a temp directory, run with the template's env and check the model the result reports:
+
+```bash
+ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5 claude -p --model haiku --output-format json --max-turns 1 "reply ok" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Object.keys(JSON.parse(s).modelUsage ?? {})))'
+```
+
+Expected: `[ 'claude-haiku-5-5' ]`. If it names another model, stop and tell the person: the alias routes depend on `templates/settings.json` being installed, and DESIGN.md must say so.
+
 - [ ] **Step 3: Does the Workflow `agent()` call accept `effort`?**
 
 Load the `workflow-authoring` skill and search it for `effort`. Record yes or no. Task 5 passes `effort` only on yes.
@@ -65,7 +80,7 @@ git commit -m "docs: role by tier routing pre-flight results
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-**Pre-flight results:** (fill in) Haiku ID: ___ · Haiku effort: yes/no · Workflow agent effort: yes/no
+**Pre-flight results:** (fill in) Haiku ID: ___ · Haiku effort: yes/no · alias resolves to: ___ · Workflow agent effort: yes/no
 
 ---
 
@@ -137,9 +152,9 @@ test('an override above the floor is honoured; below it is clamped with a warnin
 })
 
 test('routes collects every role and every warning', () => {
-  const { routes: all, warnings } = routes('feature', 'M', 0, { reviewer: { M: { model: 'haiku' } }, scout: { M: { model: 'sonnet' } } })
+  const { routes: all, warnings } = routes('feature', 'M', 0, { reviewer: { M: { model: 'haiku' } }, researcher: { M: { model: 'sonnet' } } })
   assert.deepEqual(Object.keys(all).sort(), [...ROLES].sort())
-  assert.equal((all.scout as { model: string }).model, 'sonnet')
+  assert.equal((all.researcher as { model: string }).model, 'sonnet')
   assert.equal(warnings.length, 1)
 })
 
@@ -156,6 +171,10 @@ test('parseRouting accepts model and model:effort, and rejects everything else',
   const notObject: string[] = []
   parseRouting('haiku', notObject)
   assert.match(notObject[0] ?? '', /routing must be/)
+  const pinned: string[] = []
+  parseRouting({ scout: { S: 'sonnet' }, triage: { L: 'opus' } }, pinned)
+  assert.equal(pinned.length, 2)
+  assert.match(pinned[0] ?? '', /scout.*pinned in agents\/scout\.md/)
 })
 ```
 
@@ -239,6 +258,9 @@ export function routes(type: ChangeType, tier: Tier, round = 0, override: Routin
   return { routes: all, warnings }
 }
 
+// Scout and triage are pinned in their own files: a per-launch alias could resolve to another model outside the template env.
+const PINNED: Record<string, string> = { scout: 'agents/scout.md', triage: 'templates/rig-triage.yml' }
+
 // sensors.json "routing": { "<role>": { "<tier>": "model" | "model:effort" } }. Architect routes only tier L (S and M draft in the main thread).
 export function parseRouting(value: unknown, errors: string[]): RoutingOverride {
   const out: RoutingOverride = {}
@@ -248,6 +270,7 @@ export function parseRouting(value: unknown, errors: string[]): RoutingOverride 
   }
   for (const [role, tiers] of Object.entries(value)) {
     if (!(ROLES as string[]).includes(role)) { errors.push(`routing: unknown role "${role}" (one of ${ROLES.join(', ')})`); continue }
+    if (role in PINNED) { errors.push(`routing.${role}: pinned in ${PINNED[role]}; edit that file instead`); continue }
     if (typeof tiers !== 'object' || tiers === null || Array.isArray(tiers)) { errors.push(`routing.${role} must map tiers to "model" or "model:effort"`); continue }
     for (const [tier, spec] of Object.entries(tiers)) {
       if (!(TIERS as string[]).includes(tier)) { errors.push(`routing.${role}: unknown tier "${tier}"`); continue }
@@ -395,6 +418,20 @@ test('an override below a floor is clamped and next warns naming the role', () =
 })
 ```
 
+Also add the slice retry test (a tier S chore created by `new` sits at `build`, as the existing `progress` test shows):
+
+```ts
+test('the build retry follows the open slice only: a failed earlier slice does not lift the next one', () => {
+  sdlc(repo, ['new', 'rt', '--type', 'chore', '--tier', 'S'])
+  const sl = (rounds: number, status: string) => ({ rounds, hashes: [], status })
+  const ratchet = (slices: object) => write(repo, '.sdlc/changes/rt/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: {}, slices, baseline: {} }))
+  ratchet({ 1: sl(1, 'done'), 2: sl(0, 'open') })
+  assert.deepEqual(stepOf('rt').routes.implementer, { model: 'haiku', effort: 'medium' })
+  ratchet({ 1: sl(0, 'done'), 2: sl(1, 'open') })
+  assert.deepEqual(stepOf('rt').routes.implementer, { model: 'haiku', effort: 'high' })
+})
+```
+
 The third test must keep the test repo's existing `.sdlc/sensors.json` keys: if `makeRepo` wrote one, read it, add `routing`, and write it back instead of replacing it. If `sdlc()` from `testkit.ts` does not return `stderr`, read `testkit.ts` first and use the field it returns for standard error.
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -420,10 +457,12 @@ export type Verdict = 'continue' | 'human' | 'blocked' | 'ready'
 export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason: string; command: string; round: number; progress: number; model: ModelAlias; routes: Record<Role, Route>; routeWarnings: string[] }
 ```
 
-In `step()`, replace the `const base = ...` line:
+In `step()`, replace the `const base = ...` line. Build rounds live per slice (`ratchet.ts:71`), so the build retry reads the lowest-numbered open slice:
 
 ```ts
-  const routed = routesFor(change.type, change.tier, round, loadConfig().config.routing)
+  const openSlice = Object.entries(ratchet.slices).filter(([, sl]) => sl.status === 'open').sort((a, b) => Number(a[0]) - Number(b[0]))[0]?.[1]
+  const retry = node === 'build' ? (openSlice?.rounds ?? 0) : round
+  const routed = routesFor(change.type, change.tier, retry, loadConfig().config.routing)
   const base = { slug, node, round, progress, command: nextCommand(change), model: modelFor(change.type, change.tier), routes: routed.routes, routeWarnings: routed.warnings }
 ```
 
@@ -457,6 +496,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: the `**Models:**` line (line 12) in `skills/build`, `design`, `plan`, `spec`, `pr`, `pr-review`, `sensors`, `test` `/SKILL.md`
 - Modify: `skills/build/SKILL.md:23` (tier L slice review names its route)
 - Modify: `skills/pr-review/SKILL.md:19` (workflow args carry routes)
+- Modify: `skills/design/SKILL.md`, `skills/spec/SKILL.md` (one researcher launch clause)
 - Create: `agents/researcher.md`
 - Test: `scripts/models.spec.ts`
 
@@ -467,7 +507,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [ ] **Step 1: Write the failing tests** (in `scripts/models.spec.ts`, replace the `MODELS` const and its test; add the researcher test)
 
 ```ts
-const MODELS = '**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role\'s `model` and `effort` on every launch: `rig:scout` (scout), `rig:researcher` (researcher), `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread.'
+const MODELS = '**Models:** read `routes` from `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json` and pass that role\'s `model` and `effort` on every launch: `rig:researcher` (researcher), `rig:architect` (architect), `rig:implementer` (implementer), `rig:reviewer` (`slice-review` in build, `reviewer` elsewhere). A `main` route means draft it in this thread.'
 
 test('every skill that launches architect, implementer or reviewer passes its role route, and none hardcodes one', () => {
   for (const name of fs.readdirSync(path.join(ROOT, 'skills'))) {
@@ -482,6 +522,18 @@ test('the researcher is a read-only Haiku agent that fetches docs', () => {
   assert.match(text, /^model: claude-haiku-5-5$/m)
   assert.match(text, /^effort: low$/m)
   assert.match(text, /^tools: WebFetch, WebSearch, Read$/m)
+})
+
+test('the scout and triage files match their pinned routes', async () => {
+  const { TABLE } = await import('./routing.ts')
+  const scout = read('agents/scout.md')
+  assert.deepEqual(TABLE.scout.S, { model: 'haiku', effort: 'low' })
+  assert.match(scout, /^model: claude-haiku-5-5$/m)
+  assert.match(scout, /^effort: low$/m)
+})
+
+test('design and spec send external docs questions to one researcher', () => {
+  for (const s of ['design', 'spec']) assert.match(read(`skills/${s}/SKILL.md`), /one `rig:researcher`/, s)
 })
 
 test('pr-review hands the reviewer and referee routes to the review workflow', () => {
@@ -499,6 +551,8 @@ Expected: FAIL (old Models line; no `agents/researcher.md`).
 Replace the `**Models:**` line (line 12) in each of the eight skills with the exact `MODELS` text above (unescape `\'` to `'`). It is one line for one line, so no skill grows. Check with `git diff --stat skills` that each of the eight changed by exactly one line.
 
 In `skills/pr-review/SKILL.md` step 2, change the workflow args `{slug: "$0", base, shards, reviewer: "rig:reviewer"}` to `{slug: "$0", base, shards, reviewer: "rig:reviewer", routes: {reviewer: routes.reviewer, referee: routes.referee}}`.
+
+In `skills/design/SKILL.md` and `skills/spec/SKILL.md`, append to the step that launches `rig:scout`: ` For a question about an external library, API or tool, launch one `rig:researcher` instead of reading docs yourself.` (same line, so neither skill grows).
 
 Create `agents/researcher.md`:
 
@@ -784,6 +838,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `DESIGN.md` (§2 principle 7 at line 31; the agents line at line 40; the "Cheap subagents" row at line 95)
 - Modify: `README.md` (agents diagram, lines 36-37)
 - Modify: `CHANGELOG.md` (new top entry)
+- Modify: `SECURITY.md` (one row for the researcher)
+- Modify: `docs/ai-sdlc-harness-design.html` (decision 4 text)
+- Modify: `scripts/models.spec.ts:1` (header comment)
 
 - [ ] **Step 1: Update the docs**
 
@@ -806,6 +863,12 @@ Line 95 row: `| Cheap subagents | routed by role and tier: tier L code on Sonnet
 
 Keep each diagram line the same width as the line it replaces (pad with spaces).
 
+`SECURITY.md`: add a table row after the hooks row: `| `researcher` agent | Docs lookups on Haiku with `WebFetch`, `WebSearch` and `Read` only: no Edit, Write or Bash, and its prompt treats fetched pages as data. | **Yes**, as data: a fetched page can try to steer its summary. The summary is advice to the main thread, never an approval or a recorded verdict. |`
+
+`docs/ai-sdlc-harness-design.html`: find decision 4 ("the tier picks the model") and change it to "the role and the tier pick the model and effort (scripts/routing.ts); see docs/superpowers/specs/2026-10-08-role-by-tier-routing-design.md".
+
+`scripts/models.spec.ts` line 1: `// Model routing: the role and the tier pick model and effort (scripts/routing.ts); full IDs are pinned to 5.5.`
+
 `CHANGELOG.md` top entry:
 
 ```markdown
@@ -827,7 +890,7 @@ Expected: typecheck clean, every test passes (0 fail), plugin validates.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add DESIGN.md README.md CHANGELOG.md
+git add DESIGN.md README.md CHANGELOG.md SECURITY.md docs/ai-sdlc-harness-design.html scripts/models.spec.ts
 git commit -m "docs: role by tier routing in DESIGN, README and CHANGELOG
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
