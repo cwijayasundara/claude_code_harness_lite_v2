@@ -7,7 +7,9 @@ import { writeReport } from './lib/report.mjs'
 import { install } from './phases/p0-install.mjs'
 import { PHASE as P1, runChange } from './phases/p1-greenfield.mjs'
 import { scriptedDriver } from './driver/scripted.mjs'
-import { runNegatives } from './negative.mjs'
+import { PHASE as P2 } from './phases/p2-change.mjs'
+import { mergeToMain } from './lib/merge.mjs'
+import { runNegatives, runStaleTwin } from './negative.mjs'
 import { createSessions, liveDriver } from './driver/live.mjs'
 import { assertOnboarding } from '../integration/assert/onboarding.mjs'
 import { assertProcess } from '../integration/assert/process.mjs'
@@ -24,7 +26,9 @@ const sb = createSandbox({ name: 'project', out })
 const sessions = live ? createSessions({ sb, out, capUsd: Number(arg('cap', 6)) }) : null
 const driverFor = phase => (live ? liveDriver(sb, phase, { sessions }) : scriptedDriver(sb, phase))
 const results = []
-const want = id => !only || only === id
+// A phase runs when it is the requested one or a prerequisite of it (P2 needs P1).
+const NEEDS = { P2: ['P1'], P4: ['P1', 'P2'] }
+const want = id => !only || only === id || (NEEDS[only] ?? []).includes(id)
 const finish = () => {
   writeReport(out, results)
   for (const c of results) c.print()
@@ -49,6 +53,20 @@ try {
     const bad = await runNegatives(sb, P1.slug)
     for (const b of bad) console.error(`twin surprise: ${b}`)
     if (bad.length) process.exitCode = 1
+  }
+  if (want('P2')) {
+    mergeToMain(sb, P1.slug)
+    const { slug, checks: c2 } = await runChange(sb, P2, driverFor(P2))
+    // Edited, not rewritten: under 80% of cart.js lines deleted relative to main.
+    const del = Number(sb.git('diff', '--numstat', 'main...HEAD', '--', 'src/cart.js').split('\t')[1])
+    const total = sb.git('show', 'main:src/cart.js').split('\n').length
+    await c2.check('P2: cart.js was edited, not rewritten', () => del / total < 0.8 || `${del} of ${total} lines deleted`)
+    results.push(c2)
+    if (!live) {
+      const bad = await runStaleTwin(sb, slug)
+      for (const b of bad) console.error(`twin surprise: ${b}`)
+      if (bad.length) process.exitCode = 1
+    }
   }
   if (live) {
     const pc = new Checks('process (all live sessions)')

@@ -32,3 +32,13 @@ export async function runNegatives(sb, slug) {
   }
   return bad
 }
+
+// A design edited after its approval must put the gate back to a human.
+export async function runStaleTwin(sb, slug) {
+  const f = `.sdlc/changes/${slug}/design.md`
+  const keep = sb.read(f)
+  sb.write(f, `${keep}\n- edited after approval\n`)
+  const n = JSON.parse(sb.sdlc(['next', slug, '--json']).stdout)
+  sb.write(f, keep)
+  return n.verdict === 'human' ? [] : [`stale approval: next said ${n.verdict}, expected human`]
+}
