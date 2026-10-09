@@ -1,0 +1,27 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const fm = (f: string) => fs.readFileSync(f, 'utf8').match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ''
+
+test('manifests parse and agree on the name and version', () => {
+  const p = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'))
+  const m = JSON.parse(fs.readFileSync('.claude-plugin/marketplace.json', 'utf8'))
+  assert.equal(p.name, 'rig-util')
+  assert.equal(m.plugins[0].name, 'rig-util')
+  assert.equal(m.plugins[0].version, p.version)
+})
+
+test('skills and agent have frontmatter with name and description; writer is pinned to haiku', () => {
+  for (const f of ['skills/wiki-refresh/SKILL.md', 'skills/wiki-find/SKILL.md', 'agents/wiki-writer.md']) {
+    assert.match(fm(f), /^name: /m, f); assert.match(fm(f), /^description: /m, f)
+  }
+  assert.match(fm('agents/wiki-writer.md'), /^model: haiku$/m)
+})
+
+test('hooks.json wires only command hooks to wiki.ts', () => {
+  const h = JSON.parse(fs.readFileSync('hooks/hooks.json', 'utf8'))
+  const cmds = Object.values<any>(h.hooks).flat().flatMap((e: any) => e.hooks.map((x: any) => x.command))
+  assert.ok(cmds.length >= 4)
+  for (const c of cmds) assert.match(c, /scripts\/wiki\.ts" hook /)
+})
