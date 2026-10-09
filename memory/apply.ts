@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { hasSecret } from '../shared/secrets.ts'
+import { hasSecret, redact } from '../shared/secrets.ts'
 import { ensureCacheIgnore } from '../shared/gitignore.ts'
 import { type MemConfig, cacheDir, memDir } from './config.ts'
-import { type Entry, type Store, TOPIC_FILE, allEntries, entries, findEntry, loadStore, newId, serializeTopic, similarity } from './store.ts'
+import { type Entry, type Store, TOPIC_FILE, allEntries, entries, entryLine, findEntry, isEntry, loadStore, newId, parseTopic, serializeTopic, similarity } from './store.ts'
 import { buildMemoryMd } from './memorymd.ts'
 
 export type Rejected = { op: unknown; reason: string }
@@ -11,10 +11,11 @@ export type ApplyResult = { added: number; updated: number; removed: number; mer
 export const MAX_TEXT = 240
 export const DUP_THRESHOLD = 0.8
 const MAX_REJECTED = 200
+const MAX_LOGGED_OP = 1000
 
 export function textProblem(t: unknown): string | null {
   if (typeof t !== 'string' || !t.trim()) return 'text missing'
-  if (/[\r\n]/.test(t)) return 'text must be one line'
+  if (/[\r\n\u0085\u2028\u2029]/.test(t)) return 'text must be one line'
   if (t.trim().length > MAX_TEXT) return `text over ${MAX_TEXT} chars`
   if (/\[source:/i.test(t)) return 'text has metadata'
   if (hasSecret(t)) return 'text contains a secret'
@@ -23,6 +24,12 @@ export function textProblem(t: unknown): string | null {
 
 const cleanSource = (s: unknown): string => (typeof s === 'string' ? s.replace(/[^\w.:-]/g, '') : '').slice(0, 80) || 'unknown'
 const dupOf = (s: Store, text: string, except = ''): Entry | undefined => allEntries(s).find(e => e.id !== except && similarity(e.text, text) >= DUP_THRESHOLD)
+
+// An entry must survive a write and re-read unchanged, or later ops could not find it
+const roundTrips = (e: Entry): boolean => {
+  const back = parseTopic('x.md', entryLine(e)).lines[0]
+  return isEntry(back) && back.text === e.text && back.source === e.source && back.added === e.added && back.id === e.id
+}
 
 export function applyOps(root: string, cfg: MemConfig, ops: unknown, today: string): ApplyResult {
   const store = loadStore(root)
@@ -43,14 +50,18 @@ export function applyOps(root: string, cfg: MemConfig, ops: unknown, today: stri
       const description = typeof o.description === 'string' && !textProblem(o.description) ? o.description.trim().slice(0, 100) : ''
       const topic = store.get(file) ?? { file, description, lines: [] }
       if (entries(topic).length >= cfg.maxEntriesPerFile) { reject(op, 'topic file full'); continue }
-      topic.lines.push({ id: newId(text, new Set(allEntries(store).map(e => e.id))), text, source: cleanSource(o.source), added: today })
+      const cand: Entry = { id: newId(text, new Set(allEntries(store).map(e => e.id))), text, source: cleanSource(o.source), added: today }
+      if (!roundTrips(cand)) { reject(op, 'entry does not round-trip'); continue }
+      topic.lines.push(cand)
       store.set(file, topic); res.added++
     } else if (o.op === 'update') {
       const f = findEntry(store, String(o.id))
       if (!f) { reject(op, 'unknown id'); continue }
       const dup = dupOf(store, text, String(o.id))
       if (dup) { reject(op, `duplicate of ${dup.id}`); continue }
-      f.topic.lines[f.i] = { ...(f.topic.lines[f.i] as Entry), text }; res.updated++
+      const cand: Entry = { ...(f.topic.lines[f.i] as Entry), text }
+      if (!roundTrips(cand)) { reject(op, 'entry does not round-trip'); continue }
+      f.topic.lines[f.i] = cand; res.updated++
     } else if (o.op === 'remove') {
       const f = findEntry(store, String(o.id))
       if (!f) { reject(op, 'unknown id'); continue }
@@ -62,9 +73,11 @@ export function applyOps(root: string, cfg: MemConfig, ops: unknown, today: stri
       const es = found.map(f => f!.topic.lines[f!.i] as Entry)
       const keep = es.reduce((a, b) => b.added < a.added ? b : a)
       const sources = [...new Set(es.flatMap(e => e.source.split(',')).map(s => s.trim()).filter(Boolean))].join(',').slice(0, 200)
+      const cand: Entry = { ...keep, text, source: sources }
+      if (!roundTrips(cand)) { reject(op, 'entry does not round-trip'); continue }
       for (const e of es) if (e !== keep) { const f = findEntry(store, e.id)!; f.topic.lines.splice(f.i, 1) }
       const k = findEntry(store, keep.id)!
-      k.topic.lines[k.i] = { ...keep, text, source: sources }; res.merged++
+      k.topic.lines[k.i] = cand; res.merged++
     } else reject(op, 'unknown op')
   }
   if (res.added + res.updated + res.removed + res.merged > 0) writeStore(root, store)
@@ -93,6 +106,8 @@ function appendRejected(root: string, rs: Rejected[]): void {
   let old: string[] = []
   try { old = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean) } catch { /* first rejection */ }
   const ts = new Date().toISOString()
-  fs.writeFileSync(f, [...old, ...rs.map(r => JSON.stringify({ ts, ...r }))].slice(-MAX_REJECTED).join('\n') + '\n')
+  // Logged ops may carry secrets the model proposed, so redact before anything reaches disk
+  const logged = rs.map(r => JSON.stringify({ ts, reason: r.reason, op: redact(JSON.stringify(r.op) ?? 'null').slice(0, MAX_LOGGED_OP) }))
+  fs.writeFileSync(f, [...old, ...logged].slice(-MAX_REJECTED).join('\n') + '\n')
   ensureCacheIgnore(memDir(root))
 }

@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { applyOps, textProblem, writeStore } from './apply.ts'
 import { loadMemConfig } from './config.ts'
-import { allEntries, findEntry, loadStore } from './store.ts'
+import { allEntries, entryLine, findEntry, isEntry, loadStore, parseTopic } from './store.ts'
 import { makeRepo } from '../shared/testkit.ts'
 
 const D = '2026-10-09'
@@ -29,6 +29,33 @@ test('textProblem rules', () => {
   assert.equal(textProblem('ok [source: me]'), 'text has metadata')
   assert.equal(textProblem('use token=abcdef123'), 'text contains a secret')
   assert.equal(textProblem('fine'), null)
+  for (const sep of ['\u2028', '\u2029', '\u0085']) assert.equal(textProblem(`a${sep}b`), 'text must be one line')
+})
+
+test('unicode line separators are rejected, not stored as invisible raw lines', () => {
+  const dir = repo(), cfg = loadMemConfig(dir)
+  const r = applyOps(dir, cfg, [add('a\u2028b c'), { ...add('fine words', 'deploy.md'), description: 'x\u2029y' }], D)
+  assert.equal(r.added, 1)
+  assert.deepEqual(r.rejected.map(x => x.reason), ['text must be one line'])
+  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/commands.md')), false)
+  assert.match(mem(dir, 'deploy.md'), /^# deploy\n> \n/)
+})
+
+test('text is stored trimmed and re-parses to the same entry', () => {
+  const dir = repo(), cfg = loadMemConfig(dir)
+  assert.equal(applyOps(dir, cfg, [add('  spaced entry text  ')], D).added, 1)
+  const [e] = allEntries(loadStore(dir))
+  assert.equal(e.text, 'spaced entry text')
+  const back = parseTopic('commands.md', entryLine(e)).lines[0]
+  assert.equal(isEntry(back) && JSON.stringify(back) === JSON.stringify(e), true)
+})
+
+test('rejected op log redacts secrets and caps each op at 1000 chars', () => {
+  const dir = repo(), cfg = loadMemConfig(dir)
+  applyOps(dir, cfg, [add('key password: hunter22'), add('y'.repeat(5000) + ' key password: hunter22')], D)
+  const log = fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/rejected.jsonl'), 'utf8')
+  assert.equal(log.includes('hunter22'), false)
+  for (const line of log.trim().split('\n')) assert.ok(line.length <= 1100)
 })
 
 test('apply rejects bad ops and writes them to rejected.jsonl without touching memory', () => {
