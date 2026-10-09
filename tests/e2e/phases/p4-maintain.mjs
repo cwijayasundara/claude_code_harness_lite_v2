@@ -78,6 +78,7 @@ export async function runMaintain(sb, driver, phase = PHASE) {
     sb.git('add', '.sdlc/evals')
     sb.git('commit', '-q', '--no-verify', '-m', 'chore: commit the incident eval')
   }
+  await assertChange(c, sb, slug, { label: slug })
   await c.check('P4: the regression test ran red before the fix', () => /"expectFail":\s*true/.test(sb.read(`.sdlc/changes/${slug}/runs.jsonl`)) || 'no red run recorded')
   await c.check('P4: the incident became a regression eval naming the incident', () => {
     const f = sb.run('sh', ['-c', 'ls .sdlc/evals/incident-*.json 2>/dev/null']).stdout.trim().split('\n')[0]

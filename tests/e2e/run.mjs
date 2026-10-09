@@ -34,7 +34,14 @@ const ensureMain = () => {
   if (b !== 'main') mergeToMain(sb, b.replace(/^sdlc\//, ''))
 }
 const want = id => !only || only === id || (NEEDS[only] ?? []).includes(id)
+// A group that ran fewer checks than this lost coverage silently (an assertion call deleted or skipped): fail the scripted run.
+const FLOOR = { 'P0 install': 16, 'P1 ': 27, 'P2 ': 27, 'P3 deploy': 19, 'P4 maintain: watch': 4, 'P4 maintain: incident fix': 24, 'P4 maintain: metrics': 2 }
+const lostCoverage = () => (live || only ? [] : Object.entries(FLOOR).filter(([k, n]) => {
+  const g = results.find(c => c.title.startsWith(k))
+  return !g || g.results.length < n
+}).map(([k, n]) => `${k}: fewer than ${n} checks ran`))
 const finish = () => {
+  for (const m of lostCoverage()) { console.error(`coverage floor: ${m}`); process.exitCode = 1 }
   writeReport(out, results)
   for (const c of results) c.print()
   console.log(`\nreport and sandbox: ${out}`)
