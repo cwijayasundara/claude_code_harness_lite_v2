@@ -102,3 +102,31 @@ test('repeats: a live node may take a second session before it counts as no prog
     runRoute({ sb: fakeSb({ next: seq([nextOf('build', 'continue')]) }), slug: 's', repeats: 2, driver: { step: async () => {} } }),
     /no progress at build/)
 })
+
+test('final review: an approve that exits 0 but leaves the gate open cannot loop forever', async () => {
+  const sb = fakeSb({
+    next: nextOf('design', 'human'),
+    status: { changes: [{ slug: 's', next: { kind: 'approve', gate: 'design' } }] },
+    approve: {},
+  })
+  await assert.rejects(runRoute({ sb, slug: 's', driver: { step: async () => {} } }), /approved design \d+ times/)
+})
+
+test('final review: concerns are reported, capped, and a path with .. is refused', async () => {
+  const mk = (file, lines) => {
+    const files = { [`.sdlc/changes/${file}`]: lines.join('\n') }
+    return {
+      files,
+      read: f => files[f] ?? '',
+      write: (f, t) => { files[f] = t },
+      sdlc(args) {
+        if (args[0] === 'next') return { status: 0, stdout: JSON.stringify(nextOf('design', 'human')), stderr: '' }
+        if (args[0] === 'status') return { status: 0, stdout: JSON.stringify({ changes: [{ slug: 's', next: { kind: 'approve', gate: 'design' } }] }), stderr: '' }
+        return { status: 1, stdout: '', stderr: `resolve the concern(s) in ${file} with their policy owners before approving` }
+      },
+    }
+  }
+  const many = Array.from({ length: 11 }, (_, i) => `- [policy-security] concern ${i} → owner: <x>`)
+  await assert.rejects(runRoute({ sb: mk('s/design.md', many), slug: 's', driver: { step: async () => {} } }), /more than 10 policy concerns/)
+  await assert.rejects(runRoute({ sb: mk('../../evil.md', many.slice(0, 1)), slug: 's', driver: { step: async () => {} } }), /outside the change folder/)
+})

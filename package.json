@@ -13,7 +13,7 @@
     "test:integration:self": "node tests/integration/selftest.mjs",
     "test:e2e": "node tests/e2e/run.mjs --driver live",
     "test:e2e:fast": "node tests/e2e/run.mjs --driver scripted",
-    "test:e2e:unit": "node --test tests/e2e/lib/*.test.mjs"
+    "test:e2e:unit": "node --test tests/e2e/lib/*.test.mjs tests/e2e/driver/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

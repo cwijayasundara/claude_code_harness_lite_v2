@@ -19,20 +19,21 @@ export function feed(sb, value) {
 
 const breachFiles = sb => sb.run('sh', ['-c', 'ls .sdlc/intent 2>/dev/null | grep -c breach- || true']).stdout.trim()
 
-// 5 baseline points plus 8 more in-band (the last 8 are kept out of the baseline), then one point far beyond 3 sigma.
-export async function assertWatch(c, sb, { spike = 60 } = {}) {
+// The first 13 points are the learning window (5 baseline + the 8 newest, which are kept out of the baseline), so the 13th is the
+// first one judged: in-band means tier 0 and no breach name. Then one point far beyond 3 sigma must be tier 3 with a breach name.
+// A breach name is given exactly when the tier is 2 or more. `watch` only names the breach; the CI job writes the intent file.
+export async function assertWatch(c, sb, { spike = 60, inBand = IN_BAND } = {}) {
   declareBand(sb)
-  let last
-  for (const v of IN_BAND) last = feed(sb, v)
-  await c.check('watch: in-band points are tier 0 and write no breach intent', () =>
-    (last.tier === 0 && breachFiles(sb) === '0') || `tier ${last.tier}, ${breachFiles(sb)} breach file(s)`)
+  const seen = inBand.map(v => feed(sb, v))
+  await c.check('watch: in-band points are tier 0 and raise no breach', () =>
+    seen.every(v => v.tier === 0 && v.breach === null) || JSON.stringify(seen.find(v => v.tier !== 0 || v.breach !== null)))
   const breach = feed(sb, spike)
+  seen.push(breach)
   await c.check('watch: a point far beyond 3 sigma is tier 3 with a breach name', () =>
     (breach.tier === 3 && /^breach-checkout-errors-\d{8}$/.test(breach.breach)) || JSON.stringify(breach))
-  // The breach intent is written by the CI job from the breach name (rig-watch.yml); the test plays that job.
-  sb.write(`.sdlc/intent/${breach.breach}.md`, `---\nstatus: draft\n---\n# Breach: ${BAND.id}\n\nValue ${breach.value} beyond 3 sigma.\n`)
-  await c.check('watch: the breach intent is a draft the person triages', () => fm(sb.read(`.sdlc/intent/${breach.breach}.md`)).status === 'draft')
-  await c.check('watch: history holds every point', () => jsonl(sb.read('.sdlc/watch/checkout-errors.jsonl')).length === IN_BAND.length + 1)
+  await c.check('watch: a breach name is given exactly when the tier is 2 or more', () =>
+    seen.every(v => (v.tier >= 2) === Boolean(v.breach)) || JSON.stringify(seen.find(v => (v.tier >= 2) !== Boolean(v.breach))))
+  await c.check('watch: history holds every point', () => jsonl(sb.read('.sdlc/watch/checkout-errors.jsonl')).length === seen.length)
 }
 
 export async function assertIncident(c, sb, file) {

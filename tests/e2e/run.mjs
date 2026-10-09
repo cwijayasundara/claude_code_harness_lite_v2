@@ -11,7 +11,7 @@ import { PHASE as P2 } from './phases/p2-change.mjs'
 import { runDeploy } from './phases/p3-deploy.mjs'
 import { runMaintain, PHASE as P4 } from './phases/p4-maintain.mjs'
 import { mergeToMain } from './lib/merge.mjs'
-import { runNegatives, runStaleTwin, runDeployNegatives, runMaintainNegatives } from './negative.mjs'
+import { runNegatives, runStaleTwin, runDeployNegatives, runMaintainNegatives, runWatchSpikeTwin } from './negative.mjs'
 import { createSessions, liveDriver } from './driver/live.mjs'
 import { assertOnboarding } from '../integration/assert/onboarding.mjs'
 import { assertProcess } from '../integration/assert/process.mjs'
@@ -92,7 +92,7 @@ try {
     const r = await runMaintain(sb, driverFor(P4))
     results.push(...r.checks)
     if (!live) {
-      const bad = await runMaintainNegatives(out)
+      const bad = [...(await runMaintainNegatives(out)), ...(await runWatchSpikeTwin(out))]
       for (const b of bad) console.error(`twin surprise: ${b}`)
       if (bad.length) process.exitCode = 1
     }

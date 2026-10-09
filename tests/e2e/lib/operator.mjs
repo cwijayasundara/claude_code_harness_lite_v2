@@ -8,26 +8,32 @@ function json(sb, args) {
 }
 
 // Appends the resolution the approval asks for to every unresolved policy concern line; returns how many.
+const MAX_CONCERNS = 10
+const MAX_APPROVALS = 3
+
 function resolveConcerns(sb, rel, operator) {
   let n = 0
+  const lines = []
   const text = sb.read(rel).split('\n').map(line => {
     if (!/^- \[policy-[^\]]+\]/.test(line) || line.includes('→ resolved:')) return line
     n++
+    lines.push(line)
     return `${line} → resolved: accepted for the acceptance run (${operator})`
   }).join('\n')
   if (n === 0) throw new Error(`${rel}: approval asked for concern resolutions but no policy concern line was found`)
+  if (n > MAX_CONCERNS) throw new Error(`${rel}: more than ${MAX_CONCERNS} policy concerns (${n}); a person must read this design`)
   sb.write(rel, text)
-  return n
+  return lines
 }
 
 export async function runRoute({ sb, slug, driver, operator = 'operator', maxSteps = 10, repeats = 1, expectGates }) {
   const approved = []
-  let resolvedConcerns = 0
+  const concernLines = []
   const attempts = new Map()
   let steps = 0
   for (;;) {
     const s = json(sb, ['next', slug, '--json'])
-    if (s.verdict === 'ready' || s.verdict === 'done') return { steps, approved, resolvedConcerns, end: s.verdict }
+    if (s.verdict === 'ready' || s.verdict === 'done') return { steps, approved, resolvedConcerns: concernLines.length, concernLines, end: s.verdict }
     if (s.verdict === 'blocked') throw new Error(`${slug}: blocked: ${s.reason}`)
     if (s.verdict === 'human') {
       const st = json(sb, ['status', '--json']).changes.find(c => c.slug === slug)
@@ -42,12 +48,14 @@ export async function runRoute({ sb, slug, driver, operator = 'operator', maxSte
       if (r.status !== 0 && /resolve the concern/.test(refusal)) {
         const file = /in (\S+\.md) with/.exec(refusal)?.[1]
         if (!file) throw new Error(`approve ${gate} refused on concerns in an unknown file: ${refusal.trim().split('\n')[0]}`)
-        const rel = `.sdlc/changes/${file}`
-        resolvedConcerns += resolveConcerns(sb, rel, operator)
+        if (file.includes('..') || file.startsWith('/')) throw new Error(`approve ${gate}: refusal names a file outside the change folder: ${file}`)
+        concernLines.push(...resolveConcerns(sb, `.sdlc/changes/${file}`, operator))
         r = sb.sdlc(['approve', slug, gate, '--by', operator], { human: true })
       }
       if (r.status !== 0) throw new Error(`approve ${gate} failed: ${(r.stderr || r.stdout).trim()}`)
       approved.push(gate)
+      const times = approved.filter(g => g === gate).length
+      if (times > MAX_APPROVALS) throw new Error(`${slug}: approved ${gate} ${times} times and next still asks for a human`)
       continue
     }
     const key = `${s.node}:${s.round}`

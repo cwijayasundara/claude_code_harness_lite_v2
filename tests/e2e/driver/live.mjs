@@ -6,19 +6,23 @@ import { PLUGIN } from '../../integration/lib/sandbox.mjs'
 
 // One shared session log per run, so the spend cap covers every phase.
 export function createSessions({ sb, out, capUsd = 6, model = 'sonnet' }) {
+  if (!(capUsd > 0)) throw new Error(`spend cap must be a positive number of dollars, got ${capUsd}`)
   const sessions = []
   const run = (label, prompt, { withPlugin = false, cont = false } = {}) => {
     const spent = totals(sessions).costUsd
     if (spent >= capUsd) throw new Error(`spend cap $${capUsd} reached ($${spent.toFixed(2)})`)
     const file = path.join(out, 'sessions', `${String(sessions.length).padStart(2, '0')}-${label}.jsonl`)
     fs.mkdirSync(path.dirname(file), { recursive: true })
+    const budget = Math.min(6, capUsd - spent)
     const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-      '--model', model, '--max-budget-usd', String(Math.min(6, capUsd - spent).toFixed(2)), '--setting-sources', 'project,local',
+      '--model', model, '--max-budget-usd', budget.toFixed(2), '--setting-sources', 'project,local',
       ...(withPlugin ? ['--plugin-dir', PLUGIN] : []), ...(cont ? ['--continue'] : [])]
     const r = sb.run('claude', args, { timeout: 18 * 60_000 })
     fs.writeFileSync(file, r.stdout ?? '')
     if (r.status !== 0 && !r.stdout) throw new Error(`claude exited ${r.status}: ${(r.stderr ?? '').split('\n')[0]}`)
     const s = readSession(file)
+    // A killed or crashed session prints no result event, so its cost is unknown: count its whole budget as spent.
+    if (!s.ended) s.costUsd = Math.max(s.costUsd, budget)
     sessions.push(s)
     console.log(`  live ${label}: $${s.costUsd.toFixed(2)}, ${s.turns} turns, ${s.denials.length} denial(s), total $${totals(sessions).costUsd.toFixed(2)} of $${capUsd}`)
     return s

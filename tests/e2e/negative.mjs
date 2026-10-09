@@ -33,14 +33,22 @@ export async function runNegatives(sb, slug) {
   return bad
 }
 
-// A design edited after its approval must put the gate back to a human.
+// A design edited after its approval must put the design gate back to a human (not merely any human verdict).
 export async function runStaleTwin(sb, slug) {
   const f = `.sdlc/changes/${slug}/design.md`
   const keep = sb.read(f)
-  sb.write(f, `${keep}\n- edited after approval\n`)
-  const n = JSON.parse(sb.sdlc(['next', slug, '--json']).stdout)
-  sb.write(f, keep)
-  return n.verdict === 'human' ? [] : [`stale approval: next said ${n.verdict}, expected human`]
+  const bad = []
+  try {
+    const before = JSON.parse(sb.sdlc(['next', slug, '--json']).stdout).verdict
+    sb.write(f, `${keep}\n- edited after approval\n`)
+    const n = JSON.parse(sb.sdlc(['next', slug, '--json']).stdout)
+    const gate = JSON.parse(sb.sdlc(['status', '--json']).stdout).changes.find(c => c.slug === slug)?.next?.gate
+    if (before === 'human') bad.push(`stale approval: the change was already waiting on a human before the edit`)
+    if (n.verdict !== 'human' || gate !== 'design') bad.push(`stale approval: next said ${n.verdict} (gate ${gate}), expected human at design`)
+  } finally {
+    sb.write(f, keep)
+  }
+  return bad
 }
 
 // A workflow calling a subcommand the CLI lacks, and a gate with an empty approval, must both be caught.
@@ -71,4 +79,15 @@ export async function runMaintainNegatives(out) {
   await assertIncident(i, sb, '.sdlc/incidents/x.md')
   bad.push(...surprises(i, [/has class, severity, escaped, detected/]))
   return bad
+}
+
+// An in-band series that hides a spike must trip the in-band check (it used to read a file `watch` never writes).
+export async function runWatchSpikeTwin(out) {
+  const { createSandbox } = await import('../integration/lib/sandbox.mjs')
+  const { assertWatch } = await import('./assert/maintain.mjs')
+  const sb = createSandbox({ name: 'twin-watch-spike', out })
+  sb.write('.sdlc/sensors.json', '{}\n')
+  const c = new Checks('twin: a spike hidden in the in-band series')
+  await assertWatch(c, sb, { inBand: [10, 11, 10, 9, 10, 10, 11, 10, 9, 10, 10, 11, 60] })
+  return surprises(c, [/in-band points are tier 0 and raise no breach/])
 }
