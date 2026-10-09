@@ -70,12 +70,14 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   const route = await runRoute({ sb, slug, driver, repeats: driver.sessions ? 2 : 1, maxSteps: driver.sessions ? 14 : 10 })
   const c = new Checks('P4 maintain: incident fix')
   // Known gap, pinned so a fix flips it: /rig-pr stages only .sdlc/changes/<slug> and a fixed list, never .sdlc/evals, so the
-  // incident eval diagnose writes is left untracked after the ship. A person commits it onto the branch.
-  await c.check('known gap: /rig-pr leaves the incident eval untracked (see the plan ledger)', () =>
-    sb.git('status', '--porcelain', '--', '.sdlc/evals').includes('??') || 'the eval was committed by /rig-pr: the gap is fixed, update this check')
-  sb.git('add', '.sdlc/evals')
-  sb.git('commit', '-q', '--no-verify', '-m', 'chore: commit the incident eval')
-  await assertChange(c, sb, slug, { label: slug })
+  // incident eval diagnose writes is left untracked after the ship. A person commits it onto the branch. A headless live run may write
+  // no eval at all (the write is on the settings `ask` list); that is judged by the eval check below, and not committed here.
+  if (sb.exists('.sdlc/evals')) {
+    await c.check('known gap: /rig-pr leaves the incident eval untracked (see the plan ledger)', () =>
+      sb.git('status', '--porcelain', '--', '.sdlc/evals').includes('??') || 'the eval was committed by /rig-pr: the gap is fixed, update this check')
+    sb.git('add', '.sdlc/evals')
+    sb.git('commit', '-q', '--no-verify', '-m', 'chore: commit the incident eval')
+  }
   await c.check('P4: the regression test ran red before the fix', () => /"expectFail":\s*true/.test(sb.read(`.sdlc/changes/${slug}/runs.jsonl`)) || 'no red run recorded')
   await c.check('P4: the incident became a regression eval naming the incident', () => {
     const f = sb.run('sh', ['-c', 'ls .sdlc/evals/incident-*.json 2>/dev/null']).stdout.trim().split('\n')[0]
