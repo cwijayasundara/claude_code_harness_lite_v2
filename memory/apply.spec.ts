@@ -60,7 +60,7 @@ test('rejected op log redacts secrets and caps each op at 1000 chars', () => {
 
 test('apply rejects bad ops and writes them to rejected.jsonl without touching memory', () => {
   const dir = repo(), cfg = loadMemConfig(dir)
-  const bad = [add('x', '../evil.md'), add('x', 'MEMORY.md'), add('x', 'a/b.md'), add('x', 'notes.txt'), add('a\nb'), add('x'.repeat(241)),
+  const bad = [add('x', '../evil.md'), add('x', 'MEMORY.md'), add('x', 'memory.md'), add('x', 'a/b.md'), add('x', 'notes.txt'), add('a\nb'), add('x'.repeat(241)),
     add('key password: hunter22'), { op: 'nope', text: 'x' }, 'string', null, { op: 'update', id: 'm-ffffff', text: 'x' }, { op: 'remove', id: 'm-ffffff' },
     { op: 'merge', ids: ['m-ffffff'], text: 'x' }]
   const r = applyOps(dir, cfg, bad, D)
@@ -111,6 +111,13 @@ test('a new topic takes its description from the op', () => {
   const dir = repo(), cfg = loadMemConfig(dir)
   applyOps(dir, cfg, [{ ...add('deploy with make ship', 'deploy.md'), description: 'Releasing and deploying' }], D)
   assert.match(mem(dir, 'deploy.md'), /^# deploy\n> Releasing and deploying\n/)
+})
+
+test('writeStore refuses names that collide case-insensitively, before touching memory', () => {
+  const dir = repo(), s = loadStore(dir)
+  s.set('memory.md', { file: 'memory.md', description: 'x', lines: [{ text: 'a b c', source: 's', added: D, id: 'm-aaaaaa' }] })
+  assert.throws(() => writeStore(dir, s), /collide/)
+  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/MEMORY.md')), false)
 })
 
 test('apply preserves hand-written lines and rebuilds MEMORY.md byte-identically', () => {

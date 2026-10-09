@@ -14,6 +14,8 @@ export const DEFAULT_TOPICS: Record<string, string> = {
   'conventions.md': 'Repo norms learned from user corrections',
 }
 export const TOPIC_FILE = /^[a-z0-9-]+\.md$/
+// memory.md would collide with MEMORY.md on case-insensitive filesystems
+export const isTopicFile = (f: string): boolean => TOPIC_FILE.test(f) && f.toLowerCase() !== 'memory.md'
 const LINE = /^- (.+) \[source: ([^;\]]*); added: (\d{4}-\d{2}-\d{2}); id: (m-[0-9a-f]{6,16})\]$/
 
 export const isEntry = (l: Entry | string): l is Entry => typeof l !== 'string'
@@ -46,7 +48,7 @@ export function loadStore(root: string): Store {
   let names: string[] = []
   try { names = fs.readdirSync(memDir(root)) } catch { return s }
   for (const f of names.sort()) {
-    if (!TOPIC_FILE.test(f)) continue
+    if (!isTopicFile(f)) continue
     try { s.set(f, parseTopic(f, fs.readFileSync(path.join(memDir(root), f), 'utf8'))) } catch { /* unreadable: skip */ }
   }
   return s

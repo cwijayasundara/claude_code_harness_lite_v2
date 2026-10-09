@@ -50,6 +50,12 @@ test('loadStore has default topics, reads lowercase .md files, skips MEMORY.md a
   assert.equal(loadStore(makeRepo({}, { git: false })).size, 4)
 })
 
+test('loadStore ignores a memory.md file (collides with MEMORY.md on case-insensitive filesystems)', () => {
+  const dir = makeRepo({ '.sdlc/memory/memory.md': `# memory\n> x\n\n${E}\n` }, { git: false })
+  assert.equal(allEntries(loadStore(dir)).length, 0)
+  assert.equal(loadStore(dir).has('memory.md'), false)
+})
+
 test('similarity is token Jaccard over normalized text', () => {
   assert.equal(similarity('Use `npm test`.', 'use npm test'), 1)
   assert.ok(similarity('use npm test for tests', 'use pnpm for installs') < 0.5)

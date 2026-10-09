@@ -3,7 +3,7 @@ import path from 'node:path'
 import { hasSecret, redact } from '../shared/secrets.ts'
 import { ensureCacheIgnore } from '../shared/gitignore.ts'
 import { type MemConfig, cacheDir, memDir } from './config.ts'
-import { type Entry, type Store, TOPIC_FILE, allEntries, entries, entryLine, findEntry, isEntry, loadStore, newId, parseTopic, serializeTopic, similarity } from './store.ts'
+import { type Entry, type Store, allEntries, entries, entryLine, findEntry, isEntry, isTopicFile, loadStore, newId, parseTopic, serializeTopic, similarity } from './store.ts'
 import { buildMemoryMd } from './memorymd.ts'
 
 export type Rejected = { op: unknown; reason: string }
@@ -43,7 +43,7 @@ export function applyOps(root: string, cfg: MemConfig, ops: unknown, today: stri
     const text = typeof o.text === 'string' ? o.text.trim() : ''
     if (o.op === 'add') {
       const file = String(o.file ?? '')
-      if (!TOPIC_FILE.test(file)) { reject(op, 'bad file name'); continue }
+      if (!isTopicFile(file)) { reject(op, 'bad file name'); continue }
       if (!store.has(file) && store.size >= cfg.maxFiles) { reject(op, 'too many topic files'); continue }
       const dup = dupOf(store, text)
       if (dup) { reject(op, `duplicate of ${dup.id}`); continue }
@@ -93,6 +93,8 @@ export function writeStore(root: string, s: Store): void {
   try {
     const files: [string, string][] = [...s.values()].filter(t => entries(t).length || fs.existsSync(path.join(dir, t.file))).map(t => [t.file, serializeTopic(t)])
     files.push(['MEMORY.md', buildMemoryMd(s)])
+    const lower = files.map(([f]) => f.toLowerCase())
+    if (new Set(lower).size !== lower.length) throw new Error('file names collide case-insensitively')
     for (const [f, c] of files) fs.writeFileSync(path.join(stage, f), c)
     for (const [f] of files) if (fs.existsSync(path.join(dir, f)) && !fs.statSync(path.join(dir, f)).isFile()) throw new Error(`${f} is not a file`)
     for (const [f] of files) fs.renameSync(path.join(stage, f), path.join(dir, f))
