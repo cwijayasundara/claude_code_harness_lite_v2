@@ -37,7 +37,8 @@ Off by default. Turn it on per repo with `.sdlc/memory.json`: `{ "enabled": true
 - When Claude stops and at least `minSignals` (3) are pending, at most every `cooldownMin` (30) minutes and
   `maxDreamsPerDay` (6) times a day, a background process makes one tool-less `claude -p` call (model `haiku`) that
   proposes one-line lessons. A deterministic step validates them and writes `.sdlc/memory/*.md` and `MEMORY.md`.
-  The dream call runs with `--tools ""` (no tools at all), and everything sent to it is redacted.
+  The dream call runs with `--tools ""`, `--strict-mcp-config` and `--disable-slash-commands`: the model gets no
+  built-in tools, no MCP servers and no skills. Everything sent to it is redacted.
 - Nothing is committed for you: review with `git diff .sdlc/memory` and commit with your work. Session start says
   when memory changed.
 - `MEMORY.md` is injected at session start as context. `/rig-util:memory-find <terms>`, `/rig-util:memory-forget <id>`,

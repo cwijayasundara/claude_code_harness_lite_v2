@@ -15,7 +15,7 @@ sh('git', ['init', '-q', '-b', 'main']); sh('git', ['add', '-A']); sh('git', ['-
 
 const r = sh('claude', ['-p', 'Run the unit tests with `npx --no-install jest`. If that fails, read package.json, run the right test command, and stop. Do not install anything.',
   '--plugin-dir', plugin, '--allowedTools', 'Bash', 'Read'])
-assert.equal(r.status, 0, r.stderr)
+assert.equal(r.status, 0, `${r.error ?? ''}\n${r.stderr}`)
 const signals = fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/signals.jsonl'), 'utf8')
 assert.match(signals, /"kind":"cmd-fail"/)
 
@@ -26,5 +26,5 @@ for (let i = 0; i < 150 && fs.existsSync(lock); i++) sleep(2000)
 const entries = () => fs.readdirSync(path.join(dir, '.sdlc/memory')).filter(f => f.endsWith('.md') && f !== 'MEMORY.md')
   .flatMap(f => fs.readFileSync(path.join(dir, '.sdlc/memory', f), 'utf8').split('\n').filter(l => l.startsWith('- ')))
 if (!entries().length) console.log(spawnSync('node', ['--disable-warning=ExperimentalWarning', cli, 'dream', '--now'], { cwd: dir, encoding: 'utf8', timeout: 10 * 60_000 }).stdout.trim())
-assert.ok(entries().some(l => /npm (run )?test|jest/i.test(l)), `expected a lesson about the test command, got:\n${entries().join('\n')}\nlog:\n${fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/log'), 'utf8')}`)
+assert.ok(entries().some(l => /npm (run )?test|jest/i.test(l)), `expected a lesson about the test command, got:\n${entries().join('\n')}\nlog:\n${fs.existsSync(path.join(dir, '.sdlc/memory/.cache/log')) ? fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/log'), 'utf8') : '(no log)'}`)
 console.log(`memory e2e ok in ${dir}:\n${entries().join('\n')}`)
