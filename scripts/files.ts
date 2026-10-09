@@ -29,5 +29,6 @@ export function listFiles(root: string, cfg: Config): string[] {
     .filter(f => SOURCE.test(f) && !SECRET.test(f) && !f.startsWith(`${WIKI_DIR}/`))
     .filter(f => !f.split('/').some(s => SKIP_DIR.has(s)))
     .filter(f => !ignored.some(re => re.test(f)))
+    .filter(f => fs.existsSync(path.join(root, f)))   // git still lists tracked files deleted from the working tree
     .sort()
 }
