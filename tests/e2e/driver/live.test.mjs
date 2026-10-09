@@ -34,3 +34,18 @@ test('a session that reports its cost is counted at that cost, and the next budg
   assert.equal(budget(sb.calls[0]), '6.00')
   assert.equal(budget(sb.calls[1]), '4.50')
 })
+
+import { liveDriver } from './live.mjs'
+
+test('begin(): when /rig-start ends before creating a change, it continues with the skill invocation itself (plain text loses the skill\'s allowed tools)', async () => {
+  const prompts = []
+  const sb = {
+    run: (cmd, args) => { prompts.push({ prompt: args[1], cont: args.includes('--continue') }); return { status: 0, stdout: result(0.1), stderr: '' } },
+    sdlc: () => ({ status: 0, stdout: JSON.stringify({ active: prompts.length >= 3 ? 'c' : null }), stderr: '' }),
+  }
+  const sessions = createSessions({ sb, out: out(), capUsd: 6 })
+  const slug = await liveDriver(sb, { id: 'PX', prompt: '/rig-start do the thing' }, { sessions }).begin()
+  assert.equal(slug, 'c')
+  assert.deepEqual(prompts.map(p => p.prompt), ['/rig-start do the thing', '/rig-start do the thing', '/rig-start do the thing'])
+  assert.deepEqual(prompts.map(p => p.cont), [false, true, true])
+})

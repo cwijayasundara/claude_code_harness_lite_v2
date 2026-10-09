@@ -36,10 +36,9 @@ export function liveDriver(sb, phase, { sessions }) {
     async begin() {
       sessions.run(`${phase.id}-start`, phase.prompt)
       const active = () => JSON.parse(sb.sdlc(['status', '--json']).stdout).active
-      // /rig-start can end its turn while a scout is still running; continue the same conversation up to twice.
-      for (let i = 0; i < 2 && !active(); i++) {
-        sessions.run(`${phase.id}-start-cont${i + 1}`, 'Continue /rig-start where you stopped: classify the change, run sdlc.ts new, and write intent.md.', { cont: true })
-      }
+      // /rig-start can end its turn while a scout is still running. Continue the same conversation, but with the skill invocation itself:
+      // the skill's allowed-tools are what let the model run sdlc.ts, and a plain-text "continue" is denied (`sdlc.ts new` needs approval).
+      for (let i = 0; i < 2 && !active(); i++) sessions.run(`${phase.id}-start-cont${i + 1}`, phase.prompt, { cont: true })
       if (!active()) throw new Error(`${phase.id}: /rig-start created no change after 2 continuations`)
       return active()
     },
