@@ -13,10 +13,14 @@ test('manifests parse and agree on the name and version', () => {
 })
 
 test('skills and agent have frontmatter with name and description; writer is pinned to haiku', () => {
-  for (const f of ['skills/wiki-refresh/SKILL.md', 'skills/wiki-find/SKILL.md', 'agents/wiki-writer.md']) {
+  for (const f of ['skills/wiki-refresh/SKILL.md', 'skills/wiki-find/SKILL.md', 'skills/memory-dream/SKILL.md', 'skills/memory-find/SKILL.md', 'skills/memory-forget/SKILL.md', 'agents/wiki-writer.md']) {
     assert.match(fm(f), /^name: /m, f); assert.match(fm(f), /^description: /m, f)
   }
   assert.match(fm('agents/wiki-writer.md'), /^model: haiku$/m)
+})
+
+test('memory skills call memory.ts through the plugin root', () => {
+  for (const s of ['memory-dream', 'memory-find', 'memory-forget']) assert.match(fs.readFileSync(`skills/${s}/SKILL.md`, 'utf8'), /\$\{CLAUDE_PLUGIN_ROOT\}\/memory\/memory\.ts/)
 })
 
 test('hooks.json wires only command hooks to wiki.ts or memory.ts', () => {

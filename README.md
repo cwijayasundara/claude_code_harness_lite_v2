@@ -1,7 +1,8 @@
 # rig-util
 
 Optional add-ons for the [rig](../claude_code_harness_lite_v2) harness. rig core does not depend on it.
-Module 1: **wiki**, a self-updating, DeepWiki-style code wiki for people and agents. (Module 2, an RSI loop, is planned.)
+Two modules: **code_wiki**, a self-updating, DeepWiki-style code wiki, and **memory**, a self-improving memory of
+lessons from past sessions (after Cognition's agent memory repo). Each is optional and configured on its own.
 
 ## Install
 ```
@@ -29,6 +30,23 @@ Reads `.sdlc/changes/*`, `.sdlc/sensors.json` and `.sdlc/bin/VERSION` only (rig 
 `evals/wiki-search.json` pairs five code-location questions run with and without the index. If the index does not cut
 Glob/Grep calls on at least 4 of 5 without lowering correctness, remove the `UserPromptSubmit` hook and keep the wiki for humans.
 
+## Memory
+Off by default. Turn it on per repo with `.sdlc/memory.json`: `{ "enabled": true }`.
+- While Claude works, hooks note failed commands and what fixed them, files edited over and over, tool errors and
+  your corrections (`.sdlc/memory/.cache/`, gitignored; secrets redacted). No model calls.
+- When Claude stops and at least `minSignals` (3) are pending, at most every `cooldownMin` (30) minutes and
+  `maxDreamsPerDay` (6) times a day, a background process makes one tool-less `claude -p` call (model `haiku`) that
+  proposes one-line lessons. A deterministic step validates them and writes `.sdlc/memory/*.md` and `MEMORY.md`.
+  The dream call runs with `--tools ""` (no tools at all), and everything sent to it is redacted.
+- Nothing is committed for you: review with `git diff .sdlc/memory` and commit with your work. Session start says
+  when memory changed.
+- `MEMORY.md` is injected at session start as context. `/rig-util:memory-find <terms>`, `/rig-util:memory-forget <id>`,
+  `/rig-util:memory-dream` (run now). `node memory/memory.ts status` shows pending signals and the last dream; the
+  dream log is `.sdlc/memory/.cache/log`, rejected proposals `.cache/rejected.jsonl`.
+- Config keys: `enabled`, `minSignals`, `cooldownMin`, `maxDreamsPerDay`, `model`, `maxFiles` (12),
+  `maxEntriesPerFile` (80).
+- Eval: `evals/memory-recall.json`. If memory does not help on at least 4 of 5 tasks, drop its SessionStart hook.
+
 ## Known limits (v1)
 - Import edges: relative TS/JS imports, Python/Java by path suffix, Go partly. Path aliases (`tsconfig` paths), workspace
   package imports (`@org/pkg`), dynamic `import()`/`require` and Python relative imports are not resolved, so a
@@ -38,5 +56,5 @@ Glob/Grep calls on at least 4 of 5 without lowering correctness, remove the `Use
 - TypeScript is loaded from the target repo's `node_modules` (its own dev dependency) when available.
 
 ## Develop
-`npm test` (no model calls). `npm run test:e2e` runs the real pipeline and needs `claude` and a key.
+`npm test` (no model calls). `npm run test:e2e` (wiki) and `npm run test:e2e:memory` run real pipelines and need `claude` and a key.
 Layout: code_wiki/ (wiki), memory/ (lessons), shared/ (helpers both use).
