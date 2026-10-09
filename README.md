@@ -231,14 +231,14 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 
    ```bash
    cd /path/to/your/project
-   claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2
+   claude --plugin-dir /abs/path/to/rig_v1
    ```
 
    That session is all `/rig:init` needs. After init the harness lives in the project's own `.claude/` and `.sdlc/` (step 2), so later sessions need no flag.
    If you want the plugin itself (the mod, central upgrades) on every session in this project, install it at project scope, which writes to the project's `.claude/settings.json` instead of your user settings:
 
    ```bash
-   claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project
+   claude plugin marketplace add cwijayasundara/rig_v1 --scope project
    claude plugin install rig@rig --scope project
    ```
 
@@ -284,7 +284,7 @@ rig is the harness. **rig-brain** (in [`brain/`](brain/), the same repo and mark
 ### Before either path
 
 1. Keep a checkout of this repo (rig and rig-brain ship together) somewhere `/rig:init` can reach, or use its GitHub `owner/repo`. Nothing is installed globally for either plugin.
-2. From the project root, open Claude Code with rig loaded for that project only: `cd /path/to/project && claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`. Make a first commit if the repo has none.
+2. From the project root, open Claude Code with rig loaded for that project only: `cd /path/to/project && claude --plugin-dir /abs/path/to/rig_v1`. Make a first commit if the repo has none.
 
 ### Path A: greenfield (nothing exists yet)
 
