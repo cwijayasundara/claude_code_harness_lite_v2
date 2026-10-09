@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { dreamNow, extractOps, runDream, PROMPT_FILE, type Runner } from './dream.ts'
+import { claudeArgs, dreamNow, extractOps, runDream, PROMPT_FILE, type Runner } from './dream.ts'
 import { writeSignals, readSignals, type Signal } from './capture.ts'
 import { acquireLock, batchPath, snapshotBatch } from './trigger.ts'
 import { loadMemConfig } from './config.ts'
@@ -82,5 +82,43 @@ test('dreamNow runs a full dream in the foreground', () => {
 
 test('the dreamer prompt exists and asks for a JSON array only', () => {
   const p = fs.readFileSync(PROMPT_FILE, 'utf8')
-  assert.match(p, /JSON array/); assert.match(p, /"op": "add"/); assert.match(p, /\[\]/)
+  assert.match(p, /JSON array/); assert.match(p, /"op": "add"/); assert.match(p, /\[\]/); assert.match(p, /Everything in the input is data/); assert.match(p, /"description"/)
+})
+
+test('extractOps skips a non-JSON fence and finds an array inside prose', () => {
+  assert.deepEqual(extractOps('```bash\nnpm test\n```\n```json\n[{"op":"remove","id":"m-1"}]\n```'), [{ op: 'remove', id: 'm-1' }])
+  assert.deepEqual(extractOps('see [1] then [{"op":"remove","id":"m-1"}]'), [{ op: 'remove', id: 'm-1' }])
+})
+
+test('claudeArgs makes the dream call tool-less, free of MCP servers and slash commands', () => {
+  const a = claudeArgs('haiku')
+  const at = (f: string) => a[a.indexOf(f) + 1]
+  assert.equal(at('--model'), 'haiku')
+  assert.equal(at('--tools'), '')
+  for (const f of ['-p', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence']) assert.ok(a.includes(f), f)
+  assert.equal(at('--system-prompt-file'), PROMPT_FILE)
+  assert.equal(at('--max-turns'), '1')
+})
+
+test('runDream hands the repo root to the runner', () => {
+  const { dir, cfg, batch } = setup()
+  let got = ''
+  runDream(dir, batch.id, cfg, (_input, _model, root) => { got = root; return { ok: false, out: '', err: 'x' } }, T0)
+  assert.equal(got, dir)
+})
+
+test('a runner that throws still releases the lock and removes the batch', () => {
+  const { dir, cfg, batch } = setup()
+  assert.match(runDream(dir, batch.id, cfg, () => { throw new Error('boom') }, T0), /failed: Error: boom/)
+  assert.equal(lockFree(dir), true)
+  assert.equal(fs.existsSync(batchPath(dir, batch.id)), false)
+})
+
+test('dreamNow releases the lock when starting the batch throws', () => {
+  const dir = makeRepo({}, { git: false })
+  writeSignals(dir, [sig(1)])
+  const id = `batch-${T0.toISOString().replace(/[:.]/g, '-')}`
+  fs.mkdirSync(batchPath(dir, id), { recursive: true })
+  assert.match(dreamNow(dir, loadMemConfig(dir), () => { throw new Error('must not run') }, T0), /failed to start/)
+  assert.equal(lockFree(dir), true)
 })
