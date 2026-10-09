@@ -174,7 +174,7 @@ function hookPromptSubmit(): void {
     if (carry && g.last) g.last.shown = true
   })
   if (carry) {
-    out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `sdlc: the last turn left ${last?.warns} warning(s) that did not block. Fix them if they are yours:\n${[...carry, ...more(last)].map(r => `- ${r}`).join('\n')}` } }))
+    out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `rig: the last turn left ${last?.warns} warning(s) that did not block. Fix them if they are yours:\n${[...carry, ...more(last)].map(r => `- ${r}`).join('\n')}` } }))
   }
 }
 
@@ -215,7 +215,7 @@ function hookStop(): void {
     save()
     if (exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
     const warns = gate.last?.warnRows ?? []
-    if (warns.length) out(JSON.stringify({ systemMessage: `sdlc: ${gate.last?.warns} warning(s), not blocking: ${[...warns, ...more(gate.last)].join(' | ')}` }))
+    if (warns.length) out(JSON.stringify({ systemMessage: `rig: ${gate.last?.warns} warning(s), not blocking: ${[...warns, ...more(gate.last)].join(' | ')}` }))
     return
   }
   fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
