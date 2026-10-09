@@ -1,0 +1,11 @@
+{
+  "description": "Paired runs (with the wiki index injected vs without) on tests/e2e/fixture. Decision rule: if the index does not cut Glob/Grep calls on at least 4 of 5 questions without lowering correctness, remove the UserPromptSubmit hook.",
+  "metrics": ["glob_grep_calls", "tokens", "correct"],
+  "questions": [
+    { "id": "invoice-total", "prompt": "Where is the invoice total computed?", "expectFile": "src/billing/invoice.ts" },
+    { "id": "money-format", "prompt": "Which function formats cents as a currency string?", "expectFile": "src/util/format.ts" },
+    { "id": "login-check", "prompt": "Where are user credentials checked?", "expectFile": "src/auth/login.ts" },
+    { "id": "logout", "prompt": "Where is logout implemented?", "expectFile": "src/auth/login.ts" },
+    { "id": "render", "prompt": "Which code renders an invoice for display?", "expectFile": "src/billing/invoice.ts" }
+  ]
+}

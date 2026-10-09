@@ -33,6 +33,20 @@ jobs:
       - run: npm ci || npm install
       - run: npm run test:e2e:unit
       - run: npm run test:e2e:fast
+  brain:
+    # rig-brain (wiki + memory) has its own package and no model calls in its tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - run: npm ci --prefix brain
+      - run: npm run test:unit --prefix brain
   dogfood:
     if: false # off for now: the harness is not run on its own repo; to re-enable: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

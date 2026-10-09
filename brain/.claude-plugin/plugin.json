@@ -1,0 +1,1 @@
+{ "name": "rig-brain", "version": "0.3.0", "description": "Optional rig add-on: a self-updating code wiki and a self-improving repo memory for humans and agents.", "author": { "name": "Chaminda Wijayasundara" }, "license": "MIT" }

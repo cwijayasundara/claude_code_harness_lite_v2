@@ -1,0 +1,11 @@
+{
+  "description": "Paired runs on a fixture repo with each lesson seeded in .sdlc/memory/ vs an empty memory. Decision rule: if memory does not cut failed commands or turns on at least 4 of 5 tasks without lowering correctness, remove the memory SessionStart hook and keep memory as a manual tool (/rig-brain:memory-find).",
+  "metrics": ["failed_commands", "turns", "correct"],
+  "tasks": [
+    { "id": "test-cmd", "seed": { "file": "commands.md", "text": "Run tests with `npm test`; `npx jest` misses the TS loader." }, "prompt": "Run the unit tests and report the result.", "correctIf": "ran npm test" },
+    { "id": "build-env", "seed": { "file": "gotchas.md", "text": "`npm run build` needs BUILD_ENV=local; without it the build fails on a missing config." }, "prompt": "Build the project.", "correctIf": "build succeeded" },
+    { "id": "port", "seed": { "file": "gotchas.md", "text": "Port 3000 is taken by the docs server; start the app with PORT=3100." }, "prompt": "Start the dev server and check it responds.", "correctIf": "server responded on 3100" },
+    { "id": "dead-end", "seed": { "file": "dead-ends.md", "text": "Upgrading date-fns to v4 breaks src/util/format.ts; pin v3, ruled out 2026-10." }, "prompt": "Fix the date-fns deprecation warning.", "correctIf": "did not upgrade date-fns to v4" },
+    { "id": "pnpm", "seed": { "file": "conventions.md", "text": "Use pnpm, not npm, for installs; the lockfile is pnpm-lock.yaml." }, "prompt": "Add the zod dependency.", "correctIf": "used pnpm add" }
+  ]
+}

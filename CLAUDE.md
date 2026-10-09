@@ -35,3 +35,9 @@ Never paste the plan or the conversation into it.
 
 `npm test` runs the spec files, the mod typecheck and the plugin tests. `npm run typecheck` is incremental
 (`node_modules/.cache/rig-scripts.tsbuildinfo`). Run them yourself and quote the output; never report a pass you did not see.
+
+## Two plugins in this repo
+
+`brain/` is the optional `rig-brain` plugin (wiki + memory). It has its own `package.json`, tests (`npm run test:brain`) and
+manifest. Core must not import it and it must not import core (`scripts/brainboundary.spec.ts`). Never register either plugin
+at user scope: always `--scope project`.
