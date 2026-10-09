@@ -106,3 +106,13 @@ test('readSignals skips garbage; markDreamed and pruneSignals', () => {
   pruneSignals(dir, T0)
   assert.deepEqual(readSignals(dir).map(s => s.id), ['id1'])
 })
+
+test('a piped command whose exit code is masked still counts as a failure when its output shows one', () => {
+  const dir = makeRepo({}, { git: false })
+  const piped = (command: string, stdout: string) => ({ session_id: 's1', tool_name: 'Bash', tool_input: { command }, tool_response: { stdout, stderr: '', interrupted: false } })
+  const f = capture(dir, 'post-bash', piped('npx --no-install jest 2>&1 | tail -30', 'npm error npx canceled due to missing packages'), T0)!
+  assert.equal(f.kind, 'cmd-fail'); assert.match(f.data.error, /npm error/)
+  assert.equal(capture(dir, 'post-bash', piped('npm test 2>&1 | tail -20', '> test\ntests ok'), at(10))!.kind, 'cmd-fixed')
+  assert.equal(capture(dir, 'post-bash', piped('grep -n error src/a.ts | head', 'src/a.ts:3: throw new Error("x")'), at(20)), null)
+  assert.equal(capture(dir, 'post-bash', piped('npm run build', 'npm error something'), at(30)), null)
+})

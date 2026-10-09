@@ -53,6 +53,9 @@ export function pruneSignals(root: string, now: Date): void {
 
 const CORRECTION = /^\s*(no\b|nope\b|don'?t\b|do not\b|stop\b|wrong\b)|\bthat'?s (wrong|not right|incorrect)\b|\binstead\b|\buse \S+,? not \S+|\bnot what i (asked|meant|wanted)\b/i
 const TRIVIAL = /^(ls|cat|pwd|echo|grep|rg|find|head|tail|which|cd|wc|git (status|diff|log|show))\b/
+// `cmd | tail` reports the exit code of tail, so a failure only shows in the output
+const PIPED = /[^|]\|[^|]/
+const FAIL_OUT = /(^|\n)\s*(npm (error|ERR!)|error(\[\w+\])?:|fatal:|Traceback \(most recent call last\)|\S+: command not found|FAIL\b)/i
 
 export const isCorrection = (p: string): boolean => CORRECTION.test(p)
 export const cmdKey = (cmd: string): string => cmd.trim().split(/\s+/).filter(t => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)).slice(0, 2).join(' ')
@@ -102,8 +105,11 @@ export function capture(root: string, event: CaptureEvent, input: Record<string,
     const cmd = clip(input.tool_input?.command, 300)
     if (!cmd) return null
     const r = input.tool_response
-    if (event === 'tool-fail' || exitCode(r) !== 0) {
-      sig = make('cmd-fail', { cmd, exit: String(exitCode(r) || 1), error: clip(input.error ?? (r && typeof r === 'object' ? r.stderr : r), 300) })
+    const out = r && typeof r === 'object' ? `${r.stderr ?? ''}\n${r.stdout ?? ''}` : ''
+    const masked = PIPED.test(cmd) && !TRIVIAL.test(cmd.trim()) && FAIL_OUT.test(out)
+    if (event === 'tool-fail' || exitCode(r) !== 0 || masked) {
+      const error = input.error ?? (masked ? out.split('\n').find(l => FAIL_OUT.test(`\n${l}`)) : r && typeof r === 'object' ? r.stderr : r)
+      sig = make('cmd-fail', { cmd, exit: String(exitCode(r) || 1), error: clip(error, 300) })
     } else {
       const all = readSignals(root)
       const paired = new Set(all.filter(s => s.kind === 'cmd-fixed').map(s => s.data.fail))
