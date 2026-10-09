@@ -11,7 +11,8 @@ import { sessionContext } from './session.ts'
 
 const args = process.argv.slice(2)
 const ri = args.indexOf('--root')
-const root = path.resolve(ri >= 0 ? args.splice(ri, 2)[1] : process.cwd())
+const given = ri >= 0 ? args.splice(ri, 2)[1] : undefined
+const root = given ? path.resolve(given) : repoRoot(process.cwd())
 const [cmd, ...rest] = args
 const CAPTURE: Record<string, CaptureEvent> = { 'post-bash': 'post-bash', 'tool-fail': 'tool-fail', 'post-edit': 'post-edit', prompt: 'prompt' }
 
@@ -46,6 +47,7 @@ try {
     const hits = searchEntries(loadStore(root), rest)
     console.log(hits.length ? hits.map(h => `${h.entry.id} ${h.file} ${h.entry.text}`).join('\n') : 'no matches')
   } else if (cmd === 'forget') {
+    if (!rest[0]) { console.log('usage: memory.ts forget <id>'); process.exit(0) }
     const res = applyOps(root, loadMemConfig(root), [{ op: 'remove', id: rest[0] }], new Date().toISOString().slice(0, 10))
     console.log(res.removed ? `removed ${rest[0]}` : `not found: ${rest[0]}`)
   } else if (cmd === 'status') {
@@ -54,4 +56,5 @@ try {
   } else console.log('usage: memory.ts <hook|dream|find|forget|status> [--root dir]')
 } catch (e) {
   if (cmd !== 'hook') { console.error(String(e)); process.exitCode = 1 }
+  else try { log(root, `hook ${rest[0]} failed: ${(e as Error).message ?? e}`) } catch { /* logging never throws */ }
 }

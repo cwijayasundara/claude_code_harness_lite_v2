@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { acquireLock, batchPath, loadDreamState, maybeStartDream, recordDream, releaseLock, shouldDream, snapshotBatch, BATCH_ID, LOCK_STALE_MS } from './trigger.ts'
+import { acquireLock, batchPath, readLock, loadDreamState, maybeStartDream, recordDream, releaseLock, shouldDream, snapshotBatch, BATCH_ID, LOCK_STALE_MS } from './trigger.ts'
 import { writeSignals, type Signal } from './capture.ts'
 import { loadMemConfig } from './config.ts'
 import { makeRepo } from '../shared/testkit.ts'
@@ -31,6 +31,19 @@ test('shouldDream honors cooldown and the daily cap, which resets the next UTC d
   assert.equal(loadDreamState(dir).count, 6)
   assert.equal(shouldDream(dir, cfg, plus(60 * 60_000)).reason, 'daily cap reached')
   assert.equal(shouldDream(dir, cfg, new Date('2026-10-10T00:05:00Z')).ok, true)
+})
+
+test('releaseLock with a token leaves a lock that another owner now holds', () => {
+  const dir = repo(0)
+  assert.equal(acquireLock(dir, T0), true)
+  const mine = readLock(dir)
+  const lock = path.join(dir, '.sdlc/memory/.cache/dream.lock')
+  fs.writeFileSync(lock, JSON.stringify({ pid: 1, ts: plus(5).toISOString() }))
+  releaseLock(dir, mine)
+  assert.equal(fs.existsSync(lock), true)
+  releaseLock(dir, readLock(dir))
+  assert.equal(fs.existsSync(lock), false)
+  releaseLock(dir, null)
 })
 
 test('lock: exclusive, released, stale after 15 min, corrupt counts as stale', () => {

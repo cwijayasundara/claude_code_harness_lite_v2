@@ -54,7 +54,13 @@ export function acquireLock(root: string, now = new Date()): boolean {
   return createLock(f, now)
 }
 
-export function releaseLock(root: string): void {
+export function readLock(root: string): string | null {
+  try { return fs.readFileSync(lockPath(root), 'utf8') } catch { return null }
+}
+
+// With a token (the lock body seen when we took or inherited the lock), remove the lock only if it is still ours.
+export function releaseLock(root: string, token?: string | null): void {
+  if (token !== undefined && readLock(root) !== token) return
   fs.rmSync(lockPath(root), { force: true })
 }
 
@@ -88,7 +94,7 @@ export function snapshotBatch(root: string, now = new Date()): Batch {
 
 export const detachedSpawn: Spawn = (cmd, args, opts) => {
   try {
-    const c = spawn(cmd, args, { ...opts, detached: true, stdio: 'ignore' })
+    const c = spawn(cmd, args, { ...opts, detached: true, stdio: 'ignore', windowsHide: true })
     c.on('error', () => { /* logged by the dream process when it runs; nothing to do here */ })
     c.unref()
     return true
@@ -99,6 +105,7 @@ export function maybeStartDream(root: string, cfg: MemConfig, memoryTs: string, 
   const d = shouldDream(root, cfg, now)
   if (!d.ok) return `no dream: ${d.reason}`
   if (!acquireLock(root, now)) return 'no dream: a dream is running'
+  const token = readLock(root)
   let id = ''
   let started = false
   try {
@@ -112,7 +119,7 @@ export function maybeStartDream(root: string, cfg: MemConfig, memoryTs: string, 
     return started ? `dream started: ${id}` : `no dream: ${(e as Error).message}`
   } finally {
     if (!started) {
-      releaseLock(root)
+      releaseLock(root, token)
       if (id) try { fs.rmSync(batchPath(root, id), { force: true }) } catch { /* not removable: leave it */ }
     }
   }
