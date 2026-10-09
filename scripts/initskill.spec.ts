@@ -26,3 +26,9 @@ test('init skill: a Node scaffold uses `node --test` with no directory argument 
   assert.match(skill, /`node --test`[^.]*no directory argument/)
   assert.doesNotMatch(skill, /node --test test\//)
 })
+
+test('init skill: rig-util is opt-in, per project, and skipped under --defaults', () => {
+  assert.match(skill, /Optional add-on: rig-util/)
+  assert.match(skill, /Never run `claude plugin install` and never write user settings/)
+  assert.match(skill, /Skip:[^\n]*rig-util add-on/)
+})
