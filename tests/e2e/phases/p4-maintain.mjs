@@ -46,7 +46,8 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   const buggy = good.replace('.map(l => ({ ...l }))', '')
   if (buggy === good) throw new Error('P4: the bug seed did not change src/cart.js')
   sb.write('src/cart.js', buggy)
-  for (const f of sb.run('sh', ['-c', 'ls test/*.test.js 2>/dev/null']).stdout.split('\n').filter(Boolean)) fs.rmSync(sb.file(f))
+  // The smoke test stays: the scaffold's lint script checks it by name.
+  for (const f of sb.run('sh', ['-c', 'ls test/*.test.js 2>/dev/null']).stdout.split('\n').filter(f => f && !f.endsWith('smoke.test.js'))) fs.rmSync(sb.file(f))
   fs.mkdirSync(sb.file('test'), { recursive: true })
   for (const [src, dest] of [[path.join(import.meta.dirname, '../fixtures/p1/test/cart.test.js'), 'test/cart.test.js'], [path.join(import.meta.dirname, '../fixtures/p2/test/coupon.test.js'), 'test/coupon.test.js']]) fs.copyFileSync(src, sb.file(dest))
   sb.commitAll('chore: seed the lines() leak (simulates the escaped bug), on the known-good cart and tests')
