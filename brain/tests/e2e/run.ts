@@ -5,12 +5,12 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 
 const plugin = path.resolve('.')
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigutil-e2e-'))
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigbrain-e2e-'))
 fs.cpSync('tests/e2e/fixture', dir, { recursive: true })
 const sh = (cmd: string, args: string[]) => spawnSync(cmd, args, { cwd: dir, encoding: 'utf8' })
 sh('git', ['init', '-q', '-b', 'main']); sh('git', ['add', '-A']); sh('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init'])
 
-const r = sh('claude', ['-p', '/rig-util:wiki-refresh', '--plugin-dir', plugin, '--permission-mode', 'acceptEdits'])
+const r = sh('claude', ['-p', '/rig-brain:wiki-refresh', '--plugin-dir', plugin, '--permission-mode', 'acceptEdits'])
 assert.equal(r.status, 0, r.stderr)
 const mods = fs.readdirSync(path.join(dir, '.sdlc/wiki/modules'))
 assert.ok(mods.length >= 3, `expected 3 module pages, got ${mods.join(',')}`)

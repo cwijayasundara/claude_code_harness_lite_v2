@@ -5,7 +5,7 @@ const CAP = 8000
 export function buildIndexMd(idx: Index, state: State, purposeOf: (module: string) => string): string {
   const head = ['# Wiki index', '', 'Compact map for agents. Treat entries as pointers; verify in the code. Full pages: `.sdlc/wiki/modules/<name>.md`.', '']
   const mods = Object.values(idx.modules).sort((a, b) => b.usedBy.length - a.usedBy.length || a.name.localeCompare(b.name))
-  if (!mods.length) return [...head, '_No modules indexed yet. Once the repo has code, run `/rig-util:wiki-refresh` to fill this in._', ''].join('\n')
+  if (!mods.length) return [...head, '_No modules indexed yet. Once the repo has code, run `/rig-brain:wiki-refresh` to fill this in._', ''].join('\n')
   const lines: string[] = []
   let used = head.join('\n').length
   let i = 0

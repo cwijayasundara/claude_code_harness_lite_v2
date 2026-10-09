@@ -4,6 +4,17 @@ This plugin turns Claude Code into a disciplined software engineer. It adds very
 
 It handles every kind of task: greenfield, brownfield, feature, bugfix, refactor, migration, chore, spike and incident. How much process a change goes through depends on its type and tier. See [DESIGN.md](DESIGN.md) for the evidence and the reasoning behind each choice.
 
+## Repository layout: two plugins, one marketplace
+
+This repo is a [Claude Code marketplace](.claude-plugin/marketplace.json) (named `rig`) that lists two plugins. They are versioned and released together but loaded separately, and neither imports the other (`scripts/brainboundary.spec.ts` fails if one does).
+
+| Plugin | Path | What it is |
+|---|---|---|
+| `rig` | repo root (`scripts/`, `skills/`, `hooks/`, `agents/`) | The harness: lifecycle, gates, sensors, metrics. |
+| `rig-brain` | [`brain/`](brain/) | Optional add-on: a DeepWiki-style self-updating code wiki (`.sdlc/wiki/`) and a self-improving repo memory (`.sdlc/memory/`). Its README has the details. |
+
+Both load per project. Enable `rig-brain` by answering yes in `/rig:init`, or by hand at project scope (see Install). Neither is ever installed under `~/.claude`.
+
 ## Status
 
 As of 2026-10-06. `.claude-plugin/plugin.json` says **0.4.1**, the last release and tag; everything built since is on `main` and listed under *Unreleased* in [CHANGELOG.md](CHANGELOG.md). No later release has been cut.
@@ -54,43 +65,53 @@ Dependencies point downward and evidence flows upward. Skills never decide anyth
 
 ### Command graph: the lifecycle of one change
 
-Squares are commands, hexagons are **human gates**, and the dotted edge is the repair loop. Run `/rig:next` at any node and it picks the right edge.
+`{{ }}` marks a **human gate**; everything else is a command. Run `/rig:next` at any node and it picks the right edge.
 
-```mermaid
-flowchart TD
-    I["/rig:init<br/><i>once per repo</i>"] --> S
-    S["/rig:start &quot;task&quot;<br/><i>classify type × tier,<br/>write intent.md</i>"] --> R{type?}
+```
+ /rig:init                       once per repo
+     │
+     ▼
+ /rig:start "task"               classify type × tier, write intent.md
+     │
+     ├── feature · greenfield ──► /rig:design ──► {{ approve design }} ──┐
+     │                            slices + tests    intent + design, once │
+     ├── refactor · migration ──► /rig:plan ────► {{ approve plan }} ────┤  gate at tier L or risky
+     │                            plan.md                                │
+     ├── chore ────────────────────────────────────────────────────────┤
+     │                                                                   ▼
+     │                                                            /rig:build
+     │                                                   per slice: implementer
+     │                                                   → sensors → reviewer
+     ├── bugfix · incident ──► /rig:diagnose ─────────────────────────┐   │
+     │   (plan gate at L)      failing test, root cause, fix          │   │
+     │                                                                ▼   ▼
+     └── spike ──► notes.md (read-only; no code, no gates)         /rig:test
+                                                          unit → integration → acceptance → api
+                                                                       │
+                                                                       ▼
+                                                                /rig:sensors
+                                                      lint, types, audit, coupling vs base
+                                                                       │
+                                                                       ▼
+                                                                  /rig:pr
+                                                      scope gate, ship gate, commit, open PR
+                                                                       │
+                                                                       ▼
+                                                              /rig:pr-review  (or CI rig-review)
+                                                                       │
+                                                                       ▼
+                                                              CI: rig-check  (base branch's checker)
+                                                                       │
+                                                                       ▼
+                                                                    merge
 
-    R -- "feature · greenfield" --> D["/rig:design<br/><i>design.md: slices + tests</i>"]
-    R -- "refactor · migration" --> P["/rig:plan<br/><i>plan.md</i>"]
-    R -- "bugfix · incident" --> DG["/rig:diagnose<br/><i>failing test, root cause, fix</i>"]
-    R -- "chore" --> B
-    R -- "spike" --> N["notes.md<br/><i>read-only answer</i>"]
+ {{ }} = human gate.   Repair loops (back to /rig:build):
+   /rig:test red ····· fix round, capped      /rig:sensors finding ····· one fix round
+   /rig:pr-review high finding ·····          budget hit ····· {{ /rig-approve <slug> budget }}, human only
 
-    D --> G1{{"/rig-approve slug design<br/><b>HUMAN GATE</b><br/><i>intent + design, once</i>"}}
-    P -. "tier L, or risky" .-> G2{{"/rig-approve slug plan<br/><b>HUMAN GATE</b>"}}
-    P --> B
-    G1 --> B
-    G2 --> B
-
-    B["/rig:build<br/><i>per slice: implementer → sensors → reviewer</i>"] --> T
-    DG --> T["/rig:test<br/><i>unit → integration → acceptance → api</i>"]
-    T --> SN["/rig:sensors<br/><i>lint, types, audit, coupling vs base</i>"]
-    SN --> PR["/rig:pr<br/><i>scope gate, ship gate, commit, open PR</i>"]
-    PR --> RV["/rig:pr-review<br/><i>or CI rig-review</i>"]
-    RV --> CI["CI: rig-check<br/><i>base branch's checker</i>"]
-    CI --> M(["merge"])
-
-    T -. "red: fix round (capped)" .-> B
-    SN -. "finding: one fix round" .-> B
-    RV -. "high finding" .-> B
-
-    SN -. "needs a waiver" .-> W{{"/rig-waive<br/><b>HUMAN ONLY</b>"}}
-    B -. "budget hit" .-> BG{{"/rig-approve slug budget<br/><b>HUMAN ONLY</b>"}}
-    CI -. "approval rows added" .-> H{{"someone other than<br/>the author approves"}}
-
-    classDef gate fill:#fde68a,stroke:#b45309,color:#000
-    class G1,G2,W,BG,H gate
+ Human-only, off the main path:
+   {{ /rig-waive }}  when sensors need a waiver
+   {{ someone other than the author approves }}  when a PR adds approval rows (checked in CI)
 ```
 
 Which gates a change actually meets comes from `gates` in `.sdlc/sensors.json` (default: tier S none, M design, L and greenfield spec, plan and design) and only where that stage is on the change's path. In practice a feature meets one design gate at M and L, and a refactor or bugfix meets a plan gate at L. A change whose recorded tier or type is edited later falls back to the stricter reading until a person runs `/rig-approve <slug> tier`.
@@ -202,18 +223,26 @@ Running one change's slices in parallel sessions is not supported yet: the slice
 
 ## Install
 
-The harness lives in each repo it runs on, so a repo never depends on the plugin. You need the plugin only to initialise a repo and to upgrade it.
+The harness lives in each repo it runs on, so a repo never depends on the plugin, and you install nothing globally. You need the plugin only to initialise a repo and to upgrade it, and you load it per project.
 
 **Requirements:** Node 22.18 or later (the scripts run as plain TypeScript with no build step), `git`, a POSIX shell (the git hooks are `sh`) and Claude Code 2.1.251 or later (model by tier depends on it: before that release `CLAUDE_CODE_SUBAGENT_MODEL` overrode the per-call `model`, so every subagent would run on Haiku 5.5). Per-launch model aliases (`haiku`, `sonnet`, `opus`) resolve through `ANTHROPIC_DEFAULT_*_MODEL` in `templates/settings.json`; without them `haiku` can resolve to an older Haiku. macOS and Linux are supported; Windows is not (see Status). The GitHub CLI `gh` is used by `/rig:pr`, the PR metrics and the CI approval check, and is optional otherwise.
 
-1. Install the plugin for yourself (once per machine):
+1. **Load the plugin for this project only. Do not install it globally.** rig is a per-project tool: nothing goes in `~/.claude`, so it cannot fire in repos that never opted in. Start Claude Code from the project root with the plugin directory:
 
    ```bash
-   claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2
-   claude plugin install rig@rig
+   cd /path/to/your/project
+   claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2
    ```
 
-   Or, for one session: `claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`.
+   That session is all `/rig:init` needs. After init the harness lives in the project's own `.claude/` and `.sdlc/` (step 2), so later sessions need no flag.
+   If you want the plugin itself (the mod, central upgrades) on every session in this project, install it at project scope, which writes to the project's `.claude/settings.json` instead of your user settings:
+
+   ```bash
+   claude plugin marketplace add cwijayasundara/claude_code_harness_lite_v2 --scope project
+   claude plugin install rig@rig --scope project
+   ```
+
+   Avoid `claude plugin install rig@rig` without `--scope project`: the default scope is user-level, which enables rig everywhere. The same goes for the optional add-on: `claude plugin install rig-brain@rig --scope project`, and never `claude plugin marketplace add` without `--scope project` (its default is user scope). `/rig:init` does the add-on step for you by editing only the project's `.claude/settings.json`.
 2. In the repo, make a first commit if it has none, then run `/rig:init`. It writes a compact CLAUDE.md, `.sdlc/` (sensors, guides, the checker CI runs) and copies the harness into the repo (`vendor --standalone`): skills to `.claude/skills/rig-*`, agents to `.claude/agents/rig-*`, hooks to `.claude/settings.json`, scripts to `.sdlc/bin`. It offers the CI check, the PR review workflow and [`templates/settings.json`](templates/settings.json) (Sonnet main thread, advisor off, Haiku 5.5 general subagents).
    Run `node .sdlc/bin/sdlc.ts hooks install` (or let the first Claude Code session do it) to wire the git hooks; they cover editors and other agents. `--no-verify` still works for a person; CI is the floor. To opt out, run `node .sdlc/bin/sdlc.ts hooks uninstall`: it sets `rig.githooks = off`, so session start no longer wires them, until `hooks install`.
 3. Commit `.sdlc/`, `.claude/` and `CLAUDE.md`. Anyone who clones the repo, and any cloud session, now runs the harness with no install. In the repo the commands are `/rig-start`, `/rig-next` and so on.
@@ -223,6 +252,103 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 **Upgrade** by re-running `node <plugin>/scripts/sdlc.ts vendor --standalone` from a newer plugin and committing; `.sdlc/bin/VERSION` records the version in the repo. To keep a repo on the plugin instead (central upgrades, no copy), tell onboarding the team installs the plugin.
 
 **With and without the plugin.** A standalone repo has everything that decides what may happen: skills, agents, hooks, sensors, gates and the CI check. `/rig-approve` and `/rig-waive` are skills only the person can invoke: the model cannot call them, and it cannot set `SDLC_HUMAN` itself. Installing the plugin as well adds the mod: the band, the `/rig-sensors` pane, the impact dialog, `/rig-status` with no model call, and per-stage cost capture for `/rig:metrics`. The plugin's own hooks step aside in a standalone repo, so none runs twice. The mod needs Claude Code 2.1.287 or later.
+
+## User guide: rig + rig-brain, greenfield and brownfield
+
+rig is the harness. **rig-brain** (in [`brain/`](brain/), the same repo and marketplace) is an optional second plugin: a self-updating code wiki and a self-improving repo memory. rig core never imports it and it never imports rig; a spec enforces both directions. You enable each per repo, never globally: both plugins are declared in the project's `.claude/settings.json` and nothing is written to `~/.claude`, so no other repo or Claude Code session is affected. The two paths below differ in the first hour and are identical afterwards.
+
+```
+ PER PROJECT, NEVER GLOBAL (nothing in ~/.claude)
+
+ cd <project> && claude --plugin-dir <rig>
+       │
+       ▼
+ /rig:init  (greenfield or brownfield)
+       │
+       ▼
+ {{ enable rig-brain?  default: No }}
+       │
+       ├── yes ──► project .claude/settings.json: marketplace + enabledPlugins
+       │                    │
+       └── no ──► rig only  │
+               │            │
+               └─────┬──────┘
+                     ▼
+ EVERY CHANGE
+ /rig-start ─► design or plan ─► build ─► test ─► pr
+                     │
+   (rig-brain enabled)├─ hooks, no model calls: wiki marks stale · memory notes signals
+                     └─ /rig-brain:wiki-refresh, then review .sdlc/memory
+```
+
+### Before either path
+
+1. Keep a checkout of this repo (rig and rig-brain ship together) somewhere `/rig:init` can reach, or use its GitHub `owner/repo`. Nothing is installed globally for either plugin.
+2. From the project root, open Claude Code with rig loaded for that project only: `cd /path/to/project && claude --plugin-dir /abs/path/to/claude_code_harness_lite_v2`. Make a first commit if the repo has none.
+
+### Path A: greenfield (nothing exists yet)
+
+```
+ empty repo ──► /rig:init greenfield "<stack and goal>"
+                 │  scaffolds a walking skeleton + one passing test, writes CLAUDE.md
+                 ▼
+          enable rig-brain? ──► yes: give the rig checkout path or owner/repo, confirm the settings edit
+                 │  seeds memory (placeholders) and a placeholder wiki
+                 ▼
+          commit .sdlc/ .claude/ CLAUDE.md, restart the session
+                 ▼
+          /rig-start "first feature"  ──►  design  ◆ approve  ──►  build ► test ► sensors ► pr
+                 ▼
+          after the first merged change: /rig-brain:wiki-refresh
+```
+
+1. **Init with the goal.** Run `/rig:init greenfield "a REST API in Node with Postgres"`. It asks up to three questions (stack, deployment target, test framework), scaffolds the smallest skeleton that builds, adds a lint config and `test`, `test-fast` and `lint` commands, then writes `CLAUDE.md` and the sensors.
+2. **Say yes to rig-brain** when asked. Init writes the project-scope settings (nothing in `~/.claude`), turns memory on with four placeholder topic files (`commands`, `gotchas`, `dead-ends`, `conventions`, each with a fill-in line) and writes a placeholder wiki `INDEX.md` and `architecture.md`.
+3. **Commit** `.sdlc/` (including `.sdlc/wiki/` and `.sdlc/memory/`), `.claude/`, `CLAUDE.md` and restart Claude Code so the rig-brain hooks load. Check `/plugin` lists `rig-brain`.
+4. **Start the first change:** `/rig-start "add user signup"`. Greenfield changes get a design and a spec gate: read the design, then `/rig-approve <slug> design` yourself. The model cannot approve.
+5. **Let rig run:** `/rig-next` chains build, test, sensors and pr. Fix rounds are capped.
+6. **Fill in the wiki once there is code worth documenting:** `/rig-brain:wiki-refresh`, then commit `.sdlc/wiki/`. The placeholders have little to say, so do this after the first real change, not before.
+7. **Memory is already on.** Lessons from failed commands and your corrections accumulate in `.sdlc/memory/` from the next session; replace the fill-in lines as you learn the repo.
+
+### Path B: brownfield (existing code)
+
+```
+ existing repo ──► /rig:init
+                    │  3 scouts in parallel: stack · commands · conventions
+                    │  verifies the fast test command, proposes sensors, records a baseline
+                    ▼
+             enable rig-brain? ──► yes
+                    │  seeds memory from the scouts, builds the wiki (haiku per module)
+                    ▼
+             commit, restart ──► /rig-brain:wiki-refresh later, as code changes
+                    ▼
+             /rig-start "fix X" ──► diagnose / plan ──► build ► test ► sensors ► pr
+```
+
+1. **Init.** Run `/rig:init`. Three read-only scouts (Haiku) map the stack, find the real build, test and lint commands, and collect conventions. It writes a `CLAUDE.md` of at most 120 lines (an existing one gets a proposed diff, never an overwrite).
+2. **Accept the baseline.** Failing checks it finds go into `knownRed`, so rig never blocks on debt it did not create. It reports the counts.
+3. **Say yes to rig-brain.** Init then does the first build for you: one foreground Haiku agent per module (at most 25) writes the wiki prose, so you get `.sdlc/wiki/INDEX.md`, `architecture.md` (a Mermaid graph) and `modules/*.md` straight away, and up to 12 memory entries from the scouts' findings (test commands, gotchas, conventions, all tagged `source: init`). Commit `.sdlc/wiki/` and `.sdlc/memory/`, then restart. Claude then gets the wiki `INDEX.md` once per session, and `/rig-brain:wiki-find <terms>` locates files without a Glob/Grep sweep.
+5. **Pick the first change by type:** a bug is `/rig-start "fix: ..."` (diagnose, failing test first); a cleanup is a refactor (plan); a one-liner is a chore. `/rig-next` takes it from there.
+6. **Memory keeps learning:** lessons from failed commands and your corrections accumulate in `.sdlc/memory/` beside the seeded entries.
+
+### What rig-brain does afterwards (both paths)
+
+| When | What happens | Cost |
+|---|---|---|
+| You edit code | hooks mark wiki pages stale | none |
+| Session start | `INDEX.md` and committed `MEMORY.md` injected as context | none |
+| You run `/rig-brain:wiki-refresh` | prose rewritten for changed modules only | model call per module |
+| Claude stops with enough signals | one background `claude -p` dream proposes lessons, a deterministic step validates and writes them | one tool-less Haiku call, capped per day |
+| You review | `git diff .sdlc/memory`, commit with your work. Nothing is committed for you | none |
+
+Related commands: `/rig-brain:memory-find <terms>`, `/rig-brain:memory-forget <id>`, `/rig-brain:memory-dream` (run now). Wiki and memory settings live in `.sdlc/wiki.json` and `.sdlc/memory.json`; see the [rig-brain README](brain/README.md).
+
+### Troubleshooting
+
+- **rig-brain commands missing:** the settings entries are only read at session start; restart Claude Code, then check `/plugin`.
+- **Teammates cannot load it:** a local `directory` path does not resolve on their machines. Use the `github` source for the `rig` marketplace in `.claude/settings.json` (`{"source":"github","repo":"<owner/repo>"}`).
+- **Skipped it during init:** re-run `/rig:init` and answer yes at the rig-brain step, or add the `rig` marketplace under `extraKnownMarketplaces` and `"rig-brain@rig": true` under `enabledPlugins` in the project's `.claude/settings.json` by hand.
+- **Not a rig repo:** rig-brain works without `.sdlc/changes`; it only reads rig's files if they exist.
 
 ## Team install
 
@@ -262,6 +388,7 @@ For long unattended builds, `/rig:build` prints a ready `/goal` line, so you don
 
 | Part | Role |
 |---|---|
+| `brain/` | The `rig-brain` plugin (wiki + memory, its own skills, agent, hooks and tests). Separate plugin, same marketplace; see [brain/README.md](brain/README.md). |
 | `skills/` (16) | The stages, run by the main thread (Sonnet 5.5; the Opus advisor is opt-in, see below). No skill sets `model:`, because a model switch re-reads the whole conversation uncached. The role and the tier pick each subagent's model and effort (`scripts/routing.ts`; `next --json` carries `routes`) and each agent's own `model:` is the default when no route applies; they start with their own small contexts. |
 | `agents/scout.md` | Haiku 5.5, read-only, `omitClaudeMd`. Cheap code search, used instead of Explore running on your main model. |
 | `agents/architect.md` | **Opus 5.5**, high effort. Writes spec.md, plan.md and design.md, the design-heavy steps. |
@@ -313,7 +440,10 @@ npm run typecheck:mod                        # the mod; needs generated types, s
 claude plugin test .                         # mod tests
 npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
+npm run test:brain                           # rig-brain: installs brain/ deps, runs its specs, typecheck and validate (also part of npm test)
 ```
+
+`rig-brain` has its own `package.json` in `brain/`; CI runs it as the `brain` job. Develop it the same way: `cd brain && npm test`.
 
 ### End-to-end acceptance test
 

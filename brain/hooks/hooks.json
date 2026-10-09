@@ -1,5 +1,5 @@
 {
-  "description": "rig-util: wiki stale-marking and index injection; memory signal capture, MEMORY.md injection and idle-time dreams. No hook calls a model; the Stop hook may start a detached, opt-in dream process.",
+  "description": "rig-brain: wiki stale-marking and index injection; memory signal capture, MEMORY.md injection and idle-time dreams. No hook calls a model; the Stop hook may start a detached, opt-in dream process.",
   "hooks": {
     "SessionStart": [
       {

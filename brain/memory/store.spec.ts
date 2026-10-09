@@ -80,7 +80,7 @@ test('buildMemoryMd lists topics with counts and recent entries, deterministic a
   s.get('commands.md')!.lines.push({ id: 'm-000001', text: 'old', source: 's', added: '2026-01-01' }, { id: 'm-000002', text: 'new', source: 's', added: '2026-02-01' })
   const md = buildMemoryMd(s)
   assert.equal(md, [
-    '# Memory', MEMORY_HEADER, 'Search with `/rig-util:memory-find <terms>` or grep `.sdlc/memory/`.', '',
+    '# Memory', MEMORY_HEADER, 'Search with `/rig-brain:memory-find <terms>` or grep `.sdlc/memory/`.', '',
     '## Topics', '- [[commands]] (2): Build, test and run invocations that work', '',
     '## Recent', '- new ([[commands]], m-000002)', '- old ([[commands]], m-000001)', '',
   ].join('\n'))

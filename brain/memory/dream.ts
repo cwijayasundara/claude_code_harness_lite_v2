@@ -20,7 +20,7 @@ export const claudeArgs = (model: string): string[] => [
 
 export const claudeRunner: Runner = (input, model, root) => {
   const r = spawnSync('claude', claudeArgs(model),
-    { cwd: root, input, encoding: 'utf8', timeout: 10 * 60_000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, RIG_UTIL_DREAMING: '1' } })
+    { cwd: root, input, encoding: 'utf8', timeout: 10 * 60_000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, RIG_BRAIN_DREAMING: '1' } })
   return { ok: r.status === 0, out: r.stdout ?? '', err: r.error ? String(r.error) : (r.stderr ?? '') }
 }
 

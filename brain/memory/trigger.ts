@@ -110,7 +110,7 @@ export function maybeStartDream(root: string, cfg: MemConfig, memoryTs: string, 
   let started = false
   try {
     id = snapshotBatch(root, now).id
-    started = run(process.execPath, ['--disable-warning=ExperimentalWarning', memoryTs, 'dream', id, '--root', root], { cwd: root, env: { ...process.env, RIG_UTIL_DREAMING: '1' } })
+    started = run(process.execPath, ['--disable-warning=ExperimentalWarning', memoryTs, 'dream', id, '--root', root], { cwd: root, env: { ...process.env, RIG_BRAIN_DREAMING: '1' } })
     if (!started) return 'no dream: spawn failed'
     // Recorded only once the dream is running, so a failed spawn spends no daily slot or cooldown.
     recordDream(root, now)

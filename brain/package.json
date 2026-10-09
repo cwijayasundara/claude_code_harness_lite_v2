@@ -1,10 +1,11 @@
 {
-  "name": "rig-util",
+  "name": "rig-brain",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.18" },
   "scripts": {
-    "test": "node --disable-warning=ExperimentalWarning --test 'code_wiki/*.spec.ts' 'shared/*.spec.ts' 'memory/*.spec.ts' 'tests/*.spec.ts' && npm run typecheck && claude plugin validate .claude-plugin/plugin.json",
+    "test:unit": "node --disable-warning=ExperimentalWarning --test 'code_wiki/*.spec.ts' 'shared/*.spec.ts' 'memory/*.spec.ts' 'tests/*.spec.ts' && npm run typecheck",
+    "test": "npm run test:unit && claude plugin validate .claude-plugin/plugin.json",
     "typecheck": "tsc -p tsconfig.json",
     "test:e2e": "node --disable-warning=ExperimentalWarning tests/e2e/run.ts",
     "test:e2e:memory": "node --disable-warning=ExperimentalWarning tests/e2e/memory.ts"

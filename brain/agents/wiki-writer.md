@@ -1,6 +1,6 @@
 ---
 name: wiki-writer
-description: Writes the prose for one wiki module (purpose, how it works, optional Mermaid) from the index and source. Used by /rig-util:wiki-refresh.
+description: Writes the prose for one wiki module (purpose, how it works, optional Mermaid) from the index and source. Used by /rig-brain:wiki-refresh.
 model: haiku
 tools: Read, Write
 ---

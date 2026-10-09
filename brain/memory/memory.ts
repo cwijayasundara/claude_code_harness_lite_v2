@@ -22,7 +22,7 @@ function readStdin(): Record<string, any> {
 }
 
 function hook(event: string): void {
-  if (process.env.RIG_UTIL_DREAMING === '1') return
+  if (process.env.RIG_BRAIN_DREAMING === '1') return
   const input = readStdin()
   const r = repoRoot(typeof input.cwd === 'string' ? input.cwd : root)
   const cfg = loadMemConfig(r)

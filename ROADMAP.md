@@ -9,7 +9,7 @@ Both were built, then removed in v0.4.x to keep the harness lean (`5b9cb86`; the
 
 ## v3 rule: not in core
 
-Core stays the lifecycle, gates and sensors. Each of these returns as an **optional plugin** (`rig-wiki`, `rig-learn`) that reads core's evidence and adds no imports to `check`, `hooks` or `sdlc`. This time the wiki was wired into the checker, the session-start hook and the sensor list, which is what made it expensive to carry.
+Core stays the lifecycle, gates and sensors. Each of these returns as an **optional plugin** (shipped as `rig-brain`, in `brain/` of this repo: same marketplace, separate plugin, no imports either way) that reads core's evidence and adds no imports to `check`, `hooks` or `sdlc`. This time the wiki was wired into the checker, the session-start hook and the sensor list, which is what made it expensive to carry.
 
 ## 1. DeepWiki-style wiki
 

@@ -101,7 +101,7 @@ test('maybeStartDream spawns a detached dream with the recursion guard', () => {
   assert.equal(msg, 'dream started: batch-2026-10-09T10-00-00-000Z')
   assert.equal(calls[0].cmd, process.execPath)
   assert.deepEqual(calls[0].args, ['--disable-warning=ExperimentalWarning', '/p/memory/memory.ts', 'dream', 'batch-2026-10-09T10-00-00-000Z', '--root', dir])
-  assert.equal(calls[0].opts.env.RIG_UTIL_DREAMING, '1'); assert.equal(calls[0].opts.cwd, dir)
+  assert.equal(calls[0].opts.env.RIG_BRAIN_DREAMING, '1'); assert.equal(calls[0].opts.cwd, dir)
   assert.equal(maybeStartDream(dir, { ...cfg, cooldownMin: 0 }, '/x', plus(1000), () => true), 'no dream: a dream is running')
   assert.equal(loadDreamState(dir).count, 1)
 })

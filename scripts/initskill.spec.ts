@@ -27,13 +27,15 @@ test('init skill: a Node scaffold uses `node --test` with no directory argument 
   assert.doesNotMatch(skill, /node --test test\//)
 })
 
-test('init skill: rig-util is opt-in, per project, and skipped under --defaults', () => {
-  assert.match(skill, /Optional add-on: rig-util/)
-  assert.match(skill, /Never run `claude plugin install` and never write user settings/)
-  assert.match(skill, /Skip:[^\n]*rig-util add-on/)
+test('init skill: rig-brain is opt-in, per project, and skipped under --defaults', () => {
+  assert.match(skill, /Optional add-on: rig-brain/)
+  assert.match(skill, /never run `claude plugin install` or `claude plugin marketplace add` for it and never write user settings/)
+  assert.match(skill, /marketplace add <repo-root> --scope project/)
+  assert.doesNotMatch(skill, /marketplace add <repo-root>`/)
+  assert.match(skill, /Skip:[^\n]*rig-brain add-on/)
 })
 
-test('init skill: enabling rig-util seeds memory and the wiki rather than only registering the plugin', () => {
+test('init skill: enabling rig-brain seeds memory and the wiki rather than only registering the plugin', () => {
   assert.match(skill, /memory\.ts\b[^\n]*|\$M seed --placeholders/)
   assert.match(skill, /\$W index/)
   assert.match(skill, /\$W apply/)

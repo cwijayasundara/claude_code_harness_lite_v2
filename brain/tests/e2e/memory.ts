@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 
 const plugin = path.resolve('.')
 const cli = path.join(plugin, 'memory/memory.ts')
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigutil-mem-e2e-'))
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rigbrain-mem-e2e-'))
 fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fx', private: true, scripts: { test: "node -e \"console.log('tests ok')\"" } }, null, 2))
 fs.mkdirSync(path.join(dir, '.sdlc'), { recursive: true })
 fs.writeFileSync(path.join(dir, '.sdlc/memory.json'), JSON.stringify({ enabled: true, minSignals: 1, cooldownMin: 0 }))

@@ -6,10 +6,11 @@ const fm = (f: string) => fs.readFileSync(f, 'utf8').match(/^---\n([\s\S]*?)\n--
 
 test('manifests parse and agree on the name and version', () => {
   const p = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'))
-  const m = JSON.parse(fs.readFileSync('.claude-plugin/marketplace.json', 'utf8'))
-  assert.equal(p.name, 'rig-util')
-  assert.equal(m.plugins[0].name, 'rig-util')
-  assert.equal(m.plugins[0].version, p.version)
+  const m = JSON.parse(fs.readFileSync('../.claude-plugin/marketplace.json', 'utf8'))
+  const e = m.plugins.find((x: any) => x.name === 'rig-brain')
+  assert.equal(p.name, 'rig-brain')
+  assert.equal(e?.source, './brain')
+  assert.equal(e?.version, p.version)
 })
 
 test('skills and agent have frontmatter with name and description; writer is pinned to haiku', () => {

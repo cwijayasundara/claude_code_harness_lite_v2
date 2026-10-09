@@ -1,19 +1,26 @@
-# rig-util
+# rig-brain
 
-Optional add-ons for the [rig](../claude_code_harness_lite_v2) harness. rig core does not depend on it.
+Optional add-on for the [rig](../README.md) harness, shipped from the same repo and marketplace (`rig`) as a second plugin.
+rig core does not depend on it and it does not import rig: it reads `.sdlc/` files only, and `scripts/brainboundary.spec.ts` in the
+repo root fails if either side imports the other.
 Two modules: **code_wiki**, a self-updating, DeepWiki-style code wiki, and **memory**, a self-improving memory of
 lessons from past sessions (after Cognition's agent memory repo). Each is optional and configured on its own.
 
-## Install
+## Install (per project, never global)
+The easy way is `/rig:init`: answer yes to the rig-brain step. It edits only the project's `.claude/settings.json`
+(`extraKnownMarketplaces.rig` plus `enabledPlugins["rig-brain@rig"]`), seeds `.sdlc/memory/` and builds the first wiki.
+By hand, at project scope, from the project root:
 ```
-/plugin marketplace add <path-or-github>/rig-util
-/plugin install rig-util@rig-util
+claude plugin marketplace add <path-or-owner/repo> --scope project
+claude plugin install rig-brain@rig --scope project
 ```
+Always pass `--scope project`: the default is user scope, which would enable the plugin in every repo and session.
+To try it for one session without installing, `claude --plugin-dir <rig-checkout>/brain`.
 
 ## Use
-1. `/rig-util:wiki-refresh` in a repo. Prose is written only for modules whose code changed.
+1. `/rig:init` builds the first wiki (or a placeholder one for an empty repo). After that, `/rig-brain:wiki-refresh` rewrites prose only for modules whose code changed.
 2. Commit `.sdlc/wiki/` (not `.sdlc/wiki/.cache/`).
-3. Hooks mark pages stale as code changes (no model calls). Claude gets `INDEX.md` once per session; `/rig-util:wiki-find <terms>` locates files.
+3. Hooks mark pages stale as code changes (no model calls). Claude gets `INDEX.md` once per session; `/rig-brain:wiki-find <terms>` locates files.
 4. Optional CI: copy `templates/rig-wiki.yml` for a stale-page warning.
 
 ## Read it
@@ -42,8 +49,8 @@ Off by default. Turn it on per repo with `.sdlc/memory.json`: `{ "enabled": true
 - Nothing is committed for you: review with `git diff .sdlc/memory` and commit with your work. Session start says
   when memory changed.
 - The committed `MEMORY.md` (`git show HEAD`) is injected at session start as context; unreviewed working-tree
-  changes are not loaded until committed (outside git, the working-tree file is used). `/rig-util:memory-find <terms>`, `/rig-util:memory-forget <id>`,
-  `/rig-util:memory-dream` (run now). `node memory/memory.ts status` shows pending signals and the last dream; the
+  changes are not loaded until committed (outside git, the working-tree file is used). `/rig-brain:memory-find <terms>`, `/rig-brain:memory-forget <id>`,
+  `/rig-brain:memory-dream` (run now). `node memory/memory.ts status` shows pending signals and the last dream; the
   dream log is `.sdlc/memory/.cache/log`, rejected proposals `.cache/rejected.jsonl`.
 - Config keys: `enabled`, `minSignals`, `cooldownMin`, `maxDreamsPerDay`, `model`, `maxFiles` (12),
   `maxEntriesPerFile` (80).

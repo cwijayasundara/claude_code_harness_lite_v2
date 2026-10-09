@@ -8,7 +8,7 @@ import { commitAll, makeRepo } from '../shared/testkit.ts'
 
 const cli = path.resolve('memory/memory.ts')
 const run = (dir: string, args: string[], input = '', env: Record<string, string> = {}) =>
-  spawnSync('node', ['--disable-warning=ExperimentalWarning', cli, ...args], { cwd: dir, input, encoding: 'utf8', env: { ...process.env, RIG_UTIL_DREAMING: '', ...env } })
+  spawnSync('node', ['--disable-warning=ExperimentalWarning', cli, ...args], { cwd: dir, input, encoding: 'utf8', env: { ...process.env, RIG_BRAIN_DREAMING: '', ...env } })
 const on = () => makeRepo({ '.sdlc/memory.json': JSON.stringify({ enabled: true, minSignals: 99 }) })
 const failing = (dir: string) => JSON.stringify({ cwd: dir, session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npx jest' }, tool_response: { exit_code: 1, stderr: 'not found' } })
 
@@ -25,7 +25,7 @@ test('hooks capture only when enabled and not inside a dream', () => {
   run(off, ['hook', 'post-bash'], failing(off))
   assert.equal(readSignals(off).length, 0)
   const dir = on()
-  run(dir, ['hook', 'post-bash'], failing(dir), { RIG_UTIL_DREAMING: '1' })
+  run(dir, ['hook', 'post-bash'], failing(dir), { RIG_BRAIN_DREAMING: '1' })
   assert.equal(readSignals(dir).length, 0)
   run(dir, ['hook', 'post-bash'], failing(dir))
   assert.equal(readSignals(dir)[0].kind, 'cmd-fail')
