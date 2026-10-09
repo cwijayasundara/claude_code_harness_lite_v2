@@ -8,6 +8,7 @@ import { dreamNow, log, runDream } from './dream.ts'
 import { applyOps } from './apply.ts'
 import { allEntries, loadStore, searchEntries } from './store.ts'
 import { sessionContext } from './session.ts'
+import { seedMemory } from './seed.ts'
 
 const args = process.argv.slice(2)
 const ri = args.indexOf('--root')
@@ -50,10 +51,15 @@ try {
     if (!rest[0]) { console.log('usage: memory.ts forget <id>'); process.exit(0) }
     const res = applyOps(root, loadMemConfig(root), [{ op: 'remove', id: rest[0] }], new Date().toISOString().slice(0, 10))
     console.log(res.removed ? `removed ${rest[0]}` : `not found: ${rest[0]}`)
+  } else if (cmd === 'seed') {
+    const file = rest.find(a => !a.startsWith('--'))
+    const ops = file ? JSON.parse(fs.readFileSync(file, 'utf8')) : []
+    const r = seedMemory(root, ops, new Date().toISOString().slice(0, 10), { placeholders: rest.includes('--placeholders') })
+    console.log(`seeded: ${r.added} added, ${r.rejected.length} rejected${r.rejected.length ? ` (${r.rejected.map(x => x.reason).join('; ')})` : ''}`)
   } else if (cmd === 'status') {
     const st = loadDreamState(root)
     console.log(`enabled: ${loadMemConfig(root).enabled}\nentries: ${allEntries(loadStore(root)).length}\npending signals: ${readSignals(root).filter(s => !s.dreamed).length}\nlast dream: ${st.last || 'never'}`)
-  } else console.log('usage: memory.ts <hook|dream|find|forget|status> [--root dir]')
+  } else console.log('usage: memory.ts <hook|dream|find|forget|seed|status> [--root dir]')
 } catch (e) {
   if (cmd !== 'hook') { console.error(String(e)); process.exitCode = 1 }
   else try { log(root, `hook ${rest[0]} failed: ${(e as Error).message ?? e}`) } catch { /* logging never throws */ }
