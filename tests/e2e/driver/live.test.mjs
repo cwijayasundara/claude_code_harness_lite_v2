@@ -49,3 +49,15 @@ test('begin(): when /rig-start ends before creating a change, it continues with 
   assert.deepEqual(prompts.map(p => p.prompt), ['/rig-start do the thing', '/rig-start do the thing', '/rig-start do the thing'])
   assert.deepEqual(prompts.map(p => p.cont), [false, true, true])
 })
+
+import { PLUGIN } from '../../integration/lib/sandbox.mjs'
+
+test('headless sessions carry the template allow rules on --settings: -p never trusts the workspace, so the same rules in .claude/settings.json are ignored', () => {
+  const sb = fakeSb(result(0))
+  createSessions({ sb, out: out(), capUsd: 6 }).run('a', 'x')
+  const args = sb.calls[0]
+  const inline = JSON.parse(args[args.indexOf('--settings') + 1])
+  const template = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'templates/settings.json'), 'utf8'))
+  assert.deepEqual(inline, { permissions: { allow: template.permissions.allow } })
+  assert.ok(inline.permissions.allow.some(r => r.startsWith('Bash(node ') && r.includes('sdlc.ts')))
+})

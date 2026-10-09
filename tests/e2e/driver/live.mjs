@@ -4,6 +4,11 @@ import path from 'node:path'
 import { readSession, totals } from '../../integration/assert/process.mjs'
 import { PLUGIN } from '../../integration/lib/sandbox.mjs'
 
+// `claude -p` never trusts the workspace, and an untrusted workspace's permissions.allow in .claude/settings.json is ignored
+// ("Ignoring N permissions.allow entries ... has not been trusted"). The template's allow rules go in on --settings, which has no trust step.
+const templateAllow = () =>
+  JSON.stringify({ permissions: { allow: JSON.parse(fs.readFileSync(path.join(PLUGIN, 'templates/settings.json'), 'utf8')).permissions.allow } })
+
 // One shared session log per run, so the spend cap covers every phase.
 export function createSessions({ sb, out, capUsd = 6, model = 'sonnet' }) {
   if (!(capUsd > 0)) throw new Error(`spend cap must be a positive number of dollars, got ${capUsd}`)
@@ -15,7 +20,7 @@ export function createSessions({ sb, out, capUsd = 6, model = 'sonnet' }) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     const budget = Math.min(6, capUsd - spent)
     const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-      '--model', model, '--max-budget-usd', budget.toFixed(2), '--setting-sources', 'project,local',
+      '--model', model, '--settings', templateAllow(), '--max-budget-usd', budget.toFixed(2), '--setting-sources', 'project,local',
       ...(withPlugin ? ['--plugin-dir', PLUGIN] : []), ...(cont ? ['--continue'] : [])]
     const r = sb.run('claude', args, { timeout: 18 * 60_000 })
     fs.writeFileSync(file, r.stdout ?? '')
