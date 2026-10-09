@@ -1,0 +1,20 @@
+# Warns (never fails) when wiki pages are stale. Refreshing needs a model:
+# run `claude -p "/rig-util:wiki-refresh"` yourself or add that step with your key.
+name: rig-wiki
+on:
+  push:
+    branches: [main]
+jobs:
+  wiki-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Check wiki freshness
+        run: |
+          out=$(node --disable-warning=ExperimentalWarning "${RIG_UTIL_DIR:-.rig-util}/code_wiki/wiki.ts" status)
+          echo "$out"
+          stale=$(echo "$out" | sed -n 's/^stale: //p')
+          if [ "${stale:-0}" -gt 0 ]; then echo "::warning::$stale wiki page(s) are stale; run /rig-util:wiki-refresh"; fi
