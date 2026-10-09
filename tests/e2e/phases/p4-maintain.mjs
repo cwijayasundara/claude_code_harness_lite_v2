@@ -40,12 +40,16 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   out.push(w)
 
   // Seed the escaped bug on main, as if it had shipped, then record the incident.
-  // The buggy cart is the known-good one minus the copy in lines(), so the seed is the same whatever the model wrote in P1 and P2.
+  // Reset to the known-good fixture set (cart and its tests) with the one bug seeded. Replacing only the code would leave the model's own
+  // P1/P2 tests, which assert behaviour the fixture cart does not have, so the baseline would be red for reasons unrelated to the incident.
   const good = fs.readFileSync(fx('src/cart.js'), 'utf8')
   const buggy = good.replace('.map(l => ({ ...l }))', '')
   if (buggy === good) throw new Error('P4: the bug seed did not change src/cart.js')
   sb.write('src/cart.js', buggy)
-  sb.commitAll('chore: seed the lines() leak (simulates the escaped bug)')
+  for (const f of sb.run('sh', ['-c', 'ls test/*.test.js 2>/dev/null']).stdout.split('\n').filter(Boolean)) fs.rmSync(sb.file(f))
+  fs.mkdirSync(sb.file('test'), { recursive: true })
+  for (const [src, dest] of [[path.join(import.meta.dirname, '../fixtures/p1/test/cart.test.js'), 'test/cart.test.js'], [path.join(import.meta.dirname, '../fixtures/p2/test/coupon.test.js'), 'test/coupon.test.js']]) fs.copyFileSync(src, sb.file(dest))
+  sb.commitAll('chore: seed the lines() leak (simulates the escaped bug), on the known-good cart and tests')
   const live = Boolean(driver.sessions)
   // Scripted: the incident file is written here. Live: /rig-incident writes it, and the newest file under .sdlc/incidents is judged.
   if (!live) {
