@@ -314,3 +314,14 @@ claude plugin test .                         # mod tests
 npm test                                     # all of the above
 claude plugin validate .claude-plugin/plugin.json
 ```
+
+### End-to-end acceptance test
+
+`tests/e2e/` scaffolds a throwaway project, installs the harness into it, and drives the lifecycle with the human gates approved in code (the operator): P0 install, P1 greenfield cart to a PR, P2 a small change to the built app, P3 deploy (production gate, rollback rehearsal, workflow lint; local only) and P4 maintain (band breach, incident, fix, eval, metrics). Spec: `docs/superpowers/specs/2026-10-09-e2e-acceptance-test-design.md`.
+
+```bash
+npm run test:e2e         # the acceptance test: real Claude Code (claude -p, Sonnet), costs money, --cap USD (default 6)
+npm run test:e2e:fast    # a fake model replays fixture files: $0, about 30 s, runs in npm test and CI; never the acceptance result
+npm run test:e2e:unit    # the operator loop
+node tests/e2e/run.mjs --driver live --phase P1 --cap 6   # one phase (P2 and P4 run their prerequisites first)
+```
