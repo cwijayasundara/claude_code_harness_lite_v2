@@ -60,3 +60,11 @@ test('CLI find and status work', () => {
   assert.match(run(dir, ['find', 'x.ts']).stdout, /modules\/a\.md/)
   assert.match(run(dir, ['status']).stdout, /fresh: 1/)
 })
+
+test('markStale accepts a file path that reaches the repo through a symlink', () => {
+  const dir = built()
+  const link = `${dir}-link`
+  fs.symlinkSync(dir, link)
+  assert.equal(markStale(fs.realpathSync(dir), path.join(link, 'src/a/x.ts')), true)
+  assert.equal(loadState(dir).modules.a.status, 'stale')
+})

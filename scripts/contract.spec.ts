@@ -23,5 +23,7 @@ test('no rig: supported; old rig: not supported', () => {
   assert.deepEqual(checkRig(makeRepo({})), { present: false, version: null, supported: true })
   const old = makeRepo({ '.sdlc/bin/VERSION': '0.5.2\n' })
   assert.equal(checkRig(old).supported, false)
-  assert.equal(checkRig(makeRepo({ '.sdlc/x': '1' })).supported, false)   // present, version unreadable
+  assert.equal(checkRig(makeRepo({ '.sdlc/sensors.json': '{}' })).supported, false)   // rig present, version unreadable
+  // the wiki's own files under .sdlc/ do not make a repo a rig repo
+  assert.deepEqual(checkRig(makeRepo({ '.sdlc/wiki/INDEX.md': '#', '.sdlc/wiki.json': '{}' })), { present: false, version: null, supported: true })
 })

@@ -7,7 +7,8 @@ import { loadState, saveState, statePath } from './state.ts'
 
 export function markStale(root: string, file: string): boolean {
   try {
-    const rel = path.isAbsolute(file) ? path.relative(root, file) : file
+    const real = (p: string): string => { try { return fs.realpathSync(p) } catch { return p } }
+    const rel = path.isAbsolute(file) ? path.relative(real(root), real(file)) : file
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.startsWith(`${WIKI_DIR}/`)) return false
     if (!fs.existsSync(statePath(root))) return false
     const state = loadState(root)

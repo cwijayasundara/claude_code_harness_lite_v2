@@ -11,7 +11,10 @@ const gte = (a: string, b: string): boolean => {
 }
 
 export function checkRig(root: string): { present: boolean; version: string | null; supported: boolean } {
-  if (!fs.existsSync(path.join(root, '.sdlc'))) return { present: false, version: null, supported: true }
+  // rig is present when .sdlc/ holds anything besides this plugin's own files (wiki/, wiki.json)
+  const own = new Set(['wiki', 'wiki.json'])
+  const hasRig = (() => { try { return fs.readdirSync(path.join(root, '.sdlc')).some(e => !own.has(e)) } catch { return false } })()
+  if (!hasRig) return { present: false, version: null, supported: true }
   let version: string | null = null
   try { version = fs.readFileSync(path.join(root, '.sdlc/bin/VERSION'), 'utf8').trim() || null } catch { /* unreadable */ }
   return { present: true, version, supported: version !== null && gte(version, MIN_RIG) }
