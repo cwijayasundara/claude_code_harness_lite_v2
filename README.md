@@ -49,6 +49,10 @@ Off by default. Turn it on per repo with `.sdlc/memory.json`: `{ "enabled": true
   `maxEntriesPerFile` (80).
 - Eval: `evals/memory-recall.json`. If memory does not help on at least 4 of 5 tasks, drop its SessionStart hook.
 
+- `node memory/memory.ts seed [--placeholders] [ops.json]` is the one-time setup `/rig:init` runs: it writes `.sdlc/memory.json`
+  `{ "enabled": true }` (never over a repo that set `enabled: false`), adds the `add` ops from the file with `source: init`, and with
+  `--placeholders` creates the four topic files with fill-in lines. Existing topic files are never overwritten.
+
 ## Known limits (v1)
 - Import edges: relative TS/JS imports, Python/Java by path suffix, Go partly. Path aliases (`tsconfig` paths), workspace
   package imports (`@org/pkg`), dynamic `import()`/`require` and Python relative imports are not resolved, so a
