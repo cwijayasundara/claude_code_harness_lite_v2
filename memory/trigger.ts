@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { readJson, writeJson } from '../shared/json.ts'
 import { type MemConfig, cacheDir } from './config.ts'
 import { type Signal, readSignals } from './capture.ts'
@@ -16,16 +17,41 @@ const statePath = (root: string): string => path.join(cacheDir(root), 'last-drea
 export const batchPath = (root: string, id: string): string => path.join(cacheDir(root), `${id}.json`)
 const day = (d: Date): string => d.toISOString().slice(0, 10)
 
+// The lock body is written to a private temp file and hard-linked into place: the lock
+// appears complete or not at all, and link() fails if another process already holds it.
+function createLock(f: string, now: Date): boolean {
+  const tmp = `${f}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify({ pid: process.pid, ts: now.toISOString() }))
+  try { fs.linkSync(tmp, f); return true } catch { return false } finally { fs.rmSync(tmp, { force: true }) }
+}
+
+// A parseable lock is judged by its recorded ts; an unparseable one by its mtime.
+function isStale(f: string, now: Date): boolean {
+  let text: string, mtime: number
+  try { text = fs.readFileSync(f, 'utf8'); mtime = fs.statSync(f).mtimeMs } catch { return false }
+  let ts = NaN
+  try { ts = Date.parse(JSON.parse(text).ts) } catch { /* unparseable: fall back to mtime */ }
+  if (!Number.isFinite(ts)) ts = mtime
+  return now.getTime() - ts >= LOCK_STALE_MS
+}
+
 export function acquireLock(root: string, now = new Date()): boolean {
   const f = lockPath(root)
   fs.mkdirSync(path.dirname(f), { recursive: true })
-  const body = JSON.stringify({ pid: process.pid, ts: now.toISOString() })
-  try { fs.writeFileSync(f, body, { flag: 'wx' }); return true } catch { /* held: check age */ }
-  let ts = NaN
-  try { ts = Date.parse(JSON.parse(fs.readFileSync(f, 'utf8')).ts) } catch { /* corrupt lock counts as stale */ }
-  if (Number.isFinite(ts) && now.getTime() - ts < LOCK_STALE_MS) return false
-  fs.writeFileSync(f, body)
-  return true
+  if (createLock(f, now)) return true
+  if (!isStale(f, now)) return false
+  // Takeover: only the process whose rename succeeds may replace the stale lock.
+  const aside = `${f}.${process.pid}.${randomBytes(4).toString('hex')}.stale`
+  try { fs.renameSync(f, aside) } catch { return false }
+  // The lock may have been replaced between our check and the rename; if the file we moved
+  // is not stale after all, put it back and give up.
+  if (!isStale(aside, now)) {
+    try { fs.linkSync(aside, f) } catch { /* someone already re-created the lock */ }
+    fs.rmSync(aside, { force: true })
+    return false
+  }
+  fs.rmSync(aside, { force: true })
+  return createLock(f, now)
 }
 
 export function releaseLock(root: string): void {
@@ -73,11 +99,21 @@ export function maybeStartDream(root: string, cfg: MemConfig, memoryTs: string, 
   const d = shouldDream(root, cfg, now)
   if (!d.ok) return `no dream: ${d.reason}`
   if (!acquireLock(root, now)) return 'no dream: a dream is running'
-  const b = snapshotBatch(root, now)
-  recordDream(root, now)
-  const ok = run(process.execPath, ['--disable-warning=ExperimentalWarning', memoryTs, 'dream', b.id, '--root', root], { cwd: root, env: { ...process.env, RIG_UTIL_DREAMING: '1' } })
-  if (ok) return `dream started: ${b.id}`
-  releaseLock(root)
-  fs.rmSync(batchPath(root, b.id), { force: true })
-  return 'no dream: spawn failed'
+  let id = ''
+  let started = false
+  try {
+    id = snapshotBatch(root, now).id
+    started = run(process.execPath, ['--disable-warning=ExperimentalWarning', memoryTs, 'dream', id, '--root', root], { cwd: root, env: { ...process.env, RIG_UTIL_DREAMING: '1' } })
+    if (!started) return 'no dream: spawn failed'
+    // Recorded only once the dream is running, so a failed spawn spends no daily slot or cooldown.
+    recordDream(root, now)
+    return `dream started: ${id}`
+  } catch (e) {
+    return started ? `dream started: ${id}` : `no dream: ${(e as Error).message}`
+  } finally {
+    if (!started) {
+      releaseLock(root)
+      if (id) try { fs.rmSync(batchPath(root, id), { force: true }) } catch { /* not removable: leave it */ }
+    }
+  }
 }

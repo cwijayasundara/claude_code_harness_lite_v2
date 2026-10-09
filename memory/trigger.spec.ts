@@ -40,7 +40,35 @@ test('lock: exclusive, released, stale after 15 min, corrupt counts as stale', (
   assert.equal(acquireLock(dir, plus(LOCK_STALE_MS + 1)), true)
   releaseLock(dir); releaseLock(dir)
   assert.equal(acquireLock(dir, T0), true)
-  fs.writeFileSync(path.join(dir, '.sdlc/memory/.cache/dream.lock'), 'garbage')
+  const lock = path.join(dir, '.sdlc/memory/.cache/dream.lock')
+  fs.writeFileSync(lock, 'garbage')
+  const old = new Date(Date.now() - LOCK_STALE_MS - 60_000)
+  fs.utimesSync(lock, old, old)
+  assert.equal(acquireLock(dir, new Date()), true)
+})
+
+test('a fresh corrupt or empty lock is not taken over', () => {
+  const dir = repo(0)
+  const lock = path.join(dir, '.sdlc/memory/.cache/dream.lock')
+  fs.mkdirSync(path.dirname(lock), { recursive: true })
+  fs.writeFileSync(lock, '')
+  assert.equal(acquireLock(dir, new Date()), false)
+  assert.equal(fs.readFileSync(lock, 'utf8'), '')
+})
+
+test('only one of two acquisitions at the same time takes over a stale lock', () => {
+  const dir = repo(0)
+  assert.equal(acquireLock(dir, T0), true)
+  const later = plus(LOCK_STALE_MS + 1)
+  assert.equal(acquireLock(dir, later), true)
+  assert.equal(acquireLock(dir, later), false)
+})
+
+test('maybeStartDream releases the lock when a step throws', () => {
+  const dir = repo(3)
+  fs.mkdirSync(batchPath(dir, 'batch-2026-10-09T10-00-00-000Z'), { recursive: true })
+  const msg = maybeStartDream(dir, loadMemConfig(dir), '/x', T0, () => true)
+  assert.match(msg, /^no dream: /)
   assert.equal(acquireLock(dir, T0), true)
 })
 
