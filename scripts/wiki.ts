@@ -9,6 +9,7 @@ import { applyWiki } from './apply.ts'
 import { loadState } from './state.ts'
 import { findIn } from './find.ts'
 import { markStale, promptContext } from './mark.ts'
+import { checkRig, MIN_RIG } from './rigcontract.ts'
 
 const args = process.argv.slice(2)
 const ri = args.indexOf('--root')
@@ -52,6 +53,8 @@ try {
     const s = loadState(root)
     const vals = Object.values(s.modules)
     console.log(`fresh: ${vals.filter(m => m.status === 'fresh').length}\nstale: ${vals.filter(m => m.status === 'stale').length}`)
+    const rig = checkRig(root)
+    console.log(`rig: ${rig.present ? rig.version ?? 'unknown' : 'none'} (${rig.supported ? 'supported' : `unsupported: needs >= ${MIN_RIG}`})`)
   } else console.log('usage: wiki.ts <index|plan|apply|find|status|hook> [--root dir]')
 } catch (e) {
   if (cmd !== 'hook') { console.error(String(e)); process.exitCode = 1 }
