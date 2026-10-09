@@ -42,3 +42,16 @@ export async function runStaleTwin(sb, slug) {
   sb.write(f, keep)
   return n.verdict === 'human' ? [] : [`stale approval: next said ${n.verdict}, expected human`]
 }
+
+// A workflow calling a subcommand the CLI lacks, and a gate with an empty approval, must both be caught.
+export async function runDeployNegatives(sb) {
+  const { assertWorkflowText } = await import('./assert/deploy.mjs')
+  const bad = []
+  const c = new Checks('twin: workflow calls a command that does not exist')
+  await assertWorkflowText(c, 'fake.yml', 'name: x\njobs:\n  a:\n    steps:\n      - run: node .sdlc/bin/sdlc.ts nonsense-cmd\n')
+  bad.push(...surprises(c, [/every sdlc\.ts command it calls exists/]))
+  const g = new Checks('twin: workflow that is not YAML with jobs')
+  await assertWorkflowText(g, 'empty.yml', 'name: x\n')
+  bad.push(...surprises(g, [/parses as YAML with jobs/]))
+  return bad
+}

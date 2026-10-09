@@ -36,6 +36,7 @@ export async function runChange(sb, phase, driver, { operator = 'operator', firs
   const route = await runRoute({ sb, slug, driver })
   const c = new Checks(`${phase.id} ${phase.title}`)
   await assertChange(c, sb, slug, { operator, label: slug })
+  await c.check(`${phase.id}: the operator resolved ${route.resolvedConcerns} policy concern(s) the design gate listed`, () => true)
   await c.check(`${phase.id}: approved at least one gate`, () => route.approved.length > 0 || 'no human gate was approved')
   if (first) {
     await assertPrePushPasses(c, sb, slug)

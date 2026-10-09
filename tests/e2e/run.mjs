@@ -8,8 +8,9 @@ import { install } from './phases/p0-install.mjs'
 import { PHASE as P1, runChange } from './phases/p1-greenfield.mjs'
 import { scriptedDriver } from './driver/scripted.mjs'
 import { PHASE as P2 } from './phases/p2-change.mjs'
+import { runDeploy } from './phases/p3-deploy.mjs'
 import { mergeToMain } from './lib/merge.mjs'
-import { runNegatives, runStaleTwin } from './negative.mjs'
+import { runNegatives, runStaleTwin, runDeployNegatives } from './negative.mjs'
 import { createSessions, liveDriver } from './driver/live.mjs'
 import { assertOnboarding } from '../integration/assert/onboarding.mjs'
 import { assertProcess } from '../integration/assert/process.mjs'
@@ -64,6 +65,15 @@ try {
     results.push(c2)
     if (!live) {
       const bad = await runStaleTwin(sb, slug)
+      for (const b of bad) console.error(`twin surprise: ${b}`)
+      if (bad.length) process.exitCode = 1
+    }
+  }
+  if (want('P3')) {
+    if (sb.git('rev-parse', '--abbrev-ref', 'HEAD') !== 'main') mergeToMain(sb, sb.git('rev-parse', '--abbrev-ref', 'HEAD').replace(/^sdlc\//, ''))
+    results.push(await runDeploy(sb))
+    if (!live) {
+      const bad = await runDeployNegatives(sb)
       for (const b of bad) console.error(`twin surprise: ${b}`)
       if (bad.length) process.exitCode = 1
     }

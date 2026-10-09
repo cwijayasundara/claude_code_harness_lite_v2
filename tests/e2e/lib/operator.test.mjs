@@ -67,3 +67,28 @@ test('a human verdict on budget or tier is a failure, not an approval', async ()
   })
   await assert.rejects(runRoute({ sb, slug: 's', driver: { step: async () => {} } }), /unexpected gate budget/)
 })
+
+test('resolves policy concerns the approval refuses on, then approves and reports them', async () => {
+  const files = { '.sdlc/changes/s/design.md': '# d\n\n## Concerns\n- [policy-security] Rule 3: sku not validated → owner: <the team>\n- [policy-security] Rule 5: no audit → owner: <the team>\n' }
+  let tries = 0
+  const sb = {
+    read: f => files[f] ?? '',
+    write: (f, t) => { files[f] = t },
+    sdlc(args) {
+      if (args[0] === 'next') return { status: 0, stdout: JSON.stringify(tries ? nextOf(null, 'ready') : nextOf('design', 'human')), stderr: '' }
+      if (args[0] === 'status') return { status: 0, stdout: JSON.stringify({ changes: [{ slug: 's', next: { kind: 'approve', gate: 'design' } }] }), stderr: '' }
+      if (args[0] === 'approve') {
+        if (!/→ resolved:/.test(files['.sdlc/changes/s/design.md'])) {
+          return { status: 1, stdout: '', stderr: 'resolve the concern(s) in s/design.md with their policy owners before approving: add " → resolved: <decision> (<owner>)" to each:\n  - [policy-security] Rule 3\n' }
+        }
+        tries++
+        return { status: 0, stdout: 'approved', stderr: '' }
+      }
+      throw new Error(`unexpected ${args}`)
+    },
+  }
+  const out = await runRoute({ sb, slug: 's', driver: { step: async () => {} } })
+  assert.deepEqual(out.approved, ['design'])
+  assert.equal(out.resolvedConcerns, 2)
+  assert.match(files['.sdlc/changes/s/design.md'], /Rule 3: sku not validated.*→ resolved: .*\(operator\)/)
+})
