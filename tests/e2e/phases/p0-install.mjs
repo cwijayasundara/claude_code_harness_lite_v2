@@ -3,6 +3,9 @@ import { assertOnboarding } from '../../integration/assert/onboarding.mjs'
 
 export const ROUTING = 'sdlc routes all work in this repo: start with /rig-start; use superpowers skills only when an sdlc skill names one.'
 
+// The live P0 prompt describes the project, not the feature: the cart arrives later as P1, from the PRD.
+export const SCAFFOLD_PROMPT = 'Node.js 22 ESM library named cart, no dependencies, tests with node --test. Scaffold ONLY the empty skeleton and one passing smoke test. Do not implement any shopping cart behaviour: that arrives later as its own change.'
+
 const must = (r, what) => {
   if (r.status !== 0) throw new Error(`${what} failed (exit ${r.status}): ${(r.stderr || r.stdout).trim().split('\n').slice(0, 3).join(' | ')}`)
   return r.stdout

@@ -6,7 +6,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && npm run typecheck:mod && claude plugin test .",
+    "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && npm run typecheck:mod && npm run test:e2e:unit && npm run test:e2e:fast && claude plugin test .",
     "typecheck": "tsc -p scripts/tsconfig.json",
     "typecheck:mod": "tsc -p tsconfig.json",
     "validate": "claude plugin validate .claude-plugin/plugin.json",

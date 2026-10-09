@@ -33,7 +33,7 @@ export const PHASE = {
 // Runs one change through the route and asserts it. `driver` is scripted or live.
 export async function runChange(sb, phase, driver, { operator = 'operator', first = false } = {}) {
   const slug = await driver.begin()
-  const route = await runRoute({ sb, slug, driver })
+  const route = await runRoute({ sb, slug, driver, repeats: driver.sessions ? 2 : 1, maxSteps: driver.sessions ? 14 : 10 })
   const c = new Checks(`${phase.id} ${phase.title}`)
   await assertChange(c, sb, slug, { operator, label: slug })
   await c.check(`${phase.id}: the operator resolved ${route.resolvedConcerns} policy concern(s) the design gate listed`, () => true)

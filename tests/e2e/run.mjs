@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createSandbox } from '../integration/lib/sandbox.mjs'
 import { writeReport } from './lib/report.mjs'
-import { install } from './phases/p0-install.mjs'
+import { install, SCAFFOLD_PROMPT } from './phases/p0-install.mjs'
 import { PHASE as P1, runChange } from './phases/p1-greenfield.mjs'
 import { scriptedDriver } from './driver/scripted.mjs'
 import { PHASE as P2 } from './phases/p2-change.mjs'
@@ -16,7 +16,6 @@ import { createSessions, liveDriver } from './driver/live.mjs'
 import { assertOnboarding } from '../integration/assert/onboarding.mjs'
 import { assertProcess } from '../integration/assert/process.mjs'
 import { Checks } from '../integration/lib/checks.mjs'
-import { SCAFFOLD } from '../integration/acceptance/cart.mjs'
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : d }
 const driverName = arg('driver', 'scripted')
@@ -46,7 +45,7 @@ try {
   if (live) {
     sb.git('commit', '-q', '--allow-empty', '-m', 'chore: empty start')
     sb.isolate()
-    sessions.run('P0-init', `/rig:init --defaults greenfield "${SCAFFOLD}"`, { withPlugin: true })
+    sessions.run('P0-init', `/rig:init --defaults greenfield "${SCAFFOLD_PROMPT}"`, { withPlugin: true })
     sb.commitAll('chore: onboarding leftovers')
     const p0 = new Checks('P0 install (live)')
     await assertOnboarding(p0, sb, { lane: 'greenfield' })

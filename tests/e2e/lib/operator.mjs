@@ -20,10 +20,10 @@ function resolveConcerns(sb, rel, operator) {
   return n
 }
 
-export async function runRoute({ sb, slug, driver, operator = 'operator', maxSteps = 10, expectGates }) {
+export async function runRoute({ sb, slug, driver, operator = 'operator', maxSteps = 10, repeats = 1, expectGates }) {
   const approved = []
   let resolvedConcerns = 0
-  const done = new Set()
+  const attempts = new Map()
   let steps = 0
   for (;;) {
     const s = json(sb, ['next', slug, '--json'])
@@ -51,9 +51,10 @@ export async function runRoute({ sb, slug, driver, operator = 'operator', maxSte
       continue
     }
     const key = `${s.node}:${s.round}`
-    if (done.has(key)) throw new Error(`${slug}: no progress at ${s.node} (round ${s.round})`)
+    // `repeats` is how many sessions one node may take before it counts as no progress (a live node can need a second one).
+    if ((attempts.get(key) ?? 0) >= repeats) throw new Error(`${slug}: no progress at ${s.node} (round ${s.round})`)
     if (++steps > maxSteps) throw new Error(`${slug}: more than ${maxSteps} steps`)
     await driver.step(s.node, { slug, round: s.round })
-    done.add(key)
+    attempts.set(key, (attempts.get(key) ?? 0) + 1)
   }
 }

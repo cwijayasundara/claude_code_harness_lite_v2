@@ -92,3 +92,13 @@ test('resolves policy concerns the approval refuses on, then approves and report
   assert.equal(out.resolvedConcerns, 2)
   assert.match(files['.sdlc/changes/s/design.md'], /Rule 3: sku not validated.*→ resolved: .*\(operator\)/)
 })
+
+test('repeats: a live node may take a second session before it counts as no progress', async () => {
+  let calls = 0
+  const sb = fakeSb({ next: () => (calls >= 2 ? nextOf(null, 'ready') : nextOf('build', 'continue')) })
+  const out = await runRoute({ sb, slug: 's', repeats: 2, driver: { step: async () => { calls++ } } })
+  assert.equal(out.steps, 2)
+  await assert.rejects(
+    runRoute({ sb: fakeSb({ next: seq([nextOf('build', 'continue')]) }), slug: 's', repeats: 2, driver: { step: async () => {} } }),
+    /no progress at build/)
+})

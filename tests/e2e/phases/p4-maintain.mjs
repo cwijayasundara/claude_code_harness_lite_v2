@@ -45,7 +45,7 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   out.push(i)
 
   const slug = await driver.begin()
-  const route = await runRoute({ sb, slug, driver })
+  const route = await runRoute({ sb, slug, driver, repeats: driver.sessions ? 2 : 1, maxSteps: driver.sessions ? 14 : 10 })
   const c = new Checks('P4 maintain: incident fix')
   // Known gap, pinned so a fix flips it: /rig-pr stages only .sdlc/changes/<slug> and a fixed list, never .sdlc/evals, so the
   // incident eval diagnose writes is left untracked after the ship. A person commits it onto the branch.

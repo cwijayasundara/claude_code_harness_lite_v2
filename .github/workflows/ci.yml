@@ -18,6 +18,21 @@ jobs:
       - run: npm ci || npm install
       - run: npm run typecheck
       - run: node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts
+  e2e-fast:
+    # The acceptance flow with a fake model ($0): proves the scripts, gates, hooks, deploy gate and maintain loop. The real-model run is `npm run test:e2e`, by a person.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+      - run: npm ci || npm install
+      - run: npm run test:e2e:unit
+      - run: npm run test:e2e:fast
   dogfood:
     if: false # off for now: the harness is not run on its own repo; to re-enable: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
