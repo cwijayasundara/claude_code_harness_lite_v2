@@ -11,8 +11,8 @@ const gte = (a: string, b: string): boolean => {
 }
 
 export function checkRig(root: string): { present: boolean; version: string | null; supported: boolean } {
-  // rig is present when .sdlc/ holds anything besides this plugin's own files (wiki/, wiki.json)
-  const own = new Set(['wiki', 'wiki.json'])
+  // rig is present when .sdlc/ holds anything besides this plugin's own files (wiki/, wiki.json, memory/, memory.json)
+  const own = new Set(['wiki', 'wiki.json', 'memory', 'memory.json'])
   const hasRig = (() => { try { return fs.readdirSync(path.join(root, '.sdlc')).some(e => !own.has(e)) } catch { return false } })()
   if (!hasRig) return { present: false, version: null, supported: true }
   let version: string | null = null

@@ -19,9 +19,10 @@ test('skills and agent have frontmatter with name and description; writer is pin
   assert.match(fm('agents/wiki-writer.md'), /^model: haiku$/m)
 })
 
-test('hooks.json wires only command hooks to wiki.ts', () => {
+test('hooks.json wires only command hooks to wiki.ts or memory.ts', () => {
   const h = JSON.parse(fs.readFileSync('hooks/hooks.json', 'utf8'))
   const cmds = Object.values<any>(h.hooks).flat().flatMap((e: any) => e.hooks.map((x: any) => x.command))
-  assert.ok(cmds.length >= 4)
-  for (const c of cmds) assert.match(c, /code_wiki\/wiki\.ts" hook /)
+  assert.ok(cmds.length >= 10)
+  for (const c of cmds) assert.match(c, /(code_wiki\/wiki|memory\/memory)\.ts" hook /)
+  assert.ok(Object.keys(h.hooks).includes('PostToolUseFailure'))
 })

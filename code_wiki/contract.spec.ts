@@ -27,3 +27,8 @@ test('no rig: supported; old rig: not supported', () => {
   // the wiki's own files under .sdlc/ do not make a repo a rig repo
   assert.deepEqual(checkRig(makeRepo({ '.sdlc/wiki/INDEX.md': '#', '.sdlc/wiki.json': '{}' })), { present: false, version: null, supported: true })
 })
+
+test('memory files alone do not count as rig', () => {
+  const dir = makeRepo({ '.sdlc/memory/MEMORY.md': '# Memory\n', '.sdlc/memory.json': '{}' }, { git: false })
+  assert.equal(checkRig(dir).present, false)
+})
