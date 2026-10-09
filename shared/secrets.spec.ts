@@ -45,3 +45,13 @@ test('redact masks URL credentials, Basic auth and Stripe keys', () => {
   assert.equal(redact('sk_live_abcdefghijklmnop1234'), '[REDACTED]')
   assert.equal(redact('sk_test_abcdefghijklmnop1234'), '[REDACTED]')
 })
+
+test('redact stays linear on long runs of key-like words', () => {
+  for (const s of ['token'.repeat(40000), 'password'.repeat(20000)]) {
+    const t = performance.now()
+    const out = redact(s)
+    const ms = performance.now() - t
+    assert.equal(out, s)
+    assert.ok(ms < 200, `redact took ${ms.toFixed(1)} ms`)
+  }
+})
