@@ -1,7 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
 import { loadMemConfig } from './config.ts'
 import { allEntries, findEntry, loadStore, newId, parseTopic, searchEntries, serializeTopic, similarity, type Store } from './store.ts'
 import { buildMemoryMd, MEMORY_HEADER } from './memorymd.ts'
@@ -84,4 +82,16 @@ test('buildMemoryMd lists topics with counts and recent entries, deterministic a
   for (let i = 0; i < 100; i++) s.get('gotchas.md')!.lines.push({ id: `m-${String(i).padStart(6, '0')}`, text: `t${i}`, source: 's', added: '2026-03-01' })
   assert.ok(buildMemoryMd(s).split('\n').length <= 61)
   assert.match(buildMemoryMd(loadStore(makeRepo({}, { git: false }))), /## Topics\n- \(none yet\)/)
+})
+
+test('buildMemoryMd orders topics by code-unit order, not locale collation', () => {
+  const s: Store = loadStore(makeRepo({}, { git: false }))
+  s.get('dead-ends.md')!.lines.push({ id: 'm-000010', text: 'a', source: 's', added: '2026-01-01' })
+  s.set('deadx.md', { file: 'deadx.md', description: 'x', lines: [{ id: 'm-000011', text: 'b', source: 's', added: '2026-01-01' }] })
+  const expected = buildMemoryMd(s)
+  assert.ok(expected.indexOf('[[dead-ends]]') < expected.indexOf('[[deadx]]'))
+  const original = String.prototype.localeCompare
+  // Reverse the locale collation; a locale-independent builder must produce the same output.
+  String.prototype.localeCompare = function (this: string, other: string) { return other < this ? -1 : other > this ? 1 : 0 }
+  try { assert.equal(buildMemoryMd(s), expected) } finally { String.prototype.localeCompare = original }
 })
