@@ -32,3 +32,12 @@ test('init skill: rig-util is opt-in, per project, and skipped under --defaults'
   assert.match(skill, /Never run `claude plugin install` and never write user settings/)
   assert.match(skill, /Skip:[^\n]*rig-util add-on/)
 })
+
+test('init skill: enabling rig-util seeds memory and the wiki rather than only registering the plugin', () => {
+  assert.match(skill, /memory\.ts\b[^\n]*|\$M seed --placeholders/)
+  assert.match(skill, /\$W index/)
+  assert.match(skill, /\$W apply/)
+  assert.match(skill, /Wiki, brownfield/)
+  assert.match(skill, /\*\*Greenfield:\*\* run only `\$W index`/)
+  assert.match(skill, /\.sdlc\/wiki\/` and `\.sdlc\/memory\/`/)
+})
