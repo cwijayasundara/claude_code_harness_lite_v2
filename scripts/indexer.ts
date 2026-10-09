@@ -22,7 +22,7 @@ const langOf = (f: string): FileInfo['lang'] =>
 function regexImports(lang: FileInfo['lang'], text: string): string[] {
   const out: string[] = []
   const grab = (re: RegExp) => { for (const m of text.matchAll(re)) out.push(m[1] ?? m[2]) }
-  if (lang === 'ts' || lang === 'js') grab(/(?:import|export)[^'"\n;]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]/g)
+  if (lang === 'ts' || lang === 'js') grab(/(?:import|export)\s[^'";]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]/g)
   else if (lang === 'py') grab(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))/gm)
   else if (lang === 'java') grab(/^\s*import\s+(?:static\s+)?([\w.]+?)(?:\.\*)?;/gm)
   else grab(/^\s*(?:import\s+)?"([^"]+)"\s*$/gm)
@@ -47,7 +47,7 @@ function extractTs(ts: Ts, file: string, text: string): { symbols: Sym[]; import
     const doc = docOf(st)
     if (ts.isFunctionDeclaration(st) && st.name) {
       const end = st.body ? st.body.getStart() : st.getEnd()
-      symbols.push({ name: st.name.text, kind: 'function', signature: text.slice(st.getStart(), end).trim().replace(/;$/, ''), doc })
+      symbols.push({ name: st.name.text, kind: 'function', signature: text.slice(st.getStart(), end).trim().replace(/;$/, '').replace(/\s+/g, ' '), doc })
     } else if (ts.isClassDeclaration(st) && st.name) symbols.push({ name: st.name.text, kind: 'class', signature: `export class ${st.name.text}`, doc })
     else if (ts.isInterfaceDeclaration(st)) symbols.push({ name: st.name.text, kind: 'interface', signature: `export interface ${st.name.text}`, doc })
     else if (ts.isTypeAliasDeclaration(st)) symbols.push({ name: st.name.text, kind: 'type', signature: `export type ${st.name.text}`, doc })
@@ -88,9 +88,10 @@ export function buildIndex(root: string, cfg: Config, opts: { noTypescript?: boo
     const lang = langOf(p)
     let symbols: Sym[] = [], imports: string[], structureOnly = true
     if (ts && (lang === 'ts' || lang === 'js')) {
-      const r = extractTs(ts, p, text)
-      imports = r.ok ? r.imports : regexImports(lang, text)
-      if (r.ok) { symbols = r.symbols; structureOnly = false }
+      let r: ReturnType<typeof extractTs> | null = null
+      try { r = extractTs(ts, p, text) } catch { /* unusable typescript build: fall back for this file */ }
+      imports = r?.ok ? r.imports : regexImports(lang, text)
+      if (r?.ok) { symbols = r.symbols; structureOnly = false }
     } else imports = regexImports(lang, text)
     files[p] = { path: p, module: moduleOf(p, cfg), hash: sha(text), lang, structureOnly, symbols, imports }
   }

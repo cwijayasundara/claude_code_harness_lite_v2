@@ -6,9 +6,9 @@ import { loadConfig } from './config.ts'
 import { buildIndex } from './indexer.ts'
 import { planRefresh } from './planner.ts'
 import { applyWiki } from './apply.ts'
-import { loadState } from './state.ts'
+import { ensureIgnore, loadState } from './state.ts'
 import { findIn } from './find.ts'
-import { markStale, promptContext } from './mark.ts'
+import { markStaleMany, promptContext } from './mark.ts'
 import { checkRig, MIN_RIG } from './rigcontract.ts'
 
 const args = process.argv.slice(2)
@@ -20,13 +20,18 @@ function readStdin(): Record<string, any> {
   try { return JSON.parse(fs.readFileSync(0, 'utf8')) } catch { return {} }
 }
 
+function repoRoot(dir: string): string {
+  const t = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8', timeout: 5_000 })
+  return t.status === 0 && t.stdout.trim() ? t.stdout.trim() : dir
+}
+
 function hook(event: string): void {
   const input = readStdin()
-  const r = typeof input.cwd === 'string' ? input.cwd : root
-  if (event === 'post-edit') markStale(r, String(input.tool_input?.file_path ?? ''))
+  const r = repoRoot(typeof input.cwd === 'string' ? input.cwd : root)
+  if (event === 'post-edit') markStaleMany(r, [String(input.tool_input?.file_path ?? '')])
   else if (event === 'stop') {
-    const d = spawnSync('git', ['diff', '--name-only', 'HEAD'], { cwd: r, encoding: 'utf8' })
-    if (d.status === 0) for (const f of d.stdout.split('\n').filter(Boolean)) markStale(r, f)
+    const d = spawnSync('git', ['diff', '--name-only', 'HEAD'], { cwd: r, encoding: 'utf8', timeout: 10_000 })
+    if (d.status === 0) markStaleMany(r, d.stdout.split('\n').filter(Boolean).map(f => path.join(r, f)))
   } else if (event === 'session-start') {
     if (fs.existsSync(path.join(r, WIKI_DIR, 'INDEX.md'))) console.log('A code wiki exists: read .sdlc/wiki/INDEX.md first to locate files and features, then verify in code.')
   } else if (event === 'prompt-submit') {
@@ -38,7 +43,7 @@ function hook(event: string): void {
 try {
   const cfg = loadConfig(root)
   if (cmd === 'hook') hook(rest[0])
-  else if (cmd === 'index') { const idx = buildIndex(root, cfg); writeJson(path.join(root, WIKI_DIR, '.cache/index.json'), idx); console.log(`${Object.keys(idx.modules).length} modules`) }
+  else if (cmd === 'index') { ensureIgnore(root); const idx = buildIndex(root, cfg); writeJson(path.join(root, WIKI_DIR, '.cache/index.json'), idx); console.log(`${Object.keys(idx.modules).length} modules`) }
   else if (cmd === 'plan') {
     const plan = planRefresh(buildIndex(root, cfg), loadState(root), cfg)
     console.log(rest.includes('--json') ? JSON.stringify(plan, null, 2) : `prose: ${plan.prose.map(t => t.module).join(', ') || '-'}\npending: ${plan.pending.map(t => t.module).join(', ') || '-'}\narchitecture: ${plan.architecture}`)

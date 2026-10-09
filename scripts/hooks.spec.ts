@@ -29,6 +29,7 @@ test('apply writes INDEX.md with the purpose', () => {
 
 test('markStale flags the page; unknown file and outside-root paths are safe', () => {
   const dir = built()
+  fs.writeFileSync(path.join(dir, 'src/a/x.ts'), 'export const x = 2\n')
   assert.equal(markStale(dir, 'src/a/x.ts'), true)
   assert.equal(loadState(dir).modules.a.status, 'stale')
   assert.equal(markStale(dir, '/etc/passwd'), false)
@@ -50,6 +51,7 @@ test('hook CLI never fails on garbage input and post-edit marks stale', () => {
     const r = run(dir, ['hook', ev], 'not json {{{')
     assert.equal(r.status, 0)
   }
+  fs.writeFileSync(path.join(dir, 'src/a/x.ts'), 'export const x = 3\n')
   run(dir, ['hook', 'post-edit'], JSON.stringify({ tool_input: { file_path: path.join(dir, 'src/a/x.ts') }, cwd: dir }))
   assert.equal(loadState(dir).modules.a.status, 'stale')
   assert.match(run(dir, ['hook', 'session-start'], '{}').stdout, /\.sdlc\/wiki\/INDEX\.md/)
@@ -63,6 +65,7 @@ test('CLI find and status work', () => {
 
 test('markStale accepts a file path that reaches the repo through a symlink', () => {
   const dir = built()
+  fs.writeFileSync(path.join(dir, 'src/a/x.ts'), 'export const x = 4\n')
   const link = `${dir}-link`
   fs.symlinkSync(dir, link)
   assert.equal(markStale(fs.realpathSync(dir), path.join(link, 'src/a/x.ts')), true)

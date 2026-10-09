@@ -31,9 +31,9 @@ export function composePage(a: { mod: ModuleInfo; idx: Index; prose: Prose | nul
     ? ['| Symbol | Kind | Signature |', '|---|---|---|', ...syms.map(s => `| ${s.name} | ${s.kind} | ${s.signature.replace(/\|/g, '\\|')} |`)].join('\n')
     : '_No exported symbols extracted._'
   const list = (xs: string[]) => (xs.length ? xs.map(link).join('\n') : '_none_')
-  const whyLines = a.why.length ? a.why.map(w => `- [${w.slug}](../../changes/${w.slug}/intent.md): ${w.intent}`).join('\n') : '_No rig changes recorded._'
+  const whyLines = a.why.length ? a.why.map(w => (w.linked ? `- [${w.slug}](../../changes/${w.slug}/intent.md): ${w.intent}` : `- ${w.slug}: ${w.intent}`)).join('\n') : '_No rig changes recorded._'
   const kept = old ? keepBlocks(old) : []
-  return [
+  const body = [
     '---', `module: ${mod.name}`, `files: [${mod.files.join(', ')}]`, `hash: ${mod.hash}`, `generated: ${a.generated}`,
     `status: ${mod.structureOnly ? 'structure-only' : a.stale ? 'stale' : 'fresh'}`, `changes: [${a.why.map(w => w.slug).join(', ')}]`, '---',
     `# ${mod.name}`, '',
@@ -44,6 +44,7 @@ export function composePage(a: { mod: ModuleInfo; idx: Index; prose: Prose | nul
     '## Used by', list(mod.usedBy), '',
     '## How it works', block('how', mermaid ? `${how}\n\n\`\`\`mermaid\n${mermaid}\n\`\`\`` : how), '',
     '## Why it is this way', whyLines, '',
-    ...(kept.length ? [kept.join('\n\n'), ''] : []),
   ].join('\n')
+  const extra = kept.filter(k => !body.includes(k))   // a keep block inside a prose block is already in the page
+  return extra.length ? `${body}${extra.join('\n\n')}\n` : body
 }

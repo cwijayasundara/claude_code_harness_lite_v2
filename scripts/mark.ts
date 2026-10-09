@@ -1,24 +1,37 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { WIKI_DIR } from './core.ts'
+import { WIKI_DIR, sha } from './core.ts'
 import { loadConfig } from './config.ts'
+import { isSource } from './files.ts'
 import { moduleOf } from './modules.ts'
 import { loadState, saveState, statePath } from './state.ts'
 
-export function markStale(root: string, file: string): boolean {
+const real = (p: string): string => { try { return fs.realpathSync(p) } catch { return p } }
+
+// Marks a module's page stale only when a source file differs from what the last refresh saw.
+// Loads config and state once for the whole batch. Returns how many files differed.
+export function markStaleMany(root: string, files: string[]): number {
   try {
-    const real = (p: string): string => { try { return fs.realpathSync(p) } catch { return p } }
-    const rel = path.isAbsolute(file) ? path.relative(real(root), real(file)) : file
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.startsWith(`${WIKI_DIR}/`)) return false
-    if (!fs.existsSync(statePath(root))) return false
-    const state = loadState(root)
-    const m = moduleOf(rel.split(path.sep).join('/'), loadConfig(root))
-    const s = state.modules[m]
-    if (!s) return false
-    if (s.status !== 'stale') { s.status = 'stale'; saveState(root, state) }
-    return true
-  } catch { return false }
+    if (!fs.existsSync(statePath(root))) return 0
+    const cfg = loadConfig(root), state = loadState(root), base = real(root)
+    let differed = 0, changed = false
+    for (const file of files) {
+      const rel = (path.isAbsolute(file) ? path.relative(base, real(file)) : file).split(path.sep).join('/')
+      if (!rel || rel === '..' || rel.startsWith('../') || path.isAbsolute(rel) || !isSource(rel, cfg)) continue
+      const s = state.modules[moduleOf(rel, cfg)]
+      if (!s) continue
+      let cur: string | null = null
+      try { cur = sha(fs.readFileSync(path.join(base, rel), 'utf8')) } catch { /* deleted */ }
+      if (cur !== null && s.fileHashes?.[rel] === cur) continue
+      differed++
+      if (s.status !== 'stale') { s.status = 'stale'; changed = true }
+    }
+    if (changed) saveState(root, state)
+    return differed
+  } catch { return 0 }
 }
+
+export const markStale = (root: string, file: string): boolean => markStaleMany(root, [file]) > 0
 
 export function promptContext(root: string, session: string): string {
   try {

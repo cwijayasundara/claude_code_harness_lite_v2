@@ -41,7 +41,7 @@ test('missing prose keeps the old page and reports pending; nothing half-written
   const { dir, cfg } = setup()
   writeProse(dir, 'auth', { purpose: 'P', how: 'H' }); writeProse(dir, 'util', { purpose: 'P', how: 'H' })
   applyWiki(dir, cfg, buildIndex(dir, cfg))
-  fs.rmSync(path.join(dir, '.sdlc/wiki/.cache/prose'), { recursive: true })
+  fs.rmSync(path.join(dir, '.sdlc/wiki/.cache/prose'), { recursive: true, force: true })
   fs.writeFileSync(path.join(dir, 'src/util/h.ts'), 'export const h = 2\n')
   const r = applyWiki(dir, cfg, buildIndex(dir, cfg))
   assert.match(page(dir, 'util'), /status: stale/)
@@ -77,7 +77,7 @@ test('unsafe prose cannot break out: a bad mermaid block fails validation and th
   fs.writeFileSync(path.join(dir, 'src/util/h.ts'), 'export const h = 9\n')
   writeProse(dir, 'util', { purpose: 'NEW', how: 'H', mermaid: 'not a diagram' })
   const r = applyWiki(dir, cfg, buildIndex(dir, cfg))
-  assert.ok(r.problems.util.some(p => /mermaid/.test(p)))
+  assert.ok(r.problems.util.some(p => /prose/.test(p)))
   assert.doesNotMatch(page(dir, 'util'), /NEW/)
 })
 

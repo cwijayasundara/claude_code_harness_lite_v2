@@ -13,7 +13,7 @@ export function buildIndexMd(idx: Index, state: State, purposeOf: (module: strin
     const m = mods[i]
     const stale = state.modules[m.name]?.status === 'stale' ? ' (stale)' : ''
     const syms = m.files.flatMap(f => idx.files[f].symbols.map(s => s.name)).slice(0, 5).join(', ')
-    const line = `- **${m.name}**${stale} — ${purposeOf(m.name).split('. ')[0].slice(0, 120)} · files: ${m.files.slice(0, 3).map(f => f.split('/').pop()).join(', ')}${syms ? ` · symbols: ${syms}` : ''}`
+    const line = `- **${m.name}**${stale} — ${purposeOf(m.name).replace(/\s+/g, ' ').trim().split('. ')[0].slice(0, 120)} · files: ${m.files.slice(0, 3).map(f => f.split('/').pop()).join(', ')}${syms ? ` · symbols: ${syms}` : ''}`
     if (used + line.length + 1 > CAP - 600) break
     lines.push(line); used += line.length + 1
   }
