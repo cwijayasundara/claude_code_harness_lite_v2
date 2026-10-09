@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { loadConfig } from './config.ts'
 import { listFiles } from './files.ts'
 import { moduleOf } from './modules.ts'
-import { makeRepo } from './testkit.ts'
+import { makeRepo } from '../shared/testkit.ts'
 
 const cfg = loadConfig(makeRepo({}, { git: false }))
 

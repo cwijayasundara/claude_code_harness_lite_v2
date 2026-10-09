@@ -39,3 +39,4 @@ Glob/Grep calls on at least 4 of 5 without lowering correctness, remove the `Use
 
 ## Develop
 `npm test` (no model calls). `npm run test:e2e` runs the real pipeline and needs `claude` and a key.
+Layout: code_wiki/ (wiki), memory/ (lessons), shared/ (helpers both use).

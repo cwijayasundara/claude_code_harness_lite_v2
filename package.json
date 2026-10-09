@@ -4,7 +4,7 @@
   "type": "module",
   "engines": { "node": ">=22.18" },
   "scripts": {
-    "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && npm run typecheck && claude plugin validate .claude-plugin/plugin.json",
+    "test": "node --disable-warning=ExperimentalWarning --test 'code_wiki/*.spec.ts' 'tests/*.spec.ts' && npm run typecheck && claude plugin validate .claude-plugin/plugin.json",
     "typecheck": "tsc -p tsconfig.json",
     "test:e2e": "node --disable-warning=ExperimentalWarning tests/e2e/run.ts"
   },

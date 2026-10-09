@@ -8,7 +8,7 @@ import { applyWiki } from './apply.ts'
 import { buildIndex } from './indexer.ts'
 import { loadConfig } from './config.ts'
 import { loadState } from './state.ts'
-import { makeRepo } from './testkit.ts'
+import { makeRepo } from '../shared/testkit.ts'
 
 const built = () => {
   const dir = makeRepo({ 'src/a/x.ts': 'export const x = 1\n' })
@@ -18,7 +18,7 @@ const built = () => {
   applyWiki(dir, cfg, buildIndex(dir, cfg))
   return dir
 }
-const wiki = path.resolve('scripts/wiki.ts')
+const wiki = path.resolve('code_wiki/wiki.ts')
 const run = (dir: string, args: string[], input = '') =>
   spawnSync('node', ['--disable-warning=ExperimentalWarning', wiki, ...args], { cwd: dir, input, encoding: 'utf8' })
 

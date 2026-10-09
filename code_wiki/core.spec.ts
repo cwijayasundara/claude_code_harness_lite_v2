@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { sha, safeName, readJson, writeJson } from './core.ts'
-import { makeRepo } from './testkit.ts'
+import { makeRepo } from '../shared/testkit.ts'
 
 test('sha is stable and 16 chars', () => {
   assert.equal(sha('a'), sha('a'))

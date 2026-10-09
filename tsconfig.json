@@ -4,5 +4,5 @@
     "noEmit": true, "allowImportingTsExtensions": true, "erasableSyntaxOnly": true,
     "skipLibCheck": true, "types": ["node"]
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["code_wiki/**/*.ts", "shared/**/*.ts", "memory/**/*.ts", "tests/*.ts"]
 }

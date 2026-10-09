@@ -3,10 +3,10 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { type Config, globToRegExp } from './config.ts'
 import { WIKI_DIR } from './core.ts'
+import { SECRET_PATH } from '../shared/secrets.ts'
 
 const SOURCE = /\.(tsx?|jsx?|mjs|cjs|py|go|java)$/
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next', '__pycache__', '.venv', 'vendor'])
-const SECRET = /(^|\/)(\.env[^/]*|[^/]*\.pem|[^/]*\.key|id_rsa[^/]*)$/
 
 function gitFiles(root: string): string[] | null {
   const r = spawnSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -37,7 +37,7 @@ function gitignoreRes(root: string): RegExp[] {
 }
 
 export function isSource(rel: string, cfg: Config): boolean {
-  return SOURCE.test(rel) && !SECRET.test(rel) && !rel.startsWith(`${WIKI_DIR}/`)
+  return SOURCE.test(rel) && !SECRET_PATH.test(rel) && !rel.startsWith(`${WIKI_DIR}/`)
     && !rel.split('/').some(s => SKIP_DIR.has(s)) && !cfg.ignore.some(g => globToRegExp(g).test(rel))
 }
 

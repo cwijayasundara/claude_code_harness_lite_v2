@@ -23,5 +23,5 @@ test('hooks.json wires only command hooks to wiki.ts', () => {
   const h = JSON.parse(fs.readFileSync('hooks/hooks.json', 'utf8'))
   const cmds = Object.values<any>(h.hooks).flat().flatMap((e: any) => e.hooks.map((x: any) => x.command))
   assert.ok(cmds.length >= 4)
-  for (const c of cmds) assert.match(c, /scripts\/wiki\.ts" hook /)
+  for (const c of cmds) assert.match(c, /code_wiki\/wiki\.ts" hook /)
 })

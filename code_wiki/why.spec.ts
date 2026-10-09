@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { changesFor } from './why.ts'
-import { makeRepo, commitAll } from './testkit.ts'
+import { makeRepo, commitAll } from '../shared/testkit.ts'
 
 test('links a module file to the change whose commits touched it', () => {
   const dir = makeRepo({ 'src/a/x.ts': 'export const x = 1', 'src/b/y.ts': 'export const y = 1' })

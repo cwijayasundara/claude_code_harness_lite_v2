@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { checkRig } from './rigcontract.ts'
+import { checkRig } from '../shared/rigcontract.ts'
 import { loadConfig } from './config.ts'
-import { makeRepo } from './testkit.ts'
+import { makeRepo } from '../shared/testkit.ts'
 
 const copyFixture = (name: string): string => {
   const dir = makeRepo({ 'src/a/x.ts': 'export const x = 1\n' })

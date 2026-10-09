@@ -6,7 +6,7 @@ import { applyWiki } from './apply.ts'
 import { buildIndex } from './indexer.ts'
 import { loadConfig } from './config.ts'
 import { loadState } from './state.ts'
-import { makeRepo } from './testkit.ts'
+import { makeRepo } from '../shared/testkit.ts'
 
 const setup = () => {
   const dir = makeRepo({

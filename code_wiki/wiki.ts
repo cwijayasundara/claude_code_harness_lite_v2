@@ -9,7 +9,8 @@ import { applyWiki } from './apply.ts'
 import { ensureIgnore, loadState } from './state.ts'
 import { findIn } from './find.ts'
 import { markStaleMany, promptContext } from './mark.ts'
-import { checkRig, MIN_RIG } from './rigcontract.ts'
+import { checkRig, MIN_RIG } from '../shared/rigcontract.ts'
+import { repoRoot } from '../shared/git.ts'
 
 const args = process.argv.slice(2)
 const ri = args.indexOf('--root')
@@ -18,11 +19,6 @@ const [cmd, ...rest] = args
 
 function readStdin(): Record<string, any> {
   try { return JSON.parse(fs.readFileSync(0, 'utf8')) } catch { return {} }
-}
-
-function repoRoot(dir: string): string {
-  const t = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8', timeout: 5_000 })
-  return t.status === 0 && t.stdout.trim() ? t.stdout.trim() : dir
 }
 
 function hook(event: string): void {

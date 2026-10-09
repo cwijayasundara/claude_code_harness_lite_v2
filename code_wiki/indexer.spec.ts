@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildIndex } from './indexer.ts'
 import { loadConfig } from './config.ts'
-import { makeRepo } from './testkit.ts'
+import { makeRepo } from '../shared/testkit.ts'
 
 const repo = () => makeRepo({
   'src/auth/login.ts': '/** Log a user in. */\nexport function login(user: string, pw: string): boolean { return true }\nexport class Session {}\nexport const TTL = 5\nexport type Id = string\nimport { hash } from "../util/hash.js"\n',

@@ -10,7 +10,7 @@ import { loadState } from './state.ts'
 import { markStale } from './mark.ts'
 import { buildIndexMd } from './indexmd.ts'
 import { listFiles } from './files.ts'
-import { makeRepo, commitAll } from './testkit.ts'
+import { makeRepo, commitAll } from '../shared/testkit.ts'
 
 const setup = (extra: Record<string, string> = {}) => {
   const dir = makeRepo({
@@ -70,7 +70,7 @@ test('hook CLI resolves the repo root from a subdirectory cwd', () => {
   const { dir } = setup(); both(dir); run(dir)
   fs.writeFileSync(path.join(dir, 'src/util/h.ts'), 'export const h = 7\n')
   const sub = path.join(dir, 'src/util')
-  spawnSync('node', ['--disable-warning=ExperimentalWarning', path.resolve('scripts/wiki.ts'), 'hook', 'post-edit'],
+  spawnSync('node', ['--disable-warning=ExperimentalWarning', path.resolve('code_wiki/wiki.ts'), 'hook', 'post-edit'],
     { cwd: sub, input: JSON.stringify({ cwd: sub, tool_input: { file_path: path.join(sub, 'h.ts') } }), encoding: 'utf8' })
   assert.equal(loadState(dir).modules.util.status, 'stale')
 })
