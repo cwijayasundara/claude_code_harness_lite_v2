@@ -21,3 +21,8 @@ test('init skill: the sensors.json shape it shows for fast and full is accepted 
 test('init skill: never says fast/full are plain command strings', () => {
   assert.doesNotMatch(skill, /`fast`\/`full` command strings/)
 })
+
+test('init skill: a Node scaffold uses `node --test` with no directory argument (Node 24 treats `test/` as a module path)', () => {
+  assert.match(skill, /`node --test`[^.]*no directory argument/)
+  assert.doesNotMatch(skill, /node --test test\//)
+})

@@ -39,7 +39,7 @@ End with a table of every answer taken and every item skipped, and how to do eac
 
 ## Greenfield
 1. Ask up to three questions with AskUserQuestion: stack, deployment target, and test framework (recommend defaults).
-2. Scaffold the smallest walking skeleton that builds, plus one passing smoke test, a lint config, and a `Makefile` or package scripts with `test`, `test-fast` and `lint` targets.
+2. Scaffold the smallest walking skeleton that builds, plus one passing smoke test, a lint config, and a `Makefile` or package scripts with `test`, `test-fast` and `lint` targets. For Node, the test script is `node --test` with no directory argument: Node 24 reads `test/` as a module path and fails with `MODULE_NOT_FOUND` before any test runs, which also stops the red-proof gate on the base commit.
 3. Write `CLAUDE.md` as above, then `git init` if needed.
 
 ## Both
