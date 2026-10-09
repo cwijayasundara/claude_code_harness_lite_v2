@@ -9,8 +9,9 @@ import { PHASE as P1, runChange } from './phases/p1-greenfield.mjs'
 import { scriptedDriver } from './driver/scripted.mjs'
 import { PHASE as P2 } from './phases/p2-change.mjs'
 import { runDeploy } from './phases/p3-deploy.mjs'
+import { runMaintain, PHASE as P4 } from './phases/p4-maintain.mjs'
 import { mergeToMain } from './lib/merge.mjs'
-import { runNegatives, runStaleTwin, runDeployNegatives } from './negative.mjs'
+import { runNegatives, runStaleTwin, runDeployNegatives, runMaintainNegatives } from './negative.mjs'
 import { createSessions, liveDriver } from './driver/live.mjs'
 import { assertOnboarding } from '../integration/assert/onboarding.mjs'
 import { assertProcess } from '../integration/assert/process.mjs'
@@ -29,6 +30,10 @@ const driverFor = phase => (live ? liveDriver(sb, phase, { sessions }) : scripte
 const results = []
 // A phase runs when it is the requested one or a prerequisite of it (P2 needs P1).
 const NEEDS = { P2: ['P1'], P4: ['P1', 'P2'] }
+const ensureMain = () => {
+  const b = sb.git('rev-parse', '--abbrev-ref', 'HEAD')
+  if (b !== 'main') mergeToMain(sb, b.replace(/^sdlc\//, ''))
+}
 const want = id => !only || only === id || (NEEDS[only] ?? []).includes(id)
 const finish = () => {
   writeReport(out, results)
@@ -70,10 +75,20 @@ try {
     }
   }
   if (want('P3')) {
-    if (sb.git('rev-parse', '--abbrev-ref', 'HEAD') !== 'main') mergeToMain(sb, sb.git('rev-parse', '--abbrev-ref', 'HEAD').replace(/^sdlc\//, ''))
+    ensureMain()
     results.push(await runDeploy(sb))
     if (!live) {
       const bad = await runDeployNegatives(sb)
+      for (const b of bad) console.error(`twin surprise: ${b}`)
+      if (bad.length) process.exitCode = 1
+    }
+  }
+  if (want('P4')) {
+    ensureMain()
+    const r = await runMaintain(sb, driverFor(P4))
+    results.push(...r.checks)
+    if (!live) {
+      const bad = await runMaintainNegatives(out)
       for (const b of bad) console.error(`twin surprise: ${b}`)
       if (bad.length) process.exitCode = 1
     }

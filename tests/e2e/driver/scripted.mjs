@@ -33,6 +33,27 @@ export function scriptedDriver(sb, phase) {
           must(sb.sdlc(['run', '--slug', slug, '--', 'npm test']), 'green run')
           must(sb.sdlc(['ratchet', 'record', slug, 'build', '--slice', '1', '--checks']), 'record slice 1')
           break
+        case 'diagnose': {
+          // The skill's steps: note HEAD, red test, fix, plan.md (Files + Verification), incident eval, verify.
+          const base = sb.git('rev-parse', 'HEAD')
+          copy(sb, phase.tests)
+          must(sb.sdlc(['run', '--slug', slug, '--expect-fail', '--', 'npm test']), 'red run')
+          copy(sb, phase.impl)
+          must(sb.sdlc(['run', '--slug', slug, '--', 'npm test']), 'green run')
+          const evalPath = phase.incident ? `.sdlc/evals/incident-${phase.incident.date}-${phase.incident.class}.json` : null
+          sb.write(`${dir}/plan.md`, ['## Files', ...phase.tests.concat(phase.impl).map(f => `- ${f.dest}`), ...(evalPath ? [`- ${evalPath}`] : []), '', '## Verification', '- npm test', ''].join('\n'))
+          if (phase.incident) {
+            const test = phase.tests[0].dest
+            sb.write(evalPath, JSON.stringify({
+              prompt: phase.incident.symptoms, base, files: [test],
+              checks: [{ kind: 'command', cmd: `node --test ${test}` }],
+              allowedTools: `Read,Grep,Glob,Edit,Write,Bash(node --test ${test})`, source: `incident:${phase.incident.file}`,
+            }, null, 2) + '\n')
+          }
+          must(sb.sdlc(['verify', slug]), 'verify')
+          break
+        }
+        case 'plan': sb.write(`${dir}/plan.md`, phase.design); break
         case 'test': must(sb.sdlc(['verify', slug]), 'verify'); break
         case 'sensors': must(sb.sdlc(['quality', slug]), 'quality'); break
         case 'pr': must(sb.sdlc(['pr', slug, '--message', phase.commit]), 'pr'); break

@@ -55,3 +55,20 @@ export async function runDeployNegatives(sb) {
   bad.push(...surprises(g, [/parses as YAML with jobs/]))
   return bad
 }
+
+// A series with no spike must not raise a breach; an incident file missing its class must be refused.
+export async function runMaintainNegatives(out) {
+  const { createSandbox } = await import('../integration/lib/sandbox.mjs')
+  const { assertWatch, assertIncident } = await import('./assert/maintain.mjs')
+  const bad = []
+  const sb = createSandbox({ name: 'twin-watch', out })
+  sb.write('.sdlc/sensors.json', '{}\n')
+  const w = new Checks('twin: no spike in the series')
+  await assertWatch(w, sb, { spike: 10 })
+  bad.push(...surprises(w, [/a point far beyond 3 sigma is tier 3/]))
+  sb.write('.sdlc/incidents/x.md', '---\nseverity: sev3\nescaped: true\ndetected: now\nrestored:\n---\nbody\n')
+  const i = new Checks('twin: incident without a class')
+  await assertIncident(i, sb, '.sdlc/incidents/x.md')
+  bad.push(...surprises(i, [/has class, severity, escaped, detected/]))
+  return bad
+}
