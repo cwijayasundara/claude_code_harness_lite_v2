@@ -37,11 +37,12 @@ Off by default. Turn it on per repo with `.sdlc/memory.json`: `{ "enabled": true
 - When Claude stops and at least `minSignals` (3) are pending, at most every `cooldownMin` (30) minutes and
   `maxDreamsPerDay` (6) times a day, a background process makes one tool-less `claude -p` call (model `haiku`) that
   proposes one-line lessons. A deterministic step validates them and writes `.sdlc/memory/*.md` and `MEMORY.md`.
-  The dream call runs with `--tools ""`, `--strict-mcp-config` and `--disable-slash-commands`: the model gets no
-  built-in tools, no MCP servers and no skills. Everything sent to it is redacted.
+  The dream call runs with `--tools ""`, `--strict-mcp-config`, `--disable-slash-commands` and `--safe-mode`: the
+  model gets no built-in tools, no MCP servers, no skills, and no CLAUDE.md, plugins or hooks either. Everything sent to it is redacted.
 - Nothing is committed for you: review with `git diff .sdlc/memory` and commit with your work. Session start says
   when memory changed.
-- `MEMORY.md` is injected at session start as context. `/rig-util:memory-find <terms>`, `/rig-util:memory-forget <id>`,
+- The committed `MEMORY.md` (`git show HEAD`) is injected at session start as context; unreviewed working-tree
+  changes are not loaded until committed (outside git, the working-tree file is used). `/rig-util:memory-find <terms>`, `/rig-util:memory-forget <id>`,
   `/rig-util:memory-dream` (run now). `node memory/memory.ts status` shows pending signals and the last dream; the
   dream log is `.sdlc/memory/.cache/log`, rejected proposals `.cache/rejected.jsonl`.
 - Config keys: `enabled`, `minSignals`, `cooldownMin`, `maxDreamsPerDay`, `model`, `maxFiles` (12),

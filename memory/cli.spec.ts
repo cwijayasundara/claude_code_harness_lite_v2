@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { readSignals } from './capture.ts'
-import { makeRepo } from '../shared/testkit.ts'
+import { commitAll, makeRepo } from '../shared/testkit.ts'
 
 const cli = path.resolve('memory/memory.ts')
 const run = (dir: string, args: string[], input = '', env: Record<string, string> = {}) =>
@@ -46,12 +46,30 @@ test('session-start prints memory; find, forget and status work', () => {
   fs.mkdirSync(path.join(dir, '.sdlc/memory'), { recursive: true })
   fs.writeFileSync(path.join(dir, '.sdlc/memory/commands.md'), md)
   fs.writeFileSync(path.join(dir, '.sdlc/memory/MEMORY.md'), '# Memory\n')
+  assert.doesNotMatch(run(dir, ['hook', 'session-start'], JSON.stringify({ cwd: dir })).stdout, /Memory from past sessions/)
+  commitAll(dir, 'mem')
   assert.match(run(dir, ['hook', 'session-start'], JSON.stringify({ cwd: dir })).stdout, /Memory from past sessions[\s\S]*# Memory/)
   assert.equal(run(dir, ['find', 'NPM']).stdout, 'm-abc123 commands.md use npm test\n')
   assert.equal(run(dir, ['find', 'zzz']).stdout, 'no matches\n')
   assert.match(run(dir, ['status']).stdout, /enabled: true\nentries: 1\npending signals: 0\nlast dream: never/)
   assert.equal(run(dir, ['forget', 'm-abc123']).stdout, 'removed m-abc123\n')
   assert.equal(run(dir, ['forget', 'm-abc123']).stdout, 'not found: m-abc123\n')
+})
+
+test('forget without an id prints usage; non-hook commands target the repo root from a subdirectory', () => {
+  const dir = on()
+  assert.equal(run(dir, ['forget']).stdout, 'usage: memory.ts forget <id>\n')
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
+  assert.match(run(path.join(dir, 'src'), ['status']).stdout, /enabled: true/)
+  assert.match(run(dir, ['status', '--root']).stdout, /enabled: true/)
+})
+
+test('a failing hook stays silent but is logged', () => {
+  const dir = on()
+  fs.mkdirSync(path.join(dir, '.sdlc/memory/.cache/signals.jsonl'), { recursive: true })
+  const r = run(dir, ['hook', 'post-bash'], failing(dir))
+  assert.equal(r.status, 0); assert.equal(r.stdout, ''); assert.equal(r.stderr, '')
+  assert.match(fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/log'), 'utf8'), /hook post-bash failed: /)
 })
 
 test('dream rejects unsafe batch ids', () => {

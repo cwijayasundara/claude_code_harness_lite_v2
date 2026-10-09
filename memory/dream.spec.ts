@@ -95,7 +95,7 @@ test('claudeArgs makes the dream call tool-less, free of MCP servers and slash c
   const at = (f: string) => a[a.indexOf(f) + 1]
   assert.equal(at('--model'), 'haiku')
   assert.equal(at('--tools'), '')
-  for (const f of ['-p', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence']) assert.ok(a.includes(f), f)
+  for (const f of ['-p', '--strict-mcp-config', '--disable-slash-commands', '--safe-mode', '--no-session-persistence']) assert.ok(a.includes(f), f)
   assert.equal(at('--system-prompt-file'), PROMPT_FILE)
   assert.equal(at('--max-turns'), '1')
 })

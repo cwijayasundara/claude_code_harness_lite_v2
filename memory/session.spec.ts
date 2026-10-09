@@ -21,8 +21,20 @@ test('memoryChanges counts uncommitted entry lines, including new untracked file
   applyOps(dir, cfg, [{ op: 'add', file: 'commands.md', text: 'use npm test', source: 's' }], '2026-10-09')
   commitAll(dir, 'mem')
   applyOps(dir, cfg, [{ op: 'add', file: 'commands.md', text: 'build with make all', source: 's' }, { op: 'add', file: 'gotchas.md', text: 'port 5433 for db', source: 's' }], '2026-10-09')
-  assert.equal(memoryChanges(dir), 'memory updated since last commit: +2 -0 (review with: git diff .sdlc/memory)')
+  assert.equal(memoryChanges(dir), 'memory updated since last commit: +2 -0 (unreviewed; not loaded until committed; review with: git diff .sdlc/memory)')
   assert.match(sessionContext(dir), /memory updated since last commit: \+2 -0/)
+})
+
+test('only the committed MEMORY.md is injected; an uncommitted new entry is not', () => {
+  const dir = makeRepo({})
+  const cfg = loadMemConfig(dir)
+  applyOps(dir, cfg, [{ op: 'add', file: 'commands.md', text: 'use npm test', source: 's' }], '2026-10-09')
+  assert.equal(sessionContext(dir).includes('use npm test'), false)
+  commitAll(dir, 'mem')
+  assert.match(sessionContext(dir), /use npm test/)
+  applyOps(dir, cfg, [{ op: 'add', file: 'gotchas.md', text: 'port 5433 for db', source: 's' }], '2026-10-09')
+  const c = sessionContext(dir)
+  assert.match(c, /use npm test/); assert.doesNotMatch(c, /port 5433/); assert.match(c, /unreviewed; not loaded until committed/)
 })
 
 test('memoryChanges is null without commits or outside git', () => {

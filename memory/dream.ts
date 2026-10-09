@@ -6,15 +6,15 @@ import { type MemConfig, cacheDir } from './config.ts'
 import { markDreamed } from './capture.ts'
 import { buildDreamInput } from './input.ts'
 import { applyOps } from './apply.ts'
-import { type Batch, acquireLock, batchPath, recordDream, releaseLock, snapshotBatch } from './trigger.ts'
+import { type Batch, acquireLock, batchPath, readLock, recordDream, releaseLock, snapshotBatch } from './trigger.ts'
 
 export type Runner = (input: string, model: string, root: string) => { ok: boolean; out: string; err: string }
 export const PROMPT_FILE = path.join(import.meta.dirname, 'dreamer.md')
 
 // Flags that keep the dream call tool-less: no built-in tools, no MCP servers from user or
-// project config, no slash commands, no session saved, a single turn.
+// project config, no slash commands, no CLAUDE.md/plugins/hooks (--safe-mode), no session saved, a single turn.
 export const claudeArgs = (model: string): string[] => [
-  '-p', '--model', model, '--tools', '', '--strict-mcp-config', '--disable-slash-commands',
+  '-p', '--model', model, '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--safe-mode',
   '--system-prompt-file', PROMPT_FILE, '--max-turns', '1', '--no-session-persistence', '--output-format', 'text',
 ]
 
@@ -60,9 +60,10 @@ const cleanup = (steps: Array<() => void>): void => {
 }
 
 export function runDream(root: string, batchId: string, cfg: MemConfig, runner: Runner = claudeRunner, now = new Date()): string {
+  const token = readLock(root)
   const done = (msg: string): string => {
     cleanup([
-      () => releaseLock(root),
+      () => releaseLock(root, token),
       () => fs.rmSync(batchPath(root, batchId), { force: true }),
       () => log(root, msg, now),
     ])
@@ -89,7 +90,8 @@ export function dreamNow(root: string, cfg: MemConfig, runner: Runner = claudeRu
   if (!acquireLock(root, now)) return 'a dream is already running'
   // Same id snapshotBatch derives from `now`, so a failed start can still remove its batch file.
   const id = `batch-${now.toISOString().replace(/[:.]/g, '-')}`
-  const release = (): void => cleanup([() => releaseLock(root), () => fs.rmSync(batchPath(root, id), { force: true })])
+  const token = readLock(root)
+  const release = (): void => cleanup([() => releaseLock(root, token), () => fs.rmSync(batchPath(root, id), { force: true })])
   let b: Batch
   try {
     b = snapshotBatch(root, now)
