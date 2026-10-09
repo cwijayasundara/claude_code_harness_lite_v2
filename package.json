@@ -2,16 +2,22 @@
   "name": "rig-plugin",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
-    "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && npm run typecheck:mod && claude plugin test .",
+    "test": "node --disable-warning=ExperimentalWarning --test scripts/*.spec.ts && npm run typecheck:mod && npm run test:e2e:unit && npm run test:e2e:fast && claude plugin test .",
     "typecheck": "tsc -p scripts/tsconfig.json",
     "typecheck:mod": "tsc -p tsconfig.json",
     "validate": "claude plugin validate .claude-plugin/plugin.json",
-    "test:integration:self": "node tests/integration/selftest.mjs"
+    "test:integration:self": "node tests/integration/selftest.mjs",
+    "test:e2e": "node tests/e2e/run.mjs --driver live",
+    "test:e2e:fast": "node tests/e2e/run.mjs --driver scripted",
+    "test:e2e:unit": "node --test tests/e2e/lib/*.test.mjs tests/e2e/driver/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "yaml": "^2.9.1"
   }
 }

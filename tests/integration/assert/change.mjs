@@ -84,6 +84,8 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
   await c.check(`${t}: each slice was checkpointed by its own commit`, () => {
     const subjects = sb.git('log', '--format=%s', 'main..HEAD').split('\n')
     const missing = Object.keys(ratchet.slices ?? {}).filter(k => !subjects.includes(`sdlc/${slug}: slice ${k}`))
+    // The diagnose path (bugfix, incident) fixes in one step and records no slices; every other path must have some.
+    if (['bugfix', 'incident'].includes(o.type) && Object.keys(ratchet.slices ?? {}).length === 0) return true
     return (Object.keys(ratchet.slices ?? {}).length > 0 && missing.length === 0) || `no checkpoint for slice(s) ${missing.join(', ') || '(none recorded)'}`
   })
   if (o.tier === 'L') await c.check(`${t}: an in-session review was recorded`, () =>
