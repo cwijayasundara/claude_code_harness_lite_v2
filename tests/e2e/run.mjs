@@ -7,14 +7,21 @@ import { writeReport } from './lib/report.mjs'
 import { install } from './phases/p0-install.mjs'
 import { PHASE as P1, runChange } from './phases/p1-greenfield.mjs'
 import { scriptedDriver } from './driver/scripted.mjs'
+import { createSessions, liveDriver } from './driver/live.mjs'
+import { assertOnboarding } from '../integration/assert/onboarding.mjs'
+import { assertProcess } from '../integration/assert/process.mjs'
+import { Checks } from '../integration/lib/checks.mjs'
+import { SCAFFOLD } from '../integration/acceptance/cart.mjs'
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : d }
 const driverName = arg('driver', 'scripted')
 const only = arg('phase')
 const out = path.resolve(arg('out', fs.mkdtempSync(path.join(os.tmpdir(), 'rig-e2e-'))))
-if (driverName !== 'scripted') throw new Error('live driver arrives in Task 8')
+const live = driverName === 'live'
 
 const sb = createSandbox({ name: 'project', out })
+const sessions = live ? createSessions({ sb, out, capUsd: Number(arg('cap', 6)) }) : null
+const driverFor = phase => (live ? liveDriver(sb, phase, { sessions }) : scriptedDriver(sb, phase))
 const results = []
 const want = id => !only || only === id
 const finish = () => {
@@ -25,8 +32,23 @@ const finish = () => {
 }
 
 try {
-  results.push(await install(sb))
-  if (want('P1')) results.push((await runChange(sb, P1, scriptedDriver(sb, P1), { first: true })).checks)
+  if (live) {
+    sb.git('commit', '-q', '--allow-empty', '-m', 'chore: empty start')
+    sb.isolate()
+    sessions.run('P0-init', `/rig:init --defaults greenfield "${SCAFFOLD}"`, { withPlugin: true })
+    sb.commitAll('chore: onboarding leftovers')
+    const p0 = new Checks('P0 install (live)')
+    await assertOnboarding(p0, sb, { lane: 'greenfield' })
+    results.push(p0)
+  } else {
+    results.push(await install(sb))
+  }
+  if (want('P1')) results.push((await runChange(sb, P1, driverFor(P1), { first: true })).checks)
+  if (live) {
+    const pc = new Checks('process (all live sessions)')
+    await assertProcess(pc, sessions.sessions, { label: 'live run' })
+    results.push(pc)
+  }
 } catch (err) {
   console.error(`e2e aborted: ${err.message}\nsandbox kept at ${out}`)
   process.exitCode = 1
