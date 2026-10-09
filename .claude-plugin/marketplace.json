@@ -1,0 +1,7 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "rig-util",
+  "description": "Optional add-ons for the rig harness",
+  "owner": { "name": "Chaminda Wijayasundara" },
+  "plugins": [ { "name": "rig-util", "source": "./", "description": "Self-updating code wiki for rig repos", "version": "0.1.0" } ]
+}

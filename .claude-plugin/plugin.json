@@ -1,0 +1,1 @@
+{ "name": "rig-util", "version": "0.1.0", "description": "Optional rig add-on: a self-updating code wiki for humans and agents (RSI loop to follow).", "author": { "name": "Chaminda Wijayasundara" }, "license": "MIT" }
