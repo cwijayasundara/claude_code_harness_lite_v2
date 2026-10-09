@@ -57,6 +57,6 @@ test('hook CLI never fails on garbage input and post-edit marks stale', () => {
 
 test('CLI find and status work', () => {
   const dir = built()
-  assert.match(run(dir, ['find', 'x']).stdout, /modules\/a\.md/)
+  assert.match(run(dir, ['find', 'x.ts']).stdout, /modules\/a\.md/)
   assert.match(run(dir, ['status']).stdout, /fresh: 1/)
 })
