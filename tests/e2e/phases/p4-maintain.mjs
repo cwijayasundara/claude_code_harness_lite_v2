@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { Checks } from '../../integration/lib/checks.mjs'
 import { assertChange } from '../../integration/assert/change.mjs'
@@ -25,6 +26,12 @@ export const PHASE = {
   acceptance: 'coupon',
 }
 
+const newestIncident = sb => {
+  const names = sb.run('sh', ['-c', 'ls -t .sdlc/incidents/*.md 2>/dev/null']).stdout.trim().split('\n').filter(Boolean)
+  return names[0] ?? ''
+}
+const c0 = (c, file) => c.check('incident: /rig-incident (or the fixture) left an incident file', () => Boolean(file) || 'no file under .sdlc/incidents')
+
 export async function runMaintain(sb, driver, phase = PHASE) {
   const out = []
   const w = new Checks('P4 maintain: watch')
@@ -33,18 +40,28 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   out.push(w)
 
   // Seed the escaped bug on main, as if it had shipped, then record the incident.
-  sb.write('src/cart.js', sb.read('src/cart.js').replace('.map(l => ({ ...l }))', ''))
+  // The buggy cart is the known-good one minus the copy in lines(), so the seed is the same whatever the model wrote in P1 and P2.
+  const good = fs.readFileSync(fx('src/cart.js'), 'utf8')
+  const buggy = good.replace('.map(l => ({ ...l }))', '')
+  if (buggy === good) throw new Error('P4: the bug seed did not change src/cart.js')
+  sb.write('src/cart.js', buggy)
   sb.commitAll('chore: seed the lines() leak (simulates the escaped bug)')
-  sb.write(INCIDENT, [
-    '---', 'class: shared-state', 'severity: sev3', 'escaped: true', `detected: ${new Date().toISOString()}`,
-    'restored:', `intent_at: ${new Date().toISOString()}`, '---', '', 'Symptoms: totals drift after callers edit lines().', 'Impact: wrong totals.', 'Evidence: see test/regression.test.js.', '',
-  ].join('\n'))
-  sb.commitAll('docs: incident record')
-  const i = new Checks('P4 maintain: incident')
-  await assertIncident(i, sb, INCIDENT)
-  out.push(i)
+  const live = Boolean(driver.sessions)
+  // Scripted: the incident file is written here. Live: /rig-incident writes it, and the newest file under .sdlc/incidents is judged.
+  if (!live) {
+    sb.write(INCIDENT, [
+      '---', 'class: shared-state', 'severity: sev3', 'escaped: true', `detected: ${new Date().toISOString()}`,
+      'restored:', `intent_at: ${new Date().toISOString()}`, '---', '', 'Symptoms: totals drift after callers edit lines().', 'Impact: wrong totals.', 'Evidence: see test/regression.test.js.', '',
+    ].join('\n'))
+    sb.commitAll('docs: incident record')
+  }
 
   const slug = await driver.begin()
+  const incidentFile = live ? newestIncident(sb) : INCIDENT
+  const i = new Checks('P4 maintain: incident')
+  await c0(i, incidentFile)
+  await assertIncident(i, sb, incidentFile)
+  out.push(i)
   const route = await runRoute({ sb, slug, driver, repeats: driver.sessions ? 2 : 1, maxSteps: driver.sessions ? 14 : 10 })
   const c = new Checks('P4 maintain: incident fix')
   // Known gap, pinned so a fix flips it: /rig-pr stages only .sdlc/changes/<slug> and a fixed list, never .sdlc/evals, so the
@@ -57,13 +74,13 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   await c.check('P4: the regression test ran red before the fix', () => /"expectFail":\s*true/.test(sb.read(`.sdlc/changes/${slug}/runs.jsonl`)) || 'no red run recorded')
   await c.check('P4: the incident became a regression eval naming the incident', () => {
     const f = sb.run('sh', ['-c', 'ls .sdlc/evals/incident-*.json 2>/dev/null']).stdout.trim().split('\n')[0]
-    return (f && JSON.parse(sb.read(f)).source === `incident:${phase.incident.file}`) || 'no incident eval with the incident as its source'
+    return (f && JSON.parse(sb.read(f)).source === `incident:${incidentFile.split('/').pop()}`) || 'no incident eval with the incident as its source'
   })
   await assertCart(c, sb.dir, phase.acceptance)
   out.push(c)
 
   const m = new Checks('P4 maintain: metrics')
-  await assertRestoredMetrics(m, sb, INCIDENT)
+  await assertRestoredMetrics(m, sb, incidentFile)
   out.push(m)
   return { checks: out, route, slug }
 }

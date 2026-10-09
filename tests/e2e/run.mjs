@@ -53,14 +53,19 @@ try {
   } else {
     results.push(await install(sb))
   }
-  if (want('P1')) results.push((await runChange(sb, P1, driverFor(P1), { first: true })).checks)
+  let p1slug = P1.slug
+  if (want('P1')) {
+    const r1 = await runChange(sb, P1, driverFor(P1), { first: true })
+    p1slug = r1.slug
+    results.push(r1.checks)
+  }
   if (!live && want('P1')) {
-    const bad = await runNegatives(sb, P1.slug)
+    const bad = await runNegatives(sb, p1slug)
     for (const b of bad) console.error(`twin surprise: ${b}`)
     if (bad.length) process.exitCode = 1
   }
   if (want('P2')) {
-    mergeToMain(sb, P1.slug)
+    mergeToMain(sb, p1slug)
     const { slug, checks: c2 } = await runChange(sb, P2, driverFor(P2))
     // Edited, not rewritten: under 80% of cart.js lines deleted relative to main.
     const del = Number(sb.git('diff', '--numstat', 'main...HEAD', '--', 'src/cart.js').split('\t')[1])
