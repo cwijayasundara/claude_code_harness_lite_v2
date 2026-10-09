@@ -22,3 +22,26 @@ test('redact leaves ordinary text alone', () => {
 test('SECRET_PATH still matches secret files', () => {
   assert.ok(SECRET_PATH.test('a/.env.local')); assert.ok(SECRET_PATH.test('id_rsa')); assert.ok(!SECRET_PATH.test('src/env.ts'))
 })
+
+test('redact catches prefixed and suffixed key names', () => {
+  assert.equal(redact('DB_PASSWORD=hunter22'), 'DB_PASSWORD=[REDACTED]')
+  assert.equal(redact('GITHUB_TOKEN=abcdef1234'), 'GITHUB_TOKEN=[REDACTED]')
+  assert.equal(redact('MY_API_KEY=abcdef123456'), 'MY_API_KEY=[REDACTED]')
+  assert.equal(redact('client_secret=abcdef123456'), 'client_secret=[REDACTED]')
+  assert.equal(redact('AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI'), 'AWS_SECRET_ACCESS_KEY=[REDACTED]')
+})
+
+test('redact masks quoted values containing spaces', () => {
+  assert.equal(redact('password="hunter two"'), 'password="[REDACTED]"')
+  assert.equal(redact("secret: 'my long value'"), "secret: '[REDACTED]'")
+  assert.equal(hasSecret('password="hunter two"'), true)
+})
+
+test('redact masks URL credentials, Basic auth and Stripe keys', () => {
+  assert.equal(redact('postgres://user:hunter22@db.example.com/app'), 'postgres://user:[REDACTED]@db.example.com/app')
+  assert.equal(redact('https://github.com/org/repo'), 'https://github.com/org/repo')
+  assert.equal(redact('curl -H "Authorization: Basic dXNlcjpwYXNzd29yZA=="'), 'curl -H "Authorization: [REDACTED]"')
+  assert.equal(redact('Basic configuration is done'), 'Basic configuration is done')
+  assert.equal(redact('sk_live_abcdefghijklmnop1234'), '[REDACTED]')
+  assert.equal(redact('sk_test_abcdefghijklmnop1234'), '[REDACTED]')
+})
