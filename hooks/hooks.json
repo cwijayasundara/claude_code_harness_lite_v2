@@ -1,0 +1,9 @@
+{
+  "description": "rig-util wiki: mark pages stale on edit and turn end; point Claude at the wiki index. No hook calls a model.",
+  "hooks": {
+    "SessionStart": [ { "matcher": "startup|resume|clear|compact", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/wiki.ts\" hook session-start", "timeout": 10 } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/wiki.ts\" hook prompt-submit", "timeout": 15 } ] } ],
+    "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit", "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/wiki.ts\" hook post-edit", "timeout": 15 } ] } ],
+    "Stop": [ { "hooks": [ { "type": "command", "command": "node --disable-warning=ExperimentalWarning \"${CLAUDE_PLUGIN_ROOT}/scripts/wiki.ts\" hook stop", "timeout": 15 } ] } ]
+  }
+}

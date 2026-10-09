@@ -6,6 +6,7 @@ import { composePage, getBlock, type Prose } from './compose.ts'
 import { validatePage } from './validate.ts'
 import { changesFor } from './why.ts'
 import { archHash, loadState, saveState } from './state.ts'
+import { buildIndexMd } from './indexmd.ts'
 
 export type ApplyResult = { written: string[]; kept: string[]; pending: string[]; problems: Record<string, string[]> }
 export const pagePath = (module: string): string => `modules/${safeName(module)}.md`
@@ -60,6 +61,10 @@ function swapIn(root: string, wiki: string, stage: string, idx: Index, res: Appl
   for (const f of fs.readdirSync(path.join(wiki, 'modules'))) if (!alive.has(f)) fs.rmSync(path.join(wiki, 'modules', f))
   writeArchitecture(wiki, idx)
   saveState(root, next)
+  const purposeOf = (m: string): string => {
+    try { return getBlock(fs.readFileSync(path.join(wiki, pagePath(m)), 'utf8'), 'purpose') ?? '' } catch { return '' }
+  }
+  fs.writeFileSync(path.join(wiki, 'INDEX.md'), buildIndexMd(idx, next, purposeOf))
   fs.rmSync(stage, { recursive: true, force: true })
   return res
 }
