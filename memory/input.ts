@@ -33,33 +33,53 @@ export function transcriptWindow(lines: string[], at: number, radius = RADIUS): 
 }
 
 const renderSignal = (s: Signal, win: string[]): string =>
-  `### ${s.kind} (session: ${s.session_id}, ${s.ts})\n${Object.entries(s.data).map(([k, v]) => `${k}: ${v}`).join('\n')}\ncontext:\n${win.map(l => `  ${l}`).join('\n') || '  (transcript unavailable)'}\n`
+  `### ${s.kind} (session: ${s.session_id}, ${s.ts})\n${Object.entries(s.data).map(([k, v]) => `${k}: ${redact(String(v))}`).join('\n')}\ncontext:\n${win.map(l => `  ${l}`).join('\n') || '  (transcript unavailable)'}\n`
+
+const MAX_TRANSCRIPT_BYTES = 50 * 1024 * 1024
+
+// Only absolute, regular, bounded .jsonl files are read; anything else is unavailable.
+function readTranscript(p: string): string[] {
+  try {
+    if (!path.isAbsolute(p) || !p.endsWith('.jsonl')) return []
+    const st = fs.statSync(p)
+    if (!st.isFile() || st.size > MAX_TRANSCRIPT_BYTES) return []
+    return fs.readFileSync(p, 'utf8').split('\n')
+  } catch { return [] }
+}
 
 function memorySection(root: string, max: number): string {
   let names: string[] = []
   try { names = fs.readdirSync(memDir(root)).filter(f => f.endsWith('.md')).sort() } catch { /* no memory yet */ }
   const text = names.map(f => { try { return `### ${f}\n${fs.readFileSync(path.join(memDir(root), f), 'utf8')}` } catch { return '' } }).join('\n')
-  return clip(text || '(empty)', max)
+  return clip(redact(text || '(empty)'), max)
 }
 
 export function buildDreamInput(root: string, batch: Batch, maxChars = MAX_INPUT_CHARS): { text: string; used: string[] } {
-  const mem = `## Current memory\n${memorySection(root, Math.floor(maxChars / 2))}\n`
+  const head = '## Signals\n'
+  const memHead = '## Current memory\n'
+  // mem is bounded to half the cap; the whole text is `${head}${blocks}\n${mem}`
+  const mem = `${memHead}${memorySection(root, Math.max(0, Math.floor(maxChars / 2) - memHead.length - 1))}\n`
+  // reserve the '(none)' placeholder width so the bound holds in the empty case too
+  const budget = maxChars - head.length - mem.length - 1 - '(none)'.length
   const files = new Map<string, string[]>()
   const linesOf = (p: string): string[] => {
-    if (!files.has(p)) {
-      let t: string[] = []
-      try { if (p.endsWith('.jsonl')) t = fs.readFileSync(p, 'utf8').split('\n') } catch { /* transcript gone */ }
-      files.set(p, t)
-    }
+    if (!files.has(p)) files.set(p, readTranscript(p))
     return files.get(p)!
   }
   const blocks: string[] = [], used: string[] = []
-  let size = mem.length
+  let size = 0 // sum of block lengths plus the joining newlines between them
   // newest first so the oldest are the ones dropped at the cap
   for (const s of [...batch.signals].reverse()) {
     const b = renderSignal(s, transcriptWindow(linesOf(s.transcript_path), s.transcript_line))
-    if (size + b.length > maxChars) break
-    blocks.unshift(b); used.unshift(s.id); size += b.length
+    const cost = b.length + (blocks.length ? 1 : 0)
+    if (size + cost <= budget) {
+      blocks.unshift(b); used.unshift(s.id); size += cost
+      continue
+    }
+    // newest block alone does not fit: keep a clipped copy rather than dropping everything
+    const room = budget - size - (blocks.length ? 1 : 0)
+    if (blocks.length === 0 && room > 1) { blocks.unshift(clip(b, room - 1)); used.unshift(s.id) }
+    break
   }
-  return { text: `## Signals\n${blocks.join('\n') || '(none)'}\n${mem}`, used }
+  return { text: `${head}${blocks.join('\n') || '(none)'}\n${mem}`, used }
 }

@@ -50,8 +50,43 @@ test('buildDreamInput drops the oldest signals past the cap and leaves them out 
   const dir = makeRepo({}, { git: false })
   const signals = Array.from({ length: 9 }, (_, i) => sig(i, ''))
   const one = buildDreamInput(dir, { id: 'b', signals: [signals[0]] }).text.length
-  const r = buildDreamInput(dir, { id: 'b', signals }, one + 200)
+  const cap = one + 200
+  const r = buildDreamInput(dir, { id: 'b', signals }, cap)
   assert.ok(r.used.length >= 1 && r.used.length < 9)
   assert.equal(r.used.at(-1), 'id8')
+  assert.ok(r.text.length <= cap)
   assert.match(buildDreamInput(dir, { id: 'b', signals: [] }).text, /## Signals\n\(none\)/)
+})
+
+test('buildDreamInput redacts memory files and signal data', () => {
+  const dir = makeRepo({ '.sdlc/memory/commands.md': '# commands\npassword: hunter22\n' }, { git: false })
+  const none = buildDreamInput(dir, { id: 'b', signals: [] }).text
+  assert.match(none, /\[REDACTED\]/)
+  assert.ok(!none.includes('hunter22'))
+  const withSig = buildDreamInput(dir, { id: 'b', signals: [{ ...sig(5, ''), data: { cmd: 'password: hunter22' } }] }).text
+  assert.ok(!withSig.includes('hunter22'))
+})
+
+test('buildDreamInput only reads absolute regular .jsonl transcripts', () => {
+  const dir = makeRepo({}, { git: false })
+  const t = path.join(dir, 't.jsonl')
+  fs.writeFileSync(t, J({ type: 'user', message: { content: 'hello there' } }) + '\n')
+  fs.mkdirSync(path.join(dir, 'd.jsonl'))
+  const rel = path.relative(process.cwd(), t)
+  assert.ok(!path.isAbsolute(rel))
+  const r = buildDreamInput(dir, { id: 'b', signals: [sig(1, rel), sig(2, path.join(dir, 'd.jsonl'))] })
+  assert.match(r.text, /cmd: cmd1\ncontext:\n  \(transcript unavailable\)/)
+  assert.match(r.text, /cmd: cmd2\ncontext:\n  \(transcript unavailable\)/)
+  assert.ok(!r.text.includes('hello there'))
+})
+
+test('buildDreamInput never exceeds maxChars, even for tight caps', () => {
+  const dir = makeRepo({ '.sdlc/memory/commands.md': `# commands\n${'m'.repeat(300)}\n` }, { git: false })
+  const signals = Array.from({ length: 6 }, (_, i) => ({ ...sig(i, ''), data: { cmd: 'c'.repeat(200) } }))
+  for (let cap = 60; cap <= 1500; cap += 37) {
+    const r = buildDreamInput(dir, { id: 'b', signals }, cap)
+    assert.ok(r.text.length <= cap, `cap ${cap} got ${r.text.length}`)
+  }
+  const one = buildDreamInput(dir, { id: 'b', signals: [signals[0]] }, 1500)
+  assert.ok(one.used.length === 1 && one.text.includes('c'.repeat(50)))
 })
