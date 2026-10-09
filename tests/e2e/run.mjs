@@ -7,6 +7,7 @@ import { writeReport } from './lib/report.mjs'
 import { install } from './phases/p0-install.mjs'
 import { PHASE as P1, runChange } from './phases/p1-greenfield.mjs'
 import { scriptedDriver } from './driver/scripted.mjs'
+import { runNegatives } from './negative.mjs'
 import { createSessions, liveDriver } from './driver/live.mjs'
 import { assertOnboarding } from '../integration/assert/onboarding.mjs'
 import { assertProcess } from '../integration/assert/process.mjs'
@@ -28,7 +29,7 @@ const finish = () => {
   writeReport(out, results)
   for (const c of results) c.print()
   console.log(`\nreport and sandbox: ${out}`)
-  process.exitCode = results.some(c => c.failed.length) ? 1 : process.exitCode ?? 0
+  process.exitCode = results.some(c => c.failed.length) ? 1 : (process.exitCode ?? 0)
 }
 
 try {
@@ -44,6 +45,11 @@ try {
     results.push(await install(sb))
   }
   if (want('P1')) results.push((await runChange(sb, P1, driverFor(P1), { first: true })).checks)
+  if (!live && want('P1')) {
+    const bad = await runNegatives(sb, P1.slug)
+    for (const b of bad) console.error(`twin surprise: ${b}`)
+    if (bad.length) process.exitCode = 1
+  }
   if (live) {
     const pc = new Checks('process (all live sessions)')
     await assertProcess(pc, sessions.sessions, { label: 'live run' })
