@@ -128,7 +128,7 @@ test('follow-up pushes are capped at four per change (the review fix plus three 
   const capped = sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: round 5'])
   assert.notEqual(capped.code, 0)
   assert.match(capped.stderr, /4 follow-up pushes used/)
-  assert.match(capped.stderr, /\/rig-approve tiny budget/)
+  assert.match(capped.stderr, /\/rig:approve tiny budget/)
   assert.equal(gitIn(repo, 'log', '-1', '--format=%s'), 'fix: round 4', 'the fifth push is not committed')
   assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).verdict, 'blocked')
   assert.equal(sdlc(repo, ['approve', 'tiny', 'budget'], { env: { SDLC_HUMAN: '1' } }).code, 0)
@@ -463,7 +463,7 @@ test('a refused ship gate blocks the change and names the exact next action', ()
   assert.equal(r.code, 1)
   const n = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
   assert.equal(n.verdict, 'continue', 'R46: a gate block resumes at the pr node')
-  assert.match(n.reason, /pending block[\s\S]*\/rig-waive harness-tamper \.rig\/sensors\.json <reason>/)
+  assert.match(n.reason, /pending block[\s\S]*\/rig:waive harness-tamper \.rig\/sensors\.json <reason>/)
 })
 
 test('a passing ship gate clears only a gate-kind block on pr', () => {

@@ -31,8 +31,8 @@ test('vendor --cloud writes project skills, agents and hooks with no plugin refe
   assert.ok(agents.some(f => f.endsWith('rig-scout.md')), 'scout agent')
   for (const f of [...skills, ...agents]) {
     const text = fs.readFileSync(f, 'utf8')
-    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|\/rig:(?!gen(?![a-z-])|drawn(?![a-z-]))[a-z]|\brig:(?!allow-secret|gen(?![a-z-])|drawn(?![a-z-]))[a-z]/, path.relative(repo, f))
-    assert.match(text, /^name: rig-/m, path.relative(repo, f))
+    assert.doesNotMatch(text, /CLAUDE_PLUGIN_ROOT|<plugin>\/scripts|(?<![/\w])rig:(?:architect|implementer|researcher|reviewer|scout)\b/, path.relative(repo, f))
+    assert.match(text, f.includes('/agents/') ? /^name: rig-/m : /^name: rig:[a-z]/m, path.relative(repo, f))
   }
   assert.ok(fs.existsSync(path.join(repo, '.rig/templates/rig-check.yml')), 'templates copied')
   const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
@@ -50,12 +50,12 @@ test('the vendored copy names project skills and agents, and prints its own skil
   sdlc(repo, ['init'])
   sdlc(repo, ['vendor', '--cloud'])
   vendored(repo, ['new', 'small-thing', '--type', 'chore', '--tier', 'S'])
-  assert.match(vendored(repo, ['status']).stdout, /next: \/rig-build small-thing/)
+  assert.match(vendored(repo, ['status']).stdout, /next: \/rig:build small-thing/)
   const skill = vendored(repo, ['skill', 'next']).stdout
   assert.match(skill, /\.rig\/bin\/sdlc\.ts status --json/)
   const ctx = JSON.parse(vendored(repo, ['hook', 'session-start'], '{}').stdout).hookSpecificOutput.additionalContext as string
   assert.match(ctx, /rig-scout/)
-  assert.doesNotMatch(ctx, /rig:scout|\/rig:start/)
+  assert.doesNotMatch(ctx, /(?<!\/)rig:scout/)
   const failed = JSON.parse(vendored(repo, ['hook', 'skill-failed'], JSON.stringify({ tool_input: { skill: 'rig-verify', args: 'small-thing' } })).stdout)
   assert.match(failed.hookSpecificOutput.additionalContext, /\.rig\/bin\/sdlc\.ts" skill verify small-thing/)
 })
@@ -67,7 +67,7 @@ test('the PR review may write its two files through Edit rules; a Write(path) ru
 })
 
 const humanCommand = (cmd: string): string => `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts ${cmd}`
-test('standalone ships human-only /rig-approve and /rig-waive skills the model cannot invoke', () => {
+test('standalone ships human-only /rig:approve and /rig:waive skills the model cannot invoke', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   assert.equal(sdlc(repo, ['vendor', '--standalone']).code, 0)
@@ -79,7 +79,7 @@ test('standalone ships human-only /rig-approve and /rig-waive skills the model c
   }
 })
 
-test('a quoted argument string is split: /rig-approve and /rig-waive work from a standalone skill', () => {
+test('a quoted argument string is split: /rig:approve and /rig:waive work from a standalone skill', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
   sdlc(repo, ['vendor', '--standalone'])

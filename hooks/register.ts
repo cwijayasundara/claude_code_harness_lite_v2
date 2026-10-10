@@ -1,6 +1,6 @@
 // The sdlc mod: what settings hooks cannot do.
-//  - /rig-status and /rig-approve: zero-token commands; approve runs only from the person's own prompt
-//  - /rig-waive and /rig-sensors (human-only, zero tokens)
+//  - /rig-status and /rig:approve: zero-token commands; approve runs only from the person's own prompt
+//  - /rig:waive and /rig-sensors (human-only, zero tokens)
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
 //  - /rig-map: mission control pane (mission.tsx): SDLC subway map, fix-loop arc, spend by station, fuel gauges
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
@@ -143,7 +143,7 @@ export const register: Register = on => {
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
     try {
       await $.command.register({ name: 'rig-status', description: 'rig: where every change stands and the next command (no model call)', immediate: true })
-      // A standalone repo ships its own human-only /rig-approve and /rig-waive skills; registering ours too would clash.
+      // A standalone repo ships its own human-only /rig:approve and /rig:waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/rig-approve/SKILL.md'))) {
         await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' })
         await $.command.register({ name: 'rig-waive', description: 'rig: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
@@ -170,7 +170,7 @@ export const register: Register = on => {
     }
     const [slug, stage, ...more] = e.args.trim().split(/\s+/)
     const rest = stage === 'tier' ? more.slice(0, 2) : []
-    if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' }
+    if (!slug || !stage) return { text: 'usage: /rig:approve <slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' }
     const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
     const status = await refreshBand($)
     // Approving a pre-code gate on the active change hands the rest (build, test, sensors, pr) to the driver; it stops at a human step, a block or the PR.
@@ -181,7 +181,7 @@ export const register: Register = on => {
   on('command.run', { command: 'rig-waive' }, async ($, e) => {
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig-waive runs only when the person types it.' }
     const parts = e.args.trim().split(/\s+/)
-    if (parts.length < 3) return { text: 'usage: /rig-waive <sensor> <file|*> <reason>' }
+    if (parts.length < 3) return { text: 'usage: /rig:waive <sensor> <file|*> <reason>' }
     const r = await $.process.run(sdlc($, ['waive', ...parts]), { env: { SDLC_HUMAN: '1' } })
     await refreshBand($)
     return { text: (r.stdout || r.stderr).trim() }

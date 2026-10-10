@@ -197,7 +197,7 @@ export function cmdCheckPlan(args: Args): void {
   const tier = setTierL(slug) ? '' : `\nwarning: no "tier:" line found in ${slug}/intent.md, so the tier was not raised to L; set it by hand.`
   const rows = hits.slice(0, 20).map(h => `  ${h.consumer}: ${h.file}:${h.line} uses ${h.id}`)
   const unverified = missing.length ? [`Not checked out, so the impact cannot be verified until they are: ${missing.join(', ')}`] : []
-  out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /rig-approve ${slug} impact.${tier}`, ...rows, ...unverified, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
+  out([`impact: ${hits.length} consumer reference${hits.length === 1 ? '' : 's'} across ${new Set(hits.map(h => h.consumer)).size} repo(s). The change is now tier L and needs /rig:approve ${slug} impact.${tier}`, ...rows, ...unverified, 'Add the consumer files to plan ## Files (as ../<repo>/... globs) and each consumer test to ## Verification.'].join('\n'))
 }
 
 // Only the tests this branch adds or changes can show a behaviour is covered: an old test naming B1 proves nothing new.
@@ -282,7 +282,7 @@ function tierFindings(slugs: string[], diffs: FileDiff[], config: SensorConfig):
   return low.flatMap(slug => hits.map(d => ({
     sensor: 'tier', severity: 'block' as const, file: d.file,
     message: `${slug} is tier ${loadChange(slug).tier} but changes a contract or risky path`,
-    fix: `set tier: L in ${slug}/intent.md (spec and plan gates), or the person waives with /rig-waive tier <file> <reason>`,
+    fix: `set tier: L in ${slug}/intent.md (spec and plan gates), or the person waives with /rig:waive tier <file> <reason>`,
   })))
 }
 

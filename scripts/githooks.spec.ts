@@ -348,7 +348,7 @@ test('pushing a change branch after the change finished is judged as that change
   write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   for (const n of ['app', 'b', 'c', 'd']) write(repo, `src/${n}.js`, `export const ${n} = 1\n`)
   gitIn(repo, 'add', '-A'); gitIn(repo, 'commit', '-qm', 'work')
-  // Shipped and reviewed: nothing is active any more, as after /rig-pr-review (STATE.md names no change).
+  // Shipped and reviewed: nothing is active any more, as after /rig:pr-review (STATE.md names no change).
   write(repo, '.rig/STATE.md', '---\nchange:\n---\n# State\n\nNo active change. Last shipped: tiny.\n')
   const state = fs.readFileSync(path.join(repo, '.rig/STATE.md'), 'utf8')
   const r = pushRaw('refs/heads/sdlc/tiny', head(), 'refs/heads/sdlc/tiny', base)

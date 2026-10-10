@@ -2,6 +2,7 @@
 // Five events, none on Bash: session start, turn start (the baseline), post-edit (a slim per-file check), the Stop gate,
 // and the skill-load fallback. Evidence is protected by settings deny rules and by CI, not by parsing shell commands.
 import fs from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import {
   ROOT, SDLC, CHANGES, git, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
@@ -161,18 +162,40 @@ function summarize(findings: Finding[]): GateSummary {
   return { at: now(), blocks: findings.filter(f => f.severity === 'block').length, warns: warns.length, bySensor, warnRows: warns.slice(0, 5).map(warnRow) }
 }
 
+// The person typed /rig:approve (or /rig-approve): a hook sees only what the person typed, never a model's tool call, so this is as
+// human-only as the skill, and it works in a session that started before the skill was installed. A bare command approves the gate the
+// active change waits at. The model is told to carry on with /rig:next, so the build starts without a second command.
+function runSdlc(args: string[], human = false): { code: number; text: string } {
+  const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', process.argv[1] ?? '', ...args], { encoding: 'utf8', env: { ...process.env, ...(human ? { SDLC_HUMAN: '1' } : {}) } })
+  return { code: r.status ?? 1, text: `${r.stdout}${r.stderr}`.trim() }
+}
+function approveTyped(typedArgs: string): void {
+  let args = typedArgs
+  if (!args) {
+    const next = runSdlc(['next', '--json'])
+    try { args = (/\/rig[:-]approve (.+)$/.exec((JSON.parse(next.text) as { command?: string }).command ?? '')?.[1] ?? '').trim() } catch { /* unreadable: say so below */ }
+    if (!args) return out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'rig: the person typed /rig:approve but no gate is waiting for approval. Tell them so in one line (run /rig:next for the next step) and stop.' } }))
+  }
+  const r = runSdlc(['approve', ...args.split(/\s+/)], true)
+  const done = r.code === 0
+  const follow = done && /^\S+ (?:intent|spec|plan|design)\b/.test(args) ? ' Then run /rig:next in this turn: the build, tests, sensors and PR run on their own from here.' : ''
+  out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `rig: the person typed /rig:approve ${args}. The hook ${done ? 'recorded it' : 'refused it'}: ${r.text}\nDo not run /rig:approve or sdlc.ts approve yourself.${done ? follow : ' Tell the person the reason in one line and stop.'}` } }))
+}
+
 // Each prompt starts a turn: record the tree and reset the per-turn gate, so Stop diffs exactly this turn's changes.
 // Warnings the last turn left are handed to the agent once, here, because a passing Stop cannot show them to it.
-function hookPromptSubmit(): void {
+function hookPromptSubmit(input: HookInput = {}): void {
   if (!exists(SDLC)) return
+  const typed = /^\s*\/rig[:-]approve(?:[ \t]+([^\n]*?))?\s*$/.exec(String(input.prompt ?? ''))
   const last = readGate().last
-  const carry = last && !last.shown && last.warns > 0 && last.warnRows?.length ? last.warnRows : null
+  const carry = !typed && last && !last.shown && last.warns > 0 && last.warnRows?.length ? last.warnRows : null
   const snap = snapshot()
   if (snap) writeBaseline(snap)
   updateGate(g => {
     Object.assign(g, { turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [] })
     if (carry && g.last) g.last.shown = true
   })
+  if (typed) approveTyped(typed[1] ?? '')
   if (carry) {
     out(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: `rig: the last turn left ${last?.warns} warning(s) that did not block. Fix them if they are yours:\n${[...carry, ...more(last)].map(r => `- ${r}`).join('\n')}` } }))
   }
@@ -247,7 +270,7 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
   'session-start': hookSessionStart,
   'post-edit': hookPostEdit,
   'skill-failed': hookSkillFailed,
-  'prompt-submit': () => hookPromptSubmit(),
+  'prompt-submit': i => hookPromptSubmit(i),
   stop: () => hookStop(),
   'subagent-start': i => laneEvent(i, 'start'),
   'subagent-stop': i => laneEvent(i, 'stop'),

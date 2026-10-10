@@ -104,7 +104,7 @@ test('privilege split: read-only model job with no persisted credentials; the pu
 })
 
 test('the model job never builds and edits only change folders', () => {
-  assert.match(yml, /\/rig-start \.rig\/intent\/\$\{\{ matrix\.intent\.file \}\} --plan-only/)
+  assert.match(yml, /\/rig:start \.rig\/intent\/\$\{\{ matrix\.intent\.file \}\} --plan-only/)
   assert.match(yml, /Edit\(\.\/\.rig\/changes\/\*\*\)/)
   const denied = /--disallowedTools "([^"]*)"/.exec(yml)?.[1]?.split(',') ?? []
   for (const t of ['Edit(./.rig/bin/**)', 'Edit(./.rig/sensors.json)', 'Edit(./.rig/rules.json)', 'Edit(./.claude/**)', 'Edit(./.github/**)']) assert.ok(denied.includes(t), `the draft job denies ${t}`)

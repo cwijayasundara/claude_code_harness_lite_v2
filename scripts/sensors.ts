@@ -25,7 +25,7 @@ const ASSERTION = /\bassert(?:\.\w+\s*\(|\w*\s*[!(])|^\s*assert\s|\bexpect\s*[({
 const THRESHOLD_KEY = /coverage|threshold|fail[_-]under|minimum|\b(?:lines|branches|functions|statements)\b/i
 const CONFIG_FILE = /(?:^|\/)(?:[^/]*\.(?:json|ya?ml|toml|cfg|ini|xml|gradle|kts|properties)|\.[\w-]*rc(?:\.\w+)?|[^/]*\.config\.[cm]?[jt]s)$/
 const SNAPSHOT = /(?:^|\/)__snapshots__\/|\.snap$/
-const KEEP_TESTS = "keep the test and make the code pass it; removing a test needs the person's /rig-waive"
+const KEEP_TESTS = "keep the test and make the code pass it; removing a test needs the person's /rig:waive"
 
 const countAssertions = (texts: string[]): number =>
   texts.filter(t => !COMMENT_LINE.test(t)).reduce((n, t) => n + (t.match(ASSERTION)?.length ?? 0), 0)
@@ -134,7 +134,7 @@ export function size(diffs: FileDiff[], cfg: SensorConfig, fileLines: Record<str
   if (total > cfg.limits.diffLines && point !== 'edit') {
     findings.push({
       sensor: 'size', severity: point === 'stop' ? 'warn' : 'block', message: `diff is ${total} changed lines (limit ${cfg.limits.diffLines})`,
-      fix: 'ship it as smaller changes, or the person approves the plan (/rig-approve <slug> plan) or waives with /rig-waive size * <reason>',
+      fix: 'ship it as smaller changes, or the person approves the plan (/rig:approve <slug> plan) or waives with /rig:waive size * <reason>',
     })
   }
   if (point !== 'edit') {

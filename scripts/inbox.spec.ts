@@ -90,13 +90,13 @@ test('metrics: inbox survival over decided intents; intent churn after design is
 type StepJson = { verdict: string; node: string | null; reason: string; command: string }
 const next = (slug: string): StepJson => JSON.parse(sdlc(repo, ['next', slug, '--json']).stdout) as StepJson
 
-test('a published draft (source:, no ratchet.json) waits for /rig-approve tier before any node, then takes its own path', () => {
+test('a published draft (source:, no ratchet.json) waits for /rig:approve tier before any node, then takes its own path', () => {
   intent('fix-z.md', 'status: accepted\ntype: bugfix\ntier: S')
   assert.equal(sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.rig/intent/fix-z.md']).code, 0)
   fs.rmSync(path.join(repo, '.rig/changes/fix-z/ratchet.json'))
   const waiting = next('fix-z')
   assert.equal(waiting.verdict, 'human')
-  assert.match(waiting.command, /^\/rig-approve fix-z tier S bugfix$/)
+  assert.match(waiting.command, /^\/rig:approve fix-z tier S bugfix$/)
   assert.match(waiting.reason, /no recorded tier/)
   const ok = sdlc(repo, ['approve', 'fix-z', 'tier', 'S', 'bugfix'], { env: { SDLC_HUMAN: '1' } })
   assert.equal(ok.code, 0, ok.stderr)
@@ -111,7 +111,7 @@ test('status names the same next command as next while a published draft waits f
   sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.rig/intent/fix-z.md'])
   fs.rmSync(path.join(repo, '.rig/changes/fix-z/ratchet.json'))
   const out = sdlc(repo, ['status']).stdout
-  assert.match(out, /^next: \/rig-approve fix-z tier S bugfix$/m)
+  assert.match(out, /^next: \/rig:approve fix-z tier S bugfix$/m)
   assert.doesNotMatch(out, /^next: \/rig:design/m)
 })
 

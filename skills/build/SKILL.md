@@ -24,7 +24,7 @@ Run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sd
    3. **Record (tier L).** Write the reply (a `verdict:` line and findings in the line format) to `.rig/changes/$0/review-slice-N.md` with the Write tool, then run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts ratchet record $0 build --slice N --from .rig/changes/$0/review-slice-N.md`. `--slice` is required when plan.md has more than one slice. It refuses a reply without a verdict; `changes-needed` needs a critical or high finding. It prints `continue`, `done` or `blocked`; on `done` the script commits the slice on `sdlc/$0` itself (only that slice's planned files), so never commit slices yourself:
       - `done`: next slice.
       - `continue`: send only the critical and high findings onward, then run the slice review again. Run `next $0 --json` again: if `routes.implementer` differs from the one the slice was launched with, launch a fresh `rig:implementer` with the new route and the findings; otherwise send them to the same implementer.
-      - `blocked`: stop. Show the reason; the person decides (`/rig-approve $0 budget` lifts a budget, stall or cap block).
+      - `blocked`: stop. Show the reason; the person decides (`/rig:approve $0 budget` lifts a budget, stall or cap block).
 4. Never edit `ratchet.json`, `events.jsonl` or `plan.md` to get past a round. Track progress in `.rig/STATE.md` only.
 
 End with: `Next: <command from node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts next $0 --json>`. If a person is driving with `/rig-run`, stop here. Otherwise keep going in this turn: run `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts skill next` and follow it.

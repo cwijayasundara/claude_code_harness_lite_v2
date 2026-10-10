@@ -106,7 +106,7 @@ test('step: ready when the graph has no next node', () => {
   assert.equal(stepOf('old').verdict, 'ready')
 })
 
-test('only the person can unblock a change, with /rig-approve <slug> budget', () => {
+test('only the person can unblock a change, with /rig:approve <slug> budget', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', usd: 7, change: 'tiny', stage: 'build' })])
   assert.equal(stepOf('tiny').verdict, 'blocked')

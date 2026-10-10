@@ -5,7 +5,7 @@
 # hands the change folder over as an artifact; the publish job runs no model, accepts only rig's own files in one change
 # folder, then pushes a branch and opens the pull request. The draft job passes --plan-only, so nothing is ever built here.
 # Only the Markdown a person reviews is published (intent, design, spec, plan, notes); rig's records (ratchet.json, events.jsonl,
-# impact.json, runs.jsonl, verification.md) never reach the PR, so the change waits for /rig-approve <slug> tier <S|M|L> <type>.
+# impact.json, runs.jsonl, verification.md) never reach the PR, so the change waits for /rig:approve <slug> tier <S|M|L> <type>.
 # A PR opened with github.token triggers no pull_request workflows, so a required rig-check waits: push a commit to the PR
 # branch, close and reopen the PR, or give gh pr create a GitHub App or fine-grained token so checks run.
 # A run that pushed sdlc/intent-<name> but failed before gh pr create leaves the intent no longer pending: delete that branch to redraft.
@@ -71,7 +71,7 @@ jobs:
             --model ${{ steps.model.outputs.id }} --max-turns 60
             --allowedTools "Read(./**),Grep,Glob,Agent,Skill,Edit(./.rig/changes/**),Bash(node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts *)"
             --disallowedTools "WebFetch,WebSearch,AskUserQuestion,Edit(./.rig/bin/**),Edit(./.rig/sensors.json),Edit(./.rig/rules.json),Edit(./.claude/**),Edit(./.github/**)"
-          prompt: /rig-start .rig/intent/${{ matrix.intent.file }} --plan-only
+          prompt: /rig:start .rig/intent/${{ matrix.intent.file }} --plan-only
       - name: Hand the change folder over
         env:
           FILE: ${{ matrix.intent.file }}
@@ -134,4 +134,4 @@ jobs:
           git add ".rig/changes/$SLUG"
           git -c user.name=rig-spec -c user.email=rig-spec@users.noreply.github.com commit -m "spec: draft $SLUG from .rig/intent/$FILE"
           git push origin "$branch"
-          gh pr create --head "$branch" --title "spec: $SLUG" --body "Drafted by rig-spec from .rig/intent/$FILE. Review the drafted files (intent.md, plus design.md or notes.md where present) and resolve every ## Concerns line with its owner; an engineer then runs /rig-start $SLUG. rig's own records (ratchet.json, impact.json) are not published from the model job, so the change waits for /rig-approve $SLUG tier <S|M|L> <type> before any other step. Review any ## Verification commands like code: they run during the build."
+          gh pr create --head "$branch" --title "spec: $SLUG" --body "Drafted by rig-spec from .rig/intent/$FILE. Review the drafted files (intent.md, plus design.md or notes.md where present) and resolve every ## Concerns line with its owner; an engineer then runs /rig:start $SLUG. rig's own records (ratchet.json, impact.json) are not published from the model job, so the change waits for /rig:approve $SLUG tier <S|M|L> <type> before any other step. Review any ## Verification commands like code: they run during the build."

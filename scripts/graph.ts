@@ -61,7 +61,7 @@ export function tierDrift(slug: string): string | null {
   const iType: ChangeType = isChangeType(intent.type) ? intent.type : 'feature'
   const iTier: Tier = isTier(intent.tier) ? intent.tier : 'M'
   const now = effective(slug, intent)
-  const accept = `/rig-approve ${slug} tier ${iTier} ${iType} to accept`
+  const accept = `/rig:approve ${slug} tier ${iTier} ${iType} to accept`
   if (!isTier(r.tier)) return `no recorded tier, so gated as L: ${accept}`
   const changed: [string, string][] = []
   if (iTier !== r.tier) changed.push(['tier', `${r.tier} → ${iTier}`])
@@ -123,7 +123,7 @@ export function nextCommand(change: Change): string {
   if (next.kind === 'approve') {
     const why = next.state === 'stale' ? ' (approval is stale: the artifact changed after it was approved)' : ''
     const what = next.gate === 'impact' ? `the cross-repo impact in ${change.slug}/impact.json and ${path.basename(planPath(change.slug))}` : `${change.slug}/${APPROVAL_ARTIFACTS[next.gate]}`
-    return `human gate: review ${next.gate === 'design' ? `${change.slug}/intent.md and ${change.slug}/design.md` : what}, then run /rig-approve ${change.slug} ${next.gate}${why}`
+    return `human gate: review ${next.gate === 'design' ? `${change.slug}/intent.md and ${change.slug}/design.md` : what}, then run /rig:approve ${change.slug} ${next.gate}${why}`
   }
   if (next.stage === 'intent') return `${skillRef('start')} ${change.slug}`
   if (next.stage === 'notes') return `${skillRef('start')} ${change.slug} (spike: answer in notes.md)`
@@ -153,7 +153,7 @@ export type Step = { slug: string; node: Stage | null; verdict: Verdict; reason:
 export const AUTONOMOUS: ReadonlySet<Stage> = new Set<Stage>(['build', 'diagnose', 'test', 'sensors', 'pr', 'pr-review'])
 const BUDGETED = new Set(['build', 'test', 'sensors', 'pr-review'])
 
-// The transition function: never asks a model. /rig-next (skill and mod), status and the autonomous run all read it.
+// The transition function: never asks a model. /rig:next (skill and mod), status and the autonomous run all read it.
 export function step(slug: string): Step {
   const change = loadChange(slug)
   const node = change.next?.stage ?? null
@@ -172,10 +172,10 @@ export function step(slug: string): Step {
   // A change drafted from the inbox (source:) whose tier was not published (rig-spec carries no ratchet.json) waits for a person
   // to accept its tier and type before any node, so the fallback type (feature) never picks its path. Legacy changes keep L.
   const drift = change.intent.source && !isTier(ratchet.tier) ? tierDrift(slug) : null
-  if (drift) return { ...base, verdict: 'human', reason: drift, command: drift.slice(drift.indexOf('/rig-approve')).replace(/ to accept$/, '') }
+  if (drift) return { ...base, verdict: 'human', reason: drift, command: drift.slice(drift.indexOf('/rig:approve')).replace(/ to accept$/, '') }
   if (!change.next) return { ...base, verdict: 'ready', reason: 'every node is done; a person merges the PR' }
   // R46: a gate or level block is cleared by the node's own code (pr re-runs the gate, verify-report re-derives levels) once a person
-  // fixed or waived it, so the node resumes; cap, stall, budget and other need /rig-approve <slug> budget.
+  // fixed or waived it, so the node resumes; cap, stall, budget and other need /rig:approve <slug> budget.
   const blocked = ratchet.blocked
   const pending = blocked && (blocked.kind === 'gate' || blocked.kind === 'level') ? ` (pending block: ${blocked.node}: ${blocked.reason})` : ''
   if (blocked && !pending) return { ...base, verdict: 'blocked', reason: `${blocked.node}: ${blocked.reason}` }

@@ -250,3 +250,17 @@ test('Stop skips the fast commands on a tree they already passed, and still judg
   tamper()
   assert.equal(JSON.parse(stop().stdout).decision, 'block')
 })
+
+test('a typed /rig:approve (either spelling, with or without arguments) records the approval and tells the model to carry on', () => {
+  sdlc(repo, ['init'])
+  sdlc(repo, ['new', 'demo', '--type', 'feature', '--tier', 'L'])
+  write(repo, '.rig/changes/demo/design.md', '# Design\n\n## Open questions\nnone\n')
+  const approvals = () => (fs.existsSync(path.join(repo, '.rig/approvals.jsonl')) ? fs.readFileSync(path.join(repo, '.rig/approvals.jsonl'), 'utf8') : '')
+  const ask = (prompt: string) => JSON.parse(hook(repo, 'prompt-submit', { prompt }).stdout).hookSpecificOutput.additionalContext as string
+  assert.match(ask('/rig:approve'), /recorded it/, 'a bare command approves the gate the active change waits at')
+  assert.match(approvals(), /"slug":"demo","stage":"design"/)
+  assert.match(ask('/rig-approve demo design'), /already approved/)
+  assert.equal(approvals().trim().split('\n').length, 1, 'a repeat adds no row')
+  assert.equal(hook(repo, 'prompt-submit', { prompt: 'please /rig:approve demo plan' }).stdout, '', 'only a prompt that starts with the command counts')
+  assert.doesNotMatch(approvals(), /"stage":"plan"/)
+})

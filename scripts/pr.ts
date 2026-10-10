@@ -115,11 +115,11 @@ export function cmdPr(args: Args): void {
   if (errors.length || gate.blocks.length) {
     const configFindings = errors.map(e => `[config] ${e}`)
     const q = (f: string): string => (/\s/.test(f) ? JSON.stringify(f) : f)
-    const waives = [...new Set(gate.blocks.filter(f => SENSOR_NAMES.includes(f.sensor)).map(f => `/rig-waive ${f.sensor} ${q(f.file ?? '*')} <reason>`))]
+    const waives = [...new Set(gate.blocks.filter(f => SENSOR_NAMES.includes(f.sensor)).map(f => `/rig:waive ${f.sensor} ${q(f.file ?? '*')} <reason>`))]
     const summary = [...configFindings, ...gate.blocks.map(f => `${f.sensor}${f.file ? ` ${f.file}` : ''}: ${f.message}`)].join('; ').replace(/\s+/g, ' ').slice(0, 400)
-    const resume = 'then /rig-next resumes'
+    const resume = 'then /rig:next resumes'
     block(slug, 'pr', waives.length && !errors.length ? `the ship gate refused; a person waives with ${waives.join(' ; ')}, or fix: ${summary}; ${resume}` : `fix: ${summary}; ${resume}`, 'gate')
-    fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /rig-waive <sensor> <file|*> <reason>.`)
+    fail(`not shipping: the ship gate found problems\n${[...configFindings, formatFindings(gate.findings)].filter(Boolean).join('\n')}\nFix them (one implementer round), or the person waives with /rig:waive <sensor> <file|*> <reason>.`)
   }
 
   if (readRatchet(slug).blocked?.node === 'pr') unblock(slug, 'ship gate passed', 'gate')
@@ -232,7 +232,7 @@ function followup(slug: string, message: string): void {
   const events = readEvents(slug)
   const since = events.map(e => e.verdict === 'unblocked' && e.reason === 'person approved more budget').lastIndexOf(true)
   const used = events.slice(since + 1).filter(e => e.kind === 'followup').length
-  if (used >= FOLLOWUP_CAP) { block(slug, 'pr-review', `cap: ${used} follow-up pushes used`, 'cap'); fail(`blocked: ${used} follow-up pushes used on ${slug}; a person decides, and /rig-approve ${slug} budget allows more`) }
+  if (used >= FOLLOWUP_CAP) { block(slug, 'pr-review', `cap: ${used} follow-up pushes used`, 'cap'); fail(`blocked: ${used} follow-up pushes used on ${slug}; a person decides, and /rig:approve ${slug} budget allows more`) }
   if (head !== `sdlc/${slug}`) fail(`follow-ups go on sdlc/${slug}; HEAD is ${head}`)
   const r = scopeDrift(slug, defaultBase())
   if (r.drift.length) fail(`scope drift, not committing: ${r.drift.join(', ')}`)

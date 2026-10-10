@@ -10,15 +10,17 @@ const SDLC_HOOK = '.rig/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number; async?: boolean }[] }
 
 // Plugin references rewritten for a project copy: script paths, /rig:x skills, rig:x agents and the skill's name.
-export function forProject(text: string): string {
+const AGENTS = ['architect', 'implementer', 'researcher', 'reviewer', 'scout']
+
+// `kind` says what the file is named: a skill keeps the plugin's colon (`/rig:start`), an agent takes a hyphen (`rig-scout`).
+export function forProject(text: string, kind: 'skill' | 'agent' = 'skill'): string {
   return text
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('<plugin>/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/workflows/', '.claude/workflows/')
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.rig/templates/')
-    .replace(/\/rig:([a-z][a-z-]*)/g, '/rig-$1')
-    .replace(/\brig:(?!allow-secret)([a-z][a-z-]*)/g, 'rig-$1')
-    .replace(/^name: (?!rig-)(\S+)$/m, 'name: rig-$1')
+    .replace(new RegExp(`(?<![/\\w])rig:(${AGENTS.join('|')})\\b`, 'g'), 'rig-$1')
+    .replace(/^name: (?!rig[-:])(\S+)$/m, kind === 'skill' ? 'name: rig:$1' : 'name: rig-$1')
 }
 
 function writeFile(rel: string, text: string, written: string[]): void {
@@ -70,7 +72,7 @@ function withoutStaleMod(enabled: Record<string, unknown> | undefined): Record<s
 function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): string {
   const run = `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${SDLC_HOOK} ${cmd}`
   return [
-    '---', `name: rig-${cmd}`, `description: Human only. ${what} The model cannot run this.`, `argument-hint: ${hint}`,
+    '---', `name: rig:${cmd}`, `description: Human only. ${what} The model cannot run this.`, `argument-hint: ${hint}`,
     'disable-model-invocation: true', `allowed-tools: Bash(${run} *)`, '---',
     `!\`${run} '$ARGUMENTS' 2>&1\``, '', 'Tell the person the result above in one line. Do nothing else.', '',
   ].join('\n')
@@ -84,7 +86,7 @@ function vendorStandalone(written: string[], version: string): void {
   writeFile('.claude/skills/rig-approve/SKILL.md', humanSkill('approve', '<slug> <design|spec|plan|impact|budget|full-route|tier S|M|L [type]>', 'Approve a gated sdlc artifact.'), written)
   writeFile('.claude/skills/rig-waive/SKILL.md', humanSkill('waive', '<sensor> <file|*> <reason>', 'Waive a sensor finding for the active change.'), written)
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'agents')).filter(f => f.endsWith('.md'))) {
-    writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)
+    writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file)), 'agent'), written)
   }
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'templates'))) {
     writeFile(`.rig/templates/${file}`, read(path.join(PLUGIN_ROOT, 'templates', file)), written)

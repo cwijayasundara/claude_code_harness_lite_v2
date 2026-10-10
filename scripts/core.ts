@@ -61,6 +61,7 @@ export type HookInput = {
   agent_id?: string
   agent_type?: string
   source?: string
+  prompt?: string
   tool_input?: {
     command?: string
     file_path?: string
@@ -355,9 +356,9 @@ export function planProblems(file: string): string[] {
 }
 
 export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
-// A standalone repo runs its own copy from .rig/bin, where skills are /rig-<name> and agents rig-<name>.
+// A standalone repo runs its own copy from .rig/bin: its skills are named /rig:<name> as in the plugin, its agents rig-<name>.
 export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
-export const skillRef = (name: string): string => `/rig${IS_VENDORED ? '-' : ':'}${name}`
+export const skillRef = (name: string): string => `/rig:${name}`
 export const agentRef = (name: string): string => `rig${IS_VENDORED ? '-' : ':'}${name}`
 // Managed settings (the platform team's, which no engineer can edit): the OS file plus managed-settings.d/ drop-ins in name order.
 // Objects merge, arrays concatenate, later scalars win. RIG_MANAGED_DIR overrides the directory (tests). Server-managed settings are not visible here.

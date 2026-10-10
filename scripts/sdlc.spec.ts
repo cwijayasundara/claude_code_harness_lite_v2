@@ -491,7 +491,7 @@ test('F2: a tier L bugfix stops at a plan gate after diagnosis; S and M do not',
   run(['new', 'big-bug', '--type', 'bugfix', '--tier', 'L'])
   assert.match(run(['status']).stdout, /next: \/rig:diagnose big-bug/)
   fs.writeFileSync(path.join(repo, '.rig/changes/big-bug/plan.md'), '# Plan\n\n## Files\n- src/a.js\n\n## Verification\n- `npm test`\n')
-  assert.match(run(['status']).stdout, /human gate: review big-bug\/plan\.md, then run \/rig-approve big-bug plan/)
+  assert.match(run(['status']).stdout, /human gate: review big-bug\/plan\.md, then run \/rig:approve big-bug plan/)
   run(['approve', 'big-bug', 'plan'], { env: { SDLC_HUMAN: '1' } })
   assert.match(run(['status']).stdout, /next: \/rig:diagnose big-bug/)
   run(['new', 'small-bug', '--type', 'bugfix', '--tier', 'M'])

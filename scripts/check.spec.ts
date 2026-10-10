@@ -237,7 +237,7 @@ test('the plan point records impact, escalates to tier L and requires the impact
   write(repo, '.rig/changes/rename-rate/spec.md', '## Behaviours\nB1 rename\n')
   sdlc(repo, ['approve', 'rename-rate', 'spec'], { env: { SDLC_HUMAN: '1' } })
   sdlc(repo, ['approve', 'rename-rate', 'plan'], { env: { SDLC_HUMAN: '1' } })
-  assert.match(sdlc(repo, ['status']).stdout, /\/rig-approve rename-rate impact/)
+  assert.match(sdlc(repo, ['status']).stdout, /\/rig:approve rename-rate impact/)
   sdlc(repo, ['approve', 'rename-rate', 'impact'], { env: { SDLC_HUMAN: '1' } })
   assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:build rename-rate/)
 })
@@ -306,7 +306,7 @@ test('an impact approval only downgrades the ids it covers, and re-running the p
   assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:build/, 'identical re-run keeps the approval')
   write(path.resolve(repo, rel), 'src/b.ts', 'a_col again\n')
   check('--at', 'plan', '--slug', 'scoped-change')
-  assert.match(sdlc(repo, ['status']).stdout, /\/rig-approve scoped-change impact[\s\S]*stale/)
+  assert.match(sdlc(repo, ['status']).stdout, /\/rig:approve scoped-change impact[\s\S]*stale/)
 })
 
 test('a consumer that is not checked out at the plan point also needs the impact approval', () => {

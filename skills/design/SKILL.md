@@ -23,6 +23,6 @@ Run each sdlc.ts command as its own Bash call (no `cd`, pipes, redirects, `&&` o
 
 If the run is `--plan-only` (the rig-spec workflow), stop after design.md and its checks: do not ask for approval and do not build; end with `Next: review the pull request`.
 
-Otherwise ask for the single approval. The sdlc mod shows an Approve / Not yet dialog when this turn ends, and approving it starts the build. Without the mod, tell the person to run `/rig-approve $0 design`.
+Otherwise ask for the single approval. The sdlc mod shows an Approve / Not yet dialog when this turn ends, and approving it starts the build. Without the mod, end by telling the person to type `/rig:approve` (no arguments: it approves this gate); that one command is their only step, and the build then starts on its own. Never tell them to run `/rig:design` or any other command first.
 
 Otherwise end with: `Next: <command from status>`.

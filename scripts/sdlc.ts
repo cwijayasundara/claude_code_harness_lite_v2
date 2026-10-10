@@ -179,14 +179,14 @@ function cmdStatus(args: Args): void {
   out([...rows, '', `flow: ${flowLine(flowOf(true, act))}`, `where: ${where}`, `stale: ${stale.length ? stale.join('; ') : 'nothing'}`, evalLine, st?.verdict === 'blocked' ? `blocked: ${st.reason}` : st?.verdict === 'human' ? `next: ${st.command}` : act ? `next: ${nextCommand(act)}` : '', ...warnings.map(w => `warn: ${w}`), ...open.map(o => `open: ${o}`)].filter(Boolean).join('\n'))
 }
 
-// A standalone repo's /rig-approve and /rig-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
+// A standalone repo's /rig:approve and /rig:waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
 const words = (args: Args): string[] => (args.pos.length === 1 ? (args.pos[0] ?? '').trim().split(/\s+/) : args.pos)
 
 // What the person can type when their /rig-<cmd> slash command is not listed (a session started before the harness was vendored).
 const humanFallback = (cmd: string, usage: string): string => `! SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${path.relative(process.cwd(), process.argv[1] ?? 'sdlc.ts')} ${cmd} ${usage}`
 
 function cmdApprove(args: Args): void {
-  if (process.env.SDLC_HUMAN !== '1') fail(`approvals are human-only: the person runs /rig-approve <slug> <stage>. If that command is not listed, restart Claude Code, or the person types: ${humanFallback('approve', '<slug> <stage>')}`, 3)
+  if (process.env.SDLC_HUMAN !== '1') fail(`approvals are human-only: the person runs /rig:approve <slug> <stage>. If that command is not listed, restart Claude Code, or the person types: ${humanFallback('approve', '<slug> <stage>')}`, 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
   checkSlug(slug)
@@ -213,7 +213,7 @@ function cmdApprove(args: Args): void {
     if (!isTier(tier) || (type !== undefined && !isChangeType(type))) fail('usage: approve <slug> tier <S|M|L> [<type>]')
     const intent = frontmatter(read(path.join(CHANGES, slug, 'intent.md'))).data
     const says = { tier: isTier(intent.tier) ? intent.tier : 'M', type: isChangeType(intent.type) ? intent.type : 'feature' }
-    if (says.tier !== tier || (type !== undefined && says.type !== type)) fail(`not approving: ${slug}/intent.md now says tier ${says.tier}, type ${says.type}; you approved ${tier}${type ? ` ${type}` : ''}. Read it again and run /rig-approve ${slug} tier <tier> [<type>]`)
+    if (says.tier !== tier || (type !== undefined && says.type !== type)) fail(`not approving: ${slug}/intent.md now says tier ${says.tier}, type ${says.type}; you approved ${tier}${type ? ` ${type}` : ''}. Read it again and run /rig:approve ${slug} tier <tier> [<type>]`)
     const r = readRatchet(slug)
     const was = { tier: r.tier ?? 'unrecorded', type: r.type ?? 'unrecorded' }
     r.tier = tier
@@ -237,6 +237,8 @@ function cmdApprove(args: Args): void {
   const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
   if (stage === 'impact' && !exists(path.join(CHANGES, slug, 'impact.json'))) fail(`nothing to approve: ${slug}/impact.json does not exist (run check --at plan first)`)
   const row: Approval = { slug, stage, by, at: now(), digest: approvalDigest(slug, stage as GatedStage) }
+  // The prompt hook and the /rig:approve skill can both run for one typed command: the second finds the row and adds nothing.
+  if (exists(APPROVALS) && read(APPROVALS).split('\n').some(l => l.includes(`"slug":"${slug}","stage":"${stage}"`) && l.includes(`"digest":"${row.digest}"`))) return out(`${slug} ${stage} is already approved (digest ${row.digest}). Next: ${nextCommand(loadChange(slug))}`)
   fs.appendFileSync(APPROVALS, JSON.stringify(row) + '\n')
   out(`approved ${slug} ${stage} by ${by} (digest ${row.digest}). Next: ${nextCommand(loadChange(slug))}`)
 }
@@ -275,7 +277,7 @@ function cmdLogUsage(args: Args): void {
   // Money only goes up: a malformed or negative usd, an unknown kind or a budget-raised event would let the model grant itself budget.
   const badUsd = row.usd !== undefined && (typeof row.usd !== 'number' || !Number.isFinite(row.usd) || row.usd < 0)
   const badKind = !(['main', 'agent', 'event'] as unknown[]).includes(row.kind)
-  if (badUsd || badKind || (row.kind === 'event' && row.event === 'budget-raised')) fail('log-usage refuses a bad usd or kind and budget-raised rows: only /rig-approve <slug> budget raises a budget', 3)
+  if (badUsd || badKind || (row.kind === 'event' && row.event === 'budget-raised')) fail('log-usage refuses a bad usd or kind and budget-raised rows: only /rig:approve <slug> budget raises a budget', 3)
   const current = frontmatter(read(STATE)).data.change || null
   const change = row.change ?? current
   const stage = row.change ? row.stage ?? null : current ? 'intent' : null
@@ -332,7 +334,7 @@ function cmdDiff(args: Args): void {
 
 // Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
 function cmdWaive(args: Args): void {
-  if (process.env.SDLC_HUMAN !== '1') fail(`waivers are human-only: the person runs /rig-waive <sensor> <file|*> <reason>. If that command is not listed, restart Claude Code, or the person types: ${humanFallback('waive', "<sensor> <file|*> '<reason>'")}`, 3)
+  if (process.env.SDLC_HUMAN !== '1') fail(`waivers are human-only: the person runs /rig:waive <sensor> <file|*> <reason>. If that command is not listed, restart Claude Code, or the person types: ${humanFallback('waive', "<sensor> <file|*> '<reason>'")}`, 3)
   const [sensor, file, ...reason] = words(args)
   const given = optString(args, 'slug')
   const slug = given ? checkSlug(given) : activeSlug()
