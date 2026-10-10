@@ -2,8 +2,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { makeRepo, sdlc, write } from './testkit.ts'
+import { gitIn, makeRepo, sdlc, write } from './testkit.ts'
 
 const ROOT = path.join(import.meta.dirname, '..')
 const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8')
@@ -65,4 +66,18 @@ test('new does not scaffold policy; plain init does not; init --full scaffolds o
   write(repo, '.claude/skills/policy-security/SKILL.md', 'mine\n')
   sdlc(repo, ['init', '--full'])
   assert.equal(fs.readFileSync(file, 'utf8'), 'mine\n', 'a second init --full never overwrites the policy skill')
+})
+
+test('new in a repository with no commits commits what is there as a baseline, ignoring .DS_Store', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-nocommit-'))
+  gitIn(repo, 'init', '-q', '-b', 'main')
+  write(repo, 'src/a.js', 'x\n')
+  write(repo, '.DS_Store', 'junk')
+  const r = sdlc(repo, ['new', 'add-x', '--type', 'chore', '--tier', 'S'])
+  assert.equal(r.code, 0, r.stdout + r.stderr)
+  assert.match(r.stdout, /committed the existing files as a baseline/)
+  const files = gitIn(repo, 'ls-tree', '-r', '--name-only', 'HEAD').split('\n')
+  assert.ok(files.includes('src/a.js'))
+  assert.ok(!files.includes('.DS_Store'))
+  assert.ok(!files.some(f => f.startsWith('.rig/changes/add-x')), 'the change itself is not in the baseline')
 })

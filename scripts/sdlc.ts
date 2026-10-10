@@ -72,6 +72,18 @@ function whoami(): string | null {
   return git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || null
 }
 
+// Slice scope checks diff against a base commit, so a repo with no commits gets one: everything already here, minus clutter.
+function ensureBaseline(): string {
+  if (git(['rev-parse', '--verify', '-q', 'HEAD']) !== null) return ''
+  const ignore = path.join(ROOT, '.gitignore')
+  const have = exists(ignore) ? read(ignore).split('\n') : []
+  const add = ['.DS_Store', 'node_modules/'].filter(l => !have.includes(l))
+  if (add.length) fs.appendFileSync(ignore, (have.length && have[have.length - 1] !== '' ? '\n' : '') + add.join('\n') + '\n')
+  const who = git(['config', 'user.name']) ? [] : ['-c', 'user.name=rig', '-c', 'user.email=rig@localhost']
+  if (git(['add', '-A']) === null || git([...who, 'commit', '-q', '-m', 'baseline: the repository as it was before rig']) === null) return ''
+  return 'committed the existing files as a baseline (the repository had no commits)'
+}
+
 function cmdInit(args: Args): void {
   // Ship and the PR gate read git, so a directory outside any repo gets one.
   const newRepo = git(['rev-parse', '--is-inside-work-tree']) !== 'true' && git(['init', '-q', '-b', 'main']) !== null
@@ -103,7 +115,12 @@ function cmdNew(args: Args): void {
   if (source !== undefined && (!/^\.rig\/intent\/[a-z0-9][a-z0-9-]{0,60}\.md$/.test(source) || !exists(path.join(ROOT, source)))) fail(`--source must name an existing .rig/intent/<kebab-name>.md file, not "${source}"`)
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
-  if (!exists(SDLC)) cmdInit({ pos: [], opt: {} })
+  if (!exists(SDLC)) {
+    if (git(['rev-parse', '--is-inside-work-tree']) !== 'true') git(['init', '-q', '-b', 'main'])
+    const note = ensureBaseline()
+    if (note) out(note)
+    cmdInit({ pos: [], opt: {} })
+  }
   const explicit = args.opt.points !== undefined ? parsePoints(args.opt.points) : null
   const defaults = loadConfig().config.points
   createChange(slug, type, tier, optString(args, 'title') ?? slug, { value: explicit ?? defaults[tier], set: explicit !== null }, source)
