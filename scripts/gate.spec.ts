@@ -3,7 +3,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, hook, write, gitIn } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn, buildDone } from './testkit.ts'
 
 let repo: string
 beforeEach(() => {
@@ -263,4 +263,22 @@ test('a typed /rig:approve (either spelling, with or without arguments) records 
   assert.equal(approvals().trim().split('\n').length, 1, 'a repeat adds no row')
   assert.equal(hook(repo, 'prompt-submit', { prompt: 'please /rig:approve demo plan' }).stdout, '', 'only a prompt that starts with the command counts')
   assert.doesNotMatch(approvals(), /"stage":"plan"/)
+})
+
+test('Stop sends a change with a node left on to it once, and never loops on a node that did not move', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  assert.equal(stop().stdout, '', 'a turn that moved nothing (a question mid-change) is left alone')
+  buildDone(repo, 'tiny')
+  const first = JSON.parse(stop().stdout)
+  assert.equal(first.decision, 'block')
+  assert.match(first.reason, /sdlc\.ts skill test tiny/)
+  assert.match(first.reason, /without waiting for the person/)
+  assert.equal(stop().stdout, '', 'the same node is offered once: a turn that moved nothing ends')
+})
+
+test('Stop does not continue a change that waits at a human gate or has no active change', () => {
+  assert.equal(stop().stdout, '')
+  sdlc(repo, ['new', 'gated', '--type', 'feature', '--tier', 'M'])
+  assert.equal(stop().stdout, '', 'a feature before its design approval is a person step, not an auto step')
 })

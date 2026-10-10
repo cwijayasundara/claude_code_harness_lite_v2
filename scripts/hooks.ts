@@ -8,7 +8,7 @@ import {
   ROOT, SDLC, CHANGES, git, STATE, USAGE, PLUGIN_ROOT, IS_VENDORED, skillRef, agentRef, now, exists, read, out, fail, frontmatter, toPosix,
   managedSettings, scanSecrets, planProblems, relPosix, sha, withLock, writeAtomic, type Args, type HookInput,
 } from './core.ts'
-import { activeSlug, loadChange, nextCommand, createAdhoc } from './graph.ts'
+import { activeSlug, loadChange, nextCommand, createAdhoc, step } from './graph.ts'
 import { snapshot, writeBaseline, readBaseline, turnDiff, showAt, diffHash } from './diffs.ts'
 import { isProtected, tierFromDiff } from './sensors.ts'
 import { loadConfig, runChecks, editFindings } from './check.ts'
@@ -126,7 +126,7 @@ function hookSkillFailed(input: HookInput): void {
 
 export type GateSummary = { at: string; blocks: number; warns: number; bySensor: Record<string, number>; warnRows?: string[]; shown?: boolean }
 // trees: stamps of working trees on which the fast commands passed, kept across turns (the per-turn fields reset at each prompt).
-export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; guides: Record<string, string[]>; trees: string[]; last?: GateSummary }
+export type Gate = { turn: string; blocks: Record<string, number>; passed: Record<string, string>; tool: string[]; guides: Record<string, string[]>; trees: string[]; cont?: string; turnStep?: string; last?: GateSummary }
 
 const GATE = path.join(SDLC, '.gate')
 const UNRESOLVED = path.join(SDLC, 'unresolved.json')
@@ -143,6 +143,7 @@ export function readGate(): Gate {
     return {
       turn: typeof g.turn === 'string' ? g.turn : d.turn, blocks: obj(g.blocks, d.blocks), passed: obj(g.passed, d.passed),
       tool: Array.isArray(g.tool) ? g.tool.map(String) : d.tool, guides: obj(g.guides, d.guides), trees: Array.isArray(g.trees) ? g.trees.map(String) : d.trees,
+      ...(typeof g.cont === 'string' ? { cont: g.cont } : {}), ...(typeof g.turnStep === 'string' ? { turnStep: g.turnStep } : {}),
       ...(g.last && typeof g.last === 'object' ? { last: g.last as GateSummary } : {}),
     }
   } catch {
@@ -192,7 +193,7 @@ function hookPromptSubmit(input: HookInput = {}): void {
   const snap = snapshot()
   if (snap) writeBaseline(snap)
   updateGate(g => {
-    Object.assign(g, { turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [] })
+    Object.assign(g, { turn: snap?.at ?? now(), blocks: {}, passed: {}, tool: [], turnStep: stepKeyNow()?.key })
     if (carry && g.last) g.last.shown = true
   })
   if (typed) approveTyped(typed[1] ?? '')
@@ -203,16 +204,16 @@ function hookPromptSubmit(input: HookInput = {}): void {
 
 // The end-of-turn gate: every built-in sensor on this turn's diff, then the fast commands. Work with no active change is
 // adopted as an ad-hoc change and judged the same way.
-function hookStop(): void {
-  if (!exists(SDLC)) return
+function hookStop(): boolean {
+  if (!exists(SDLC)) return false
   const snap = readBaseline()
-  if (!snap) return
+  if (!snap) return false
   const { config, rules, errors } = loadConfig()
   const gate = readGate()
   const diffs = turnDiff(snap).filter(d => isSource(d.file, config) || isProtected(d.file))
-  if (!diffs.length) return
+  if (!diffs.length) return false
   const hash = diffHash(diffs) + sha(read(path.join(SDLC, 'sensors.json')) + read(path.join(SDLC, 'rules.json')))
-  if (gate.passed.main === hash) return
+  if (gate.passed.main === hash) return false
   let slug = activeSlug()
   // A turn that shipped (its commits add a change's ship.json) is recorded already; any other commit is still ad hoc.
   const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.rig\/changes\/[^/]+\/ship\.json$/.test(f))
@@ -239,17 +240,46 @@ function hookStop(): void {
     if (exists(UNRESOLVED)) fs.rmSync(UNRESOLVED)
     const warns = gate.last?.warnRows ?? []
     if (warns.length) out(JSON.stringify({ systemMessage: `rig: ${gate.last?.warns} warning(s), not blocking: ${[...warns, ...more(gate.last)].join(' | ')}` }))
-    return
+    return false
   }
   fs.writeFileSync(UNRESOLVED, JSON.stringify({ at: now(), slug, findings: blocks }, null, 2) + '\n')
   const attempt = (gate.blocks.main ?? 0) + 1
   if (attempt > MAX_BLOCKS) {
     save()
-    return out(JSON.stringify({ systemMessage: `sdlc quality gate: ${blocks.length} problem(s) unresolved after ${MAX_BLOCKS} attempts (.rig/unresolved.json). Ship and CI will refuse until they are fixed or the person waives them.` }))
+    out(JSON.stringify({ systemMessage: `sdlc quality gate: ${blocks.length} problem(s) unresolved after ${MAX_BLOCKS} attempts (.rig/unresolved.json). Ship and CI will refuse until they are fixed or the person waives them.` }))
+    return true
   }
   gate.blocks.main = attempt
   save()
   out(JSON.stringify({ decision: 'block', reason: `sdlc quality gate (attempt ${attempt}/${MAX_BLOCKS}): fix these before you finish.\n${formatFindings(findings)}` }))
+  return true
+}
+
+// After approval the rest of the lifecycle is automatic: a turn that ends with a node still to run (build, test, sensors, pr)
+// and no person-gate waiting is sent on to the next node, so nobody types /rig:test. Each node is offered once: a turn that
+// ends on the same node, round and slice count as the last offer moved nothing, so it stops instead of looping.
+const AUTO_NODES = new Set(['build', 'test', 'sensors', 'pr'])
+function stepKeyNow(): { key: string; s: ReturnType<typeof step> } | null {
+  try {
+    const slug = exists(SDLC) ? activeSlug() : null
+    if (!slug) return null
+    const s = step(slug)
+    return { key: `${slug}:${s.node}:${s.round}:${s.progress ?? 0}`, s }
+  } catch { return null }
+}
+
+// Only a turn that moved the change (its step differs from the one the turn started on) is continued: a question asked
+// mid-change, or an approval turn that has not begun a node, is left alone.
+function continueChange(): void {
+  const now_ = stepKeyNow()
+  if (!now_) return
+  const { key, s } = now_
+  const slug = s.slug
+  if (s.verdict !== 'continue' || !s.node || !AUTO_NODES.has(s.node)) return
+  const gate = readGate()
+  if (gate.turnStep === undefined || gate.turnStep === key || gate.cont === key) return
+  updateGate(g => { g.cont = key })
+  out(JSON.stringify({ decision: 'block', reason: `rig: the design is approved, so ${s.node} runs next without waiting for the person. Run \`node --disable-warning=ExperimentalWarning ${process.argv[1]} skill ${s.node} ${slug}\` and follow the printed steps for this node, then stop (the next node is offered when you do).` }))
 }
 
 // Subagent lanes, for the work/span/idle numbers. Observational only: they never block and write nothing without an active change.
@@ -271,7 +301,7 @@ const HOOKS: Record<string, (input: HookInput) => void> = {
   'post-edit': hookPostEdit,
   'skill-failed': hookSkillFailed,
   'prompt-submit': i => hookPromptSubmit(i),
-  stop: () => hookStop(),
+  stop: () => { if (!hookStop()) continueChange() },
   'subagent-start': i => laneEvent(i, 'start'),
   'subagent-stop': i => laneEvent(i, 'stop'),
 }
