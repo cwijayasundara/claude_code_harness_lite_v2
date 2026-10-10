@@ -106,7 +106,7 @@ async function offerDesignGate($: EngineInterface, step: StepInfo | null | undef
 // The vendored copy (.rig/mod) wins over the globally installed plugin's mod: both would register the same commands.
 const isVendoredRoot = (root: string): boolean => /\/\.rig\/mod\/?$/.test(root.replace(/\\/g, '/'))
 
-const VENDORED_IDS = ['rig-mod@rig-local', 'sdlc-mod@sdlc-local']
+const VENDORED_IDS = ['rig@rig-local', 'rig-mod@rig-local', 'sdlc-mod@sdlc-local']
 
 // Step aside only when the vendored copy is really configured: its files exist AND the protected settings enable it.
 // Anything unreadable keeps this copy active (fail closed).

@@ -29,7 +29,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     noFlow: false,
     vendoredMod: false,
     logs: [] as string[],
-    settings: '{"enabledPlugins":{"rig-mod@rig-local":true}}',
+    settings: '{"enabledPlugins":{"rig@rig-local":true}}',
     partial: false,
     verdict: 'continue',
     prompts: [] as string[],

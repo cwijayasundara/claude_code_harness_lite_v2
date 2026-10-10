@@ -52,9 +52,16 @@ function mergeHooks(written: string[]): void {
   const merged = {
     ...settings, hooks,
     extraKnownMarketplaces: { ...settings.extraKnownMarketplaces, 'rig-local': { source: { source: 'directory', path: '.' } } },
-    enabledPlugins: { ...settings.enabledPlugins, 'rig-mod@rig-local': true },
+    enabledPlugins: { ...withoutStaleMod(settings.enabledPlugins), 'rig@rig-local': true },
   }
   writeFile('.claude/settings.json', JSON.stringify(merged, null, 2) + '\n', written)
+}
+
+// The mod's state atoms are owned by plugin 'rig', so the vendored copy must be named 'rig' too or the host refuses its
+// state writes. Repos vendored earlier enabled it as rig-mod: drop that entry so the old copy is not loaded twice.
+function withoutStaleMod(enabled: Record<string, unknown> | undefined): Record<string, unknown> {
+  const { 'rig-mod@rig-local': _stale, ...rest } = enabled ?? {}
+  return rest
 }
 
 // Human-only gates without the mod: the person invokes these, the model cannot (disable-model-invocation), and
@@ -87,9 +94,9 @@ function vendorStandalone(written: string[], version: string): void {
   }
   for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, 'hooks')).filter(f => /\.(?:ts|tsx)$/.test(f))) writeFile(`.rig/mod/hooks/${f}`, read(path.join(PLUGIN_ROOT, 'hooks', f)), written)
   writeFile('.rig/mod/hooks/hooks.json', JSON.stringify({ modules: ['./register.ts'] }, null, 2) + '\n', written)
-  writeFile('.rig/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'rig-mod', version }, null, 2) + '\n', written)
+  writeFile('.rig/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'rig', version }, null, 2) + '\n', written)
   writeFile('.rig/mod/types/index.d.ts', read(path.join(PLUGIN_ROOT, 'types', 'index.d.ts')), written)
-  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'rig-local', owner: { name: 'sdlc' }, plugins: [{ name: 'rig-mod', source: './.rig/mod' }] }, null, 2) + '\n', written)
+  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'rig-local', owner: { name: 'sdlc' }, plugins: [{ name: 'rig', source: './.rig/mod' }] }, null, 2) + '\n', written)
   mergeHooks(written)
 }
 

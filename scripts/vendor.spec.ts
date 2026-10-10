@@ -140,10 +140,11 @@ test('standalone vendoring installs the mod as a project plugin', () => {
   sdlc(repo, ['vendor', '--standalone'])
   assert.ok(fs.existsSync(path.join(repo, '.rig/mod/hooks/register.ts')))
   assert.ok(fs.existsSync(path.join(repo, '.rig/mod/types/index.d.ts')))
-  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.rig/mod/.claude-plugin/plugin.json'), 'utf8')).name, 'rig-mod')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.rig/mod/.claude-plugin/plugin.json'), 'utf8')).name, 'rig')
   assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin/marketplace.json'), 'utf8')).plugins[0].source, './.rig/mod')
   const settings = JSON.parse(fs.readFileSync(path.join(repo, '.claude/settings.json'), 'utf8'))
-  assert.equal(settings.enabledPlugins['rig-mod@rig-local'], true)
+  assert.equal(settings.enabledPlugins['rig@rig-local'], true)
+  assert.equal(settings.enabledPlugins['rig-mod@rig-local'], undefined)
   assert.ok(settings.extraKnownMarketplaces['rig-local'])
 })
 
