@@ -182,8 +182,11 @@ function cmdStatus(args: Args): void {
 // A standalone repo's /rig-approve and /rig-waive skills pass '$ARGUMENTS' as one quoted string, so the shell never globs it.
 const words = (args: Args): string[] => (args.pos.length === 1 ? (args.pos[0] ?? '').trim().split(/\s+/) : args.pos)
 
+// What the person can type when their /rig-<cmd> slash command is not listed (a session started before the harness was vendored).
+const humanFallback = (cmd: string, usage: string): string => `! SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${path.relative(process.cwd(), process.argv[1] ?? 'sdlc.ts')} ${cmd} ${usage}`
+
 function cmdApprove(args: Args): void {
-  if (process.env.SDLC_HUMAN !== '1') fail('approvals are human-only: the person runs /rig-approve <slug> <stage>', 3)
+  if (process.env.SDLC_HUMAN !== '1') fail(`approvals are human-only: the person runs /rig-approve <slug> <stage>. If that command is not listed, restart Claude Code, or the person types: ${humanFallback('approve', '<slug> <stage>')}`, 3)
   const [slug, stage] = words(args)
   if (!slug || !stage) fail('usage: approve <slug> <stage>')
   checkSlug(slug)
@@ -329,7 +332,7 @@ function cmdDiff(args: Args): void {
 
 // Every script the checker imports; testkit and specs stay behind. CI runs this copy, so it never needs the plugin.
 function cmdWaive(args: Args): void {
-  if (process.env.SDLC_HUMAN !== '1') fail('waivers are human-only: the person runs /rig-waive <sensor> <file|*> <reason>', 3)
+  if (process.env.SDLC_HUMAN !== '1') fail(`waivers are human-only: the person runs /rig-waive <sensor> <file|*> <reason>. If that command is not listed, restart Claude Code, or the person types: ${humanFallback('waive', "<sensor> <file|*> '<reason>'")}`, 3)
   const [sensor, file, ...reason] = words(args)
   const given = optString(args, 'slug')
   const slug = given ? checkSlug(given) : activeSlug()
