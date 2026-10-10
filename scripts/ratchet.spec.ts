@@ -18,13 +18,13 @@ test('parseReviewFindings reads the reviewer line format', () => {
 })
 
 test('a slice with no high findings is done; new high findings continue; a repeated one stalls', () => {
-  write(repo, '.sdlc/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
+  write(repo, '.rig/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
   assert.equal(record('build', 'verdict: pass\n## Findings\n', '1').verdict, 'done')
   assert.equal(record('build', HIGH, '2').verdict, 'continue')
   const stalled = record('build', HIGH, '2')
   assert.equal(stalled.verdict, 'blocked')
   assert.match(stalled.reason, /stall: the same finding came back/)
-  const r = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8'))
+  const r = JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), 'utf8'))
   assert.equal(r.slices['1'].status, 'done')
   assert.equal(r.blocked.node, 'build')
 })
@@ -38,11 +38,11 @@ test('the round cap blocks: default build cap is 2 fix rounds', () => {
 })
 
 test('build is done when every plan slice is done', () => {
-  write(repo, '.sdlc/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
+  write(repo, '.rig/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
   record('build', 'verdict: pass\n', '1')
-  assert.notEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')).nodes.build?.status, 'done')
+  assert.notEqual(JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), 'utf8')).nodes.build?.status, 'done')
   record('build', 'verdict: pass\n', '2')
-  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')).nodes.build.status, 'done')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), 'utf8')).nodes.build.status, 'done')
 })
 
 test('testCaseCount counts test cases across common frameworks', () => {
@@ -56,7 +56,7 @@ test('spendUsd sums a change\'s main-turn cost, per node', () => {
   assert.deepEqual(r, { total: 0.75, byNode: { build: 0.5, test: 0.25 } })
 })
 
-const ratchetJson = (): string => fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')
+const ratchetJson = (): string => fs.readFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), 'utf8')
 const tryRecord = (node: string, text: string, extra: string[] = []) => sdlc(repo, ['ratchet', 'record', 'big', node, ...extra], { input: text })
 
 test('record refuses input with no verdict and no finding line, and records nothing', () => {
@@ -64,7 +64,7 @@ test('record refuses input with no verdict and no finding line, and records noth
     const r = tryRecord('pr-review', text)
     assert.notEqual(r.code, 0, JSON.stringify(text))
   }
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, tier: 'L', type: 'feature', nodes: {}, slices: {}, baseline: {} })
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), 'utf8')), { version: 4, tier: 'L', type: 'feature', nodes: {}, slices: {}, baseline: {} })
   assert.equal(record('pr-review', 'verdict: pass\n').verdict, 'done')
 })
 
@@ -72,11 +72,11 @@ test('record refuses changes-needed when no critical or high finding parsed', ()
   const r = tryRecord('pr-review', 'verdict: changes-needed\n- [severity: medium] [category: tests] t.js:1: weak\n')
   assert.notEqual(r.code, 0)
   assert.match(r.stderr + r.stdout, /changes-needed but no critical or high finding lines parsed/)
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), 'utf8')), { version: 4, tier: 'L', type: 'feature', nodes: {}, slices: {}, baseline: {} })
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), 'utf8')), { version: 4, tier: 'L', type: 'feature', nodes: {}, slices: {}, baseline: {} })
 })
 
 test('build needs --slice when the plan has several, and rejects unknown slices', () => {
-  write(repo, '.sdlc/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
+  write(repo, '.rig/changes/big/plan.md', '## Slices\n### Task 1: a\n### Task 2: b\n')
   const missing = tryRecord('build', 'verdict: pass\n')
   assert.notEqual(missing.code, 0)
   assert.match(missing.stderr + missing.stdout, /--slice is required: plan\.md has 1, 2/)
@@ -87,7 +87,7 @@ test('build needs --slice when the plan has several, and rejects unknown slices'
 
 test('build events are labelled build#<slice>, unknown nodes and changes are refused', () => {
   tryRecord('build', 'verdict: pass\n')
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8'), /"node":"build#1"/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/big/events.jsonl'), 'utf8'), /"node":"build#1"/)
   assert.notEqual(tryRecord('constructor', 'verdict: pass\n').code, 0)
   const ghost = sdlc(repo, ['ratchet', 'show', 'nope'])
   assert.notEqual(ghost.code, 0)
@@ -97,16 +97,16 @@ test('build events are labelled build#<slice>, unknown nodes and changes are ref
 test('ratchet record --from reads the reply from a file inside the change folder only', () => {
   const repo = makeRepo()
   sdlc(repo, ['new', 'chg', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/chg/plan.md', '## Files\n- src/**\n')
-  write(repo, '.sdlc/changes/chg/review.md', 'verdict: pass\n')
-  const ok = sdlc(repo, ['ratchet', 'record', 'chg', 'build', '--slice', '1', '--from', '.sdlc/changes/chg/review.md'])
+  write(repo, '.rig/changes/chg/plan.md', '## Files\n- src/**\n')
+  write(repo, '.rig/changes/chg/review.md', 'verdict: pass\n')
+  const ok = sdlc(repo, ['ratchet', 'record', 'chg', 'build', '--slice', '1', '--from', '.rig/changes/chg/review.md'])
   assert.equal(ok.code, 0, ok.stderr)
   assert.match(ok.stdout, /"done"/)
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-from-'))
   fs.writeFileSync(path.join(outside, 'r.md'), 'verdict: pass\n')
-  fs.symlinkSync(outside, path.join(repo, '.sdlc/changes/chg/link'))
-  write(repo, '.sdlc/changes/chg/runs.jsonl', '')
-  for (const f of ['../../sensors.json', path.join(outside, 'r.md'), '.sdlc/changes/chg/link/r.md', '.sdlc/changes/chg/runs.jsonl', '.sdlc/changes/chg/ratchet.json', '.sdlc/changes/chg/missing.md']) {
+  fs.symlinkSync(outside, path.join(repo, '.rig/changes/chg/link'))
+  write(repo, '.rig/changes/chg/runs.jsonl', '')
+  for (const f of ['../../sensors.json', path.join(outside, 'r.md'), '.rig/changes/chg/link/r.md', '.rig/changes/chg/runs.jsonl', '.rig/changes/chg/ratchet.json', '.rig/changes/chg/missing.md']) {
     const r = sdlc(repo, ['ratchet', 'record', 'chg', 'build', '--slice', '1', '--from', f])
     assert.equal(r.code, 1, f)
     assert.match(r.stderr, /--from/, f)
@@ -115,9 +115,9 @@ test('ratchet record --from reads the reply from a file inside the change folder
 
 test('sensors and test cannot be self-certified with ratchet record', () => {
   const before = ratchetJson()
-  write(repo, '.sdlc/changes/big/ok.md', 'verdict: pass\n')
+  write(repo, '.rig/changes/big/ok.md', 'verdict: pass\n')
   for (const node of ['sensors', 'test']) {
-    for (const extra of [['--from', '.sdlc/changes/big/ok.md'], []]) {
+    for (const extra of [['--from', '.rig/changes/big/ok.md'], []]) {
       const r = tryRecord(node, 'verdict: pass\n', extra)
       assert.notEqual(r.code, 0, node)
       assert.match(r.stderr + r.stdout, /recorded only by sdlc\.ts quality \/ verify-report/)

@@ -15,7 +15,7 @@ const section = (text, name) => new RegExp(`^## ${name}\\s*$`, 'm').test(text)
 const redFirst = (type, tier) => ['bugfix', 'incident'].includes(type) || (['feature', 'greenfield'].includes(type) && tier !== 'S')
 
 export async function assertChange(c, sb, slug, { operator = 'operator', label = slug } = {}) {
-  const dir = `.sdlc/changes/${slug}`
+  const dir = `.rig/changes/${slug}`
   const read = name => sb.read(`${dir}/${name}`)
   let o
   await c.check(`${label}: the checker can load the change`, () => { o = oracle(sb.dir, slug); return true })
@@ -46,7 +46,7 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
 
   // A design gate on a change planned without design.md is the plan gate (graph.ts gateOf).
   const expected = o.gates.filter(g => o.stages.includes(g)).map(g => (g === 'design' && !sb.exists(`${dir}/design.md`) ? 'plan' : g))
-  const approvals = jsonl(sb.read('.sdlc/approvals.jsonl')).filter(a => a.slug === slug)
+  const approvals = jsonl(sb.read('.rig/approvals.jsonl')).filter(a => a.slug === slug)
   await c.check(`${t}: approved exactly the gates its route meets [${expected.join(', ') || 'none'}]`, () => {
     const got = [...new Set(approvals.map(a => a.stage))]
     const missing = expected.filter(g => !got.includes(g))
@@ -99,7 +99,7 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
     return missing.length === 0 || `not committed: ${missing.join(', ')}`
   })
   await c.check(`${t}: the PR was opened through gh`, () => {
-    const body = `${path.sep}.sdlc${path.sep}changes${path.sep}${slug}${path.sep}pr.md`
+    const body = `${path.sep}.rig${path.sep}changes${path.sep}${slug}${path.sep}pr.md`
     const calls = sb.read('../logs/gh.log').split('\n').filter(l => l.startsWith('pr create ') && l.endsWith(body))
     return calls.length === 1 || `${calls.length} gh pr create call(s) for ${slug}`
   })
@@ -110,10 +110,10 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
   // status and next drop a finished change from STATE.md, so after review it may differ from the committed copy; that
   // edit alone is expected, as long as it names no change.
   await c.check(`${t}: tree clean, nothing unresolved, no waivers`, () => {
-    const cleared = /^change:\s*$/m.test(sb.read('.sdlc/STATE.md'))
-    const dirty = sb.git('status', '--porcelain').split('\n').filter(l => l && !(cleared && /^ ?M .sdlc\/STATE\.md$/.test(l))).join('\n')
-    const waived = jsonl(sb.read('.sdlc/waivers.jsonl'))
-    const unresolved = sb.exists('.sdlc/unresolved.json')
+    const cleared = /^change:\s*$/m.test(sb.read('.rig/STATE.md'))
+    const dirty = sb.git('status', '--porcelain').split('\n').filter(l => l && !(cleared && /^ ?M .rig\/STATE\.md$/.test(l))).join('\n')
+    const waived = jsonl(sb.read('.rig/waivers.jsonl'))
+    const unresolved = sb.exists('.rig/unresolved.json')
     if (dirty === '' && !unresolved && waived.length === 0) return true
     const why = [dirty && `dirty: ${dirty.split('\n').join('; ')}`, unresolved && 'unresolved.json present', waived.length && `${waived.length} waiver(s)`]
     return why.filter(Boolean).join(' | ')
@@ -121,7 +121,7 @@ export async function assertChange(c, sb, slug, { operator = 'operator', label =
   // CI judges the committed branch in a fresh checkout, and its command runs append to runs.jsonl: a throwaway worktree
   // gives the same view and leaves the sandbox untouched.
   await c.check(`${t}: CI check blocks only on the human-approval rows it cannot verify offline`, () => {
-    const committed = jsonl(sb.run('git', ['show', `HEAD:.sdlc/approvals.jsonl`]).stdout ?? '').filter(a => a.slug === slug)
+    const committed = jsonl(sb.run('git', ['show', `HEAD:.rig/approvals.jsonl`]).stdout ?? '').filter(a => a.slug === slug)
     const res = sb.inWorktree(wt => JSON.parse(wt.sdlc(['check', '--at', 'ci', '--base', 'main', '--json']).stdout))
     const other = res.blocks.filter(b => b.sensor !== 'human-approval')
     const rows = res.humanRows.length

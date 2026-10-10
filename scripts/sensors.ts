@@ -156,7 +156,7 @@ export function secretsInDiff(diffs: FileDiff[]): Finding[] {
   for (const d of diffs.filter(f => !f.binary)) {
     for (const l of d.added) {
       const hit = SECRET_PATTERNS.find(([, re]) => re.test(l.text))
-      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; a deliberate test fixture goes under `fixtures` in .sdlc/sensors.json (a person approves that change)' })
+      if (hit) findings.push({ sensor: 'secrets', severity: 'block', file: d.file, line: l.n, message: `possible ${hit[0]}`, fix: 'load it from the environment or a secret store; a deliberate test fixture goes under `fixtures` in .rig/sensors.json (a person approves that change)' })
     }
   }
   return findings
@@ -166,9 +166,9 @@ export function rulesSensor(diffs: FileDiff[], rules: { id: string; pattern: str
   const findings: Finding[] = []
   for (const rule of rules) {
     const re = new RegExp(rule.pattern)
-    for (const d of diffs.filter(f => !f.binary && !f.file.startsWith('.sdlc/') && (!rule.paths || matchesAny(f.file, rule.paths)))) {
+    for (const d of diffs.filter(f => !f.binary && !f.file.startsWith('.rig/') && (!rule.paths || matchesAny(f.file, rule.paths)))) {
       for (const l of d.added.filter(a => re.test(a.text))) {
-        findings.push({ sensor: 'rules', severity: rule.action, file: d.file, line: l.n, message: `${rule.message} (${rule.why})`, fix: `follow rule ${rule.id} in .sdlc/rules.json`, labels: [rule.id] })
+        findings.push({ sensor: 'rules', severity: rule.action, file: d.file, line: l.n, message: `${rule.message} (${rule.why})`, fix: `follow rule ${rule.id} in .rig/rules.json`, labels: [rule.id] })
       }
     }
   }
@@ -223,11 +223,11 @@ export function contractsFromPlan(planText: string): string[] {
     .filter((id): id is string => Boolean(id))
 }
 
-export const PROTECTED = ['.sdlc/sensors.json', '.sdlc/rules.json', '.sdlc/guides/**', '.sdlc/evals/*.json', '.sdlc/bin/**', '.sdlc/mod/**', '.sdlc/githooks/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
+export const PROTECTED = ['.rig/sensors.json', '.rig/rules.json', '.rig/guides/**', '.rig/evals/*.json', '.rig/bin/**', '.rig/mod/**', '.rig/githooks/**', '.claude-plugin/**', 'CLAUDE.md', '.claude/**', '.github/workflows/rig-check.yml', '.github/workflows/sdlc-check.yml', 'CODEOWNERS', '.github/CODEOWNERS']
 // ci: compare case-insensitively (macOS and Windows file systems treat CLAUDE.MD and CLAUDE.md as one file).
 export const isProtected = (file: string, ci = false): boolean => (ci ? matchesAny(file.toLowerCase(), PROTECTED.map(p => p.toLowerCase())) : matchesAny(file, PROTECTED))
-const SENSORS = '.sdlc/sensors.json'
-const RULES = '.sdlc/rules.json'
+const SENSORS = '.rig/sensors.json'
+const RULES = '.rig/rules.json'
 
 const removedFrom = (before: string[], after: string[]): string[] => before.filter(x => !after.includes(x))
 

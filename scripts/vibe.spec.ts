@@ -13,7 +13,7 @@ const CASES: Case[] = [
 
 function fresh(c: Case) {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify(c.config))
+  write(repo, '.rig/sensors.json', JSON.stringify(c.config))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   return repo
 }
@@ -92,7 +92,7 @@ test('layering at edit: a forbidden import this turn adds blocks and names the r
 
 test('size: a file that crosses the limit is blocked at edit and at Stop with no active change', () => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { fileLines: 10 } }))
   write(repo, 'src/a.js', Array.from({ length: 8 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   hook(repo, 'prompt-submit', {})

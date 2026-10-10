@@ -12,7 +12,7 @@ const ready = (slug: string) => {
   sdlc(repo, ['new', slug, '--type', 'chore', '--tier', 'S'])
   verified(repo, slug)
   write(repo, 'src/app.js', 'x\n')
-  write(repo, `.sdlc/changes/${slug}/plan.md`, '## Files\n- src/app.js\n')
+  write(repo, `.rig/changes/${slug}/plan.md`, '## Files\n- src/app.js\n')
   ratcheted(repo, slug)
 }
 const withRemote = () => {
@@ -26,17 +26,17 @@ const fakeGh = (script: string) => {
   fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho "$@" > "$0.args"\n${script}\n`, { mode: 0o755 })
   return { bin, env: { PATH: `${bin}:${process.env.PATH}` } }
 }
-const events = (slug: string) => fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/events.jsonl`), 'utf8')
+const events = (slug: string) => fs.readFileSync(path.join(repo, `.rig/changes/${slug}/events.jsonl`), 'utf8')
 beforeEach(() => { repo = makeRepo() })
 
 test('with no remote, pr commits locally, writes pr.md as local-only, and keeps the change active', () => {
   ready('tiny')
   const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(r.code, 0, r.stderr)
-  const pr = fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/pr.md'), 'utf8')
+  const pr = fs.readFileSync(path.join(repo, '.rig/changes/tiny/pr.md'), 'utf8')
   assert.match(pr, /^state: local-only$/m)
   assert.match(pr, /## Scorecard/)
-  assert.match(gitIn(repo, 'show', '--name-only', '--format=', 'HEAD'), /\.sdlc\/changes\/tiny\/pr\.md/)
+  assert.match(gitIn(repo, 'show', '--name-only', '--format=', 'HEAD'), /\.rig\/changes\/tiny\/pr\.md/)
   assert.match(sdlc(repo, ['status']).stdout, /▶ tiny[\s\S]*pr-review/)
 })
 
@@ -44,8 +44,8 @@ test('pr.md is committed in the same commit as ship.json, so the change is not r
   ready('tiny')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
   const files = gitIn(repo, 'show', '--name-only', '--format=', 'HEAD')
-  assert.match(files, /\.sdlc\/changes\/tiny\/ship\.json/)
-  assert.match(files, /\.sdlc\/changes\/tiny\/pr\.md/)
+  assert.match(files, /\.rig\/changes\/tiny\/ship\.json/)
+  assert.match(files, /\.rig\/changes\/tiny\/pr\.md/)
   const status = sdlc(repo, ['status']).stdout
   assert.match(status, /▶ tiny\s+chore\s+S\s+pr-review/)
   assert.doesNotMatch(status, /tiny\s+chore\s+S\s+done/)
@@ -61,7 +61,7 @@ test('with a remote, pr pushes the branch and calls gh pr create with pr.md as t
   assert.ok(gitIn(bare, 'branch', '--list', 'sdlc/tiny').includes('sdlc/tiny'))
   assert.equal(gitIn(bare, 'branch', '--list', 'main'), '')
   assert.match(events('tiny'), /"kind":"pr","target":"https:\/\/github.com\/o\/r\/pull\/7"/)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/pr.md'), 'utf8'), /^state: open$/m)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/tiny/pr.md'), 'utf8'), /^state: open$/m)
 })
 
 test('a title longer than 200 characters is truncated, and the body comes from the file, never argv', () => {
@@ -143,12 +143,12 @@ test('the follow-up cap resets only on a person approving more budget, never on 
     assert.equal(sdlc(repo, ['pr', 'tiny', '--followup', '--message', `fix: w${i}`]).code, 0)
   }
   // Any other code path that clears a block (a gate, a level, a pr resume) writes an unblocked event with its own reason.
-  fs.appendFileSync(path.join(repo, '.sdlc/changes/tiny/events.jsonl'), JSON.stringify({ at: new Date().toISOString(), node: 'any', verdict: 'unblocked', reason: 'pr created' }) + '\n')
+  fs.appendFileSync(path.join(repo, '.rig/changes/tiny/events.jsonl'), JSON.stringify({ at: new Date().toISOString(), node: 'any', verdict: 'unblocked', reason: 'pr created' }) + '\n')
   write(repo, 'src/app.js', 'w5\n')
   const r = sdlc(repo, ['pr', 'tiny', '--followup', '--message', 'fix: w5'])
   assert.notEqual(r.code, 0, 'an unblock that was not a budget approval does not reset the count')
   assert.match(r.stderr, /4 follow-up pushes used/)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/ratchet.json'), 'utf8')).blocked?.kind, 'cap')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/tiny/ratchet.json'), 'utf8')).blocked?.kind, 'cap')
 })
 
 test('a follow-up pushes to the same branch when there is a remote', () => {
@@ -165,7 +165,7 @@ test('a follow-up pushes to the same branch when there is a remote', () => {
 const withHooks = (): string => {
   const counter = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rig-count-')), 'runs')
   const once = `node -e "const fs=require('fs');const f=${JSON.stringify(counter).replace(/"/g, "'")};const again=fs.existsSync(f);fs.writeFileSync(f,'x');process.exit(again?1:0)"`
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { once } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { once } }))
   assert.equal(sdlc(repo, ['vendor']).code, 0)
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'harness')
@@ -197,26 +197,26 @@ test('a follow-up keeps the git hooks and shows why one refused', () => {
 test('pr-checks commits the pr-review evidence written after ship, leaving a clean tree', () => {
   ready('tiny')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
-  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n')
+  write(repo, '.rig/changes/tiny/review.md', '---\nresult: pass\n---\n')
   write(repo, 'src/other.js', 'not evidence\n')
   const r = sdlc(repo, ['pr-checks', 'tiny'])
   assert.match(r.stdout, /pr-review evidence committed/)
   const files = gitIn(repo, 'show', '--name-only', '--format=%s', 'HEAD')
   assert.match(files, /pr-review evidence for tiny/)
-  assert.match(files, /\.sdlc\/changes\/tiny\/review\.md/)
+  assert.match(files, /\.rig\/changes\/tiny\/review\.md/)
   assert.doesNotMatch(files, /src\/other\.js/)
-  assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/changes/tiny'), /\S/)
+  assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.rig/changes/tiny'), /\S/)
   sdlc(repo, ['pr-checks', 'tiny'])
-  assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.sdlc/changes/tiny'), /\S/, 'a repeat check appends an event and commits it too')
+  assert.doesNotMatch(gitIn(repo, 'status', '--porcelain', '--', '.rig/changes/tiny'), /\S/, 'a repeat check appends an event and commits it too')
 })
 
 test('the review evidence commit also clears STATE.md, so a finished change leaves nothing to commit', () => {
   ready('tiny')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
-  assert.match(gitIn(repo, 'show', 'HEAD:.sdlc/STATE.md'), /^change: tiny$/m)
-  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n')
+  assert.match(gitIn(repo, 'show', 'HEAD:.rig/STATE.md'), /^change: tiny$/m)
+  write(repo, '.rig/changes/tiny/review.md', '---\nresult: pass\n---\n')
   sdlc(repo, ['pr-checks', 'tiny'])
-  assert.match(gitIn(repo, 'show', 'HEAD:.sdlc/STATE.md'), /^change:\s*$/m)
+  assert.match(gitIn(repo, 'show', 'HEAD:.rig/STATE.md'), /^change:\s*$/m)
   sdlc(repo, ['status'])
   sdlc(repo, ['next', '--json'])
   assert.equal(gitIn(repo, 'status', '--porcelain'), '', 'status and next find nothing left to clear')
@@ -256,7 +256,7 @@ test('with a remote, pr-review is not done until the checks pass', () => {
   withRemote()
   const gh = fakeGh('echo https://github.com/o/r/pull/7')
   sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
-  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
+  write(repo, '.rig/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
   assert.match(sdlc(repo, ['next', 'tiny']).stdout, /pr-review|review/)
   sdlc(repo, ['pr-checks', 'tiny'], { env: fakeGh(`echo '[{"state":"SUCCESS"}]'`).env })
   assert.match(sdlc(repo, ['next', 'tiny']).stdout, /^ready/)
@@ -267,14 +267,14 @@ test('ship commits code plus artifacts on a branch', () => {
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   write(repo, 'src/app.js', 'x\n')
-  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
+  write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
   assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:pr tiny/)
   const shipped = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
   assert.match(shipped.stdout, /sdlc\/tiny/)
   const files = gitIn(repo, 'show', '--name-only', '--format=', 'HEAD')
   assert.match(files, /src\/app\.js/)
-  assert.match(files, /\.sdlc\/changes\/tiny\/verification\.md/)
+  assert.match(files, /\.rig\/changes\/tiny\/verification\.md/)
   assert.doesNotMatch(files, /usage\.jsonl/)
   assert.match(sdlc(repo, ['status']).stdout, /pr-review/)
 })
@@ -285,7 +285,7 @@ test('ship refuses scope drift and unfinished changes', () => {
   assert.match(sdlc(repo, ['pr', 'tiny', '--message', 'chore: x']).stderr, /not ready to ship/)
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
-  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   write(repo, 'src/other.js', 'y\n')
   const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: x'])
   assert.notEqual(r.code, 0)
@@ -293,23 +293,23 @@ test('ship refuses scope drift and unfinished changes', () => {
 })
 
 
-test('pr stages STATE.md and .sdlc/.gitignore and keeps the change active; STATE.md is cleared at ready', () => {
+test('pr stages STATE.md and .rig/.gitignore and keeps the change active; STATE.md is cleared at ready', () => {
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   write(repo, 'src/app.js', 'x\n')
-  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
+  write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n## Verification\n- npm test\n')
   const shipped = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
   const files = gitIn(repo, 'show', '--name-only', '--format=', 'HEAD')
-  assert.match(files, /\.sdlc\/STATE\.md/)
-  assert.match(files, /\.sdlc\/\.gitignore/)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /^change: tiny$/m) // the change stays active for pr-review
+  assert.match(files, /\.rig\/STATE\.md/)
+  assert.match(files, /\.rig\/\.gitignore/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/STATE.md'), 'utf8'), /^change: tiny$/m) // the change stays active for pr-review
   assert.equal(gitIn(repo, 'status', '--porcelain').trim(), '')
   assert.match(sdlc(repo, ['status']).stdout, /▶ tiny[\s\S]*next: \/rig:pr-review/)
-  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
+  write(repo, '.rig/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /next: /) // ready: STATE.md is cleared now
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), /No active change\. Last shipped: tiny\./)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/STATE.md'), 'utf8'), /No active change\. Last shipped: tiny\./)
 })
 
 
@@ -318,7 +318,7 @@ test('a change started on another change\'s branch is warned, refused at ship, a
   verified(repo, 'first')
   ratcheted(repo, 'first')
   write(repo, 'src/a.js', 'x\n')
-  write(repo, '.sdlc/changes/first/plan.md', '## Files\n- src/a.js\n')
+  write(repo, '.rig/changes/first/plan.md', '## Files\n- src/a.js\n')
   assert.equal(sdlc(repo, ['pr', 'first', '--message', 'chore: first']).code, 0)
   const started = sdlc(repo, ['new', 'second', '--type', 'chore', '--tier', 'S'])
   assert.match(started.stdout, /warning: HEAD is on sdlc\/first[\s\S]*git checkout -b sdlc\/second/)
@@ -326,7 +326,7 @@ test('a change started on another change\'s branch is warned, refused at ship, a
   verified(repo, 'second')
   ratcheted(repo, 'second')
   write(repo, 'src/b.js', 'y\n')
-  write(repo, '.sdlc/changes/second/plan.md', '## Files\n- src/b.js\n')
+  write(repo, '.rig/changes/second/plan.md', '## Files\n- src/b.js\n')
   const refused = sdlc(repo, ['pr', 'second', '--message', 'chore: second'])
   assert.notEqual(refused.code, 0)
   assert.match(refused.stderr, /not shipping: HEAD is on sdlc\/first/)
@@ -338,35 +338,35 @@ test('activeSlug never falls back to a finished change', () => {
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   write(repo, 'src/app.js', 'x\n')
-  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
-  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
-  fs.rmSync(path.join(repo, '.sdlc/STATE.md'))
+  write(repo, '.rig/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
+  fs.rmSync(path.join(repo, '.rig/STATE.md'))
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /▶ tiny/)
 })
 
 
 test('a directory whose name is not a valid slug is never the active change', () => {
-  fs.mkdirSync(path.join(repo, '.sdlc/changes/Bad Name`x'), { recursive: true })
-  write(repo, '.sdlc/changes/Bad Name`x/intent.md', '# x\n')
+  fs.mkdirSync(path.join(repo, '.rig/changes/Bad Name`x'), { recursive: true })
+  write(repo, '.rig/changes/Bad Name`x/intent.md', '# x\n')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /Bad Name/)
-  fs.writeFileSync(path.join(repo, '.sdlc/STATE.md'), '---\nchange: Bad Name`x\n---\n')
+  fs.writeFileSync(path.join(repo, '.rig/STATE.md'), '---\nchange: Bad Name`x\n---\n')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /▶ Bad Name/)
 })
 
 test('I3: ship ratchets a known-red full command that now passes and commits the tightened sensors.json', () => {
   sdlc(repo, ['init'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { t: 'node -e "process.exit(0)"' }, knownRed: ['full.t'] }, null, 2) + '\n')
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { t: 'node -e "process.exit(0)"' }, knownRed: ['full.t'] }, null, 2) + '\n')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'cfg')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   verified(repo, 'tiny')
   ratcheted(repo, 'tiny')
   write(repo, 'src/app.js', 'x\n')
-  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   const shipped = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(shipped.code, 0, shipped.stderr)
-  const committed = gitIn(repo, 'show', 'HEAD:.sdlc/sensors.json')
+  const committed = gitIn(repo, 'show', 'HEAD:.rig/sensors.json')
   assert.deepEqual(JSON.parse(committed).knownRed, [])
   assert.equal(gitIn(repo, 'status', '--porcelain').trim(), '')
 })
@@ -377,7 +377,7 @@ test('pr-checks with no checks: no-ci without workflows, pending with them; both
   withRemote()
   const gh = fakeGh('echo https://github.com/o/r/pull/7')
   sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env })
-  write(repo, '.sdlc/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
+  write(repo, '.rig/changes/tiny/review.md', '---\nresult: pass\n---\n# Review\n')
   const empty = fakeGh(`echo '[]'`).env
   assert.match(sdlc(repo, ['pr-checks', 'tiny'], { env: empty }).stdout, /checks: no-ci/)
   assert.match(sdlc(repo, ['next', 'tiny']).stdout, /^ready/)
@@ -452,41 +452,41 @@ test('gh saying the PR already exists records the existing url instead of blocki
 })
 
 test('a refused ship gate blocks the change and names the exact next action', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
-  gitIn(repo, 'add', '.sdlc/sensors.json')
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.rig/sensors.json')
   gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'feature')
   ready('tiny')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
   gitIn(repo, 'commit', '-qam', 'loosen')
   const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.equal(r.code, 1)
   const n = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
   assert.equal(n.verdict, 'continue', 'R46: a gate block resumes at the pr node')
-  assert.match(n.reason, /pending block[\s\S]*\/rig-waive harness-tamper \.sdlc\/sensors\.json <reason>/)
+  assert.match(n.reason, /pending block[\s\S]*\/rig-waive harness-tamper \.rig\/sensors\.json <reason>/)
 })
 
 test('a passing ship gate clears only a gate-kind block on pr', () => {
   for (const [kind, blocked] of [['gate', false], ['cap', true]] as const) {
     repo = makeRepo()
     ready('tiny')
-    write(repo, '.sdlc/changes/tiny/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: { build: { rounds: 0, hashes: [], status: 'done' }, sensors: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {}, blocked: { node: 'pr', reason: 'x', at: 'now', kind } }))
+    write(repo, '.rig/changes/tiny/ratchet.json', JSON.stringify({ tier: 'S', type: 'chore', nodes: { build: { rounds: 0, hashes: [], status: 'done' }, sensors: { rounds: 0, hashes: [], status: 'done' } }, slices: {}, baseline: {}, blocked: { node: 'pr', reason: 'x', at: 'now', kind } }))
     assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
     assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).verdict === 'blocked', blocked, kind)
   }
 })
 
 test('R46: after a waiver, next resumes at pr and pr passes the gate and clears the block', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
-  gitIn(repo, 'add', '.sdlc/sensors.json')
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.rig/sensors.json')
   gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'feature')
   ready('tiny')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
   gitIn(repo, 'commit', '-qam', 'loosen')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 1)
   assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).verdict, 'continue')
-  assert.equal(sdlc(repo, ['waive', 'harness-tamper', '.sdlc/sensors.json', 'reviewed', '--slug', 'tiny'], { env: { SDLC_HUMAN: '1' } }).code, 0)
+  assert.equal(sdlc(repo, ['waive', 'harness-tamper', '.rig/sensors.json', 'reviewed', '--slug', 'tiny'], { env: { SDLC_HUMAN: '1' } }).code, 0)
   const n = JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout)
   assert.equal(n.verdict, 'continue')
   assert.equal(n.node, 'pr')
@@ -500,7 +500,7 @@ test('resuming a recorded pr clears only the other-kind block, never a cap', () 
   withRemote()
   const gh = fakeGh('[ -f "$0.ok" ] || exit 1\necho https://github.com/o/r/pull/12')
   assert.notEqual(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'], { env: gh.env }).code, 0)
-  const file = path.join(repo, '.sdlc/changes/tiny/ratchet.json')
+  const file = path.join(repo, '.rig/changes/tiny/ratchet.json')
   const r = JSON.parse(fs.readFileSync(file, 'utf8'))
   r.blocked.kind = 'cap'
   fs.writeFileSync(file, JSON.stringify(r))
@@ -511,7 +511,7 @@ test('resuming a recorded pr clears only the other-kind block, never a cap', () 
 
 test('the ship gate refuses a quality regression even when the sensors node was never really measured', () => {
   const lint = 'node -e "const fs=require(\'fs\');for(const f of fs.readdirSync(\'src\'))if(fs.readFileSync(\'src/\'+f,\'utf8\').includes(\'TODO\'))console.log(f)"'
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { lint: { cmd: lint, count: 'lines' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { lint: { cmd: lint, count: 'lines' } } }))
   write(repo, 'src/keep.js', 'export const k = 1\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
@@ -520,7 +520,7 @@ test('the ship gate refuses a quality regression even when the sensors node was 
   const r = sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny'])
   assert.notEqual(r.code, 0)
   assert.match(r.stderr + r.stdout, /quality\.lint/)
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/changes/tiny/pr.md')))
+  assert.ok(!fs.existsSync(path.join(repo, '.rig/changes/tiny/pr.md')))
   write(repo, 'src/app.js', 'x\n')
   assert.equal(sdlc(repo, ['pr', 'tiny', '--message', 'chore: tiny']).code, 0)
 })
@@ -530,14 +530,14 @@ const bump = (file: string): string => `node -e "require('fs').appendFileSync('$
 const count = (file: string): number => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').length : 0)
 const OK = 'node -e "process.exit(0)"'
 function stamped(config: object) {
-  write(repo, '.sdlc/sensors.json', JSON.stringify(config))
+  write(repo, '.rig/sensors.json', JSON.stringify(config))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
   write(repo, 'src/app.js', 'x\n')
 }
 function markDone(slug: string, nodes: string[]): void {
-  const file = path.join(repo, `.sdlc/changes/${slug}/ratchet.json`)
+  const file = path.join(repo, `.rig/changes/${slug}/ratchet.json`)
   const r = JSON.parse(fs.readFileSync(file, 'utf8'))
   for (const n of nodes) r.nodes[n] = { ...(r.nodes[n] ?? { rounds: 0, hashes: [] }), status: 'done' }
   fs.writeFileSync(file, JSON.stringify(r))
@@ -567,11 +567,11 @@ test('ship runs the full commands as before when the tree changed after verify',
 
 test('ship does not re-measure quality when the sensors node was stamped on this tree', () => {
   const m = marker()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: OK }, quality: { lint: { cmd: bump(m), count: 'exit' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: OK }, quality: { lint: { cmd: bump(m), count: 'exit' } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
   write(repo, 'src/app.js', 'x\n')
   verified(repo, 'tiny')
   assert.equal(sdlc(repo, ['quality', 'tiny']).code, 0)

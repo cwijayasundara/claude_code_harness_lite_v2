@@ -1,7 +1,7 @@
-// `sdlc.ts watch`: the deterministic band detector (playbook p.49-50). For each band in .sdlc/sensors.json it runs the query, appends the
-// point to .sdlc/watch/<id>.jsonl and prints a tier from Western Electric rules: 0 nothing, 1 log, 2 diagnose, 3 act. No model.
+// `sdlc.ts watch`: the deterministic band detector (playbook p.49-50). For each band in .rig/sensors.json it runs the query, appends the
+// point to .rig/watch/<id>.jsonl and prints a tier from Western Electric rules: 0 nothing, 1 log, 2 diagnose, 3 act. No model.
 // A failed query records a miss and is tier 0: fail closed on action, open on observation. Dismissals tune the band: every breach
-// intent for it a person closed (.sdlc/intent/breach-<id>-<date>.md, status: closed) widens each threshold by the band's step, in σ,
+// intent for it a person closed (.rig/intent/breach-<id>-<date>.md, status: closed) widens each threshold by the band's step, in σ,
 // up to 2σ in all.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -57,8 +57,8 @@ function append(file: string, row: Row): void {
 
 export function cmdWatch(args: Args): void {
   const { config, errors } = loadConfig()
-  if (errors.length) fail(`.sdlc/sensors.json: ${errors.join('; ')}`)
-  if (!config.bands.length) return out(args.opt.json ? '[]' : 'no bands in .sdlc/sensors.json: declare one to watch a metric')
+  if (errors.length) fail(`.rig/sensors.json: ${errors.join('; ')}`)
+  if (!config.bands.length) return out(args.opt.json ? '[]' : 'no bands in .rig/sensors.json: declare one to watch a metric')
   fs.mkdirSync(WATCH, { recursive: true })
   const day = now().slice(0, 10).replaceAll('-', '')
   const verdicts = config.bands.map((b): Verdict => {

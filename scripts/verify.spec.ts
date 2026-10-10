@@ -11,15 +11,15 @@ const BAD = 'node -e "process.exit(3)"'
 
 function change(sensors: object, plan: string): string {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify(sensors))
+  write(repo, '.rig/sensors.json', JSON.stringify(sensors))
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   buildDone(repo, 'tiny')
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/**\n## Verification\n${plan}`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/**\n## Verification\n${plan}`)
   return repo
 }
-const report = (repo: string): string => fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/verification.md'), 'utf8')
+const report = (repo: string): string => fs.readFileSync(path.join(repo, '.rig/changes/tiny/verification.md'), 'utf8')
 const rows = (repo: string): { cmd: string; exit: number }[] =>
-  fs.readFileSync(path.join(repo, '.sdlc/changes/tiny/runs.jsonl'), 'utf8').trim().split('\n').map(r => JSON.parse(r))
+  fs.readFileSync(path.join(repo, '.rig/changes/tiny/runs.jsonl'), 'utf8').trim().split('\n').map(r => JSON.parse(r))
 
 test('verify runs the plan commands the config declares, records each and writes a passing report', () => {
   const repo = change({ fast: { test: OK } }, `- \`${OK}\`\n`)
@@ -55,10 +55,10 @@ test('a command listed twice runs once', () => {
 const PASS = 'node -e "process.exit(0)"'
 function stampedChange(full: Record<string, string>) {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: PASS }, full }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: PASS }, full }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/a.js\n## Verification\n- \`${PASS}\`\n`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/a.js\n## Verification\n- \`${PASS}\`\n`)
   write(repo, 'src/a.js', 'export const a = 1\n')
   return repo
 }
@@ -102,10 +102,10 @@ test('a full command equal to a plan command runs once during verify and is stil
   const m = path.join(os.tmpdir(), `rig-once-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
   const bump = `node -e "require('fs').appendFileSync('${m}','x')"`
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: bump }, full: { test: bump } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: bump }, full: { test: bump } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/a.js\n## Verification\n- \`${bump}\`\n`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/a.js\n## Verification\n- \`${bump}\`\n`)
   write(repo, 'src/a.js', 'export const a = 1\n')
   const r = sdlc(repo, ['verify', 'tiny'])
   assert.equal(r.code, 0, r.stdout + r.stderr)

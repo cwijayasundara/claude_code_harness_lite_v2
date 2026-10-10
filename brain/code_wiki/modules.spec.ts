@@ -27,7 +27,7 @@ test('listFiles in a git repo honors .gitignore, secrets, node_modules and rig i
     'src/a/.env': 'K=1', 'src/a/key.pem': 'x',
     'dist/out.js': 'x', 'node_modules/p/i.js': 'x',
     'src/gen/g.ts': 'x', 'README.md': '# r',
-    '.sdlc/sensors.json': JSON.stringify({ ignore: ['src/gen/**'] }),
+    '.rig/sensors.json': JSON.stringify({ ignore: ['src/gen/**'] }),
   })
   assert.deepEqual(listFiles(dir, loadConfig(dir)), ['src/a/x.ts'])
 })
@@ -35,4 +35,9 @@ test('listFiles in a git repo honors .gitignore, secrets, node_modules and rig i
 test('listFiles falls back to a directory walk when there is no git', () => {
   const dir = makeRepo({ 'src/a/x.ts': 'x', 'node_modules/p/i.js': 'x', 'src/b/y.py': 'x' }, { git: false })
   assert.deepEqual(listFiles(dir, loadConfig(dir)), ['src/a/x.ts', 'src/b/y.py'])
+})
+
+test('listFiles never indexes the harness directories', () => {
+  const dir = makeRepo({ 'src/a/x.ts': 'x', '.rig/bin/core.ts': 'x', '.sdlc/bin/core.ts': 'x', '.claude/workflows/review.js': 'x' })
+  assert.deepEqual(listFiles(dir, loadConfig(dir)), ['src/a/x.ts'])
 })

@@ -24,7 +24,7 @@ export function applyWiki(root: string, _cfg: Config, idx: Index, opts: { genera
   const res: ApplyResult = { written: [], kept: [], pending: [], problems: {} }
   const changes = loadChanges(root)
   const known = new Set(Object.keys(idx.modules).map(pagePath))
-  // links are validated relative to the wiki dir: 'modules/x.md', or '../changes/<slug>/intent.md' (= .sdlc/changes/...)
+  // links are validated relative to the wiki dir: 'modules/x.md', or '../changes/<slug>/intent.md' (= .rig/changes/...)
   const exists = (rel: string): boolean => known.has(rel) || fs.existsSync(path.join(wiki, rel))
 
   for (const mod of Object.values(idx.modules)) {

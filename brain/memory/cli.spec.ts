@@ -9,7 +9,7 @@ import { commitAll, makeRepo } from '../shared/testkit.ts'
 const cli = path.resolve('memory/memory.ts')
 const run = (dir: string, args: string[], input = '', env: Record<string, string> = {}) =>
   spawnSync('node', ['--disable-warning=ExperimentalWarning', cli, ...args], { cwd: dir, input, encoding: 'utf8', env: { ...process.env, RIG_BRAIN_DREAMING: '', ...env } })
-const on = () => makeRepo({ '.sdlc/memory.json': JSON.stringify({ enabled: true, minSignals: 99 }) })
+const on = () => makeRepo({ '.rig/memory.json': JSON.stringify({ enabled: true, minSignals: 99 }) })
 const failing = (dir: string) => JSON.stringify({ cwd: dir, session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npx jest' }, tool_response: { exit_code: 1, stderr: 'not found' } })
 
 test('every hook exits 0 silently on garbage input', () => {
@@ -30,7 +30,7 @@ test('hooks capture only when enabled and not inside a dream', () => {
   run(dir, ['hook', 'post-bash'], failing(dir))
   assert.equal(readSignals(dir)[0].kind, 'cmd-fail')
   assert.equal(run(dir, ['hook', 'stop'], JSON.stringify({ cwd: dir })).stdout, '')
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/.cache/dream.lock')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory/.cache/dream.lock')), false)
 })
 
 test('hook resolves the repo root from a subdirectory cwd', () => {
@@ -43,9 +43,9 @@ test('hook resolves the repo root from a subdirectory cwd', () => {
 test('session-start prints memory; find, forget and status work', () => {
   const dir = on()
   const md = '# commands\n> x\n\n- use npm test [source: s; added: 2026-10-09; id: m-abc123]\n'
-  fs.mkdirSync(path.join(dir, '.sdlc/memory'), { recursive: true })
-  fs.writeFileSync(path.join(dir, '.sdlc/memory/commands.md'), md)
-  fs.writeFileSync(path.join(dir, '.sdlc/memory/MEMORY.md'), '# Memory\n')
+  fs.mkdirSync(path.join(dir, '.rig/memory'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.rig/memory/commands.md'), md)
+  fs.writeFileSync(path.join(dir, '.rig/memory/MEMORY.md'), '# Memory\n')
   assert.doesNotMatch(run(dir, ['hook', 'session-start'], JSON.stringify({ cwd: dir })).stdout, /Memory from past sessions/)
   commitAll(dir, 'mem')
   assert.match(run(dir, ['hook', 'session-start'], JSON.stringify({ cwd: dir })).stdout, /Memory from past sessions[\s\S]*# Memory/)
@@ -66,10 +66,10 @@ test('forget without an id prints usage; non-hook commands target the repo root 
 
 test('a failing hook stays silent but is logged', () => {
   const dir = on()
-  fs.mkdirSync(path.join(dir, '.sdlc/memory/.cache/signals.jsonl'), { recursive: true })
+  fs.mkdirSync(path.join(dir, '.rig/memory/.cache/signals.jsonl'), { recursive: true })
   const r = run(dir, ['hook', 'post-bash'], failing(dir))
   assert.equal(r.status, 0); assert.equal(r.stdout, ''); assert.equal(r.stderr, '')
-  assert.match(fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/log'), 'utf8'), /hook post-bash failed: /)
+  assert.match(fs.readFileSync(path.join(dir, '.rig/memory/.cache/log'), 'utf8'), /hook post-bash failed: /)
 })
 
 test('dream rejects unsafe batch ids', () => {

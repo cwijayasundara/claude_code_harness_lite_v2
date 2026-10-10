@@ -85,7 +85,7 @@ const RULE = 'Run only the command strings given above, exactly as written. Use 
 
 const reviewPrompt = shard =>
   [
-    `Review one shard of change ${ARGS.slug}. Read intent.md, spec.md and plan.md under .sdlc/changes/${ARGS.slug}/ first.`,
+    `Review one shard of change ${ARGS.slug}. Read intent.md, spec.md and plan.md under .rig/changes/${ARGS.slug}/ first.`,
     `Review ONLY these files. Run exactly these commands, one per file, as given (a JSON label follows each in the list below):`,
     ...shard.files.map(f => diffCmd(f)),
     `File labels: ${shard.files.map(f => JSON.stringify(f)).join(', ')}`,

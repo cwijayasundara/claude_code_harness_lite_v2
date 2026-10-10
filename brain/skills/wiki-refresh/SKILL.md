@@ -1,6 +1,6 @@
 ---
 name: wiki-refresh
-description: Refresh the repo's code wiki (.sdlc/wiki): rewrite prose only for modules whose code changed, then rebuild deterministic sections and INDEX.md.
+description: Refresh the repo's code wiki (.rig/wiki): rewrite prose only for modules whose code changed, then rebuild deterministic sections and INDEX.md.
 allowed-tools: Bash(node:*), Read, Agent
 ---
 Run from the repo root. `W="node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/code_wiki/wiki.ts"`.

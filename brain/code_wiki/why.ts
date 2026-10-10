@@ -12,7 +12,7 @@ const git = (root: string, args: string[]): string => {
 
 function intentOf(root: string, slug: string): { intent: string; linked: boolean } {
   try {
-    const text = fs.readFileSync(path.join(root, '.sdlc/changes', slug, 'intent.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '')
+    const text = fs.readFileSync(path.join(root, '.rig/changes', slug, 'intent.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '')
     const line = text.split('\n').map(l => l.trim()).find(Boolean) ?? ''
     return { intent: line.replace(/^#+\s*/, '') || slug, linked: true }
   } catch { return { intent: slug, linked: false } }
@@ -20,14 +20,14 @@ function intentOf(root: string, slug: string): { intent: string; linked: boolean
 
 // One pass over git history for every rig change; callers filter per module with pick().
 export function loadChanges(root: string): Change[] {
-  const dir = path.join(root, '.sdlc/changes')
+  const dir = path.join(root, '.rig/changes')
   if (!fs.existsSync(dir)) return []
   const out: Change[] = []
   for (const slug of fs.readdirSync(dir).sort()) {
     if (!/^[\w.-]+$/.test(slug)) continue
     const files = new Set<string>()
-    for (const sha of git(root, ['log', '--format=%H', '--', `.sdlc/changes/${slug}`]).split('\n').filter(Boolean))
-      for (const f of git(root, ['show', '--name-only', '--format=', sha]).split('\n')) if (f && !f.startsWith('.sdlc/')) files.add(f)
+    for (const sha of git(root, ['log', '--format=%H', '--', `.rig/changes/${slug}`]).split('\n').filter(Boolean))
+      for (const f of git(root, ['show', '--name-only', '--format=', sha]).split('\n')) if (f && !f.startsWith('.rig/')) files.add(f)
     out.push({ slug, ...intentOf(root, slug), files })
   }
   return out

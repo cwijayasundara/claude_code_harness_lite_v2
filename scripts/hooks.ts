@@ -50,7 +50,7 @@ function guidesFor(rel: string, session: string): string | undefined {
 export const ROUTING_LINE = `sdlc routes all work in this repo: start with ${skillRef('start')}; use superpowers skills only when an sdlc skill names one.`
 
 // The sdlc script as the model should call it: the plugin's copy, or the project's own in a standalone repo.
-const SCRIPT = () => (IS_VENDORED ? '.sdlc/bin/sdlc.ts' : `${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts`)
+const SCRIPT = () => (IS_VENDORED ? '.rig/bin/sdlc.ts' : `${toPosix(PLUGIN_ROOT)}/scripts/sdlc.ts`)
 
 function hookSessionStart(input: HookInput): void {
   if (!exists(SDLC)) return
@@ -63,10 +63,10 @@ function hookSessionStart(input: HookInput): void {
   const c = active ? loadChange(active) : null
   const state = frontmatter(read(STATE)).body.trim().split('\n').slice(0, 15).join('\n')
   const context = [
-    'sdlc harness is active in this repo (artifacts in .sdlc/).',
+    'sdlc harness is active in this repo (artifacts in .rig/).',
     ROUTING_LINE,
     c ? `Active change: ${c.slug} (${c.type}, tier ${c.tier}). Next: ${nextCommand(c)}` : `No active change. Start one with ${skillRef('start')} "<request>".`,
-    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to ${agentRef('scout')} and slices to ${agentRef('implementer')}; read .sdlc/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .sdlc/STATE.md). If an sdlc skill fails to load, run \`node "${SCRIPT()}" skill <stage> <slug>\` and follow it exactly.`,
+    `Rules: plans hold interfaces + acceptance tests, never code; delegate searches to ${agentRef('scout')} and slices to ${agentRef('implementer')}; read .rig/approvals.jsonl with the Read tool (only the person writes it); run subagents in the foreground and never end a turn while one is running; never sleep-poll; at ~150k context run /compact (the active change lives in .rig/STATE.md). If an sdlc skill fails to load, run \`node "${SCRIPT()}" skill <stage> <slug>\` and follow it exactly.`,
     sessionNote(),
     guides.length ? `Guides (injected when you first touch matching files): ${guides.join(', ')}` : '',
     state && state !== '# State' ? `STATE.md:\n${state}` : '',
@@ -81,7 +81,7 @@ function hookPostEdit(input: HookInput): void {
   const file = String(input.tool_input?.file_path ?? '')
   if (!file || !exists(file)) return
   const problems = scanSecrets(file)
-  if (exists(SDLC) && /\.sdlc\/changes\/[^/]+\/(?:plan|design)\.md$/.test(toPosix(file))) problems.push(...planProblems(file).map(p => `${file}: ${p}`))
+  if (exists(SDLC) && /\.rig\/changes\/[^/]+\/(?:plan|design)\.md$/.test(toPosix(file))) problems.push(...planProblems(file).map(p => `${file}: ${p}`))
   let edits = ''
   let guide: string | undefined
   if (exists(SDLC)) {
@@ -192,7 +192,7 @@ function hookStop(): void {
   if (gate.passed.main === hash) return
   let slug = activeSlug()
   // A turn that shipped (its commits add a change's ship.json) is recorded already; any other commit is still ad hoc.
-  const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.sdlc\/changes\/[^/]+\/ship\.json$/.test(f))
+  const shipped = (git(['diff', '--name-only', snap.sha, 'HEAD']) ?? '').split('\n').some(f => /^\.rig\/changes\/[^/]+\/ship\.json$/.test(f))
   // Harness files alone (onboarding writes CI workflows and settings) are not ad-hoc work.
   if (!slug && !shipped && diffs.some(d => isSource(d.file, config) && !isProtected(d.file))) slug = createAdhoc(tierFromDiff(diffs, config))
   // The fast commands are keyed by the whole tree, not this turn's diff: a tree that already passed them (an edit undone, a
@@ -203,7 +203,7 @@ function hookStop(): void {
     point: 'stop', diffs, config, rules, slugs: slug ? [slug] : [], commands: treePassed ? 'none' : 'fast', budgetMs: STOP_BUDGET_MS,
     before: f => showAt(snap.sha, f) ?? '', toolEdited: new Set(gate.tool), base: null, ratchet: true,
   })
-  const configBlocks: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
+  const configBlocks: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.rig/sensors.json', message: e, fix: 'fix the file' }))
   const findings = [...configBlocks, ...result.findings]
   const blocks = findings.filter(f => f.severity === 'block')
   gate.last = summarize(findings)
@@ -222,7 +222,7 @@ function hookStop(): void {
   const attempt = (gate.blocks.main ?? 0) + 1
   if (attempt > MAX_BLOCKS) {
     save()
-    return out(JSON.stringify({ systemMessage: `sdlc quality gate: ${blocks.length} problem(s) unresolved after ${MAX_BLOCKS} attempts (.sdlc/unresolved.json). Ship and CI will refuse until they are fixed or the person waives them.` }))
+    return out(JSON.stringify({ systemMessage: `sdlc quality gate: ${blocks.length} problem(s) unresolved after ${MAX_BLOCKS} attempts (.rig/unresolved.json). Ship and CI will refuse until they are fixed or the person waives them.` }))
   }
   gate.blocks.main = attempt
   save()
@@ -263,7 +263,7 @@ export function runsOwnHook(name: string): boolean {
   if (process.env.RIG_MANAGED_HOOKS_ONLY === '1' || managedSettings().allowManagedHooksOnly === true) return false
   try {
     const { hooks = {} } = JSON.parse(read(path.join(ROOT, '.claude', 'settings.json')) || '{}') as SettingsHooks
-    const own = new RegExp(`\\.sdlc/bin/sdlc\\.ts"? hook ${name}$`)
+    const own = new RegExp(`\\.rig/bin/sdlc\\.ts"? hook ${name}$`)
     return Object.values(hooks).flat().some(g => g.hooks?.some(h => typeof h.command === 'string' && own.test(h.command.trim())))
   } catch {
     return false

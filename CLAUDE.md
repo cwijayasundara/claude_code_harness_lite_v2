@@ -1,6 +1,6 @@
 # Working on rig (this repo)
 
-rig is **not** enabled on its own repo: there is no `.sdlc/` here and `/rig:*` skills, `sdlc.ts check` and change records are
+rig is **not** enabled on its own repo: there is no `.rig/` here and `/rig:*` skills, `sdlc.ts check` and change records are
 never run against this tree. superpowers routes the work. These rules replace what rig would otherwise enforce, and they
 exist because one week of building this repo cost $1k and 3 hours per change (`docs/proposals/2026-10-08-why-slow-and-the-fix.md`).
 

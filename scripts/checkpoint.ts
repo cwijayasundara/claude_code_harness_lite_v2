@@ -10,7 +10,7 @@ import { sliceFiles } from './slices.ts'
 
 export type Checkpoint = { ok: true; sha: string | null } | { ok: false; why: string }
 
-// Changed paths in the working tree (staged or not, untracked included), without .sdlc/ (evidence is committed by `pr`).
+// Changed paths in the working tree (staged or not, untracked included), without .rig/ (evidence is committed by `pr`).
 // A rename row is `R  new\0old`: the old path is returned right after the new one, so its deletion is committed too.
 function dirty(): string[][] {
   const parts = (gitIn(ROOT, ['status', '--porcelain', '-uall', '-z']) ?? '').split('\0').filter(Boolean)
@@ -19,7 +19,7 @@ function dirty(): string[][] {
     const row = parts[i] ?? ''
     const group = [row.slice(3)]
     if (/^[RC]/.test(row)) group.push(parts[++i] ?? '')
-    rows.push(group.map(toPosix).filter(f => f && !f.startsWith('.sdlc/')))
+    rows.push(group.map(toPosix).filter(f => f && !f.startsWith('.rig/')))
   }
   return rows.filter(g => g.length)
 }

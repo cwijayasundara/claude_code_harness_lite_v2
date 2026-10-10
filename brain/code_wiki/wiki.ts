@@ -29,7 +29,7 @@ function hook(event: string): void {
     const d = spawnSync('git', ['diff', '--name-only', 'HEAD'], { cwd: r, encoding: 'utf8', timeout: 10_000 })
     if (d.status === 0) markStaleMany(r, d.stdout.split('\n').filter(Boolean).map(f => path.join(r, f)))
   } else if (event === 'session-start') {
-    if (fs.existsSync(path.join(r, WIKI_DIR, 'INDEX.md'))) console.log('A code wiki exists: read .sdlc/wiki/INDEX.md first to locate files and features, then verify in code.')
+    if (fs.existsSync(path.join(r, WIKI_DIR, 'INDEX.md'))) console.log('A code wiki exists: read .rig/wiki/INDEX.md first to locate files and features, then verify in code.')
   } else if (event === 'prompt-submit') {
     const ctx = promptContext(r, String(input.session_id ?? 'default'))
     if (ctx) console.log(ctx)

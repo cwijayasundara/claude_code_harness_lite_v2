@@ -7,7 +7,7 @@ import { runRoute } from '../lib/operator.mjs'
 import { assertWatch, assertIncident, assertRestoredMetrics } from '../assert/maintain.mjs'
 
 const fx = rel => path.join(import.meta.dirname, '../fixtures/p4', rel)
-export const INCIDENT = '.sdlc/incidents/20261009-lines-leak-internal-state.md'
+export const INCIDENT = '.rig/incidents/20261009-lines-leak-internal-state.md'
 
 export const PHASE = {
   id: 'P4', slug: 'lines-copy', type: 'incident', tier: 'M', title: 'lines() leaks internal state',
@@ -27,10 +27,10 @@ export const PHASE = {
 }
 
 const newestIncident = sb => {
-  const names = sb.run('sh', ['-c', 'ls -t .sdlc/incidents/*.md 2>/dev/null']).stdout.trim().split('\n').filter(Boolean)
+  const names = sb.run('sh', ['-c', 'ls -t .rig/incidents/*.md 2>/dev/null']).stdout.trim().split('\n').filter(Boolean)
   return names[0] ?? ''
 }
-const c0 = (c, file) => c.check('incident: /rig-incident (or the fixture) left an incident file', () => Boolean(file) || 'no file under .sdlc/incidents')
+const c0 = (c, file) => c.check('incident: /rig-incident (or the fixture) left an incident file', () => Boolean(file) || 'no file under .rig/incidents')
 
 export async function runMaintain(sb, driver, phase = PHASE) {
   const out = []
@@ -52,7 +52,7 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   for (const [src, dest] of [[path.join(import.meta.dirname, '../fixtures/p1/test/cart.test.js'), 'test/cart.test.js'], [path.join(import.meta.dirname, '../fixtures/p2/test/coupon.test.js'), 'test/coupon.test.js']]) fs.copyFileSync(src, sb.file(dest))
   sb.commitAll('chore: seed the lines() leak (simulates the escaped bug), on the known-good cart and tests')
   const live = Boolean(driver.sessions)
-  // Scripted: the incident file is written here. Live: /rig-incident writes it, and the newest file under .sdlc/incidents is judged.
+  // Scripted: the incident file is written here. Live: /rig-incident writes it, and the newest file under .rig/incidents is judged.
   if (!live) {
     sb.write(INCIDENT, [
       '---', 'class: shared-state', 'severity: sev3', 'escaped: true', `detected: ${new Date().toISOString()}`,
@@ -69,19 +69,19 @@ export async function runMaintain(sb, driver, phase = PHASE) {
   out.push(i)
   const route = await runRoute({ sb, slug, driver, repeats: driver.sessions ? 2 : 1, maxSteps: driver.sessions ? 14 : 10 })
   const c = new Checks('P4 maintain: incident fix')
-  // Known gap, pinned so a fix flips it: /rig-pr stages only .sdlc/changes/<slug> and a fixed list, never .sdlc/evals, so the
+  // Known gap, pinned so a fix flips it: /rig-pr stages only .rig/changes/<slug> and a fixed list, never .rig/evals, so the
   // incident eval diagnose writes is left untracked after the ship. A person commits it onto the branch. A headless live run may write
   // no eval at all (the write is on the settings `ask` list); that is judged by the eval check below, and not committed here.
-  if (sb.exists('.sdlc/evals')) {
+  if (sb.exists('.rig/evals')) {
     await c.check('known gap: /rig-pr leaves the incident eval untracked (see the plan ledger)', () =>
-      sb.git('status', '--porcelain', '--', '.sdlc/evals').includes('??') || 'the eval was committed by /rig-pr: the gap is fixed, update this check')
-    sb.git('add', '.sdlc/evals')
+      sb.git('status', '--porcelain', '--', '.rig/evals').includes('??') || 'the eval was committed by /rig-pr: the gap is fixed, update this check')
+    sb.git('add', '.rig/evals')
     sb.git('commit', '-q', '--no-verify', '-m', 'chore: commit the incident eval')
   }
   await assertChange(c, sb, slug, { label: slug })
-  await c.check('P4: the regression test ran red before the fix', () => /"expectFail":\s*true/.test(sb.read(`.sdlc/changes/${slug}/runs.jsonl`)) || 'no red run recorded')
+  await c.check('P4: the regression test ran red before the fix', () => /"expectFail":\s*true/.test(sb.read(`.rig/changes/${slug}/runs.jsonl`)) || 'no red run recorded')
   await c.check('P4: the incident became a regression eval naming the incident', () => {
-    const f = sb.run('sh', ['-c', 'ls .sdlc/evals/incident-*.json 2>/dev/null']).stdout.trim().split('\n')[0]
+    const f = sb.run('sh', ['-c', 'ls .rig/evals/incident-*.json 2>/dev/null']).stdout.trim().split('\n')[0]
     return (f && JSON.parse(sb.read(f)).source === `incident:${incidentFile.split('/').pop()}`) || 'no incident eval with the incident as its source'
   })
   await assertCart(c, sb.dir, phase.acceptance)

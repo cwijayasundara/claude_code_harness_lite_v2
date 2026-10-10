@@ -56,12 +56,12 @@ test('publish refuses a second change folder, a bad name and an empty change dir
 // A draft built by rig's real commands: `new --source` then the design skill's `check --at plan` (impact.json, events, ratchet).
 function drafted(slug: string, type: string, artifact: [string, string]): string {
   const repo = makeRepo()
-  write(repo, `.sdlc/intent/${slug}.md`, '---\nstatus: accepted\n---\n# Intent\n\n## Problem\nY is missing.\n')
-  const made = sdlc(repo, ['new', slug, '--type', type, '--tier', 'M', '--source', `.sdlc/intent/${slug}.md`])
+  write(repo, `.rig/intent/${slug}.md`, '---\nstatus: accepted\n---\n# Intent\n\n## Problem\nY is missing.\n')
+  const made = sdlc(repo, ['new', slug, '--type', type, '--tier', 'M', '--source', `.rig/intent/${slug}.md`])
   assert.equal(made.code, 0, made.stderr)
-  write(repo, `.sdlc/changes/${slug}/${artifact[0]}`, artifact[1])
+  write(repo, `.rig/changes/${slug}/${artifact[0]}`, artifact[1])
   if (artifact[0] === 'design.md') sdlc(repo, ['check', '--at', 'plan', '--slug', slug])
-  return path.join(repo, '.sdlc/changes', slug)
+  return path.join(repo, '.rig/changes', slug)
 }
 
 test('publish accepts a feature draft made by new --source and check --at plan', () => {
@@ -81,7 +81,7 @@ test('publish accepts a spike draft with notes.md', () => {
 
 test('publish refuses a change folder the trunk already has', () => {
   refused(d => folder(d, 'abc', ['intent.md']), /change abc already exists on the trunk/, repo => {
-    write(repo, '.sdlc/changes/abc/intent.md', 'x\n')
+    write(repo, '.rig/changes/abc/intent.md', 'x\n')
     gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'abc')
   })
 })
@@ -104,10 +104,10 @@ test('privilege split: read-only model job with no persisted credentials; the pu
 })
 
 test('the model job never builds and edits only change folders', () => {
-  assert.match(yml, /\/rig-start \.sdlc\/intent\/\$\{\{ matrix\.intent\.file \}\} --plan-only/)
-  assert.match(yml, /Edit\(\.\/\.sdlc\/changes\/\*\*\)/)
+  assert.match(yml, /\/rig-start \.rig\/intent\/\$\{\{ matrix\.intent\.file \}\} --plan-only/)
+  assert.match(yml, /Edit\(\.\/\.rig\/changes\/\*\*\)/)
   const denied = /--disallowedTools "([^"]*)"/.exec(yml)?.[1]?.split(',') ?? []
-  for (const t of ['Edit(./.sdlc/bin/**)', 'Edit(./.sdlc/sensors.json)', 'Edit(./.sdlc/rules.json)', 'Edit(./.claude/**)', 'Edit(./.github/**)']) assert.ok(denied.includes(t), `the draft job denies ${t}`)
+  for (const t of ['Edit(./.rig/bin/**)', 'Edit(./.rig/sensors.json)', 'Edit(./.rig/rules.json)', 'Edit(./.claude/**)', 'Edit(./.github/**)']) assert.ok(denied.includes(t), `the draft job denies ${t}`)
   assert.doesNotMatch(yml, /--allowedTools "[^"]*\b(?:Edit|Write|Bash),/)
   assert.match(yml, /inbox --pending --json/)
   assert.match(yml, /sdlc\/intent-\$\{FILE%\.md\}/)

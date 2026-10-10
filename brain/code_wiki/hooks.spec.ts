@@ -13,7 +13,7 @@ import { makeRepo } from '../shared/testkit.ts'
 const built = () => {
   const dir = makeRepo({ 'src/a/x.ts': 'export const x = 1\n' })
   const cfg = loadConfig(dir)
-  const f = path.join(dir, '.sdlc/wiki/.cache/prose/a.json')
+  const f = path.join(dir, '.rig/wiki/.cache/prose/a.json')
   fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify({ purpose: 'Does a.', how: 'H' }))
   applyWiki(dir, cfg, buildIndex(dir, cfg))
   return dir
@@ -24,7 +24,7 @@ const run = (dir: string, args: string[], input = '') =>
 
 test('apply writes INDEX.md with the purpose', () => {
   const dir = built()
-  assert.match(fs.readFileSync(path.join(dir, '.sdlc/wiki/INDEX.md'), 'utf8'), /\*\*a\*\* — Does a\./)
+  assert.match(fs.readFileSync(path.join(dir, '.rig/wiki/INDEX.md'), 'utf8'), /\*\*a\*\* — Does a\./)
 })
 
 test('markStale flags the page; unknown file and outside-root paths are safe', () => {
@@ -54,7 +54,7 @@ test('hook CLI never fails on garbage input and post-edit marks stale', () => {
   fs.writeFileSync(path.join(dir, 'src/a/x.ts'), 'export const x = 3\n')
   run(dir, ['hook', 'post-edit'], JSON.stringify({ tool_input: { file_path: path.join(dir, 'src/a/x.ts') }, cwd: dir }))
   assert.equal(loadState(dir).modules.a.status, 'stale')
-  assert.match(run(dir, ['hook', 'session-start'], '{}').stdout, /\.sdlc\/wiki\/INDEX\.md/)
+  assert.match(run(dir, ['hook', 'session-start'], '{}').stdout, /\.rig\/wiki\/INDEX\.md/)
 })
 
 test('CLI find and status work', () => {

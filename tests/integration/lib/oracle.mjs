@@ -19,7 +19,7 @@ export const configOf = repo => oracle(repo, '--config')
 if (process.argv[1] === import.meta.filename) {
   const [repo, slug] = process.argv.slice(2)
   process.env.CLAUDE_PROJECT_DIR = repo
-  const bin = rel => import(pathToFileURL(path.join(repo, '.sdlc/bin', rel)).href)
+  const bin = rel => import(pathToFileURL(path.join(repo, '.rig/bin', rel)).href)
   if (slug === '--config') {
     const { loadConfig } = await bin('check.ts')
     const { parseConfig } = await bin('model.ts')

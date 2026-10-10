@@ -1,5 +1,5 @@
 // Evals: the agent's configuration (CLAUDE.md, .claude/**, guides, rules) regression-tested by a person before it merges.
-// Each .sdlc/evals/<id>.json is a prompt plus deterministic checks, run with `claude -p` in a throwaway worktree: the code at
+// Each .rig/evals/<id>.json is a prompt plus deterministic checks, run with `claude -p` in a throwaway worktree: the code at
 // the eval's `base` (default HEAD), the configuration and the eval's own `files` from HEAD. Verdicts come from exit codes and
 // files, never from what the model says it did. Nothing in rig blocks on the result: a person reads it.
 import fs from 'node:fs'
@@ -13,8 +13,8 @@ import { matchesAny } from './model.ts'
 
 export const EVALS = path.join(SDLC, 'evals')
 export const RESULTS = path.join(EVALS, 'results.jsonl')
-// The vendored harness (.sdlc/bin, githooks, mod) comes from HEAD too: HEAD's skills and hooks call the scripts beside them.
-export const CONFIG_PATHS = ['CLAUDE.md', '.claude', '.sdlc/guides', '.sdlc/rules.json', '.sdlc/sensors.json', '.sdlc/bin', '.sdlc/githooks', '.sdlc/mod']
+// The vendored harness (.rig/bin, githooks, mod) comes from HEAD too: HEAD's skills and hooks call the scripts beside them.
+export const CONFIG_PATHS = ['CLAUDE.md', '.claude', '.rig/guides', '.rig/rules.json', '.rig/sensors.json', '.rig/bin', '.rig/githooks', '.rig/mod']
 
 export type Check = { kind: 'command'; cmd: string } | { kind: 'file-contains'; path: string; text: string } | { kind: 'file-absent'; path: string } | { kind: 'skill-loaded'; name: string }
 export type Eval = { id: string; prompt: string; checks: Check[]; allowedTools?: string; base?: string; files?: string[]; source?: string }
@@ -138,16 +138,16 @@ function seed(limit: number): void {
     const cmds = planVerification(slug)
     // The base goes to git as a revision, so only a commit hash is trusted; anything else skips the change.
     if (exists(file) || typeof ship.base !== 'string' || !/^[0-9a-f]{7,40}$/.test(ship.base) || !cmds.length) continue
-    const shipCommit = git(['log', '-1', '--format=%H', '--', `.sdlc/changes/${slug}/ship.json`]) ?? 'HEAD'
+    const shipCommit = git(['log', '-1', '--format=%H', '--', `.rig/changes/${slug}/ship.json`]) ?? 'HEAD'
     const files = (git(['diff', '--name-only', ship.base, shipCommit]) ?? '').split('\n').filter(f => f && matchesAny(f, tests))
     const { body } = frontmatter(read(path.join(CHANGES, slug, 'intent.md')))
     const draft = { prompt: `Make this change in this repository, then run its verification.\n\n${body.trim()}`, base: ship.base, files, checks: cmds.map(cmd => ({ kind: 'command', cmd })), allowedTools: 'Read,Grep,Glob,Edit,Write,' + cmds.map(c => `Bash(${c})`).join(','), source: `change:${slug}` }
     fs.mkdirSync(EVALS, { recursive: true })
     fs.writeFileSync(file, JSON.stringify(draft, null, 2) + '\n')
-    written.push(`.sdlc/evals/change-${slug}.json`)
+    written.push(`.rig/evals/change-${slug}.json`)
   }
   if (written.length) sanctionWrites(written)
-  out(written.length ? `seeded ${written.length} eval(s) in .sdlc/evals: read each prompt and check before relying on it` : 'nothing to seed: every shipped change with a base and plan verification already has an eval')
+  out(written.length ? `seeded ${written.length} eval(s) in .rig/evals: read each prompt and check before relying on it` : 'nothing to seed: every shipped change with a base and plan verification already has an eval')
 }
 
 export function cmdEvals(args: Args): void {
@@ -156,9 +156,9 @@ export function cmdEvals(args: Args): void {
   const cfg = loadConfig().config.evals
   const only = optString(args, 'only')
   const files = exists(EVALS) ? fs.readdirSync(EVALS).filter(f => f.endsWith('.json') && (!only || f === `${only}.json`)).sort() : []
-  if (!files.length) fail(only ? `no eval ${only} in .sdlc/evals` : 'no evals in .sdlc/evals: run `sdlc.ts evals --seed` or write one')
+  if (!files.length) fail(only ? `no eval ${only} in .rig/evals` : 'no evals in .rig/evals: run `sdlc.ts evals --seed` or write one')
   if (git(['status', '--porcelain', '--', ...CONFIG_PATHS])) out('warn: uncommitted changes to CLAUDE.md, .claude, guides, rules, sensors or the vendored harness are not evaluated: evals use the configuration at HEAD; commit first')
-  if ((git(['status', '--porcelain', '--untracked-files=all', '--', '.sdlc/evals']) ?? '').split('\n').some(l => l.trim().endsWith('.json'))) out('warn: uncommitted eval definitions run as they are in the working tree')
+  if ((git(['status', '--porcelain', '--untracked-files=all', '--', '.rig/evals']) ?? '').split('\n').some(l => l.trim().endsWith('.json'))) out('warn: uncommitted eval definitions run as they are in the working tree')
   const run = now()
   const model = optString(args, 'model')
   const rows: EvalResult[] = files.map(f => {

@@ -11,7 +11,7 @@ const SECRET = 'const apikey = "abcdefghijklmnop12345678"\n'
 let repo: string
 beforeEach(() => {
   repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', '{}')
+  write(repo, '.rig/sensors.json', '{}')
 })
 const stage = (rel: string, text: string): void => {
   write(repo, rel, text)
@@ -51,12 +51,12 @@ test('staged assertion removal blocks as test-tamper', () => {
 })
 
 test('a failing fast command blocks; a long-line warning prints but does not block', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' }, limits: { lineChars: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' }, limits: { lineChars: 10 } }))
   stage('src/a.js', 'export const a = 1\n')
   const red = commit()
   assert.equal(red.code, 1)
   assert.match(red.stdout, /fast\.test/)
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   stage('src/big.js', Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n')
   const warn = commit()
   assert.equal(warn.code, 0)
@@ -64,7 +64,7 @@ test('a failing fast command blocks; a long-line warning prints but does not blo
 })
 
 test('a staged file that crosses the line limit blocks at commit; one already over the limit does not', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { fileLines: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { fileLines: 10 } }))
   const lines = (n: number) => Array.from({ length: n }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n'
   stage('src/a.js', lines(8))
   stage('src/over.js', lines(30))
@@ -95,7 +95,7 @@ test('file names with spaces are judged; a binary file is skipped without a cras
 test('a repo with no commits yet is judged against nothing, not a crash', () => {
   const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-fresh-'))
   gitIn(fresh, 'init', '-q', '-b', 'main')
-  write(fresh, '.sdlc/sensors.json', '{}')
+  write(fresh, '.rig/sensors.json', '{}')
   write(fresh, 'src/a.js', SECRET)
   gitIn(fresh, 'add', 'src/a.js')
   const r = sdlc(fresh, ['check', '--at', 'commit'])
@@ -114,7 +114,7 @@ test('a merge or rebase is read from git state, not the environment; it skips on
   assert.match(merging.stdout, /secrets/)
   gitIn(repo, 'reset', '-q')
   fs.rmSync(path.join(repo, '.git/MERGE_HEAD'), { force: true })
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: 'node -e "process.exit(1)"' } }))
   stage('src/b.js', 'export const b = 1\n')
   assert.equal(commit().code, 1, 'no merge: the failing fast command blocks')
   fs.writeFileSync(path.join(repo, '.git/MERGE_HEAD'), gitIn(repo, 'rev-parse', 'HEAD') + '\n')
@@ -136,10 +136,10 @@ test('hooks install needs the vendored checker, writes executable scripts and se
   assert.equal(early.code, 1)
   assert.match(early.stderr, /vendor/)
   assert.equal(sdlc(repo, ['vendor']).code, 0)
-  for (const n of ['pre-commit', 'pre-push']) assert.ok(fs.statSync(path.join(repo, '.sdlc/githooks', n)).mode & 0o111, `${n} is executable after vendor`)
+  for (const n of ['pre-commit', 'pre-push']) assert.ok(fs.statSync(path.join(repo, '.rig/githooks', n)).mode & 0o111, `${n} is executable after vendor`)
   const r = sdlc(repo, ['hooks', 'install'])
   assert.equal(r.code, 0, r.stderr)
-  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.sdlc/githooks')
+  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.rig/githooks')
   assert.match(sdlc(repo, ['hooks', 'status']).stdout, /installed/)
   assert.equal(sdlc(repo, ['hooks', 'uninstall']).code, 0)
   assert.match(sdlc(repo, ['hooks', 'status']).stdout, /not installed/)
@@ -151,10 +151,10 @@ test('hooks install leaves another core.hooksPath alone unless --force', () => {
   const r = sdlc(repo, ['hooks', 'install'])
   assert.equal(r.code, 1)
   assert.match(r.stderr, /\.husky/)
-  assert.match(r.stderr, /sh \.sdlc\/githooks\/pre-commit/)
+  assert.match(r.stderr, /sh \.rig\/githooks\/pre-commit/)
   assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.husky')
   assert.equal(sdlc(repo, ['hooks', 'install', '--force']).code, 0)
-  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.sdlc/githooks')
+  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.rig/githooks')
 })
 
 test('with hooks installed, git commit refuses a staged secret (also from a subdirectory) and accepts clean code', () => {
@@ -174,7 +174,7 @@ test('a hook that cannot find node warns and lets the commit through', () => {
   sdlc(repo, ['hooks', 'install'])
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-path-'))
   fs.symlinkSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim(), path.join(bin, 'git'))
-  const r = spawnSync('/bin/sh', [path.join(repo, '.sdlc/githooks/pre-commit')], { cwd: repo, env: { PATH: bin }, encoding: 'utf8' })
+  const r = spawnSync('/bin/sh', [path.join(repo, '.rig/githooks/pre-commit')], { cwd: repo, env: { PATH: bin }, encoding: 'utf8' })
   assert.equal(r.status, 0)
   assert.match(r.stderr, /Node >= 22\.18 not found/)
 })
@@ -230,10 +230,10 @@ test('an unplanned tier M ad-hoc change is refused at push; prePush off skips; a
   const r = push(head(), base)
   assert.equal(r.code, 1, r.stdout)
   assert.match(r.stdout, /adhoc/)
-  assert.equal(fs.readdirSync(path.join(repo, '.sdlc/changes')).filter(s => s.startsWith('adhoc-')).length, 1)
+  assert.equal(fs.readdirSync(path.join(repo, '.rig/changes')).filter(s => s.startsWith('adhoc-')).length, 1)
   push(head(), base)
-  assert.equal(fs.readdirSync(path.join(repo, '.sdlc/changes')).filter(s => s.startsWith('adhoc-')).length, 1, 'reused, not recreated')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ githooks: { prePush: 'off' } }))
+  assert.equal(fs.readdirSync(path.join(repo, '.rig/changes')).filter(s => s.startsWith('adhoc-')).length, 1, 'reused, not recreated')
+  write(repo, '.rig/sensors.json', JSON.stringify({ githooks: { prePush: 'off' } }))
   const off = push(head(), base)
   assert.equal(off.code, 0)
   assert.match(off.stdout, /off/)
@@ -293,7 +293,7 @@ test('pushing another branch than HEAD uses that branch\'s merge-base, not HEAD\
 const LINT = `node -e "for (const f of require('fs').readdirSync('.')) if (f.startsWith('bad')) console.log(f)"`
 
 test('push blocks a quality regression against the base', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { lint: { cmd: LINT, count: 'lines' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { lint: { cmd: LINT, count: 'lines' } } }))
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'config')
   const base = head()
@@ -309,7 +309,7 @@ test('push blocks a quality regression against the base', () => {
 })
 
 test('an overrun push budget warns and lets the push through', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { slow: 'node -e "setTimeout(()=>{},3000)"' }, githooks: { budgetMs: 500 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { slow: 'node -e "setTimeout(()=>{},3000)"' }, githooks: { budgetMs: 500 } }))
   const base = head()
   stage('src/a.js', 'export const a = 1\n')
   gitIn(repo, 'commit', '-qm', 'x')
@@ -345,20 +345,20 @@ test('pushing a change branch after the change finished is judged as that change
   const base = head()
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', '## Files\n- src/app.js\n')
+  write(repo, '.rig/changes/tiny/plan.md', '## Files\n- src/app.js\n')
   for (const n of ['app', 'b', 'c', 'd']) write(repo, `src/${n}.js`, `export const ${n} = 1\n`)
   gitIn(repo, 'add', '-A'); gitIn(repo, 'commit', '-qm', 'work')
   // Shipped and reviewed: nothing is active any more, as after /rig-pr-review (STATE.md names no change).
-  write(repo, '.sdlc/STATE.md', '---\nchange:\n---\n# State\n\nNo active change. Last shipped: tiny.\n')
-  const state = fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8')
+  write(repo, '.rig/STATE.md', '---\nchange:\n---\n# State\n\nNo active change. Last shipped: tiny.\n')
+  const state = fs.readFileSync(path.join(repo, '.rig/STATE.md'), 'utf8')
   const r = pushRaw('refs/heads/sdlc/tiny', head(), 'refs/heads/sdlc/tiny', base)
   assert.doesNotMatch(r.stdout, /adhoc/, r.stdout)
-  assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc/changes')), ['tiny'])
-  assert.equal(fs.readFileSync(path.join(repo, '.sdlc/STATE.md'), 'utf8'), state)
+  assert.deepEqual(fs.readdirSync(path.join(repo, '.rig/changes')), ['tiny'])
+  assert.equal(fs.readFileSync(path.join(repo, '.rig/STATE.md'), 'utf8'), state)
 })
 
 test('a Stop that passes with a warning tells the person, and the next prompt tells the agent once', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   hook(repo, 'prompt-submit', { session_id: 's' })
   write(repo, 'src/big.js', Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n')
   const stop = hook(repo, 'stop', { session_id: 's' })
@@ -375,18 +375,18 @@ test('session-start installs the git hooks when they are committed but not wired
   gitIn(repo, 'config', '--local', '--unset', 'core.hooksPath')
   const first = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
   assert.match(first, /Git hooks: installed/)
-  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.sdlc/githooks')
+  assert.equal(gitIn(repo, 'config', '--local', 'core.hooksPath'), '.rig/githooks')
   const again = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
   assert.doesNotMatch(again, /Git hooks/)
   gitIn(repo, 'config', '--local', 'core.hooksPath', '.husky')
   const other = JSON.parse(hook(repo, 'session-start', { source: 'startup' }).stdout).hookSpecificOutput.additionalContext
   assert.match(other, /Git hooks: core\.hooksPath is \.husky/)
-  assert.match(other, /ask the person to run `node \.sdlc\/bin\/sdlc\.ts hooks install --force`/)
+  assert.match(other, /ask the person to run `node \.rig\/bin\/sdlc\.ts hooks install --force`/)
 })
 
 test('a checker crash inside a git hook warns and allows; stop, ship and ci still fail closed', () => {
   assert.equal(sdlc(repo, ['vendor']).code, 0)
-  const bin = path.join(repo, '.sdlc/bin')
+  const bin = path.join(repo, '.rig/bin')
   const boom = (file: string, fn: string) => {
     const text = fs.readFileSync(path.join(bin, file), 'utf8')
     fs.writeFileSync(path.join(bin, file), text.replace(new RegExp(`(export function ${fn}\\([^)]*\\): void \\{)`), "$1\n  throw new Error('boom')"))
@@ -408,7 +408,7 @@ test('a checker crash inside a git hook warns and allows; stop, ship and ci stil
 
 test('an older vendored checker without githooks.ts is not wired: install and session start say to re-run vendor', () => {
   sdlc(repo, ['vendor'])
-  fs.rmSync(path.join(repo, '.sdlc/bin/githooks.ts'))
+  fs.rmSync(path.join(repo, '.rig/bin/githooks.ts'))
   const r = sdlc(repo, ['hooks', 'install'])
   assert.equal(r.code, 1)
   assert.match(r.stderr, /re-run `vendor`/)
@@ -418,7 +418,7 @@ test('an older vendored checker without githooks.ts is not wired: install and se
 })
 
 test('warnings at commit print with their fix text, five at most plus a count', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   const big = Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n'
   stage('src/big.js', big)
   const one = commit()
@@ -435,7 +435,7 @@ const context = () => JSON.parse(hook(repo, 'session-start', { source: 'startup'
 test('hooks uninstall is an opt-out session start respects; install clears it; the install note names it', () => {
   sdlc(repo, ['vendor'])
   const note = context()
-  assert.match(note, /Git hooks: installed .*\(core\.hooksPath = \.sdlc\/githooks\)\. Opt out with: node \.sdlc\/bin\/sdlc\.ts hooks uninstall/)
+  assert.match(note, /Git hooks: installed .*\(core\.hooksPath = \.rig\/githooks\)\. Opt out with: node \.rig\/bin\/sdlc\.ts hooks uninstall/)
   assert.equal(sdlc(repo, ['hooks', 'uninstall']).code, 0)
   assert.equal(gitIn(repo, 'config', '--local', 'rig.githooks'), 'off')
   assert.doesNotMatch(context(), /Git hooks/)
@@ -468,7 +468,7 @@ test('a failed git config set is reported, not claimed as installed', () => {
 
 test('hooks state sees any config scope and reads ./ and trailing-slash spellings as installed', () => {
   sdlc(repo, ['vendor'])
-  for (const p of ['./.sdlc/githooks', '.sdlc/githooks/']) {
+  for (const p of ['./.rig/githooks', '.rig/githooks/']) {
     gitIn(repo, 'config', '--local', 'core.hooksPath', p)
     assert.match(sdlc(repo, ['hooks', 'status']).stdout, /^rig git hooks installed/, p)
   }
@@ -482,7 +482,7 @@ test('hooks state sees any config scope and reads ./ and trailing-slash spelling
 
 test('install rewrites a hook script only when its content or mode differs', () => {
   sdlc(repo, ['vendor'])
-  const file = path.join(repo, '.sdlc/githooks/pre-commit')
+  const file = path.join(repo, '.rig/githooks/pre-commit')
   const before = fs.statSync(file).mtimeMs
   sdlc(repo, ['hooks', 'install'])
   assert.equal(fs.statSync(file).mtimeMs, before)
@@ -510,7 +510,7 @@ test('push says when the commands judge the working tree, and names refs it skip
 const bigFile = Array.from({ length: 20 }, (_, i) => `export const g${i} = ${i}`).join('\n') + '\n'
 
 test('more than five warnings at Stop say how many more, to the person and to the agent', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { lineChars: 10 } }))
   hook(repo, 'prompt-submit', { session_id: 's' })
   for (const n of [1, 2, 3, 4, 5, 6, 7]) write(repo, `src/big${n}.js`, bigFile)
   const stop = JSON.parse(hook(repo, 'stop', { session_id: 's' }).stdout).systemMessage
@@ -541,7 +541,7 @@ test('a real git push runs the installed pre-push hook: clean work goes, a secre
 })
 
 test('a failing full command still blocks at push; only a budget overrun is softened', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { test: 'node -e "process.exit(3)"' } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { test: 'node -e "process.exit(3)"' } }))
   const base = head()
   stage('src/a.js', 'export const a = 1\n')
   gitIn(repo, 'commit', '-qm', 'x')
@@ -554,12 +554,12 @@ test('pre-push skips the full commands and the quality ratchet for a change stam
   const OK = 'node -e "process.exit(0)"'
   const m = path.join(os.tmpdir(), `rig-push-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
   const bump = `node -e "require('fs').appendFileSync('${m}','x')"`
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: OK }, full: { mark: bump }, quality: { lint: { cmd: bump, count: 'exit' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: OK }, full: { mark: bump }, quality: { lint: { cmd: bump, count: 'exit' } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   const base = gitIn(repo, 'rev-parse', 'HEAD')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
   write(repo, 'src/app.js', 'x\n')
   assert.equal(sdlc(repo, ['verify', 'tiny']).code, 0)
   assert.equal(sdlc(repo, ['quality', 'tiny']).code, 0)
@@ -576,12 +576,12 @@ test('pre-push does not skip when an untracked file was in the stamped tree, eve
   const m = path.join(os.tmpdir(), `rig-push-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
   const bump = `node -e "require('fs').appendFileSync('${m}','x')"`
   gitIn(repo, 'config', 'status.showUntrackedFiles', 'no')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: OK }, full: { mark: bump }, quality: { lint: { cmd: bump, count: 'exit' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: OK }, full: { mark: bump }, quality: { lint: { cmd: bump, count: 'exit' } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   const base = gitIn(repo, 'rev-parse', 'HEAD')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
+  write(repo, '.rig/changes/tiny/plan.md', `## Files\n- src/app.js\n## Verification\n- \`${OK}\`\n`)
   write(repo, 'src/app.js', 'x\n')
   write(repo, 'src/helper.js', 'untracked helper\n')
   assert.equal(sdlc(repo, ['verify', 'tiny']).code, 0)

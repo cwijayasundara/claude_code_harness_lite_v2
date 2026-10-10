@@ -5,8 +5,8 @@ export const BAND = { id: 'checkout-errors', query: 'cat .band-value', window: 5
 export const IN_BAND = [10, 11, 10, 9, 10, 10, 11, 10, 9, 10, 10, 11, 10]
 
 export function declareBand(sb) {
-  const sensors = JSON.parse(sb.read('.sdlc/sensors.json'))
-  sb.write('.sdlc/sensors.json', JSON.stringify({ ...sensors, bands: [BAND] }, null, 2) + '\n')
+  const sensors = JSON.parse(sb.read('.rig/sensors.json'))
+  sb.write('.rig/sensors.json', JSON.stringify({ ...sensors, bands: [BAND] }, null, 2) + '\n')
 }
 
 // Records one point through `watch` and returns the band's verdict.
@@ -17,7 +17,7 @@ export function feed(sb, value) {
   return JSON.parse(r.stdout)[0]
 }
 
-const breachFiles = sb => sb.run('sh', ['-c', 'ls .sdlc/intent 2>/dev/null | grep -c breach- || true']).stdout.trim()
+const breachFiles = sb => sb.run('sh', ['-c', 'ls .rig/intent 2>/dev/null | grep -c breach- || true']).stdout.trim()
 
 // The first 13 points are the learning window (5 baseline + the 8 newest, which are kept out of the baseline), so the 13th is the
 // first one judged: in-band means tier 0 and no breach name. Then one point far beyond 3 sigma must be tier 3 with a breach name.
@@ -33,7 +33,7 @@ export async function assertWatch(c, sb, { spike = 60, inBand = IN_BAND } = {}) 
     (breach.tier === 3 && /^breach-checkout-errors-\d{8}$/.test(breach.breach)) || JSON.stringify(breach))
   await c.check('watch: a breach name is given exactly when the tier is 2 or more', () =>
     seen.every(v => (v.tier >= 2) === Boolean(v.breach)) || JSON.stringify(seen.find(v => (v.tier >= 2) !== Boolean(v.breach))))
-  await c.check('watch: history holds every point', () => jsonl(sb.read('.sdlc/watch/checkout-errors.jsonl')).length === seen.length)
+  await c.check('watch: history holds every point', () => jsonl(sb.read('.rig/watch/checkout-errors.jsonl')).length === seen.length)
 }
 
 export async function assertIncident(c, sb, file) {

@@ -1,4 +1,4 @@
-// The init skill tells a model how to write .sdlc/sensors.json; what it shows must be what the harness's own parser accepts.
+// The init skill tells a model how to write .rig/sensors.json; what it shows must be what the harness's own parser accepts.
 // A live run wrote `fast`/`full` as strings (as the skill said), and the ship gate then refused every change.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -41,5 +41,23 @@ test('init skill: enabling rig-brain seeds memory and the wiki rather than only 
   assert.match(skill, /\$W apply/)
   assert.match(skill, /Wiki, brownfield/)
   assert.match(skill, /\*\*Greenfield:\*\* run only `\$W index`/)
-  assert.match(skill, /\.sdlc\/wiki\/` and `\.sdlc\/memory\/`/)
+  assert.match(skill, /\.rig\/wiki\/` and `\.rig\/memory\/`/)
+})
+
+test('init skill: writes rig docs into README.md between markers, brownfield in place and greenfield new', () => {
+  const tpl = fs.readFileSync(path.resolve(import.meta.dirname, '../templates/readme-rig.md'), 'utf8')
+  assert.match(skill, /templates\/readme-rig\.md/)
+  assert.match(skill, /\*\*Brownfield:\*\* keep the existing `README\.md`/)
+  assert.match(skill, /\*\*Greenfield:\*\* create `README\.md`/)
+  assert.match(tpl, /^<!-- rig:begin/)
+  assert.match(tpl.trimEnd(), /<!-- rig:end -->$/)
+  assert.match(tpl, /### Architecture/)
+  assert.match(tpl, /### User guide/)
+  assert.match(tpl, /\{\{P\}\}/)
+  assert.match(tpl, /\{\{BRAIN\}\}/)
+})
+
+test('init skill: warns when the main model is Opus, without blocking', () => {
+  assert.match(skill, /\*\*Model check:\*\*[^\n]*Opus/)
+  assert.match(skill, /Never stop on it/)
 })

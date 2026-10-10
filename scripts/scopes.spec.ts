@@ -67,7 +67,7 @@ test('removing a scope or a dependency edge, or raising scopeLimit, is a weakeni
 
 test('the unscoped sensor warns when scopes are declared and a changed source file matches none', () => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg' } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'feature')
   write(repo, 'pkg/a.js', 'export const a = 1\n'); write(repo, 'loose/b.js', 'export const b = 1\n')
@@ -110,7 +110,7 @@ test('a new scope with no commands weakens a config that already declares scopes
 
 test('backticks in a warning cannot close the step summary fence', () => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg' } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'feature')
   write(repo, 'loose/a```b.js', 'export const b = 1\n')
@@ -141,7 +141,7 @@ const ran = (m: { file: string }): number => (fs.existsSync(m.file) ? fs.readFil
 function monorepo(extra: object = {}) {
   const root = mark('root'), api = mark('api'), web = mark('web'), shared = mark('shared')
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({
+  write(repo, '.rig/sensors.json', JSON.stringify({
     fast: { root: root.cmd },
     scopes: {
       'packages/shared/**': { name: 'shared', root: 'packages/shared', fast: { t: shared.cmd } },
@@ -182,7 +182,7 @@ test('a failing affected command fails closed: every scope runs, with a warning'
 test('scoped commands run in the scope root', () => {
   const repo = makeRepo()
   const out = path.join(os.tmpdir(), `rig-cwd-${process.pid}-${Math.random().toString(36).slice(2)}.txt`)
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: `node -e "require('fs').writeFileSync('${out}', process.cwd())"` } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: `node -e "require('fs').writeFileSync('${out}', process.cwd())"` } } } }))
   write(repo, 'pkg/a.js', 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   stopAfterEdit(repo, 'pkg/b.js')
@@ -191,7 +191,7 @@ test('scoped commands run in the scope root', () => {
 
 test('a scoped failure is reported with the scope in its key', () => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: 'node -e "process.exit(1)"' } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', fast: { t: 'node -e "process.exit(1)"' } } } }))
   write(repo, 'pkg/a.js', 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   const out = JSON.parse(stopAfterEdit(repo, 'pkg/b.js').stdout)
@@ -202,7 +202,7 @@ test('CI runs the selected scopes from the diff, and everything with ci.scope al
   for (const [ciScope, expected] of [['affected', [1, 0]], ['all', [1, 1]]] as const) {
     const api = mark('api'), web = mark('web')
     const repo = makeRepo()
-    write(repo, '.sdlc/sensors.json', JSON.stringify({
+    write(repo, '.rig/sensors.json', JSON.stringify({
       ci: { scope: ciScope },
       full: {},
       scopes: { 'api/**': { name: 'api', root: 'api', full: { t: api.cmd } }, 'web/**': { name: 'web', root: 'web', full: { t: web.cmd } } },
@@ -220,11 +220,11 @@ test('CI runs the selected scopes from the diff, and everything with ci.scope al
 test('verify runs the full commands of the scopes the branch touches, once each', () => {
   const m = mark('full')
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { t: 'node -e "process.exit(0)"' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: m.cmd } }, 'other/**': { name: 'other', root: 'other', full: { t: m.cmd.replace(/x'/, 'y\'') } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { t: 'node -e "process.exit(0)"' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: m.cmd } }, 'other/**': { name: 'other', root: 'other', full: { t: m.cmd.replace(/x'/, 'y\'') } } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/vf')
   sdlc(repo, ['new', 'vf', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/vf/plan.md', '## Files\n- pkg/a.js\n## Verification\n- `node -e "process.exit(0)"`\n')
+  write(repo, '.rig/changes/vf/plan.md', '## Files\n- pkg/a.js\n## Verification\n- `node -e "process.exit(0)"`\n')
   write(repo, 'pkg/a.js', 'export {}\n')
   sdlc(repo, ['verify', 'vf'])
   assert.equal(ran(m), 1)
@@ -233,7 +233,7 @@ test('verify runs the full commands of the scopes the branch touches, once each'
 test('a scope whose root is not a directory blocks instead of running its command elsewhere', () => {
   const m = mark('ghost')
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'nowhere', fast: { t: m.cmd } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'nowhere', fast: { t: m.cmd } } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   const out = JSON.parse(stopAfterEdit(repo, 'pkg/b.js').stdout)
   assert.match(out.reason, /pkg:fast\.t not run: its scope root nowhere is not a directory/)
@@ -248,7 +248,7 @@ const stopAfterEdits = (repo: string, rels: string[]) => {
 }
 const scoped = (scopes: object, extra: object = {}) => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes, ...extra }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes, ...extra }))
   for (const d of ['a', 'b', 'shared', 'pkg']) write(repo, `${d}/index.js`, 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   return repo
@@ -258,12 +258,12 @@ test('verify with no base to diff against runs every scope\'s full commands rath
   const m = mark('nobase')
   const repo = makeRepo()
   gitIn(repo, 'branch', '-m', 'trunk')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: m.cmd } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { t: m.cmd } } } }))
   write(repo, 'pkg/a.js', 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/nb')
   sdlc(repo, ['new', 'nb', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/nb/plan.md', '## Files\n- pkg/a.js\n## Verification\n- `node -e "process.exit(0)"`\n')
+  write(repo, '.rig/changes/nb/plan.md', '## Files\n- pkg/a.js\n## Verification\n- `node -e "process.exit(0)"`\n')
   sdlc(repo, ['verify', 'nb'])
   assert.equal(ran(m), 1)
 })
@@ -285,11 +285,11 @@ test('the same command in different scope roots runs in each', () => {
 test('a scope rooted at . is the repo root: verify does not rerun a command its plan loop already ran there', () => {
   const m = mark('dot')
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { unit: m.cmd }, scopes: { 'pkg/**': { name: 'pkg', root: '.', full: { t: m.cmd } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ levels: { unit: m.cmd }, scopes: { 'pkg/**': { name: 'pkg', root: '.', full: { t: m.cmd } } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/dot')
   sdlc(repo, ['new', 'dot', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/dot/plan.md', `## Files\n- pkg/a.js\n## Verification\n- \`${m.cmd}\`\n`)
+  write(repo, '.rig/changes/dot/plan.md', `## Files\n- pkg/a.js\n## Verification\n- \`${m.cmd}\`\n`)
   write(repo, 'pkg/a.js', 'export {}\n')
   sdlc(repo, ['verify', 'dot'])
   assert.equal(ran(m), 1)
@@ -338,12 +338,12 @@ test('with scopes declared, an empty source diff plans nothing; verify alone fal
 test('verify on a branch with no source changes runs the top-level full commands instead of stamping pass with none', () => {
   const m = mark('empty')
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { t: m.cmd }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: 'node -e "0"' } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { t: m.cmd }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: 'node -e "0"' } } } }))
   write(repo, 'pkg/a.js', 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/em')
   sdlc(repo, ['new', 'em', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/em/plan.md', '## Files\n- .sdlc/sensors.json\n## Verification\n- `node -e "process.exit(0)"`\n')
+  write(repo, '.rig/changes/em/plan.md', '## Files\n- .rig/sensors.json\n## Verification\n- `node -e "process.exit(0)"`\n')
   sdlc(repo, ['verify', 'em'])
   assert.equal(ran(m), 1)
 })
@@ -351,7 +351,7 @@ test('verify on a branch with no source changes runs the top-level full commands
 test('a docs-only diff in CI with ci.scope affected plans no commands, scoped or top-level', () => {
   const top = mark('docs-top'), sc = mark('docs-scope')
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { t: top.cmd }, fast: { t: top.cmd }, ci: { scope: 'affected' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: sc.cmd } } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { t: top.cmd }, fast: { t: top.cmd }, ci: { scope: 'affected' }, scopes: { 'pkg/**': { name: 'pkg', root: 'pkg', full: { u: sc.cmd } } } }))
   write(repo, 'pkg/a.js', 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'feature')

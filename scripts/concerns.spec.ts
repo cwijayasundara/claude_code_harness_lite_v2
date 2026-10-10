@@ -17,7 +17,7 @@ beforeEach(() => {
   repo = makeRepo()
   sdlc(repo, ['new', 'feat', '--type', 'feature', '--tier', 'M'])
 })
-const design = (concerns: string) => write(repo, '.sdlc/changes/feat/design.md', `## Files\n- src/a.js\n## Verification\n- \`npm test\`\n${concerns}`)
+const design = (concerns: string) => write(repo, '.rig/changes/feat/design.md', `## Files\n- src/a.js\n## Verification\n- \`npm test\`\n${concerns}`)
 const approve = () => sdlc(repo, ['approve', 'feat', 'design'], { env: { SDLC_HUMAN: '1' } })
 
 test('approve refuses a design with an unresolved concern and names it; status lists it as open', () => {

@@ -25,7 +25,7 @@ Do differently:
 - **Run the workflow on GitHub first**, before adding features. Its first-run checklist (agent mode on `push`, `--allowedTools` confinement headless, artifact semantics) was never verified.
 - **Use a real parser** (tree-sitter or the language's own tooling) rather than a per-language regex table, and resolve aliases and monorepo packages.
 - **Cache the graph.** Rebuilding it cost about 1.3 s on 5,000 files at every commit.
-- **Add "why" from evidence.** Join `.sdlc/changes/<slug>/` (intent, design, review findings) to the files they touched, so the wiki can say why code looks as it does. This is the part a plain code index cannot do.
+- **Add "why" from evidence.** Join `.rig/changes/<slug>/` (intent, design, review findings) to the files they touched, so the wiki can say why code looks as it does. This is the part a plain code index cannot do.
 - **Keep it out of the commit path.** Warn in CI, not at `pre-commit`.
 
 Entry test: on one real repo of 50k+ lines, `ask` answers 10 questions the maintainer chose, with correct citations, and a refresh PR opens by itself.
@@ -53,4 +53,4 @@ Entry test: at least 30 shipped changes of real evidence, then show one promoted
 
 - Should `learn` also tune `sensors.json` thresholds, or stay advisory? Today it was advisory only.
 - Is the wiki one artifact for humans and agents, or should agents get a smaller, denser index?
-- Where do these plugins keep state without touching `.sdlc/` evidence files?
+- Where do these plugins keep state without touching `.rig/` evidence files?

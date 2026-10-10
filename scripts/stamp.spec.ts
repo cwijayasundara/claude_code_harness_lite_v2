@@ -25,17 +25,17 @@ test('the stamp is stable, and changes with an edit, an untracked file, the sens
   write(repo, 'src/b.js', 'export const b = 1\n')
   const added = stamp()
   assert.notEqual(added, edited)
-  write(repo, '.sdlc/sensors.json', '{"limits":{"fileLines":50}}')
+  write(repo, '.rig/sensors.json', '{"limits":{"fileLines":50}}')
   assert.notEqual(stamp(), added)
   fs.rmSync(path.join(repo, 'src/a.js'))
   assert.notEqual(stamp(), added)
 })
 
-test('touching a file or churning .sdlc evidence or an ignored file does not change the stamp', () => {
+test('touching a file or churning .rig evidence or an ignored file does not change the stamp', () => {
   const clean = stamp()
   const t = new Date(Date.now() + 5000)
   fs.utimesSync(path.join(repo, 'src/a.js'), t, t)
-  write(repo, '.sdlc/changes/x/runs.jsonl', '{}\n')
+  write(repo, '.rig/changes/x/runs.jsonl', '{}\n')
   write(repo, 'dist/out.js', 'built\n')
   assert.equal(stamp(), clean)
 })

@@ -181,7 +181,7 @@ export function matchesAny(file: string, globs: string[]): boolean {
 }
 export const isTest = (file: string, cfg: SensorConfig): boolean => matchesAny(file, cfg.tests)
 export const isSource = (file: string, cfg: SensorConfig): boolean =>
-  !file.startsWith('.sdlc/') && !matchesAny(file, cfg.ignore)
+  !file.startsWith('.rig/') && !matchesAny(file, cfg.ignore)
 
 // ---------- unified diff ----------
 

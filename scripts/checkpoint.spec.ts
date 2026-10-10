@@ -8,11 +8,11 @@ import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 const GREEN = 'node -e "process.exit(0)"'
 let repo: string
 function setup(branch = 'sdlc/feat') {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: GREEN } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: GREEN } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   if (branch !== 'main') gitIn(repo, 'checkout', '-qb', branch)
   sdlc(repo, ['new', 'feat', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/feat/plan.md', '## Files\n- src/a.js\n- src/b.js\n- test/a.test.js\n## Slices\n### Task 1: a\nFiles: `src/a.js` `test/a.test.js`\n### Task 2: b\nFiles: `src/b.js`\n')
+  write(repo, '.rig/changes/feat/plan.md', '## Files\n- src/a.js\n- src/b.js\n- test/a.test.js\n## Slices\n### Task 1: a\nFiles: `src/a.js` `test/a.test.js`\n### Task 2: b\nFiles: `src/b.js`\n')
   write(repo, 'src/a.js', 'export const a = 1\n')
   write(repo, 'test/a.test.js', "test('B1 a', () => {})\n")
   write(repo, 'src/b.js', 'export const b = 1\n')
@@ -82,7 +82,7 @@ test('a slice with no changed planned files records without a commit', () => {
 const files = (rev = 'HEAD') => gitIn(repo, 'show', '--name-status', '--format=', rev).split('\n').sort()
 function plan(list: string[]) {
   fs.rmSync(path.join(repo, 'src/b.js')); fs.rmSync(path.join(repo, 'test/a.test.js'))
-  write(repo, '.sdlc/changes/feat/plan.md', `## Files\n${list.map(f => `- ${f}`).join('\n')}\n## Slices\n### Task 1: a\n`)
+  write(repo, '.rig/changes/feat/plan.md', `## Files\n${list.map(f => `- ${f}`).join('\n')}\n## Slices\n### Task 1: a\n`)
 }
 
 test('planned deletions (git rm and unstaged) are committed with the slice', () => {
@@ -99,7 +99,7 @@ test('planned deletions (git rm and unstaged) are committed with the slice', () 
 test('pathspec magic in a planned name stays literal', () => {
   setup()
   plan(['src/a.js', 'src/a[y].js', 'src/ay.js'])
-  write(repo, '.sdlc/changes/feat/plan.md', '## Files\n- src/a.js\n- src/a[y].js\n- src/ay.js\n## Slices\n### Task 1: lit\nFiles: `src/a.js` `src/a[y].js`\n### Task 2: other\nFiles: `src/ay.js`\n')
+  write(repo, '.rig/changes/feat/plan.md', '## Files\n- src/a.js\n- src/a[y].js\n- src/ay.js\n## Slices\n### Task 1: lit\nFiles: `src/a.js` `src/a[y].js`\n### Task 2: other\nFiles: `src/ay.js`\n')
   write(repo, 'src/a[y].js', 'lit\n'); write(repo, 'src/ay.js', 'other\n')
   { const r = record('1'); assert.equal(r.code, 0, r.stderr) }
   assert.deepEqual(files(), ['A\tsrc/a.js', 'A\tsrc/a[y].js'])
@@ -137,7 +137,7 @@ test('tier L: a passing reply commits the slice; a failed commit reopens it and 
   assert.notEqual(bad.code, 0)
   assert.match(bad.stderr, /the slice is reopened/)
   assert.equal(JSON.parse(sdlc(repo, ['ratchet', 'show', 'feat']).stdout).slices['1'].status, 'open')
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/feat/events.jsonl'), 'utf8'), /"node":"build#1","verdict":"reopened","reason":"checkpoint commit failed"/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/feat/events.jsonl'), 'utf8'), /"node":"build#1","verdict":"reopened","reason":"checkpoint commit failed"/)
   gitIn(repo, 'config', 'commit.gpgsign', 'false')
   const ok = reply()
   assert.equal(ok.code, 0, ok.stderr)

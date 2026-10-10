@@ -11,7 +11,7 @@ printf '%s' "$cmd" | grep -qiF deploy || exit 0
 printf '%s' "$cmd" | grep -qiF -- "$env_name" || exit 0
 if [ -n "$RELEASE_APPROVAL" ]; then decision=allow; else decision=block; fi
 session=$(printf '%s' "$input" | sed -nE 's/.*"session_id"[[:space:]]*:[[:space:]]*"([A-Za-z0-9-]*)".*/\1/p')
-dir=${CLAUDE_PROJECT_DIR:-$PWD}/.sdlc
+dir=${CLAUDE_PROJECT_DIR:-$PWD}/.rig
 if [ -d "$dir" ] && [ ! -L "$dir/gates.jsonl" ]; then
   { printf '{"at":"%s","decision":"%s","session":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$decision" "$session" >> "$dir/gates.jsonl"; } 2>/dev/null || :
 fi

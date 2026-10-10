@@ -122,8 +122,8 @@ test('size blocks when a file crosses the line limit at stop, and the diff limit
 
 test('size does not judge the vendored harness: an install or upgrade is neither long lines nor an oversized diff', () => {
   const long = 'x'.repeat(200)
-  const vendored = [fd('.claude/workflows/review.js', [long], [], 'A'), fd('.sdlc/bin/check.ts', Array.from({ length: 1600 }, () => 'y'), [], 'A')]
-  assert.deepEqual(size(vendored, CFG, { '.claude/workflows/review.js': 1, '.sdlc/bin/check.ts': 1600 }, 'ship'), [])
+  const vendored = [fd('.claude/workflows/review.js', [long], [], 'A'), fd('.rig/bin/check.ts', Array.from({ length: 1600 }, () => 'y'), [], 'A')]
+  assert.deepEqual(size(vendored, CFG, { '.claude/workflows/review.js': 1, '.rig/bin/check.ts': 1600 }, 'ship'), [])
   assert.equal(size([fd('src/review.js', [long], [], 'A')], CFG, { 'src/review.js': 1 }, 'ship')[0]?.sensor, 'size', 'project code still is')
 })
 
@@ -200,13 +200,13 @@ test('onlyKnownRedRemoved accepts the ratchet and nothing more', () => {
 })
 
 test('harnessTamper: Bash-made edits block at Stop, weakening blocks at ship, plain edits warn', () => {
-  const cfgDiff = fd('.sdlc/sensors.json', ['x'], ['y'])
+  const cfgDiff = fd('.rig/sensors.json', ['x'], ['y'])
   const before = () => J({ limits: { diffLines: 500 } })
   const weaker = () => J({ limits: { diffLines: 900 } })
   const viaBash = harnessTamper([cfgDiff], { point: 'stop', toolEdited: new Set(), before, after: weaker })
   assert.match(viaBash[0]?.message ?? '', /outside Write\/Edit/)
   assert.equal(viaBash[0]?.severity, 'block')
-  assert.equal(harnessTamper([cfgDiff], { point: 'stop', toolEdited: new Set(['.sdlc/sensors.json']), before, after: weaker })[0]?.severity, 'warn')
+  assert.equal(harnessTamper([cfgDiff], { point: 'stop', toolEdited: new Set(['.rig/sensors.json']), before, after: weaker })[0]?.severity, 'warn')
   const ship = harnessTamper([cfgDiff], { point: 'ship', before, after: weaker })
   assert.deepEqual([ship[0]?.severity, ship[0]?.labels], ['block', ['weakens-harness']])
   assert.equal(harnessTamper([fd('CLAUDE.md', ['more'])], { point: 'ci', before: () => '', after: () => '' })[0]?.severity, 'warn')
@@ -224,9 +224,9 @@ test('weakensRules names removed and downgraded rules only', () => {
 test('isProtected compares case-insensitively when asked; a deleted sensors.json is reported', () => {
   assert.ok(!isProtected('CLAUDE.MD'))
   assert.ok(isProtected('CLAUDE.MD', true))
-  assert.ok(isProtected('.sdlc/Sensors.json', true))
-  const gone = harnessTamper([fd('.sdlc/sensors.json', [], ['x'], 'D')], { point: 'ship', before: () => J({}), after: () => '' })
-  assert.match(gone[0]?.message ?? '', /\.sdlc\/sensors\.json deleted/)
+  assert.ok(isProtected('.rig/Sensors.json', true))
+  const gone = harnessTamper([fd('.rig/sensors.json', [], ['x'], 'D')], { point: 'ship', before: () => J({}), after: () => '' })
+  assert.match(gone[0]?.message ?? '', /\.rig\/sensors\.json deleted/)
 })
 
 test('behaviour ids come from the named section only; a test must name each one', () => {
@@ -292,7 +292,7 @@ test('weakensConfig flags changed and added declared level and quality commands'
 })
 
 test('the repo-root plugin marketplace and the vendored mod are protected, case-insensitively', () => {
-  for (const f of ['.claude-plugin/marketplace.json', '.sdlc/mod/hooks/register.ts']) assert.ok(isProtected(f) && isProtected(f.toUpperCase(), true), f)
+  for (const f of ['.claude-plugin/marketplace.json', '.rig/mod/hooks/register.ts']) assert.ok(isProtected(f) && isProtected(f.toUpperCase(), true), f)
 })
 
 test('legacy sdlc names stay honoured: protected old workflow, both secret markers', () => {
@@ -333,8 +333,8 @@ test('githooks config defaults to ship, parses, and turning pre-push off counts 
 })
 
 test('the git hook scripts are protected harness files', () => {
-  assert.ok(isProtected('.sdlc/githooks/pre-commit'))
-  assert.ok(isProtected('.sdlc/githooks/pre-push'))
+  assert.ok(isProtected('.rig/githooks/pre-commit'))
+  assert.ok(isProtected('.rig/githooks/pre-push'))
 })
 
 test('a file crossing the line limit blocks at edit and stop, and only warns at ship and ci', () => {

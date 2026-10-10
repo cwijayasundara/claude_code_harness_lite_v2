@@ -146,7 +146,7 @@ export function readRef(): { tip: string | null; files: Rollup[]; bad: string[] 
 export function fetchRef(): boolean {
   if (g(['remote', 'get-url', 'origin']) === null) return false
   const ok = g(['fetch', '-q', '--no-tags', 'origin', `+${SPEND_REF}:${SPEND_REF}`], { timeout: TIMEOUT }) !== null
-  if (ok) try { writeAtomic(FETCHED, now()) } catch { /* no .sdlc */ }
+  if (ok) try { writeAtomic(FETCHED, now()) } catch { /* no .rig */ }
   return ok
 }
 
@@ -283,7 +283,7 @@ export function crossings(view: BudgetView): string[] {
     const n = newly(c.level, had)
     if (n.length) { seen.changes[c.slug] = [...had, ...n]; msgs.push(`rig budget ${c.level}: ${c.slug} ${changeBudgetText(c)}`) }
   }
-  try { writeAtomic(SEEN, JSON.stringify(seen)) } catch { /* no .sdlc */ }
+  try { writeAtomic(SEEN, JSON.stringify(seen)) } catch { /* no .rig */ }
   return msgs
 }
 

@@ -58,7 +58,7 @@ export function createSandbox({ name, out }) {
     },
     // The repo's vendored checker once onboarded, the plugin's before: a teammate only ever has the vendored one.
     sdlc(args, { human = false } = {}) {
-      const vendored = path.join(dir, '.sdlc/bin/sdlc.ts')
+      const vendored = path.join(dir, '.rig/bin/sdlc.ts')
       const script = fs.existsSync(vendored) ? vendored : path.join(PLUGIN, 'scripts/sdlc.ts')
       const who = human ? { SDLC_HUMAN: '1' } : {}
       return run('node', ['--disable-warning=ExperimentalWarning', script, ...args], { env: { CLAUDE_PROJECT_DIR: dir, ...who } })
@@ -80,7 +80,7 @@ export function createSandbox({ name, out }) {
       const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-ci-'))
       git('worktree', 'add', '-q', '--detach', wt, 'HEAD')
       try {
-        const script = path.join(wt, '.sdlc/bin/sdlc.ts')
+        const script = path.join(wt, '.rig/bin/sdlc.ts')
         const sdlc = args => run('node', ['--disable-warning=ExperimentalWarning', script, ...args], { cwd: wt, env: { CLAUDE_PROJECT_DIR: wt } })
         return fn({ dir: wt, sdlc })
       } finally {

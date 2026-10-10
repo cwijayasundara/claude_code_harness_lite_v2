@@ -140,11 +140,11 @@ test('DORA from gh and incidents: deploy frequency, lead time, change failure ra
   sdlc(repo, ['init'])
   const deploys = [10, 30, 50, 70, 90, 2000].map(h => ({ created_at: ago(h), environment: 'prod' })) // 2000h is outside the 30-day window
   const prs = [[100, 95], [80, 75], [60, 55], [40, 35], [20, 15], [5, 4]].map(([open, merged], i) => ({ number: i + 1, createdAt: ago(open as number), mergedAt: ago(merged as number) }))
-  write(repo, '.sdlc/incidents/20261001-a.md', `---\nescaped: true\ndetected: ${ago(48)}\nrestored: ${ago(46)}\n---\n`)
-  write(repo, '.sdlc/incidents/20261001-b.md', `---\nescaped: false\ndetected: ${ago(30)}\nrestored: ${ago(29)}\n---\n`)
-  for (const [k, h] of [['c', 4], ['d', 3], ['e', 5]] as const) write(repo, `.sdlc/incidents/20261001-${k}.md`, `---\nescaped: false\ndetected: ${ago(200)}\nrestored: ${ago(200 - h)}\n---\n`)
-  write(repo, '.sdlc/incidents/20261001-f.md', `---\ndetected: ${ago(10)}\nrestored: ${ago(12)}\n---\n`)
-  write(repo, '.sdlc/incidents/20261001-g.md', `---\ndetected: ${ago(10)}\nrestored:\n---\n`)
+  write(repo, '.rig/incidents/20261001-a.md', `---\nescaped: true\ndetected: ${ago(48)}\nrestored: ${ago(46)}\n---\n`)
+  write(repo, '.rig/incidents/20261001-b.md', `---\nescaped: false\ndetected: ${ago(30)}\nrestored: ${ago(29)}\n---\n`)
+  for (const [k, h] of [['c', 4], ['d', 3], ['e', 5]] as const) write(repo, `.rig/incidents/20261001-${k}.md`, `---\nescaped: false\ndetected: ${ago(200)}\nrestored: ${ago(200 - h)}\n---\n`)
+  write(repo, '.rig/incidents/20261001-f.md', `---\ndetected: ${ago(10)}\nrestored: ${ago(12)}\n---\n`)
+  write(repo, '.rig/incidents/20261001-g.md', `---\ndetected: ${ago(10)}\nrestored:\n---\n`)
   const m = metricsWith(repo, ghBin({ deployments: deploys, prs }))
   assert.deepEqual({ v: m.deployment_frequency_per_week.value, n: m.deployment_frequency_per_week.n }, { v: Number((5 / (30 / 7)).toFixed(2)), n: 5 })
   // Each PR's lead time runs from open to the first deploy at or after its merge: 100→90 = 10h, 80→70 = 10h, 60→50 = 10h,
@@ -219,7 +219,7 @@ test('each workflow that runs Claude reads the run cost and publishes it from a 
     assert.match(job, /contents: write/)
     assert.doesNotMatch(job, /claude-code-action/, `${name}: the spend job runs no model`)
     assert.match(job, /spend publish --ci --usd "\$USD" --run "\$RUN"/)
-    assert.match(job, /if \[ ! -f \.sdlc\/bin\/spend\.ts \]; then echo "::notice::/, `${name}: an old base branch skips with a notice`)
+    assert.match(job, /if \[ ! -f \.rig\/bin\/spend\.ts \]; then echo "::notice::/, `${name}: an old base branch skips with a notice`)
     assert.match(job, /github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
   }
 })

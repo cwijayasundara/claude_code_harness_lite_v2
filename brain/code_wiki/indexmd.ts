@@ -3,7 +3,7 @@ import type { Index, State } from './core.ts'
 const CAP = 8000
 
 export function buildIndexMd(idx: Index, state: State, purposeOf: (module: string) => string): string {
-  const head = ['# Wiki index', '', 'Compact map for agents. Treat entries as pointers; verify in the code. Full pages: `.sdlc/wiki/modules/<name>.md`.', '']
+  const head = ['# Wiki index', '', 'Compact map for agents. Treat entries as pointers; verify in the code. Full pages: `.rig/wiki/modules/<name>.md`.', '']
   const mods = Object.values(idx.modules).sort((a, b) => b.usedBy.length - a.usedBy.length || a.name.localeCompare(b.name))
   if (!mods.length) return [...head, '_No modules indexed yet. Once the repo has code, run `/rig-brain:wiki-refresh` to fill this in._', ''].join('\n')
   const lines: string[] = []

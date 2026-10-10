@@ -78,7 +78,7 @@ export type HookInput = {
 // ---------- constants ----------
 
 export const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd()
-export const SDLC = path.join(ROOT, '.sdlc')
+export const SDLC = path.join(ROOT, '.rig')
 export const CHANGES = path.join(SDLC, 'changes')
 export const APPROVALS = path.join(SDLC, 'approvals.jsonl')
 export const STATE = path.join(SDLC, 'STATE.md')
@@ -106,7 +106,7 @@ export const out = (text: string): void => {
 }
 
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/
-// A slug names a directory under .sdlc/changes: it must be a plain name of an existing change, never a path.
+// A slug names a directory under .rig/changes: it must be a plain name of an existing change, never a path.
 export function checkSlug(slug: string): string {
   if (!SLUG_RE.test(slug)) fail(`invalid change name ${slug}`)
   if (!fs.existsSync(path.join(CHANGES, slug))) fail(`no change named ${slug}`)
@@ -303,7 +303,7 @@ export function relPosix(file: string): string {
 
 export function isPlanned(file: string, patterns: string[]): boolean {
   const rel = relPosix(file)
-  if (rel.startsWith('.sdlc/')) return true
+  if (rel.startsWith('.rig/')) return true
   return patterns.some(p => globToRegex(p).test(rel))
 }
 
@@ -355,7 +355,7 @@ export function planProblems(file: string): string[] {
 }
 
 export const PLUGIN_ROOT = path.resolve(import.meta.dirname, '..')
-// A standalone repo runs its own copy from .sdlc/bin, where skills are /rig-<name> and agents rig-<name>.
+// A standalone repo runs its own copy from .rig/bin, where skills are /rig-<name> and agents rig-<name>.
 export const IS_VENDORED = path.basename(import.meta.dirname) === 'bin'
 export const skillRef = (name: string): string => `/rig${IS_VENDORED ? '-' : ':'}${name}`
 export const agentRef = (name: string): string => `rig${IS_VENDORED ? '-' : ':'}${name}`

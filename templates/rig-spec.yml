@@ -1,4 +1,4 @@
-# rig-spec: when an accepted intent lands in .sdlc/intent/ on the trunk, draft its change (intent.md and, for a feature,
+# rig-spec: when an accepted intent lands in .rig/intent/ on the trunk, draft its change (intent.md and, for a feature,
 # design.md) and open a pull request for the product owner to review. Copy to .github/workflows/ and list it in CODEOWNERS.
 # Auth: set ONE repository secret, CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) or ANTHROPIC_API_KEY.
 # Privilege split, as in rig-review.yml: the draft job runs the model with a read-only token and no persisted credentials and
@@ -16,7 +16,7 @@ name: rig-spec
 on:
   push:
     branches: [main]
-    paths: ['.sdlc/intent/**']
+    paths: ['.rig/intent/**']
 concurrency:
   group: rig-spec
   cancel-in-progress: false
@@ -38,7 +38,7 @@ jobs:
       - name: Accepted intents with no change and no rig-spec branch yet
         id: pick
         run: |
-          p=$(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts inbox --pending --json)
+          p=$(node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts inbox --pending --json)
           echo "pending=$p" >> "$GITHUB_OUTPUT"
   draft:
     needs: pick
@@ -69,16 +69,16 @@ jobs:
           github_token: ${{ github.token }}
           claude_args: >-
             --model ${{ steps.model.outputs.id }} --max-turns 60
-            --allowedTools "Read(./**),Grep,Glob,Agent,Skill,Edit(./.sdlc/changes/**),Bash(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts *)"
-            --disallowedTools "WebFetch,WebSearch,AskUserQuestion,Edit(./.sdlc/bin/**),Edit(./.sdlc/sensors.json),Edit(./.sdlc/rules.json),Edit(./.claude/**),Edit(./.github/**)"
-          prompt: /rig-start .sdlc/intent/${{ matrix.intent.file }} --plan-only
+            --allowedTools "Read(./**),Grep,Glob,Agent,Skill,Edit(./.rig/changes/**),Bash(node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts *)"
+            --disallowedTools "WebFetch,WebSearch,AskUserQuestion,Edit(./.rig/bin/**),Edit(./.rig/sensors.json),Edit(./.rig/rules.json),Edit(./.claude/**),Edit(./.github/**)"
+          prompt: /rig-start .rig/intent/${{ matrix.intent.file }} --plan-only
       - name: Hand the change folder over
         env:
           FILE: ${{ matrix.intent.file }}
         run: |
-          slug=$(node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts inbox --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const e=JSON.parse(s).find(x=>x.file===process.argv[1]);process.stdout.write((e&&e.change)||"")})' "$FILE")
-          [ -n "$slug" ] || { echo "::error::no change names .sdlc/intent/$FILE as its source"; exit 1; }
-          mkdir -p handover && cp -R ".sdlc/changes/$slug" handover/
+          slug=$(node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts inbox --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const e=JSON.parse(s).find(x=>x.file===process.argv[1]);process.stdout.write((e&&e.change)||"")})' "$FILE")
+          [ -n "$slug" ] || { echo "::error::no change names .rig/intent/$FILE as its source"; exit 1; }
+          mkdir -p handover && cp -R ".rig/changes/$slug" handover/
       - uses: actions/upload-artifact@v4
         with:
           name: rig-spec-${{ matrix.intent.file }}
@@ -116,7 +116,7 @@ jobs:
             if [ -L "$f" ] || [ -d "$f" ]; then echo "::error::refusing $f"; exit 1; fi
             case "$(basename "$f")" in intent.md|design.md|spec.md|plan.md|notes.md|ratchet.json|events.jsonl|impact.json|runs.jsonl|verification.md) ;; *) echo "::error::refusing $f"; exit 1 ;; esac
           done
-          if git cat-file -e "HEAD:.sdlc/changes/$slug" 2>/dev/null; then echo "::error::change $slug already exists on the trunk"; exit 1; fi
+          if git cat-file -e "HEAD:.rig/changes/$slug" 2>/dev/null; then echo "::error::change $slug already exists on the trunk"; exit 1; fi
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
           # publish-check:end
       - name: Push the branch and open the pull request
@@ -127,11 +127,11 @@ jobs:
         run: |
           branch="sdlc/intent-${FILE%.md}"
           git switch -c "$branch"
-          mkdir -p ".sdlc/changes/$SLUG"
+          mkdir -p ".rig/changes/$SLUG"
           for f in intent.md design.md spec.md plan.md notes.md; do
-            if [ -f "change/$SLUG/$f" ]; then cp "change/$SLUG/$f" ".sdlc/changes/$SLUG/"; fi
+            if [ -f "change/$SLUG/$f" ]; then cp "change/$SLUG/$f" ".rig/changes/$SLUG/"; fi
           done
-          git add ".sdlc/changes/$SLUG"
-          git -c user.name=rig-spec -c user.email=rig-spec@users.noreply.github.com commit -m "spec: draft $SLUG from .sdlc/intent/$FILE"
+          git add ".rig/changes/$SLUG"
+          git -c user.name=rig-spec -c user.email=rig-spec@users.noreply.github.com commit -m "spec: draft $SLUG from .rig/intent/$FILE"
           git push origin "$branch"
-          gh pr create --head "$branch" --title "spec: $SLUG" --body "Drafted by rig-spec from .sdlc/intent/$FILE. Review the drafted files (intent.md, plus design.md or notes.md where present) and resolve every ## Concerns line with its owner; an engineer then runs /rig-start $SLUG. rig's own records (ratchet.json, impact.json) are not published from the model job, so the change waits for /rig-approve $SLUG tier <S|M|L> <type> before any other step. Review any ## Verification commands like code: they run during the build."
+          gh pr create --head "$branch" --title "spec: $SLUG" --body "Drafted by rig-spec from .rig/intent/$FILE. Review the drafted files (intent.md, plus design.md or notes.md where present) and resolve every ## Concerns line with its owner; an engineer then runs /rig-start $SLUG. rig's own records (ratchet.json, impact.json) are not published from the model job, so the change waits for /rig-approve $SLUG tier <S|M|L> <type> before any other step. Review any ## Verification commands like code: they run during the build."

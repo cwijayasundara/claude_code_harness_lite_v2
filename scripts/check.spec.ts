@@ -35,10 +35,10 @@ test('an untracked file changed during the turn counts; a staged-only change cou
   assert.deepEqual(turnFiles(), ['A notes.txt', 'M src/app.js'])
 })
 
-test('an untracked .sdlc/sensors.json created during the turn appears in the turn diff', () => {
+test('an untracked .rig/sensors.json created during the turn appears in the turn diff', () => {
   hook(repo, 'prompt-submit', {})
-  write(repo, '.sdlc/sensors.json', '{"ignore":["**"]}\n')
-  assert.ok(turnFiles().includes('A .sdlc/sensors.json'))
+  write(repo, '.rig/sensors.json', '{"ignore":["**"]}\n')
+  assert.ok(turnFiles().includes('A .rig/sensors.json'))
 })
 
 test('a diff over 1 MB is parsed, not silently empty', () => {
@@ -54,7 +54,7 @@ test('the branch diff covers commits since the merge-base plus the working tree'
   write(repo, 'src/app.js', 'export const a = 4\n')
   gitIn(repo, 'commit', '-qam', 'wip')
   write(repo, 'src/later.js', 'x\n')
-  const files = JSON.parse(sdlc(repo, ['diff', '--base', 'main', '--json']).stdout).map((d: { file: string }) => d.file).filter((f: string) => !f.startsWith('.sdlc/')).sort()
+  const files = JSON.parse(sdlc(repo, ['diff', '--base', 'main', '--json']).stdout).map((d: { file: string }) => d.file).filter((f: string) => !f.startsWith('.rig/')).sort()
   assert.deepEqual(files, ['notes.txt', 'src/app.js', 'src/later.js'])
 })
 
@@ -64,7 +64,7 @@ test('no commits yet: prompt-submit is silent and writes no baseline', () => {
   sdlc(bare, ['init'])
   const r = hook(bare, 'prompt-submit', {})
   assert.deepEqual([r.code, r.stdout], [0, ''])
-  assert.ok(!fs.existsSync(path.join(bare, '.sdlc/.baseline')))
+  assert.ok(!fs.existsSync(path.join(bare, '.rig/.baseline')))
 })
 
 test('an edit made before the turn is not blamed on it, even with no git identity configured', () => {
@@ -83,7 +83,7 @@ test('diff --turn without a baseline says so instead of diffing against now', ()
   assert.deepEqual([r.code, r.stdout.trim()], [0, 'no turn baseline yet (run a prompt first)'])
 })
 
-const sensors = (cfg: object) => write(repo, '.sdlc/sensors.json', JSON.stringify(cfg, null, 2) + '\n')
+const sensors = (cfg: object) => write(repo, '.rig/sensors.json', JSON.stringify(cfg, null, 2) + '\n')
 const check = (...args: string[]) => sdlc(repo, ['check', ...args])
 
 test('check is silent-success: one pass line, exit 0', () => {
@@ -105,7 +105,7 @@ test('a failing fast command blocks with its output tail; a passing one is silen
   assert.match(r.stdout, /fast\.lint failed \(exit 1\)/)
   assert.match(r.stdout, /src\/app\.js:1 no-var/)
   assert.doesNotMatch(r.stdout, /fast\.test/)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/xx/runs.jsonl'), 'utf8'), /fast|no-var|process\.exit/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/xx/runs.jsonl'), 'utf8'), /fast|no-var|process\.exit/)
 })
 
 test('a hanging command, and a grandchild holding its output, time out inside the budget and count as a failure', () => {
@@ -128,11 +128,11 @@ test('known-red commands warn instead of block, and the ratchet removes them onc
   assert.match(red.stdout, /warn: \d+ \(.*commands 1/)
   sensors({ fast: { lint: 'node -e "process.exit(0)"' }, knownRed: ['fast.lint'] })
   check('--at', 'stop')
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8')).knownRed, [])
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.rig/sensors.json'), 'utf8')).knownRed, [])
 })
 
 test('an invalid sensors.json blocks with the parse error', () => {
-  write(repo, '.sdlc/sensors.json', '{ "limits": { "fileLines": "big" } }')
+  write(repo, '.rig/sensors.json', '{ "limits": { "fileLines": "big" } }')
   hook(repo, 'prompt-submit', {})
   write(repo, 'src/app.js', 'export const a = 8\n')
   const r = check('--at', 'stop')
@@ -145,7 +145,7 @@ test('a human waiver for the active change drops the matching finding', () => {
   hook(repo, 'prompt-submit', {})
   write(repo, 'src/app.js', 'export const a = 9 // eslint-disable-line\n')
   assert.equal(check('--at', 'stop').code, 1)
-  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'xx', sensor: 'suppression', file: 'src/app.js', reason: 'generated file', by: 'p', at: 'now' }) + '\n')
+  write(repo, '.rig/waivers.jsonl', JSON.stringify({ slug: 'xx', sensor: 'suppression', file: 'src/app.js', reason: 'generated file', by: 'p', at: 'now' }) + '\n')
   assert.equal(check('--at', 'stop').code, 0)
 })
 
@@ -175,12 +175,12 @@ test('ci with a base-branch config never ratchets sensors.json or records runs',
   sensors({ fast: {}, full: { t: 'node -e "process.exit(0)"' }, knownRed: ['full.t'] })
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'cfg')
-  const file = path.join(repo, '.sdlc/sensors.json')
+  const file = path.join(repo, '.rig/sensors.json')
   const before = fs.readFileSync(file, 'utf8')
   const r = check('--at', 'ci', '--base', 'main', '--config-from', 'main')
   assert.equal(r.code, 0, r.stdout + r.stderr)
   assert.equal(fs.readFileSync(file, 'utf8'), before)
-  assert.equal(fs.existsSync(path.join(repo, '.sdlc/changes/xx/runs.jsonl')), false)
+  assert.equal(fs.existsSync(path.join(repo, '.rig/changes/xx/runs.jsonl')), false)
 })
 
 test('a known-red command that times out still blocks', () => {
@@ -212,7 +212,7 @@ function consumerRepo(name: string, file: string, text: string): string {
 test('Stop blocks a contract rename that a consumer still uses, naming file:line', () => {
   const rel = consumerRepo('checkout', 'src/cart.ts', 'const r = order.discount_rate\n')
   sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }], levels: { integration: 'node -e "process.exit(0)"' } })
-  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
+  gitIn(repo, 'add', '.rig/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   write(repo, 'schema/billing.sql', 'CREATE TABLE billing (discount_rate NUMERIC);\n')
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'schema')
@@ -228,13 +228,13 @@ test('the plan point records impact, escalates to tier L and requires the impact
   const rel = consumerRepo('invoicing', 'src/invoice.py', 'rate = row["discount_rate"]\n')
   sensors({ consumers: [{ name: 'invoicing-service', path: rel }] })
   sdlc(repo, ['new', 'rename-rate', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/rename-rate/plan.md', '## Files\n- schema/**\n## Contracts\n- rename `discount_rate` → `promotional_discount`\n## Verification\n- npm test\n')
+  write(repo, '.rig/changes/rename-rate/plan.md', '## Files\n- schema/**\n## Contracts\n- rename `discount_rate` → `promotional_discount`\n## Verification\n- npm test\n')
   const r = check('--at', 'plan', '--slug', 'rename-rate')
   assert.match(r.stdout, /1 consumer reference/)
-  const impact = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/rename-rate/impact.json'), 'utf8'))
+  const impact = JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/rename-rate/impact.json'), 'utf8'))
   assert.equal(impact.hits[0].file, 'src/invoice.py')
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/rename-rate/intent.md'), 'utf8'), /tier: L/)
-  write(repo, '.sdlc/changes/rename-rate/spec.md', '## Behaviours\nB1 rename\n')
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/rename-rate/intent.md'), 'utf8'), /tier: L/)
+  write(repo, '.rig/changes/rename-rate/spec.md', '## Behaviours\nB1 rename\n')
   sdlc(repo, ['approve', 'rename-rate', 'spec'], { env: { SDLC_HUMAN: '1' } })
   sdlc(repo, ['approve', 'rename-rate', 'plan'], { env: { SDLC_HUMAN: '1' } })
   assert.match(sdlc(repo, ['status']).stdout, /\/rig-approve rename-rate impact/)
@@ -285,10 +285,10 @@ test('an impact approval only downgrades the ids it covers, and re-running the p
   const rel = consumerRepo('scoped', 'src/a.ts', 'a_col b_col\n')
   sensors({ consumers: [{ name: 'scoped', path: rel }] })
   sdlc(repo, ['new', 'scoped-change', '--type', 'feature', '--tier', 'M'])
-  const planPath = '.sdlc/changes/scoped-change/plan.md'
+  const planPath = '.rig/changes/scoped-change/plan.md'
   write(repo, planPath, '## Files\n- schema/**\n## Contracts\n- remove `a_col`\n')
   check('--at', 'plan', '--slug', 'scoped-change')
-  write(repo, '.sdlc/changes/scoped-change/spec.md', '## Behaviours\nB1\n')
+  write(repo, '.rig/changes/scoped-change/spec.md', '## Behaviours\nB1\n')
   for (const s of ['spec', 'plan', 'impact']) sdlc(repo, ['approve', 'scoped-change', s], { env: { SDLC_HUMAN: '1' } })
   assert.match(sdlc(repo, ['status']).stdout, /next: \/rig:build/)
   stopWithRename('a_col', 'z_col')
@@ -312,9 +312,9 @@ test('an impact approval only downgrades the ids it covers, and re-running the p
 test('a consumer that is not checked out at the plan point also needs the impact approval', () => {
   sensors({ consumers: [{ name: 'ghost', path: '../does-not-exist' }] })
   sdlc(repo, ['new', 'ghost-change', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/ghost-change/plan.md', '## Files\n- schema/**\n## Contracts\n- remove `q_col`\n')
+  write(repo, '.rig/changes/ghost-change/plan.md', '## Files\n- schema/**\n## Contracts\n- remove `q_col`\n')
   assert.match(check('--at', 'plan', '--slug', 'ghost-change').stdout, /not checked out/i)
-  write(repo, '.sdlc/changes/ghost-change/spec.md', '## Behaviours\nB1\n')
+  write(repo, '.rig/changes/ghost-change/spec.md', '## Behaviours\nB1\n')
   sdlc(repo, ['approve', 'ghost-change', 'spec'], { env: { SDLC_HUMAN: '1' } })
   sdlc(repo, ['approve', 'ghost-change', 'plan'], { env: { SDLC_HUMAN: '1' } })
   assert.match(sdlc(repo, ['status']).stdout, /impact \(awaiting approval\)/)
@@ -322,16 +322,16 @@ test('a consumer that is not checked out at the plan point also needs the impact
 
 test('approving impact without an impact.json fails', () => {
   sdlc(repo, ['new', 'ev', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/ev/plan.md', '## Files\n- a\n')
+  write(repo, '.rig/changes/ev/plan.md', '## Files\n- a\n')
   assert.notEqual(sdlc(repo, ['approve', 'ev', 'impact'], { env: { SDLC_HUMAN: '1' } }).code, 0)
 })
 
 test('check --at ship reports a weakened committed sensors.json as harness-tamper', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
-  gitIn(repo, 'add', '.sdlc/sensors.json')
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  gitIn(repo, 'add', '.rig/sensors.json')
   gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'feature')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 9000 } }))
   gitIn(repo, 'commit', '-qam', 'loosen')
   const r = check('--at', 'ship', '--base', 'main')
   assert.equal(r.code, 1)
@@ -347,7 +347,7 @@ function featureRepo(): void {
   gitIn(repo, 'commit', '-qm', 'base')
   gitIn(repo, 'checkout', '-qb', 'feature')
   sdlc(repo, ['new', 'sub', '--type', 'feature', '--tier', 'M'])
-  write(repo, '.sdlc/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, '.rig/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract\n## Verification\n- node --test test/*.test.js\n')
 }
 
 test('ship: new tests that fail on the base prove red; tests that already pass there do not', () => {
@@ -366,7 +366,7 @@ test('ship: new tests that fail on the base prove red; tests that already pass t
 test('ship: a refactor\'s characterization tests must pass on the base, not fail', () => {
   featureRepo()
   sdlc(repo, ['new', 'tidy', '--type', 'refactor', '--tier', 'M'])
-  write(repo, '.sdlc/changes/tidy/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. characterize add\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, '.rig/changes/tidy/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. characterize add\n## Verification\n- node --test test/*.test.js\n')
   write(repo, 'test/add-char.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add keeps working', () => assert.equal(add(2, 3), 5))\n")
   assert.equal(check('--at', 'ship', '--base', 'main', '--slug', 'tidy').code, 0)
   write(repo, 'test/add-char.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { add } from '../src/add.js'\ntest('add is now different', () => assert.equal(add(2, 3), 6))\n")
@@ -376,7 +376,7 @@ test('ship: a refactor\'s characterization tests must pass on the base, not fail
 
 test('ship: every behaviour needs a test that names it', () => {
   featureRepo()
-  write(repo, '.sdlc/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract, B2 negative\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, '.rig/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract, B2 negative\n## Verification\n- node --test test/*.test.js\n')
   write(repo, 'src/sub.js', 'export const sub = (a, b) => a - b\n')
   write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('B1 subtracts', () => assert.equal(sub(3, 1), 2))\n")
   const r = check('--at', 'ship', '--base', 'main', '--slug', 'sub')
@@ -388,7 +388,7 @@ test('an ad-hoc change that started small is re-tiered at ship as it grows', () 
   write(repo, 'src/one.js', 'export const one = 1\n')
   hook(repo, 'stop', {})
   const slug = (sdlc(repo, ['status', '--json']).stdout.match(/adhoc-[\d-]+/) ?? [''])[0]
-  assert.match(fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/intent.md`), 'utf8'), /tier: S/)
+  assert.match(fs.readFileSync(path.join(repo, `.rig/changes/${slug}/intent.md`), 'utf8'), /tier: S/)
   for (const f of ['a', 'b', 'c', 'd']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
   assert.match(check('--at', 'ship', '--slug', slug).stdout, /\[adhoc\][\s\S]*now tier M/)
 })
@@ -407,14 +407,14 @@ test('sdlc run does not inherit NODE_TEST_CONTEXT: a failing node --test records
   write(repo, 'test/bad.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\ntest('bad', () => assert.equal(1, 2))\n")
   write(repo, 'package.json', '{ "type": "module" }\n')
   sdlc(repo, ['run', '--slug', 'rn', '--', 'node --test test/bad.test.js'], { env: { NODE_TEST_CONTEXT: 'child-v8' } })
-  const rows = fs.readFileSync(path.join(repo, '.sdlc/changes/rn/runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as { exit: number })
+  const rows = fs.readFileSync(path.join(repo, '.rig/changes/rn/runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l) as { exit: number })
   assert.notEqual(rows.at(-1)?.exit, 0)
 })
 
 test('ship: an old committed test naming B2 does not satisfy this change\'s B2', () => {
   write(repo, 'test/old.test.js', "// B2 from long ago\n")
   featureRepo()
-  write(repo, '.sdlc/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract\n2. B2 negative numbers\n## Verification\n- node --test test/*.test.js\n')
+  write(repo, '.rig/changes/sub/plan.md', '## Files\n- src/**\n- test/**\n## Slices\n1. B1 subtract\n2. B2 negative numbers\n## Verification\n- node --test test/*.test.js\n')
   write(repo, 'src/sub.js', 'export const sub = (a, b) => a - b\n')
   write(repo, 'test/sub.test.js', "import { test } from 'node:test'\nimport assert from 'node:assert'\nimport { sub } from '../src/sub.js'\ntest('test_B1_subtracts', () => assert.equal(sub(3, 1), 2))\n")
   assert.match(check('--at', 'ship', '--base', 'main', '--slug', 'sub').stdout, /B2 \(negative numbers\) has no test that names it/)
@@ -430,16 +430,16 @@ test('ship: a fixture added in the branch travels with the tests, so an already-
 test('ship commits a changed consumer on the same branch after its tests pass, and records it', () => {
   const rel = consumerRepo('checkout2', 'src/cart.ts', 'const r = order.discount_rate\n')
   sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }], levels: { integration: 'node -e "process.exit(0)"' } })
-  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
+  gitIn(repo, 'add', '.rig/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
   write(repo, 'src/app.js', 'export const a = 10\n')
-  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
+  write(repo, '.rig/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .rig/sensors.json\n- notes.txt\n`)
   write(path.resolve(repo, rel), 'src/cart.ts', 'const r = order.promotional_discount\n')
   verified(repo, 'rate')
   ratcheted(repo, 'rate')
   const r = sdlc(repo, ['ship', 'rate', '--message', 'chore: rename rate'])
   assert.equal(r.code, 0, r.stderr)
-  const shipped = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/rate/ship.json'), 'utf8'))
+  const shipped = JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/rate/ship.json'), 'utf8'))
   assert.equal(shipped.repos[0].branch, 'sdlc/rate')
   assert.match(gitIn(path.resolve(repo, rel), 'log', '-1', '--format=%B', 'sdlc/rate'), /Part of .*@sdlc\/rate/)
 })
@@ -447,10 +447,10 @@ test('ship commits a changed consumer on the same branch after its tests pass, a
 test('ship refuses and commits nothing when a changed consumer\'s tests fail', () => {
   const rel = consumerRepo('checkout3', 'src/cart.ts', 'x\n')
   sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(1)"' }], levels: { integration: 'node -e "process.exit(0)"' } })
-  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
+  gitIn(repo, 'add', '.rig/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
   write(repo, 'src/app.js', 'export const a = 11\n')
-  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
+  write(repo, '.rig/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .rig/sensors.json\n- notes.txt\n`)
   write(path.resolve(repo, rel), 'src/cart.ts', 'y\n')
   verified(repo, 'rate')
   ratcheted(repo, 'rate')
@@ -466,10 +466,10 @@ test('ship refuses and commits nothing when a changed consumer\'s tests fail', (
 function shipSetup(name: string): string {
   const rel = consumerRepo(name, 'src/cart.ts', 'x\n')
   sensors({ consumers: [{ name: 'checkout-service', path: rel, test: 'node -e "process.exit(0)"' }], levels: { integration: 'node -e "process.exit(0)"' } })
-  gitIn(repo, 'add', '.sdlc/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
+  gitIn(repo, 'add', '.rig/sensors.json'); gitIn(repo, 'commit', '-qm', 'declare sensors')
   sdlc(repo, ['new', 'rate', '--type', 'chore', '--tier', 'S'])
   write(repo, 'src/app.js', 'export const a = 12\n')
-  write(repo, '.sdlc/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .sdlc/sensors.json\n- notes.txt\n`)
+  write(repo, '.rig/changes/rate/plan.md', `## Files\n- src/**\n- ${rel}/src/**\n- .rig/sensors.json\n- notes.txt\n`)
   write(path.resolve(repo, rel), 'src/cart.ts', 'y\n')
   verified(repo, 'rate')
   ratcheted(repo, 'rate')
@@ -503,9 +503,9 @@ test('ship refuses before committing anything when sdlc/<slug> already exists in
 test('vendor copies a standalone checker that runs without the plugin', () => {
   const v = sdlc(repo, ['vendor'])
   assert.equal(v.code, 0, v.stderr)
-  assert.ok(fs.existsSync(path.join(repo, '.sdlc/bin/VERSION')))
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/bin/testkit.ts')))
-  const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', '.sdlc/bin/sdlc.ts', 'check', '--at', 'ship'], { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo } })
+  assert.ok(fs.existsSync(path.join(repo, '.rig/bin/VERSION')))
+  assert.ok(!fs.existsSync(path.join(repo, '.rig/bin/testkit.ts')))
+  const r = spawnSync('node', ['--disable-warning=ExperimentalWarning', '.rig/bin/sdlc.ts', 'check', '--at', 'ship'], { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo } })
   assert.equal(r.status, 0, r.stdout + r.stderr)
 })
 
@@ -549,8 +549,8 @@ test('I1: CI blocks a tier M PR that carries no committed change record; a tier 
 test('I4: CI lists every waiver and approval row the PR adds, for human review', () => {
   gitIn(repo, 'checkout', '-qb', 'pr')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'trust me', by: 'Mallory', at: '2026-10-03T00:00:00Z' }) + '\n')
-  write(repo, '.sdlc/approvals.jsonl', JSON.stringify({ slug: 'tiny', stage: 'plan', by: 'Mallory', at: '2026-10-03T00:00:00Z', digest: 'x' }) + '\n')
+  write(repo, '.rig/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'trust me', by: 'Mallory', at: '2026-10-03T00:00:00Z' }) + '\n')
+  write(repo, '.rig/approvals.jsonl', JSON.stringify({ slug: 'tiny', stage: 'plan', by: 'Mallory', at: '2026-10-03T00:00:00Z', digest: 'x' }) + '\n')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'pr')
   const summary = path.join(path.dirname(repo), `${path.basename(repo)}-summary.md`)
@@ -568,7 +568,7 @@ test('I4: PR-controlled waiver fields cannot break out of the review listing', (
   gitIn(repo, 'checkout', '-qb', 'pr')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   const reason = 'ok\n```\n::warning::all clean\n<b>x</b>\u2028more'
-  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason, by: 'M\r\n::error::x' }) + '\n')
+  write(repo, '.rig/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason, by: 'M\r\n::error::x' }) + '\n')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'pr')
   const summary = path.join(path.dirname(repo), `${path.basename(repo)}-summary.md`)
@@ -585,11 +585,11 @@ test('I4: PR-controlled waiver fields cannot break out of the review listing', (
 test('a big diff blocks in CI unless the person approved the change plan; then it only warns', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 50 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 50 } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   gitIn(repo, 'checkout', '-qb', 'big')
   sdlc(repo, ['new', 'big-change', '--type', 'refactor', '--tier', 'L'])
-  write(repo, '.sdlc/changes/big-change/plan.md', '# Plan\n\n## Files\n- src/**\n\n## Verification\n- `node -e 0`\n')
+  write(repo, '.rig/changes/big-change/plan.md', '# Plan\n\n## Files\n- src/**\n\n## Verification\n- `node -e 0`\n')
   write(repo, 'src/a.js', Array.from({ length: 80 }, (_, i) => `export const v${i} = ${i}`).join('\n') + '\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'work')
   const size = () => (JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json']).stdout) as { findings: { sensor: string; severity: string; file?: string }[] })
@@ -612,7 +612,7 @@ test('a tier S or M change that touches a contract or a risky path blocks at CI 
   const report = (): Report => JSON.parse(sdlc(repo, ['check', '--at', 'ci', '--base', 'main', '--json']).stdout) as Report
   const tier = () => report().findings.filter(f => f.sensor === 'tier')
   assert.deepEqual(tier().map(f => [f.severity, f.file]), [['block', 'src/auth/keys.js']])
-  const intent = path.join(repo, '.sdlc/changes/small-auth/intent.md')
+  const intent = path.join(repo, '.rig/changes/small-auth/intent.md')
   fs.writeFileSync(intent, fs.readFileSync(intent, 'utf8').replace('tier: M', 'tier: L'))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'retier')
   assert.deepEqual(tier(), [])
@@ -622,11 +622,11 @@ test('CI waivers apply only to changes the PR adds, and only to files in that ch
   const waiver = (slug: string, file: string) => JSON.stringify({ slug, sensor: 'suppression', file, reason: 'ok', by: 'p', at: 'now' }) + '\n'
   const ci = () => check('--at', 'ci', '--base', 'main', '--config-from', 'main')
   sdlc(repo, ['new', 'old-one', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/waivers.jsonl', waiver('old-one', '*'))
+  write(repo, '.rig/waivers.jsonl', waiver('old-one', '*'))
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'old change with a wildcard waiver')
   gitIn(repo, 'checkout', '-qb', 'pr')
-  fs.appendFileSync(path.join(repo, '.sdlc/changes/old-one/intent.md'), '\ntouched\n')
+  fs.appendFileSync(path.join(repo, '.rig/changes/old-one/intent.md'), '\ntouched\n')
   write(repo, 'src/app.js', 'export const a = 9 // eslint-disable-line\n')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'touch the old change folder')
@@ -635,8 +635,8 @@ test('CI waivers apply only to changes the PR adds, and only to files in that ch
   assert.match(touched.stdout, /suppression/)
   // A change the PR adds, with a plan naming the file: its waiver applies; for a file outside the plan it does not.
   sdlc(repo, ['new', 'fresh-one', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/fresh-one/plan.md', '# Plan\n## Files\n- src/app.js\n')
-  write(repo, '.sdlc/waivers.jsonl', waiver('old-one', '*') + waiver('fresh-one', '*'))
+  write(repo, '.rig/changes/fresh-one/plan.md', '# Plan\n## Files\n- src/app.js\n')
+  write(repo, '.rig/waivers.jsonl', waiver('old-one', '*') + waiver('fresh-one', '*'))
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'add fresh change')
   const inPlan = ci()
@@ -653,11 +653,11 @@ test('at CI a harness-tamper waiver in the PR never waives, exact file or *; oth
   const waiver = (sensor: string, file: string) => JSON.stringify({ slug: 'lvl', sensor, file, reason: 'r', by: 'p', at: 'now' }) + '\n'
   gitIn(repo, 'checkout', '-qb', 'pr')
   sdlc(repo, ['new', 'lvl', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/lvl/plan.md', '## Files\n- src/**\n')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "0"' } }))
+  write(repo, '.rig/changes/lvl/plan.md', '## Files\n- src/**\n')
+  write(repo, '.rig/sensors.json', JSON.stringify({ levels: { acceptance: 'node -e "0"' } }))
   write(repo, 'src/app.js', 'export const a = 9 // eslint-disable-line\n')
-  for (const file of ['*', '.sdlc/sensors.json']) {
-    write(repo, '.sdlc/waivers.jsonl', waiver('harness-tamper', file))
+  for (const file of ['*', '.rig/sensors.json']) {
+    write(repo, '.rig/waivers.jsonl', waiver('harness-tamper', file))
     gitIn(repo, 'add', '-A')
     gitIn(repo, 'commit', '-qm', `waiver ${file}`)
     const r = ci()
@@ -666,7 +666,7 @@ test('at CI a harness-tamper waiver in the PR never waives, exact file or *; oth
     assert.match(r.stdout, /declare it on the trunk first/)
     assert.doesNotMatch(r.stderr, /TypeError/)
   }
-  write(repo, '.sdlc/waivers.jsonl', waiver('suppression', 'src/app.js'))
+  write(repo, '.rig/waivers.jsonl', waiver('suppression', 'src/app.js'))
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'suppression waiver')
   const r = ci()
@@ -682,7 +682,7 @@ const prRun = (reviews: unknown[], head = 'HEAD') => {
   gitIn(repo, 'checkout', '-q', 'main')
   gitIn(repo, 'checkout', '-qb', `pr${++prN}`)
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'forged', by: 'dev', at: '2026-10-03T00:00:00Z' }) + '\n')
+  write(repo, '.rig/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'forged', by: 'dev', at: '2026-10-03T00:00:00Z' }) + '\n')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'pr')
   const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim()
@@ -724,12 +724,12 @@ test('the reviewer lookup happens before any PR test command runs', { skip: !pos
   fs.mkdirSync(planted)
   fs.writeFileSync(path.join(bin, 'gh'), "#!/bin/sh\necho '[[]]'\n", { mode: 0o755 })
   gitIn(repo, 'checkout', '-q', 'main')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ full: { plant: `cp ${planted}/gh ${bin}/gh` } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ full: { plant: `cp ${planted}/gh ${bin}/gh` } }))
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'config')
   gitIn(repo, 'checkout', '-qb', 'prx')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'forged', by: 'dev' }) + '\n')
+  write(repo, '.rig/waivers.jsonl', JSON.stringify({ slug: 'tiny', sensor: 'red-proof', file: '*', reason: 'forged', by: 'dev' }) + '\n')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'pr')
   const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim()

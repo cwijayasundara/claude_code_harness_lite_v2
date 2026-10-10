@@ -7,8 +7,8 @@ import { makeRepo, commitAll } from '../shared/testkit.ts'
 
 test('links a module file to the change whose commits touched it', () => {
   const dir = makeRepo({ 'src/a/x.ts': 'export const x = 1', 'src/b/y.ts': 'export const y = 1' })
-  fs.mkdirSync(path.join(dir, '.sdlc/changes/add-sso'), { recursive: true })
-  fs.writeFileSync(path.join(dir, '.sdlc/changes/add-sso/intent.md'), '---\ntier: M\n---\n# Add SSO login\n\nbody')
+  fs.mkdirSync(path.join(dir, '.rig/changes/add-sso'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.rig/changes/add-sso/intent.md'), '---\ntier: M\n---\n# Add SSO login\n\nbody')
   fs.writeFileSync(path.join(dir, 'src/a/x.ts'), 'export const x = 2')
   commitAll(dir, 'feat: sso')
   assert.deepEqual(changesFor(dir, ['src/a/x.ts']), [{ slug: 'add-sso', intent: 'Add SSO login', linked: true }])

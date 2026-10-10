@@ -20,7 +20,7 @@ export async function install(sb) {
   sb.write('test/smoke.test.js', "import { test } from 'node:test'\nimport '../src/index.js'\ntest('loads', () => {})\n")
   sb.commitAll('chore: scaffold')
   must(sb.sdlc(['init']), 'init')
-  sb.write('.sdlc/sensors.json', JSON.stringify({ fast: { test: 'npm test' }, full: { test: 'npm test' } }, null, 2) + '\n')
+  sb.write('.rig/sensors.json', JSON.stringify({ fast: { test: 'npm test' }, full: { test: 'npm test' } }, null, 2) + '\n')
   must(sb.sdlc(['init', '--stack']), 'init --stack')
   must(sb.sdlc(['init', '--full']), 'init --full')
   sb.write('CLAUDE.md', `# cart\n\n${ROUTING}\n\n## Map\n- src/\n`)

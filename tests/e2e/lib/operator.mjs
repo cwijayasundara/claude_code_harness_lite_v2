@@ -49,7 +49,7 @@ export async function runRoute({ sb, slug, driver, operator = 'operator', maxSte
         const file = /in (\S+\.md) with/.exec(refusal)?.[1]
         if (!file) throw new Error(`approve ${gate} refused on concerns in an unknown file: ${refusal.trim().split('\n')[0]}`)
         if (file.includes('..') || file.startsWith('/')) throw new Error(`approve ${gate}: refusal names a file outside the change folder: ${file}`)
-        concernLines.push(...resolveConcerns(sb, `.sdlc/changes/${file}`, operator))
+        concernLines.push(...resolveConcerns(sb, `.rig/changes/${file}`, operator))
         r = sb.sdlc(['approve', slug, gate, '--by', operator], { human: true })
       }
       if (r.status !== 0) throw new Error(`approve ${gate} failed: ${(r.stderr || r.stdout).trim()}`)

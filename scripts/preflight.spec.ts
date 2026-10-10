@@ -130,10 +130,10 @@ test('answers must be a small object of the known keys with one-line values', ()
 
 let repo: string
 beforeEach(() => { repo = makeRepo() })
-const report = (): string => fs.readFileSync(path.join(repo, '.sdlc/PREFLIGHT.md'), 'utf8')
+const report = (): string => fs.readFileSync(path.join(repo, '.rig/PREFLIGHT.md'), 'utf8')
 
 test('preflight runs every check even when the first fails, and writes one report', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'npm run nope' }, consumers: [{ name: 'billing', path: '../no-such-clone', repo: 'o/billing' }] }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: 'npm run nope' }, consumers: [{ name: 'billing', path: '../no-such-clone', repo: 'o/billing' }] }))
   write(repo, 'package.json', JSON.stringify({ scripts: {} }))
   const r = sdlc(repo, ['preflight'])
   assert.equal(r.code, 1)
@@ -146,7 +146,7 @@ test('preflight runs every check even when the first fails, and writes one repor
 })
 
 test('repo-supplied names cannot break the report table or smuggle a command into a fix', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ consumers: [{ name: 'evil|x\nresult: pass', path: '../x; rm -rf ~', repo: 'o/r; curl bad' }] }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ consumers: [{ name: 'evil|x\nresult: pass', path: '../x; rm -rf ~', repo: 'o/r; curl bad' }] }))
   sdlc(repo, ['preflight'])
   const text = report()
   assert.doesNotMatch(text, /^result: pass$/m)
@@ -158,11 +158,11 @@ test('repo-supplied names cannot break the report table or smuggle a command int
 test('a planted symlink at PREFLIGHT.md is replaced, never followed', () => {
   const outside = path.join(tmp(), 'target.txt')
   fs.writeFileSync(outside, 'keep\n')
-  fs.mkdirSync(path.join(repo, '.sdlc'), { recursive: true })
-  fs.symlinkSync(outside, path.join(repo, '.sdlc/PREFLIGHT.md'))
+  fs.mkdirSync(path.join(repo, '.rig'), { recursive: true })
+  fs.symlinkSync(outside, path.join(repo, '.rig/PREFLIGHT.md'))
   sdlc(repo, ['preflight'])
   assert.equal(fs.readFileSync(outside, 'utf8'), 'keep\n')
-  assert.ok(!fs.lstatSync(path.join(repo, '.sdlc/PREFLIGHT.md')).isSymbolicLink())
+  assert.ok(!fs.lstatSync(path.join(repo, '.rig/PREFLIGHT.md')).isSymbolicLink())
   assert.match(report(), /^# Preflight$/m)
 })
 
@@ -170,7 +170,7 @@ test('bad answers are refused before anything is written', () => {
   const r = sdlc(repo, ['preflight', '--answers', JSON.stringify({ gates: 'x\n## Fix these first' })])
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /--answers/)
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/PREFLIGHT.md')))
+  assert.ok(!fs.existsSync(path.join(repo, '.rig/PREFLIGHT.md')))
 })
 
 test('the protection check wants the evidence deny rules in .claude/settings.json', () => {
@@ -180,9 +180,9 @@ test('the protection check wants the evidence deny rules in .claude/settings.jso
 })
 
 test('pre-v0.6.0 settings (approvals denied, PREFLIGHT.md not) fail protection; both rules pass', () => {
-  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Edit(/.sdlc/approvals.jsonl)'] } }))
+  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Edit(/.rig/approvals.jsonl)'] } }))
   assert.match(sdlc(repo, ['preflight']).stdout, /protection \| fail/)
-  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Edit(/.sdlc/approvals.jsonl)', 'Edit(/.sdlc/PREFLIGHT.md)'] } }))
+  write(repo, '.claude/settings.json', JSON.stringify({ permissions: { deny: ['Edit(/.rig/approvals.jsonl)', 'Edit(/.rig/PREFLIGHT.md)'] } }))
   assert.match(sdlc(repo, ['preflight']).stdout, /protection \| pass/)
 })
 
@@ -239,13 +239,13 @@ test('a repo with no manifests, a detached HEAD and a dirty tree still gets a co
 })
 
 test('status flags a missing or older PREFLIGHT.md for an initialised repo', () => {
-  write(repo, '.sdlc/sensors.json', '{}')
+  write(repo, '.rig/sensors.json', '{}')
   sdlc(repo, ['new', 'any-change', '--type', 'chore', '--tier', 'S']) // status lists stale items once there is a change to report on
   assert.match(sdlc(repo, ['status']).stdout, /stale: .*PREFLIGHT\.md is missing/)
   sdlc(repo, ['preflight'])
-  const t = new Date(Date.now() - 600_000); fs.utimesSync(path.join(repo, '.sdlc/PREFLIGHT.md'), t, t)
-  write(repo, '.sdlc/sensors.json', '{"limits":{"fileLines":400}}')
-  assert.match(sdlc(repo, ['status']).stdout, /PREFLIGHT\.md is older than \.sdlc\/sensors\.json/)
+  const t = new Date(Date.now() - 600_000); fs.utimesSync(path.join(repo, '.rig/PREFLIGHT.md'), t, t)
+  write(repo, '.rig/sensors.json', '{"limits":{"fileLines":400}}')
+  assert.match(sdlc(repo, ['status']).stdout, /PREFLIGHT\.md is older than \.rig\/sensors\.json/)
 })
 
 const K = { H: 'ANTHROPIC_DEFAULT_HAIKU_MODEL', S: 'ANTHROPIC_DEFAULT_SONNET_MODEL', O: 'ANTHROPIC_DEFAULT_OPUS_MODEL' }

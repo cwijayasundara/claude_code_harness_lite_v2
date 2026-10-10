@@ -8,7 +8,7 @@ export function findIn(idx: Index, state: State, query: string, limit = 8): Hit[
   const ts = tokens(query)
   const hits: Hit[] = []
   for (const m of Object.values(idx.modules)) {
-    const page = `.sdlc/wiki/modules/${m.name}.md`
+    const page = `.rig/wiki/modules/${m.name}.md`
     const stale = state.modules[m.name]?.status === 'stale'
     const modScore = ts.filter(t => m.name.toLowerCase().includes(t)).length * 3
       + ts.filter(t => m.files.some(f => f.toLowerCase().includes(t))).length * 2

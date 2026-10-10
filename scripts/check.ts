@@ -31,7 +31,7 @@ export type CheckInput = {
 }
 export type CheckResult = { findings: Finding[]; blocks: Finding[]; warns: Finding[]; waived: number }
 
-const SENSORS_JSON = '.sdlc/sensors.json'
+const SENSORS_JSON = '.rig/sensors.json'
 const TAIL_IN_FINDING = 15
 
 // With a ref (CI), config comes from the base branch, so a PR cannot loosen the rules it is judged by.
@@ -39,7 +39,7 @@ export function loadConfig(ref: string | null = null): { config: SensorConfig; r
   if (ref && git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]) === null) return { config: parseConfig('').config, rules: [], errors: [`config ref ${ref} does not exist`] }
   const text = (rel: string): string => (ref ? git(['show', `${ref}:${rel}`]) ?? '' : read(path.join(ROOT, rel)))
   const c = parseConfig(text(SENSORS_JSON))
-  const r = parseRules(text('.sdlc/rules.json'))
+  const r = parseRules(text('.rig/rules.json'))
   return { config: c.config, rules: r.rules, errors: [...c.errors, ...r.errors.map(e => `rules.json: ${e}`)] }
 }
 
@@ -60,15 +60,15 @@ export function runDeclared(prefix: 'fast' | 'full', config: SensorConfig, slug:
   let left = budgetMs
   const plan = resolveCommands(prefix, config, files, budgetMs, skip)
   left -= plan.ms
-  if (plan.affectedFailed) findings.push({ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .sdlc/sensors.json and fix it' })
+  if (plan.affectedFailed) findings.push({ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .rig/sensors.json and fix it' })
   for (const { key, cmd, dir, error } of plan.commands) {
     const known = config.knownRed.includes(key)
     if (error) {
-      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: ${error}`, fix: `fix the scope's root in .sdlc/sensors.json` })
+      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: ${error}`, fix: `fix the scope's root in .rig/sensors.json` })
       continue
     }
     if (left <= 0) {
-      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: the ${Math.round(budgetMs / 1000)} s budget ran out`, fix: `make the ${prefix} commands in .sdlc/sensors.json faster` })
+      findings.push({ sensor: 'commands', severity: 'block', message: `${key} not run: the ${Math.round(budgetMs / 1000)} s budget ran out`, fix: `make the ${prefix} commands in .rig/sensors.json faster` })
       continue
     }
     const row = runCommand(cmd, { timeoutMs: left, cwd: dir })
@@ -105,10 +105,10 @@ function logRuleFires(findings: Finding[], point: Point): void {
 // At CI only a change the PR adds (its folder is absent in the base) can waive, and only inside its plan's files or its own folder:
 // an older change's wildcard waiver must not cover what a later PR does.
 function ciScope(slug: string, base: string | null | undefined): ((file: string | undefined) => boolean) | null {
-  if (!base || showAt(base, `.sdlc/changes/${slug}/intent.md`) !== null) return null
+  if (!base || showAt(base, `.rig/changes/${slug}/intent.md`) !== null) return null
   const patterns = exists(planPath(slug)) ? planFiles(slug) : []
-  const folder = `.sdlc/changes/${slug}/`
-  return file => Boolean(file) && (String(file).startsWith(folder) || patterns.some(p => isPlanned(String(file), [p]) && !String(file).startsWith('.sdlc/')))
+  const folder = `.rig/changes/${slug}/`
+  return file => Boolean(file) && (String(file).startsWith(folder) || patterns.some(p => isPlanned(String(file), [p]) && !String(file).startsWith('.rig/')))
 }
 
 // The PR supplies its own waivers.jsonl rows, so at CI a harness-tamper finding is never waivable: harness changes land on the trunk first.
@@ -217,7 +217,7 @@ function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base
   const t0 = Date.now()
   const left = (): number => Math.max(1000, budgetMs - (Date.now() - t0))
   if (!tests.length) return mode === 'red' ? block('no test file changed, so nothing proves this change', 'write the failing test first') : []
-  if (!cmd) return block('no test command declared (full.test or fast.test in .sdlc/sensors.json)', 'declare it so red can be proven')
+  if (!cmd) return block('no test command declared (full.test or fast.test in .rig/sensors.json)', 'declare it so red can be proven')
   const tree = withBaseTree(base, tmp => {
     const sanity = runCommand(cmd, { cwd: tmp, timeoutMs: left() })
     recordRun(slug, { ...sanity, source: 'ship' })
@@ -237,7 +237,7 @@ function proofOnBase(slug: string, config: SensorConfig, diffs: FileDiff[], base
 }
 
 export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff[], base: string | null, budgetMs = 1_800_000): Finding[] {
-  if (!exists(path.join(CHANGES, slug))) return [{ sensor: 'traceability', severity: 'block', message: `unknown change ${slug}`, fix: 'pass a slug that exists under .sdlc/changes/' }]
+  if (!exists(path.join(CHANGES, slug))) return [{ sensor: 'traceability', severity: 'block', message: `unknown change ${slug}`, fix: 'pass a slug that exists under .rig/changes/' }]
   const change = loadChange(slug)
   const findings: Finding[] = []
   const hasPlan = exists(planPath(slug))
@@ -271,7 +271,7 @@ export function shipVerdicts(slug: string, config: SensorConfig, diffs: FileDiff
 function unrecorded(diffs: FileDiff[], config: SensorConfig): Finding[] {
   const tier = tierFromDiff(diffs, config)
   if (tier === 'S') return []
-  return [{ sensor: 'adhoc', severity: 'block', message: `no sdlc change record for a tier ${tier} diff (${diffs.filter(d => isSource(d.file, config)).length} source file(s))`, fix: 'commit the change folder with the PR (git add .sdlc), or run /rig:start to adopt the work: it writes the plan and applies the tier\'s gates' }]
+  return [{ sensor: 'adhoc', severity: 'block', message: `no sdlc change record for a tier ${tier} diff (${diffs.filter(d => isSource(d.file, config)).length} source file(s))`, fix: 'commit the change folder with the PR (git add .rig), or run /rig:start to adopt the work: it writes the plan and applies the tier\'s gates' }]
 }
 
 // Tier S and M skip the human gates, so a diff that reaches contracts or risky paths must be tier L.
@@ -311,7 +311,7 @@ export function runChecks(i: CheckInput): CheckResult {
   if (point !== 'stop') findings.push(...tierFindings(i.slugs, diffs, config))
   if (Object.keys(config.scopes).length) {
     const unscoped = selectScopes(diffs.filter(d => isSource(d.file, config)).map(d => d.file), config).unscoped
-    if (unscoped.length) findings.push({ sensor: 'unscoped', severity: 'warn', message: `${unscoped.length} changed file(s) match no scope, so the top-level commands run for them: ${unscoped.slice(0, 5).join(', ')}`, fix: 'add a scope glob that covers them in .sdlc/sensors.json scopes' })
+    if (unscoped.length) findings.push({ sensor: 'unscoped', severity: 'warn', message: `${unscoped.length} changed file(s) match no scope, so the top-level commands run for them: ${unscoped.slice(0, 5).join(', ')}`, fix: 'add a scope glob that covers them in .rig/sensors.json scopes' })
   }
   if (i.commands !== 'none') findings.push(...runDeclared(i.commands, config, i.point === 'ci' ? null : i.slugs[0] ?? null, i.budgetMs, Boolean(i.ratchet) && i.point !== 'ci', i.point === 'ci' && config.ci.scope === 'all' ? 'all' : diffs.map(d => d.file).filter(f => isSource(f, config))))
   const result = applyWaivers(findings, i.slugs, i.point === 'ci' ? { base: i.base } : undefined)
@@ -331,10 +331,10 @@ export function editFindings(rel: string): Finding[] {
 }
 
 // The changes a diff carries evidence for, as CI reads them.
-export const slugsIn = (diffs: FileDiff[]): string[] => [...new Set(diffs.map(d => /^\.sdlc\/changes\/([^/]+)\//.exec(d.file)?.[1]).filter((s): s is string => Boolean(s)))]
+export const slugsIn = (diffs: FileDiff[]): string[] => [...new Set(diffs.map(d => /^\.rig\/changes\/([^/]+)\//.exec(d.file)?.[1]).filter((s): s is string => Boolean(s)))]
 
 // Waivers and approvals are trusted, not recomputed, so CI shows each row a PR adds for a person to review.
-const HUMAN_FILES = [['.sdlc/waivers.jsonl', 'waiver'], ['.sdlc/approvals.jsonl', 'approval']] as const
+const HUMAN_FILES = [['.rig/waivers.jsonl', 'waiver'], ['.rig/approvals.jsonl', 'approval']] as const
 // PR-controlled text: one line, no backticks or angle brackets (it cannot close the summary fence or start a
 // `::` workflow command, since every row is printed after "  - "), and capped.
 const clean = (v: unknown): string => String(v).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/`/g, "'").replace(/[<>]/g, '_').replace(/"/g, "'").slice(0, 200)

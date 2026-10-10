@@ -1,7 +1,7 @@
-// `sdlc.ts preflight`: one complete readiness report for the repo, written to .sdlc/PREFLIGHT.md. Every check runs, each states the exact
+// `sdlc.ts preflight`: one complete readiness report for the repo, written to .rig/PREFLIGHT.md. Every check runs, each states the exact
 // fix, nothing retries, and the questions only a person can answer are recorded verbatim (the unanswered ones become open items).
 // Repo contents are data: manifests and config are read, never run; every repo-derived string is flattened before it reaches the report,
-// and a suggested fix only names a value that passed a plain-charset check. The only file written is .sdlc/PREFLIGHT.md.
+// and a suggested fix only names a value that passed a plain-charset check. The only file written is .rig/PREFLIGHT.md.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -143,11 +143,11 @@ function commands(o: Opts, config: SensorConfig, errors: string[]): Check {
     ...Object.entries(config.levels).map(([k, v]): [string, string] => [`levels.${k}`, v ?? '']),
     ...Object.entries(config.quality).map(([k, v]): [string, string] => [`quality.${k}`, v?.cmd ?? '']),
   ]
-  if (errors.length) return { id: 'commands', status: 'fail', line: `.sdlc/sensors.json: ${errors.join('; ')}`, fix: 'fix .sdlc/sensors.json so it parses, then rerun preflight' }
-  if (!declared.length) return { id: 'commands', status: 'warn', line: 'no commands declared in .sdlc/sensors.json', fix: 'run /rig:init and declare fast, full and levels' }
+  if (errors.length) return { id: 'commands', status: 'fail', line: `.rig/sensors.json: ${errors.join('; ')}`, fix: 'fix .rig/sensors.json so it parses, then rerun preflight' }
+  if (!declared.length) return { id: 'commands', status: 'warn', line: 'no commands declared in .rig/sensors.json', fix: 'run /rig:init and declare fast, full and levels' }
   const bad = declared.map(([k, c]) => [k, resolveCommand(c, o.root)] as const).filter((e): e is [string, string] => e[1] !== null)
   return bad.length
-    ? { id: 'commands', status: 'fail', line: bad.map(([k, why]) => `${k}: ${why}`).join('; '), fix: 'fix the command in .sdlc/sensors.json or add what it needs' }
+    ? { id: 'commands', status: 'fail', line: bad.map(([k, why]) => `${k}: ${why}`).join('; '), fix: 'fix the command in .rig/sensors.json or add what it needs' }
     : { id: 'commands', status: 'pass', line: `${declared.length} declared command(s) resolve` }
 }
 
@@ -155,8 +155,8 @@ function baseCheck(): Check {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   const hasBase = ['origin/main', 'main', 'origin/master', 'master'].some(r => git(['rev-parse', '--verify', '--quiet', r]))
   // core.fsmonitor off: status would otherwise run a command the clone's own .git/config names.
-  const dirty = (git(['-c', 'core.fsmonitor=false', 'status', '--porcelain', '--', '.', ':(exclude).sdlc']) ?? '').split('\n').filter(Boolean).length
-  const notes = [head === 'HEAD' ? 'HEAD is detached' : '', hasBase ? '' : 'no main or master branch to compare against', dirty ? `${dirty} uncommitted file(s) outside .sdlc/` : ''].filter(Boolean)
+  const dirty = (git(['-c', 'core.fsmonitor=false', 'status', '--porcelain', '--', '.', ':(exclude).rig']) ?? '').split('\n').filter(Boolean).length
+  const notes = [head === 'HEAD' ? 'HEAD is detached' : '', hasBase ? '' : 'no main or master branch to compare against', dirty ? `${dirty} uncommitted file(s) outside .rig/` : ''].filter(Boolean)
   return notes.length ? { id: 'base', status: 'warn', line: notes.join('; '), fix: 'ship and the quality ratchet compare against the trunk: commit or stash, and work on a branch' } : { id: 'base', status: 'pass', line: `on ${head}, trunk found, tree clean` }
 }
 
@@ -165,7 +165,7 @@ function consumers(o: Opts, config: SensorConfig): Check {
   if (!config.consumers.length) return { id: 'consumers', status: 'skip', line: 'no consumer repos declared' }
   const missing = config.consumers.filter(c => !exists(path.join(path.resolve(o.root, c.path), '.git')))
   const fixFor = (c: SensorConfig['consumers'][number]): string => (c.repo && /^[\w.-]+\/[\w.-]+$/.test(c.repo) && SAFE.test(c.path) && !c.path.startsWith('-')
-    ? `git clone https://github.com/${c.repo}.git ${c.path}` : `clone the ${c.name} repo to the path declared in .sdlc/sensors.json`)
+    ? `git clone https://github.com/${c.repo}.git ${c.path}` : `clone the ${c.name} repo to the path declared in .rig/sensors.json`)
   return missing.length
     ? { id: 'consumers', status: 'fail', line: missing.map(c => `${c.name} is not a git repo at ${c.path}`).join('; '), fix: missing.map(fixFor).join(' ; ') }
     : { id: 'consumers', status: 'pass', line: `${config.consumers.length} consumer repo(s) present` }
@@ -174,7 +174,7 @@ function consumers(o: Opts, config: SensorConfig): Check {
 function protection(o: Opts): Check {
   let deny: unknown = []
   try { deny = (JSON.parse(read(path.join(o.root, '.claude', 'settings.json')) || '{}') as { permissions?: { deny?: unknown } }).permissions?.deny ?? [] } catch { /* unreadable */ }
-  const wanted = ['Edit(/.sdlc/approvals.jsonl)', 'Edit(/.sdlc/PREFLIGHT.md)']
+  const wanted = ['Edit(/.rig/approvals.jsonl)', 'Edit(/.rig/PREFLIGHT.md)']
   return Array.isArray(deny) && wanted.every(r => deny.includes(r))
     ? { id: 'protection', status: 'pass', line: 'evidence deny rules are in .claude/settings.json' }
     : { id: 'protection', status: 'fail', line: 'the evidence deny rules are missing from .claude/settings.json', fix: 'run `sdlc.ts init --full` (it merges templates/settings.json)' }
@@ -207,8 +207,8 @@ export function managedCheck(m: unknown, found: number, canRun: (file: string) =
   const rigOn = typeof plugins === 'object' && plugins !== null && Object.entries(plugins).some(([id, on]) => id.startsWith('rig@') && on === true)
   const notes = [
     get(m, 'allowManagedHooksOnly') === true && !rigOn ? "rig's hooks are off: allowManagedHooksOnly without rig force-enabled in enabledPlugins" : '',
-    get(m, 'allowManagedPermissionRulesOnly') === true && !has(get(m, 'permissions.deny'), 'Edit(./.sdlc/approvals.jsonl)') ? "rig's evidence rules are dropped: allowManagedPermissionRulesOnly without them in the managed file" : '',
-    ...rules.filter(r => /^\w+\(\/\.sdlc\//.test(r)).map(r => `${r} anchors at the managed settings folder: use ./`),
+    get(m, 'allowManagedPermissionRulesOnly') === true && !has(get(m, 'permissions.deny'), 'Edit(./.rig/approvals.jsonl)') ? "rig's evidence rules are dropped: allowManagedPermissionRulesOnly without them in the managed file" : '',
+    ...rules.filter(r => /^\w+\(\/\.rig\//.test(r)).map(r => `${r} anchors at the managed settings folder: use ./`),
     // A hook whose script is missing exits 126/127, which Claude Code treats as a non-blocking error: the gate would allow everything.
     ...Object.values((get(m, 'hooks') ?? {}) as Record<string, unknown>).flatMap(g => (Array.isArray(g) ? g : []) as { hooks?: { command?: unknown }[] }[])
       .flatMap(g => g.hooks ?? []).map(h => (typeof h.command === 'string' ? h.command.trim().split(/\s+/)[0] ?? '' : '')).filter(c => c.startsWith('/') && !canRun(c))
@@ -254,7 +254,7 @@ function modelAliases(o: Opts): Check {
 
 export function runPreflight(o: Opts): { checks: Check[]; open: string[]; result: 'pass' | 'fail' } {
   let parsed: ReturnType<typeof parseConfig> | null = null
-  const cfg = (): ReturnType<typeof parseConfig> => (parsed ??= parseConfig(read(path.join(o.root, '.sdlc', 'sensors.json'))))
+  const cfg = (): ReturnType<typeof parseConfig> => (parsed ??= parseConfig(read(path.join(o.root, '.rig', 'sensors.json'))))
   const steps: [string, () => Check][] = [
     ['stack', () => { const s = STACKS.filter(([f]) => exists(path.join(o.root, f))).map(([, n]) => n); return s.length ? { id: 'stack', status: 'pass', line: [...new Set(s)].join(', ') } : { id: 'stack', status: 'skip', line: 'no known manifest found' } }],
     ['toolchain', () => toolchain(o)], ['commands', () => commands(o, cfg().config, cfg().errors)], ['base', baseCheck],
@@ -276,9 +276,9 @@ function writeReport(text: string): void {
   fs.mkdirSync(SDLC, { recursive: true })
   const sdlcReal = fs.realpathSync(SDLC)
   const rootReal = fs.realpathSync(ROOT)
-  if (fs.lstatSync(SDLC).isSymbolicLink() || path.relative(rootReal, sdlcReal).startsWith('..')) fail('.sdlc is a link out of this repo; not writing PREFLIGHT.md there')
+  if (fs.lstatSync(SDLC).isSymbolicLink() || path.relative(rootReal, sdlcReal).startsWith('..')) fail('.rig is a link out of this repo; not writing PREFLIGHT.md there')
   const file = path.join(SDLC, 'PREFLIGHT.md')
-  try { fs.unlinkSync(file) } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') fail(`cannot replace .sdlc/PREFLIGHT.md: ${(e as Error).message}`) }
+  try { fs.unlinkSync(file) } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') fail(`cannot replace .rig/PREFLIGHT.md: ${(e as Error).message}`) }
   fs.writeFileSync(file, text, { flag: 'wx' })
 }
 

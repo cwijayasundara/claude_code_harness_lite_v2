@@ -85,7 +85,7 @@ export function applyOps(root: string, cfg: MemConfig, ops: unknown, today: stri
   return res
 }
 
-// Stage every file first, then rename; a failure while staging leaves .sdlc/memory untouched
+// Stage every file first, then rename; a failure while staging leaves .rig/memory untouched
 export function writeStore(root: string, s: Store): void {
   const dir = memDir(root), stage = path.join(cacheDir(root), `stage-${process.pid}`)
   fs.rmSync(stage, { recursive: true, force: true })

@@ -1,4 +1,4 @@
-// The intent inbox (.sdlc/intent/*.md): ideas a product owner commits before any change exists. People write `status:`
+// The intent inbox (.rig/intent/*.md): ideas a product owner commits before any change exists. People write `status:`
 // (draft | accepted | closed); `shipped` is derived from the change whose intent.md names the file as its `source:`.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -37,5 +37,5 @@ export const pendingIntents = (): InboxEntry[] => inboxEntries().filter(e =>
 export function cmdInbox(args: Args): void {
   const rows = args.opt.pending ? pendingIntents() : inboxEntries()
   if (args.opt.json) return out(JSON.stringify(rows))
-  out(rows.length ? rows.map(e => `${e.status.padEnd(9)}${e.file}${e.change ? ` → ${e.change}` : ''}`).join('\n') : 'intent inbox is empty (.sdlc/intent/)')
+  out(rows.length ? rows.map(e => `${e.status.padEnd(9)}${e.file}${e.change ? ` → ${e.change}` : ''}`).join('\n') : 'intent inbox is empty (.rig/intent/)')
 }

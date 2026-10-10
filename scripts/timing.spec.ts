@@ -37,7 +37,7 @@ test('no data gives zeros and a null last activity', () => {
 let repo: string
 beforeEach(() => { repo = makeRepo(); sdlc(repo, ['new', 'lanes', '--type', 'chore', '--tier', 'S']) })
 const events = (): { kind?: string; verdict: string; agent?: string; id?: string; ms?: number }[] =>
-  fs.readFileSync(path.join(repo, '.sdlc/changes/lanes/events.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  fs.readFileSync(path.join(repo, '.rig/changes/lanes/events.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
 
 test('subagent hooks append lane events with a duration measured from the matching start', async () => {
   hook(repo, 'subagent-start', { agent_id: 'a1', agent_type: 'rig:implementer' })
@@ -62,7 +62,7 @@ test('concurrent lanes are matched by id, a stop with no start records 0 ms, and
   assert.ok((stops.find(e => e.id === 'a')?.ms ?? 0) - (stops.find(e => e.id === 'b')?.ms ?? 1e9) >= 50, 'b is measured from its own start (60 ms later), not a\'s')
   const bare = makeRepo()
   assert.equal(hook(bare, 'subagent-start', { agent_id: 'x' }).code, 0)
-  assert.ok(!fs.existsSync(path.join(bare, '.sdlc')))
+  assert.ok(!fs.existsSync(path.join(bare, '.rig')))
 })
 
 test('a gap exactly equal to the idle threshold is not idle, one millisecond more is', () => {
@@ -85,7 +85,7 @@ const ev = (t: number, verdict: string, id: string): string => JSON.stringify({ 
 
 test('the scorecard skips runs rows whose ms is missing or not a number', () => {
   const t0 = Date.now() - 3_600_000
-  write(repo, '.sdlc/changes/lanes/runs.jsonl', JSON.stringify({ at: iso(t0 + m(10)), cmd: 'a', exit: 0, ms: m(10), tail: '' }) + '\n'
+  write(repo, '.rig/changes/lanes/runs.jsonl', JSON.stringify({ at: iso(t0 + m(10)), cmd: 'a', exit: 0, ms: m(10), tail: '' }) + '\n'
     + JSON.stringify({ at: iso(t0 + m(20)), cmd: 'b', exit: 0, tail: '' }) + '\n'
     + JSON.stringify({ at: iso(t0 + m(30)), cmd: 'c', exit: 0, ms: 'x', tail: '' }) + '\n')
   const raw = sdlc(repo, ['scorecard', 'lanes', '--json']).stdout
@@ -97,7 +97,7 @@ test('the scorecard skips runs rows whose ms is missing or not a number', () => 
 
 test('lanes: a paired lane counts once as work, an interleaved lane by its own id, an open lane only extends the span', () => {
   const t0 = Date.now() - 3_600_000
-  write(repo, '.sdlc/changes/lanes/events.jsonl', ev(t0, 'start', 'a') + ev(t0 + m(2), 'start', 'b') + ev(t0 + m(4), 'stop', 'b') + ev(t0 + m(10), 'stop', 'a') + ev(t0 + m(20), 'start', 'open'))
+  write(repo, '.rig/changes/lanes/events.jsonl', ev(t0, 'start', 'a') + ev(t0 + m(2), 'start', 'b') + ev(t0 + m(4), 'stop', 'b') + ev(t0 + m(10), 'stop', 'a') + ev(t0 + m(20), 'start', 'open'))
   const s = JSON.parse(sdlc(repo, ['scorecard', 'lanes', '--json']).stdout)
   assert.equal(s.workMs, m(10), 'a and b overlap, counted once; open adds no work')
   assert.equal(s.spanMs, m(20), 'the open lane\'s start extends the span')
@@ -111,7 +111,7 @@ test('a malformed payload never fails the hook', () => {
 
 test('the scorecard reports work, span and idle for a change', () => {
   const t0 = Date.now() - 4 * 3_600_000
-  write(repo, '.sdlc/changes/lanes/runs.jsonl', JSON.stringify({ at: new Date(t0 + m(10)).toISOString(), cmd: 'npm test', exit: 0, ms: m(10), tail: '' }) + '\n'
+  write(repo, '.rig/changes/lanes/runs.jsonl', JSON.stringify({ at: new Date(t0 + m(10)).toISOString(), cmd: 'npm test', exit: 0, ms: m(10), tail: '' }) + '\n'
     + JSON.stringify({ at: new Date(t0 + 3 * 3_600_000).toISOString(), cmd: 'npm test', exit: 0, ms: m(10), tail: '' }) + '\n')
   const s = JSON.parse(sdlc(repo, ['scorecard', 'lanes', '--json']).stdout)
   assert.equal(Math.round(s.workMs / 60_000), 20)

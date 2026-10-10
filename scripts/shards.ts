@@ -39,7 +39,7 @@ export function cmdShards(args: Args): void {
   const { config } = loadConfig()
   const base = defaultBase() ?? 'HEAD'
   const files = branchDiff(base)
-    .filter(d => !d.binary && !d.file.startsWith('.sdlc/') && !matchesAny(d.file, config.ignore))
+    .filter(d => !d.binary && !d.file.startsWith('.rig/') && !matchesAny(d.file, config.ignore))
     .map(d => ({ file: d.file, lines: d.added.length + d.removed.length }))
   const keyOf = Object.keys(config.scopes).length ? (f: string): string => { const g = scopeOf(f, config); return g ? config.scopes[g]?.name ?? '(unscoped)' : '(unscoped)' } : undefined
   const shards = makeShards(files, MAX_SHARD_FILES, MAX_SHARD_LINES, keyOf)

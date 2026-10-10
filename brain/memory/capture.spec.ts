@@ -31,7 +31,7 @@ test('failed bash records cmd-fail with redacted, clipped fields and a transcrip
   assert.equal(s.kind, 'cmd-fail'); assert.equal(s.data.exit, '7'); assert.equal(s.data.error, 'boom')
   assert.match(s.data.cmd, /\[REDACTED\]/); assert.equal(s.transcript_line, 2); assert.equal(s.dreamed, false)
   assert.equal(readSignals(dir).length, 1)
-  assert.equal(fs.readFileSync(path.join(dir, '.sdlc/memory/.gitignore'), 'utf8'), '.cache/\n')
+  assert.equal(fs.readFileSync(path.join(dir, '.rig/memory/.gitignore'), 'utf8'), '.cache/\n')
 })
 
 test('PostToolUseFailure on Bash is a cmd-fail; on other tools a tool-error', () => {
@@ -99,7 +99,7 @@ test('appendSignal appends without rewriting and trims past 600', () => {
 test('readSignals skips garbage; markDreamed and pruneSignals', () => {
   const dir = makeRepo({}, { git: false })
   writeSignals(dir, [sig(1), sig(2, { ts: '2026-09-30T00:00:00Z' }), sig(3, { ts: '2026-10-07T00:00:00Z', dreamed: true })])
-  fs.appendFileSync(path.join(dir, '.sdlc/memory/.cache/signals.jsonl'), 'not json\n{"a":1}\n')
+  fs.appendFileSync(path.join(dir, '.rig/memory/.cache/signals.jsonl'), 'not json\n{"a":1}\n')
   assert.equal(readSignals(dir).length, 3)
   markDreamed(dir, new Set(['id1']))
   assert.equal(readSignals(dir).find(s => s.id === 'id1')!.dreamed, true)

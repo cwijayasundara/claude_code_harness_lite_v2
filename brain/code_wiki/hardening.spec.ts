@@ -19,12 +19,12 @@ const setup = (extra: Record<string, string> = {}) => {
   return { dir, cfg: loadConfig(dir) }
 }
 const prose = (dir: string, mod: string, p: unknown) => {
-  const f = path.join(dir, '.sdlc/wiki/.cache/prose', `${mod}.json`)
+  const f = path.join(dir, '.rig/wiki/.cache/prose', `${mod}.json`)
   fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(p))
 }
 const both = (dir: string) => { prose(dir, 'auth', { purpose: 'P.', how: 'H.' }); prose(dir, 'util', { purpose: 'P.', how: 'H.' }) }
 const run = (dir: string) => { const cfg = loadConfig(dir); return applyWiki(dir, cfg, buildIndex(dir, cfg)) }
-const page = (dir: string, m: string) => fs.readFileSync(path.join(dir, '.sdlc/wiki/modules', `${m}.md`), 'utf8')
+const page = (dir: string, m: string) => fs.readFileSync(path.join(dir, '.rig/wiki/modules', `${m}.md`), 'utf8')
 
 test('prose is consumed: a later change without new prose is pending and stale, never stamped fresh', () => {
   const { dir } = setup(); both(dir); run(dir)
@@ -53,7 +53,7 @@ test('untrusted prose cannot break out of its block or inject markers; bad shape
 
 test('a .gitignore for .cache/ is written inside the wiki dir', () => {
   const { dir } = setup(); both(dir); run(dir)
-  assert.match(fs.readFileSync(path.join(dir, '.sdlc/wiki/.gitignore'), 'utf8'), /\.cache\//)
+  assert.match(fs.readFileSync(path.join(dir, '.rig/wiki/.gitignore'), 'utf8'), /\.cache\//)
 })
 
 test('hooks only mark stale when file content differs from the last refresh; non-source files are ignored', () => {
@@ -98,19 +98,19 @@ test('a typescript that throws demotes the file to structure-only instead of abo
 
 test('a removed module page with a keep block is moved to orphaned/, not deleted; subdirs in modules/ do not break the swap', () => {
   const { dir } = setup(); both(dir); run(dir)
-  const f = path.join(dir, '.sdlc/wiki/modules/util.md')
+  const f = path.join(dir, '.rig/wiki/modules/util.md')
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8') + '\n<!-- keep -->\nPrecious\n<!-- /keep -->\n')
-  fs.mkdirSync(path.join(dir, '.sdlc/wiki/modules/sub'))
+  fs.mkdirSync(path.join(dir, '.rig/wiki/modules/sub'))
   fs.rmSync(path.join(dir, 'src/util'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'src/auth/login.ts'), 'export function login(a: string): boolean { return true }\n')
   run(dir)
   assert.equal(fs.existsSync(f), false)
-  assert.match(fs.readFileSync(path.join(dir, '.sdlc/wiki/orphaned/util.md'), 'utf8'), /Precious/)
+  assert.match(fs.readFileSync(path.join(dir, '.rig/wiki/orphaned/util.md'), 'utf8'), /Precious/)
 })
 
 test('a keep block inside a prose block is not duplicated when the page is recomposed', () => {
   const { dir } = setup(); both(dir); run(dir)
-  const f = path.join(dir, '.sdlc/wiki/modules/util.md')
+  const f = path.join(dir, '.rig/wiki/modules/util.md')
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('P.', 'P.\n<!-- keep -->\nNote\n<!-- /keep -->'))
   run(dir)
   assert.equal(page(dir, 'util').split('Note').length - 1, 1)
@@ -118,8 +118,8 @@ test('a keep block inside a prose block is not duplicated when the page is recom
 
 test('a rig change without intent.md does not get its page rejected', () => {
   const { dir } = setup()
-  fs.mkdirSync(path.join(dir, '.sdlc/changes/ghost'), { recursive: true })
-  fs.writeFileSync(path.join(dir, '.sdlc/changes/ghost/plan.md'), 'x')
+  fs.mkdirSync(path.join(dir, '.rig/changes/ghost'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.rig/changes/ghost/plan.md'), 'x')
   fs.writeFileSync(path.join(dir, 'src/util/h.ts'), 'export const h = 5\n')
   commitAll(dir, 'ghost change')
   both(dir)

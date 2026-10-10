@@ -16,4 +16,4 @@ Read by rig's pr-review node and by the rig-review workflow. Edit it to match yo
 - Naming, comments, small duplication, style a linter does not catch.
 
 ## Exclusions
-- Generated files, lockfiles, vendored `.sdlc/bin/**`, and anything CI's rig-check already enforces.
+- Generated files, lockfiles, vendored `.rig/bin/**`, and anything CI's rig-check already enforces.

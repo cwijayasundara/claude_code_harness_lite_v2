@@ -6,17 +6,17 @@ import path from 'node:path'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
 let repo: string
-const intentPath = (slug: string): string => path.join(repo, `.sdlc/changes/${slug}/intent.md`)
+const intentPath = (slug: string): string => path.join(repo, `.rig/changes/${slug}/intent.md`)
 const setIntent = (slug: string, from: string, to: string): void => fs.writeFileSync(intentPath(slug), fs.readFileSync(intentPath(slug), 'utf8').replace(from, to))
 const status = (): { changes: { slug: string; tier: string }[]; step: { verdict: string; node: string } } => JSON.parse(sdlc(repo, ['status', '--json']).stdout)
-const ratchetJson = (slug: string) => JSON.parse(fs.readFileSync(path.join(repo, `.sdlc/changes/${slug}/ratchet.json`), 'utf8'))
+const ratchetJson = (slug: string) => JSON.parse(fs.readFileSync(path.join(repo, `.rig/changes/${slug}/ratchet.json`), 'utf8'))
 const planned = (slug: string): void => {
-  write(repo, `.sdlc/changes/${slug}/design.md`, '## Files\n- src/**\n## Verification\n- `npm test`\n## Open questions\nnone\n')
+  write(repo, `.rig/changes/${slug}/design.md`, '## Files\n- src/**\n## Verification\n- `npm test`\n## Open questions\nnone\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'plan')
 }
 beforeEach(() => {
   repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'npm test' } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: 'npm test' } }))
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])
   planned('big')
 })
@@ -40,10 +40,10 @@ test('status warns when intent.md differs from the recorded tier', () => {
 })
 
 test('a change folder with no recorded tier is gated as L, whatever intent.md says', () => {
-  write(repo, '.sdlc/changes/hand/intent.md', '---\nslug: hand\ntype: feature\ntier: S\n---\n# Hand\n')
-  write(repo, '.sdlc/changes/hand/spec.md', '# Spec\n## Open questions\nnone\n')
-  write(repo, '.sdlc/changes/hand/plan.md', '## Files\n- src/**\n## Open questions\nnone\n')
-  write(repo, '.sdlc/STATE.md', '---\nchange: hand\n---\n')
+  write(repo, '.rig/changes/hand/intent.md', '---\nslug: hand\ntype: feature\ntier: S\n---\n# Hand\n')
+  write(repo, '.rig/changes/hand/spec.md', '# Spec\n## Open questions\nnone\n')
+  write(repo, '.rig/changes/hand/plan.md', '## Files\n- src/**\n## Open questions\nnone\n')
+  write(repo, '.rig/STATE.md', '---\nchange: hand\n---\n')
   const s = status()
   assert.equal(s.changes.find(c => c.slug === 'hand')?.tier, 'L')
   assert.equal(s.step.verdict, 'human')
@@ -62,7 +62,7 @@ test('a person approving tier records the lowered tier and gating follows it', (
   assert.equal(r.code, 0, r.stderr)
   assert.match(r.stdout, /L → S/)
   assert.equal(ratchetJson('big').tier, 'S')
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/big/events.jsonl'), 'utf8'), /"kind":"tier".*L → S/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/big/events.jsonl'), 'utf8'), /"kind":"tier".*L → S/)
   assert.equal(status().changes[0]?.tier, 'S')
   assert.equal(status().step.verdict, 'continue')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /tier changed/)
@@ -70,7 +70,7 @@ test('a person approving tier records the lowered tier and gating follows it', (
 
 test('raising the tier in intent.md takes effect without approval', () => {
   sdlc(repo, ['new', 'small', '--type', 'feature', '--tier', 'S'])
-  write(repo, '.sdlc/STATE.md', '---\nchange: small\n---\n')
+  write(repo, '.rig/STATE.md', '---\nchange: small\n---\n')
   setIntent('small', 'tier: S', 'tier: L')
   const s = status()
   assert.equal(s.changes.find(c => c.slug === 'small')?.tier, 'L')
@@ -97,7 +97,7 @@ test('approve tier refuses unless intent.md currently says exactly the stated ti
 test('with no recorded type, intent.md cannot pick a shorter path: the type is feature', () => {
   const r = ratchetJson('big')
   delete r.type
-  fs.writeFileSync(path.join(repo, '.sdlc/changes/big/ratchet.json'), JSON.stringify(r))
+  fs.writeFileSync(path.join(repo, '.rig/changes/big/ratchet.json'), JSON.stringify(r))
   setIntent('big', 'type: feature', 'type: chore')
   assert.equal(status().step.verdict, 'human')
   assert.equal(status().step.node, 'design')
