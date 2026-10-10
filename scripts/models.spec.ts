@@ -12,12 +12,12 @@ const out = (model: string, effort: string): string => `model=claude-${model}-5-
 const ROOT = path.join(import.meta.dirname, '..')
 const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 
-test('the settings template pins every alias to its 5.5 model and gives general subagents Haiku 5.5', () => {
+test('the settings template pins every alias to its 5.5 model and gives unrouted subagents Sonnet 5.5', () => {
   const env = (JSON.parse(read('templates/settings.json')) as { env: Record<string, string> }).env
   assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-haiku-5-5')
   assert.equal(env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'claude-sonnet-5-5')
   assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'claude-opus-5-5')
-  assert.equal(env.CLAUDE_CODE_SUBAGENT_MODEL, 'claude-haiku-5-5')
+  assert.equal(env.CLAUDE_CODE_SUBAGENT_MODEL, 'claude-sonnet-5-5')
 })
 
 test('the scout runs on Haiku 5.5 by full ID, like the other agents', () => {
