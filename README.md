@@ -133,6 +133,17 @@ spike       ●start ─ ●notes                                      (no code,
 
 For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow is installed, because CI performs it. `/rig:incident` joins the map from the side: it records what broke and opens an `incident` change on the bugfix line.
 
+### How command names are spelled
+
+The same commands are spelled two ways, by how they are loaded. Nothing else differs.
+
+| Install mode | The model-run skills | The human and mod commands |
+|---|---|---|
+| Plugin (`/plugin install rig`) | `/rig:init`, `/rig:start`, `/rig:next`, `/rig:build` (Claude Code writes `<plugin>:<skill>`) | `/rig-approve`, `/rig-waive`, `/rig-status`, `/rig-run`, `/rig-map` |
+| Standalone (`vendor --standalone`, what `/rig:init` can set up) | `/rig-init`, `/rig-start`, `/rig-next`, `/rig-build` | `/rig-approve`, `/rig-waive`, `/rig-status`, `/rig-run`, `/rig-map` |
+
+The colon is the host's plugin separator, so a plugin install cannot spell the skills with a hyphen. A repo that wants `/rig-*` everywhere vendors standalone. The rest of this README writes the plugin spelling (`/rig:x`) for skills; read it as `/rig-x` in a standalone repo.
+
 ### Command atlas: when to reach for each
 
 **Drive the change** (the model runs these; `/rig:next` chains them)
