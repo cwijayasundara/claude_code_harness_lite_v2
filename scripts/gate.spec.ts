@@ -3,7 +3,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { makeRepo, sdlc, hook, write, gitIn, buildDone } from './testkit.ts'
+import { makeRepo, sdlc, hook, write, gitIn, buildDone, verified, ratcheted } from './testkit.ts'
 
 let repo: string
 beforeEach(() => {
@@ -281,4 +281,17 @@ test('Stop does not continue a change that waits at a human gate or has no activ
   assert.equal(stop().stdout, '')
   sdlc(repo, ['new', 'gated', '--type', 'feature', '--tier', 'M'])
   assert.equal(stop().stdout, '', 'a feature before its design approval is a person step, not an auto step')
+})
+
+test('Stop continues from pr to pr-review: the only human step left is the merge', () => {
+  sdlc(repo, ['new', 'tiny', '--type', 'feature', '--tier', 'S'])
+  hook(repo, 'prompt-submit', {})
+  verified(repo, 'tiny')
+  ratcheted(repo, 'tiny')
+  write(repo, '.rig/changes/tiny/plan.md', '---\nslug: tiny\n---\n# Plan\n\n## Files\n- src/a.js\n\n## Verification\n- npm test\n')
+  write(repo, '.rig/changes/tiny/pr.md', '---\nstate: local-only\n---\n')
+  gitIn(repo, 'add', '-A')
+  gitIn(repo, 'commit', '-qm', 'pr')
+  assert.equal(JSON.parse(sdlc(repo, ['next', 'tiny', '--json']).stdout).node, 'pr-review', 'fixture reaches pr-review')
+  assert.match(JSON.parse(stop().stdout).reason, /skill pr-review tiny/)
 })

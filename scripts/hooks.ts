@@ -258,7 +258,7 @@ function hookStop(): boolean {
 // After approval the rest of the lifecycle is automatic: a turn that ends with a node still to run (build, test, sensors, pr)
 // and no person-gate waiting is sent on to the next node, so nobody types /rig:test. Each node is offered once: a turn that
 // ends on the same node, round and slice count as the last offer moved nothing, so it stops instead of looping.
-const AUTO_NODES = new Set(['build', 'test', 'sensors', 'pr'])
+const AUTO_NODES = new Set(['build', 'test', 'sensors', 'pr', 'pr-review'])
 function stepKeyNow(): { key: string; s: ReturnType<typeof step> } | null {
   try {
     const slug = exists(SDLC) ? activeSlug() : null
