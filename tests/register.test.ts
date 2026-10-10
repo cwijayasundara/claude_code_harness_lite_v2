@@ -471,6 +471,17 @@ describe('sdlc mod', () => {
     expect(world.prompts.at(-1)).toContain('skill build add-login')
   })
 
+  test('two starts in one tick drive once: the second finds the driver already running', async ($, on) => {
+    const world = worldOf(on)
+    const clock = mock.clock(on)
+    await $.session.start(SESSION)
+    await $.command.run(command('rig-approve', 'add-login design'))
+    await $.command.run(command('rig-run'))
+    await clock.advance(1)
+    expect(world.prompts.length).toBe(1)
+    expect(world.toasts.some(t => t.includes('no progress'))).toBe(false)
+  })
+
   test('the driver stops when a turn makes no progress', async ($, on) => {
     const world = worldOf(on)
     const clock = mock.clock(on)

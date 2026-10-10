@@ -99,7 +99,7 @@ async function advance($: EngineInterface): Promise<void> {
 // "running" is set only when it fires, and any failure on the first step resets it.
 async function startDriver($: EngineInterface): Promise<void> {
   await update($, driverLast, () => '')
-  try { $.clock.after(0, () => { update($, driverRunning, () => true).then(() => advance($)).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined)) }) }
+  try { $.clock.after(0, () => { read($, driverRunning).then(on => on ? undefined : update($, driverRunning, () => true).then(() => advance($))).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined)) }) }
   catch (err) { await stopDriver($, `driver stopped: ${String(err)}`) }
 }
 
