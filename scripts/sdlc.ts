@@ -233,7 +233,12 @@ function cmdApprove(args: Args): void {
     fail(`resolve the open question(s) in ${open.some(q => q.startsWith('intent.md:')) ? `${slug}/intent.md` : `${slug}/${artifact}`} before approving: answer each, or record the default under ## Decisions, and leave "## Open questions" as none:\n${list}`)
   }
   const concerns = ['spec', 'plan', 'design'].includes(stage) ? unresolvedConcerns(read(file)) : []
-  if (concerns.length) fail(`resolve the concern(s) in ${slug}/${artifact} with their policy owners before approving: add " → resolved: <decision> (<owner>)" to each:\n${concerns.map(c => `  - ${c}`).join('\n')}`)
+  if (concerns.length) {
+    // A policy skill copied from the template still has `owner: <the team or person ...>`; naming that as who to ask sends the person nowhere.
+    const ghost = concerns.some(c => /→ owner: <[^>]*>/.test(c))
+    const hint = ghost ? `\nThe policy's owner is not set (.claude/skills/policy-*/SKILL.md still has the template placeholder). If you own the policy, you can resolve it yourself: edit ${slug}/${artifact}, append " → resolved: <decision> (<your name>)" to each bullet, then run /rig:approve ${slug} ${stage} again. Set owner: in the policy skill so later concerns name a real person.` : ''
+    fail(`resolve the concern(s) in ${slug}/${artifact} with their policy owners before approving: add " → resolved: <decision> (<owner>)" to each:\n${concerns.map(c => `  - ${c}`).join('\n')}${hint}`)
+  }
   const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
   if (stage === 'impact' && !exists(path.join(CHANGES, slug, 'impact.json'))) fail(`nothing to approve: ${slug}/impact.json does not exist (run check --at plan first)`)
   const row: Approval = { slug, stage, by, at: now(), digest: approvalDigest(slug, stage as GatedStage) }

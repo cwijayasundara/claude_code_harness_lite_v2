@@ -75,7 +75,7 @@ test('standalone ships human-only /rig:approve and /rig:waive skills the model c
     const skill = fs.readFileSync(path.join(repo, `.claude/skills/rig-${cmd}/SKILL.md`), 'utf8')
     assert.match(skill, /^disable-model-invocation: true$/m)
     assert.ok(skill.includes(`allowed-tools: Bash(${humanCommand(cmd)} *)`), `${cmd}: the grant covers exactly the injected command`)
-    assert.ok(skill.includes(`!\`${humanCommand(cmd)} '$ARGUMENTS' 2>&1\``), `${cmd}: arguments are single-quoted, never globbed`)
+    assert.ok(skill.includes(`!\`${humanCommand(cmd)} '$ARGUMENTS' 2>&1 || true\``), `${cmd}: arguments are single-quoted, never globbed`)
   }
 })
 

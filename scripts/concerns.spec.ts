@@ -29,6 +29,14 @@ test('approve refuses a design with an unresolved concern and names it; status l
   assert.match(sdlc(repo, ['status']).stdout, /^open: feat\/design\.md: concern: \[policy-security\] claim IDs appear in logs/m)
 })
 
+test('a concern whose owner is the unfilled policy placeholder tells the person what to do instead of naming a ghost', () => {
+  design('## Concerns\n- [policy-security] no auth → owner: <the team or person who owns this policy>\n')
+  const r = approve()
+  assert.notEqual(r.code, 0)
+  assert.match(r.stderr, /owner is not set/)
+  assert.match(r.stderr, /you can resolve it yourself/)
+})
+
 test('approve accepts a design whose concerns are all resolved', () => {
   design('## Concerns\n- [policy-security] claim IDs appear in logs → owner: @sec → resolved: masked at the logger (@sec)\n')
   const r = approve()

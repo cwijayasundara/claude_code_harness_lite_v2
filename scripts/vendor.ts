@@ -68,13 +68,14 @@ function withoutStaleMod(enabled: Record<string, unknown> | undefined): Record<s
 
 // Human-only gates without the mod: the person invokes these, the model cannot (disable-model-invocation), and
 // CI refuses approval rows a PR adds unless an independent reviewer approves.
-// '$ARGUMENTS' is quoted so the shell never globs or splits it.
+// '$ARGUMENTS' is quoted so the shell never globs or splits it. `|| true`: a refusal (open concern, wrong stage) is an answer to show,
+// not a failed command; without it the host prints "Shell command failed" and the person thinks the command is broken.
 function humanSkill(cmd: 'approve' | 'waive', hint: string, what: string): string {
   const run = `SDLC_HUMAN=1 node --disable-warning=ExperimentalWarning ${SDLC_HOOK} ${cmd}`
   return [
     '---', `name: rig:${cmd}`, `description: Human only. ${what} The model cannot run this.`, `argument-hint: ${hint}`,
     'disable-model-invocation: true', `allowed-tools: Bash(${run} *)`, '---',
-    `!\`${run} '$ARGUMENTS' 2>&1\``, '', 'Tell the person the result above in one line. Do nothing else.', '',
+    `!\`${run} '$ARGUMENTS' 2>&1 || true\``, '', 'Tell the person the result above in one line. Do nothing else.', '',
   ].join('\n')
 }
 
