@@ -5,13 +5,13 @@ import { sdlcArgv, mod, stateChange } from './shared'
 
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 const sdlc = ($: EngineInterface, args: string[]): string[] => sdlcArgv($.plugin.root, ...args)
-const isInitialised = ($: EngineInterface): Promise<boolean> => $.fs.exists('.sdlc')
+const isInitialised = ($: EngineInterface): Promise<boolean> => $.fs.exists('.rig')
 type Impact = { hold: boolean; slug: string | null; consumers: string[]; hits: number }
 
 // A hold needs the active change to carry impact.json: two file reads, not a node start, before every edit (unsure: ask the script).
 async function mayHold($: EngineInterface): Promise<boolean> {
-  const change = await $.fs.read('.sdlc/STATE.md').then(stateChange, () => undefined)
-  return change === undefined || (change !== null && (await $.fs.exists(`.sdlc/changes/${change}/impact.json`)))
+  const change = await $.fs.read('.rig/STATE.md').then(stateChange, () => undefined)
+  return change === undefined || (change !== null && (await $.fs.exists(`.rig/changes/${change}/impact.json`)))
 }
 
 export function registerGates(on: On): void {

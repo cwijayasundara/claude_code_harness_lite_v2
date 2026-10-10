@@ -16,10 +16,10 @@ const setup = () => {
   return { dir, cfg: loadConfig(dir) }
 }
 const writeProse = (dir: string, mod: string, p: object) => {
-  const f = path.join(dir, '.sdlc/wiki/.cache/prose', `${mod}.json`)
+  const f = path.join(dir, '.rig/wiki/.cache/prose', `${mod}.json`)
   fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(p))
 }
-const page = (dir: string, mod: string) => fs.readFileSync(path.join(dir, '.sdlc/wiki/modules', `${mod}.md`), 'utf8')
+const page = (dir: string, mod: string) => fs.readFileSync(path.join(dir, '.rig/wiki/modules', `${mod}.md`), 'utf8')
 
 test('composes a page from facts and prose, updates state', () => {
   const { dir, cfg } = setup()
@@ -34,14 +34,14 @@ test('composes a page from facts and prose, updates state', () => {
   assert.match(p, /Handles login\./)
   assert.match(p, /```mermaid\ngraph LR/)
   assert.equal(loadState(dir).modules.auth.status, 'fresh')
-  assert.match(fs.readFileSync(path.join(dir, '.sdlc/wiki/architecture.md'), 'utf8'), /auth --> util/)
+  assert.match(fs.readFileSync(path.join(dir, '.rig/wiki/architecture.md'), 'utf8'), /auth --> util/)
 })
 
 test('missing prose keeps the old page and reports pending; nothing half-written', () => {
   const { dir, cfg } = setup()
   writeProse(dir, 'auth', { purpose: 'P', how: 'H' }); writeProse(dir, 'util', { purpose: 'P', how: 'H' })
   applyWiki(dir, cfg, buildIndex(dir, cfg))
-  fs.rmSync(path.join(dir, '.sdlc/wiki/.cache/prose'), { recursive: true, force: true })
+  fs.rmSync(path.join(dir, '.rig/wiki/.cache/prose'), { recursive: true, force: true })
   fs.writeFileSync(path.join(dir, 'src/util/h.ts'), 'export const h = 2\n')
   const r = applyWiki(dir, cfg, buildIndex(dir, cfg))
   assert.match(page(dir, 'util'), /status: stale/)
@@ -54,14 +54,14 @@ test('a module with no prose and no old page is pending, no file written', () =>
   const { dir, cfg } = setup()
   const r = applyWiki(dir, cfg, buildIndex(dir, cfg))
   assert.deepEqual(r.pending.sort(), ['auth', 'util'])
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/wiki/modules/auth.md')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/wiki/modules/auth.md')), false)
 })
 
 test('keep blocks survive regeneration', () => {
   const { dir, cfg } = setup()
   writeProse(dir, 'util', { purpose: 'P', how: 'H' }); writeProse(dir, 'auth', { purpose: 'P', how: 'H' })
   applyWiki(dir, cfg, buildIndex(dir, cfg))
-  const f = path.join(dir, '.sdlc/wiki/modules/util.md')
+  const f = path.join(dir, '.rig/wiki/modules/util.md')
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8') + '\n<!-- keep -->\nHuman note\n<!-- /keep -->\n')
   fs.writeFileSync(path.join(dir, 'src/util/h.ts'), 'export const h = 3\n')
   writeProse(dir, 'util', { purpose: 'P2', how: 'H2' })
@@ -88,5 +88,5 @@ test('removed modules lose their page', () => {
   fs.rmSync(path.join(dir, 'src/util'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'src/auth/login.ts'), 'export function login(a: string): boolean { return true }\n')
   applyWiki(dir, cfg, buildIndex(dir, cfg))
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/wiki/modules/util.md')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/wiki/modules/util.md')), false)
 })

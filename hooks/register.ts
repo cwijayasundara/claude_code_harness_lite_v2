@@ -36,7 +36,7 @@ let turnPressure: 'normal' | 'tight' = 'normal', coordinatorSwitched = false
 const agentTypes = new Map<string, string>()
 
 const sdlc = ($: EngineInterface, args: string[]): string[] => sdlcArgv($.plugin.root, ...args)
-const isInitialised = ($: EngineInterface): Promise<boolean> => $.fs.exists('.sdlc')
+const isInitialised = ($: EngineInterface): Promise<boolean> => $.fs.exists('.rig')
 const statusJson = async ($: EngineInterface): Promise<Status | null> => parseStatus((await $.process.run(sdlc($, ['status', '--json', '--band']))).stdout)
 
 function stageOf(status: Status | null): { change: string | null; stage: string | null } {
@@ -103,24 +103,24 @@ async function offerDesignGate($: EngineInterface, step: StepInfo | null | undef
   return advance($)
 }
 
-// The vendored copy (.sdlc/mod) wins over the globally installed plugin's mod: both would register the same commands.
-const isVendoredRoot = (root: string): boolean => /\/\.sdlc\/mod\/?$/.test(root.replace(/\\/g, '/'))
+// The vendored copy (.rig/mod) wins over the globally installed plugin's mod: both would register the same commands.
+const isVendoredRoot = (root: string): boolean => /\/\.rig\/mod\/?$/.test(root.replace(/\\/g, '/'))
 
 const VENDORED_IDS = ['rig-mod@rig-local', 'sdlc-mod@sdlc-local']
 
 // Step aside only when the vendored copy is really configured: its files exist AND the protected settings enable it.
 // Anything unreadable keeps this copy active (fail closed).
 async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
-  if (isVendoredRoot($.plugin.root) || !(await $.fs.exists('.sdlc/mod/hooks/register.ts'))) return false
+  if (isVendoredRoot($.plugin.root) || !(await $.fs.exists('.rig/mod/hooks/register.ts'))) return false
   try {
     const settings = JSON.parse(await $.fs.read('.claude/settings.json')) as { enabledPlugins?: Record<string, unknown> }
     // sdlc-mod@sdlc-local: repos vendored before the rename to rig.
     if (VENDORED_IDS.some(id => settings.enabledPlugins?.[id] === true)) {
-      $.ui.log("rig: using the project's vendored sdlc mod (.sdlc/mod)")
+      $.ui.log("rig: using the project's vendored sdlc mod (.rig/mod)")
       return true
     }
   } catch { /* unreadable or unparseable settings: stay active */ }
-  $.ui.log('rig: the vendored mod (.sdlc/mod) is present but not enabled in .claude/settings.json; using the plugin copy')
+  $.ui.log('rig: the vendored mod (.rig/mod) is present but not enabled in .claude/settings.json; using the plugin copy')
   return false
 }
 
@@ -290,7 +290,7 @@ export const register: Register = on => {
     promptsSinceNudge += 1
     if (promptsSinceNudge < NUDGE_EVERY_PROMPTS) return next(e)
     promptsSinceNudge = 0
-    const note = `rig: context is ${Math.round(current.contextTokens / 1000)}k tokens, past the 150k budget. Finish the current step, then run /compact: the active change and its next step live in .sdlc/STATE.md.`
+    const note = `rig: context is ${Math.round(current.contextTokens / 1000)}k tokens, past the 150k budget. Finish the current step, then run /compact: the active change and its next step live in .rig/STATE.md.`
     return next({ ...e, context: [...(e.context ?? []), note] })
   })
 

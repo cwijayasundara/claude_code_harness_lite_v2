@@ -24,14 +24,14 @@ jobs:
         run: |
           base="origin/$BASE"
           mkdir -p "$RUNNER_TEMP/sdlc"
-          if git cat-file -e "$base:.sdlc/bin/sdlc.ts" 2>/dev/null; then
-            git ls-tree --name-only "$base" .sdlc/bin/ | while IFS= read -r f; do git show "$base:$f" > "$RUNNER_TEMP/sdlc/$(basename "$f")"; done
+          if git cat-file -e "$base:.rig/bin/sdlc.ts" 2>/dev/null; then
+            git ls-tree --name-only "$base" .rig/bin/ | while IFS= read -r f; do git show "$base:$f" > "$RUNNER_TEMP/sdlc/$(basename "$f")"; done
           else
             echo "::notice::bootstrap: no sdlc checker on $base yet; using this PR's copy. This PR needs human review."
-            if [ ! -f .sdlc/bin/sdlc.ts ]; then echo "::error::run sdlc.ts vendor and commit .sdlc/bin"; exit 1; fi
-            cp .sdlc/bin/* "$RUNNER_TEMP/sdlc/"
+            if [ ! -f .rig/bin/sdlc.ts ]; then echo "::error::run sdlc.ts vendor and commit .rig/bin"; exit 1; fi
+            cp .rig/bin/* "$RUNNER_TEMP/sdlc/"
           fi
-          git show "$base:.sdlc/sensors.json" > "$RUNNER_TEMP/sensors.json" 2>/dev/null || cp .sdlc/sensors.json "$RUNNER_TEMP/sensors.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/sensors.json"
+          git show "$base:.rig/sensors.json" > "$RUNNER_TEMP/sensors.json" 2>/dev/null || cp .rig/sensors.json "$RUNNER_TEMP/sensors.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/sensors.json"
       - name: Check out consumer repos
         env:
           TOKEN: ${{ secrets.SDLC_CONSUMERS_TOKEN }}

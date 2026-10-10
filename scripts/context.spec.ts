@@ -67,7 +67,7 @@ test('log-usage prints the context warnings for the mod to show and keeps the fi
   assert.equal(r.code, 0)
   assert.match(r.stdout, /first call of this session is 60k/)
   assert.match(r.stdout, /heavy@m/)
-  const rows = fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  const rows = fs.readFileSync(path.join(repo, '.rig/usage.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
   assert.equal(rows.at(-1).first, true)
   assert.equal(sdlc(repo, ['log-usage', JSON.stringify({ kind: 'main', ctx: 20_000, usd: 0.1 })], { env: { HOME: home } }).stdout, '')
 })

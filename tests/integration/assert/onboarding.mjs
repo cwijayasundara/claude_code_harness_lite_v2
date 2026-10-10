@@ -40,7 +40,7 @@ export async function assertOnboarding(c, sb, { lane, modules = [] }) {
     return missing.length === 0 || `missing: ${missing.join(', ')}`
   })
   await c.check('vendored checker is the plugin version', () => {
-    const vendored = sb.read('.sdlc/bin/VERSION').trim()
+    const vendored = sb.read('.rig/bin/VERSION').trim()
     return vendored === pluginVersion() || `VERSION ${vendored || '(none)'} vs plugin ${pluginVersion()}`
   })
   await c.check('settings carry every template permission rule', () => {
@@ -49,17 +49,17 @@ export async function assertOnboarding(c, sb, { lane, modules = [] }) {
     const missing = Object.entries(want).flatMap(([kind, rules]) => rules.filter(r => !(have[kind] ?? []).includes(r)).map(r => `${kind} ${r}`))
     return missing.length === 0 || missing.join(', ')
   })
-  await c.check('git hooks wired: core.hooksPath is .sdlc/githooks, both hooks executable', () => {
+  await c.check('git hooks wired: core.hooksPath is .rig/githooks, both hooks executable', () => {
     const hooksPath = sb.run('git', ['config', 'core.hooksPath']).stdout.trim()
-    const bad = ['pre-commit', 'pre-push'].filter(h => !sb.exists(`.sdlc/githooks/${h}`) || !(fs.statSync(sb.file(`.sdlc/githooks/${h}`)).mode & 0o111))
-    return (hooksPath === '.sdlc/githooks' && bad.length === 0) || `hooksPath=${hooksPath || '(unset)'} not executable or missing: ${bad.join(', ')}`
+    const bad = ['pre-commit', 'pre-push'].filter(h => !sb.exists(`.rig/githooks/${h}`) || !(fs.statSync(sb.file(`.rig/githooks/${h}`)).mode & 0o111))
+    return (hooksPath === '.rig/githooks' && bad.length === 0) || `hooksPath=${hooksPath || '(unset)'} not executable or missing: ${bad.join(', ')}`
   })
-  await c.check('preflight report written', () => /result:/.test(sb.read('.sdlc/PREFLIGHT.md')) || 'no .sdlc/PREFLIGHT.md')
+  await c.check('preflight report written', () => /result:/.test(sb.read('.rig/PREFLIGHT.md')) || 'no .rig/PREFLIGHT.md')
 
   await c.check('onboarding committed on main', () => {
     const branch = sb.git('rev-parse', '--abbrev-ref', 'HEAD')
     const tracked = sb.git('ls-files').split('\n')
-    const need = ['CLAUDE.md', '.sdlc/sensors.json', '.sdlc/bin/sdlc.ts', '.claude/settings.json']
+    const need = ['CLAUDE.md', '.rig/sensors.json', '.rig/bin/sdlc.ts', '.claude/settings.json']
     const untracked = need.filter(f => !tracked.includes(f))
     return (branch === 'main' && untracked.length === 0) || `branch ${branch}; not committed: ${untracked.join(', ')}`
   })

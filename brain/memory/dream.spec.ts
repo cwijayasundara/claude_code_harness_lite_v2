@@ -12,14 +12,14 @@ import { makeRepo } from '../shared/testkit.ts'
 const T0 = new Date('2026-10-09T10:00:00Z')
 const sig = (i: number): Signal => ({ id: `id${i}`, ts: T0.toISOString(), session_id: 'sess1', transcript_path: '', transcript_line: 0, kind: 'cmd-fail', data: { cmd: 'npx jest' }, dreamed: false })
 const setup = () => {
-  const dir = makeRepo({ '.sdlc/memory.json': JSON.stringify({ enabled: true }) }, { git: false })
+  const dir = makeRepo({ '.rig/memory.json': JSON.stringify({ enabled: true }) }, { git: false })
   writeSignals(dir, [sig(1), sig(2)])
   acquireLock(dir, T0)
   return { dir, cfg: loadMemConfig(dir), batch: snapshotBatch(dir, T0) }
 }
 const ops = (j: unknown) => JSON.stringify(j)
 const lockFree = (dir: string) => acquireLock(dir, T0)
-const logText = (dir: string) => fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/log'), 'utf8')
+const logText = (dir: string) => fs.readFileSync(path.join(dir, '.rig/memory/.cache/log'), 'utf8')
 
 test('extractOps takes a fenced block or the first parseable bare array', () => {
   assert.deepEqual(extractOps('Here:\n```json\n[{"op":"remove","id":"m-1"}]\n```\nDone'), [{ op: 'remove', id: 'm-1' }])

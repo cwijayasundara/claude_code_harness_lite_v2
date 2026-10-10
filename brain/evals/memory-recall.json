@@ -1,5 +1,5 @@
 {
-  "description": "Paired runs on a fixture repo with each lesson seeded in .sdlc/memory/ vs an empty memory. Decision rule: if memory does not cut failed commands or turns on at least 4 of 5 tasks without lowering correctness, remove the memory SessionStart hook and keep memory as a manual tool (/rig-brain:memory-find).",
+  "description": "Paired runs on a fixture repo with each lesson seeded in .rig/memory/ vs an empty memory. Decision rule: if memory does not cut failed commands or turns on at least 4 of 5 tasks without lowering correctness, remove the memory SessionStart hook and keep memory as a manual tool (/rig-brain:memory-find).",
   "metrics": ["failed_commands", "turns", "correct"],
   "tasks": [
     { "id": "test-cmd", "seed": { "file": "commands.md", "text": "Run tests with `npm test`; `npx jest` misses the TS loader." }, "prompt": "Run the unit tests and report the result.", "correctIf": "ran npm test" },

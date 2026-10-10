@@ -21,7 +21,7 @@ test('rule: a lesson needs two occurrences, then becomes a regex rule or one CLA
 test('pr-review: a finding whose category appears in another change hands over to /rig:rule', () => {
   const review = read('skills/pr-review/SKILL.md')
   assert.match(review, /^allowed-tools: .*\bGrep\b/m)
-  assert.match(review, /\.sdlc\/changes\/\*\/review\.md/)
+  assert.match(review, /\.rig\/changes\/\*\/review\.md/)
   assert.match(review, /Next: \/rig:rule "<category>/)
 })
 
@@ -42,7 +42,7 @@ test('metrics: repeat_findings counts changes whose finding category was seen on
   const cats: [string, string][] = [['c1', 'security'], ['c2', 'tests'], ['c3', 'security'], ['c4', 'data'], ['c5', 'tests'], ['c6', '']]
   for (const [slug, cat] of cats) {
     sdlc(repo, ['new', slug, '--type', 'chore', '--tier', 'S'])
-    write(repo, `.sdlc/changes/${slug}/review.md`, `---\nresult: pass\n---\n## Findings\n${cat ? `- [severity: high] [category: ${cat}] src/a.js:1: problem → fix\n` : 'none\n'}`)
+    write(repo, `.rig/changes/${slug}/review.md`, `---\nresult: pass\n---\n## Findings\n${cat ? `- [severity: high] [category: ${cat}] src/a.js:1: problem → fix\n` : 'none\n'}`)
   }
   const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
   assert.deepEqual({ value: m.repeat_findings.value, n: m.repeat_findings.n }, { value: 0.4, n: 5 }, 'c3 and c5 repeat; c6 has no finding and is not counted')
@@ -50,7 +50,7 @@ test('metrics: repeat_findings counts changes whose finding category was seen on
 
 test('a rerun of pr-review resumes the sweep instead of reviewing the whole branch again', () => {
   const review = read('skills/pr-review/SKILL.md')
-  assert.match(review, /If `\.sdlc\/changes\/\$0\/review\.md` exists, this is a rerun: go straight to step 6/)
+  assert.match(review, /If `\.rig\/changes\/\$0\/review\.md` exists, this is a rerun: go straight to step 6/)
 })
 
 test('the sweep reads only new comments from people with write access, never its own, and sees failing logs', () => {
@@ -76,10 +76,10 @@ test('the twice rule needs the same mistake on two different changes, and the ha
 test('metrics: rule_suggestions counts distinct changes, so one change with many findings suggests nothing', () => {
   const repo = makeRepo()
   sdlc(repo, ['new', 'one', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/one/review.md', '## Findings\n- [severity: high] [category: tests] a:1: x → y\n- [severity: high] [category: tests] a:2: x → y\n- [severity: high] [category: tests] a:3: x → y\n')
+  write(repo, '.rig/changes/one/review.md', '## Findings\n- [severity: high] [category: tests] a:1: x → y\n- [severity: high] [category: tests] a:2: x → y\n- [severity: high] [category: tests] a:3: x → y\n')
   assert.deepEqual(JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics.harness.rule_suggestions, [])
   sdlc(repo, ['new', 'two', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/changes/two/review.md', '## Findings\n- [severity: high] [category: tests] b:1: x → y\n')
+  write(repo, '.rig/changes/two/review.md', '## Findings\n- [severity: high] [category: tests] b:1: x → y\n')
   assert.deepEqual(JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics.harness.rule_suggestions, ['tests (2 changes): consider /rig:rule'])
 })
 

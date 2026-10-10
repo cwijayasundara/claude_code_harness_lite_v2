@@ -9,7 +9,7 @@ import { allEntries, loadStore } from './store.ts'
 import { makeRepo } from '../shared/testkit.ts'
 
 const add = (file: string, text: string) => ({ op: 'add', file, text, source: 'init' })
-const read = (d: string, f: string) => fs.readFileSync(path.join(d, '.sdlc/memory', f), 'utf8')
+const read = (d: string, f: string) => fs.readFileSync(path.join(d, '.rig/memory', f), 'utf8')
 
 test('seed turns memory on and adds entries tagged with source init', () => {
   const dir = makeRepo({})
@@ -38,9 +38,9 @@ test('re-seeding never overwrites an existing topic file and dreams can still ad
 })
 
 test('seed refuses to override a repo that disabled memory', () => {
-  const dir = makeRepo({ '.sdlc/memory.json': JSON.stringify({ enabled: false }) })
+  const dir = makeRepo({ '.rig/memory.json': JSON.stringify({ enabled: false }) })
   assert.throws(() => seedMemory(dir, [], '2026-10-09'), /disabled/)
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory')), false)
 })
 
 test('seed CLI reads ops from a file and reports rejects', () => {

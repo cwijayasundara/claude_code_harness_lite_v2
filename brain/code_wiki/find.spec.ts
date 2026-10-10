@@ -19,7 +19,7 @@ test('findIn ranks symbol and module matches and flags stale', () => {
   const hits = findIn(idx, st, 'where is login handled')
   assert.equal(hits[0].name, 'login')
   assert.equal(hits[0].stale, true)
-  assert.equal(hits[0].page, '.sdlc/wiki/modules/auth.md')
+  assert.equal(hits[0].page, '.rig/wiki/modules/auth.md')
   assert.deepEqual(findIn(idx, st, 'zzzz'), [])
 })
 

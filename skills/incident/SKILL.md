@@ -11,8 +11,8 @@ allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_R
 1. Gather the details from $ARGUMENTS. Ask at most two questions:
    - severity (sev1–sev4)
    - whether it reached production (escaped)
-2. Write `.sdlc/incidents/<yyyymmdd>-<kebab>.md` with frontmatter:
-   - `class:` a short reusable category such as `null-input`, `timeout`, `auth` or `config`; reuse an existing class from `.sdlc/incidents/` when it fits, because repeat classes are measured
+2. Write `.rig/incidents/<yyyymmdd>-<kebab>.md` with frontmatter:
+   - `class:` a short reusable category such as `null-input`, `timeout`, `auth` or `config`; reuse an existing class from `.rig/incidents/` when it fits, because repeat classes are measured
    - `severity:`
    - `escaped: true|false`
    - `detected:` ISO time

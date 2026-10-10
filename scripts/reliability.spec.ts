@@ -21,20 +21,20 @@ test('parallel post-edit hooks all land in .gate', async () => {
   const n = 10
   for (let i = 0; i < n; i++) write(repo, `f${i}.ts`, `export const v${i} = ${i}\n`)
   await Promise.all(Array.from({ length: n }, (_, i) => runHook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, `f${i}.ts`) } })))
-  const gate = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8')) as { tool: string[] }
+  const gate = JSON.parse(fs.readFileSync(path.join(repo, '.rig/.gate'), 'utf8')) as { tool: string[] }
   assert.equal(gate.tool.length, n, `recorded ${gate.tool.length} of ${n}`)
-  assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc')).filter(f => f.endsWith('.lock') || f.endsWith('.tmp')), [], 'no lock or temp file is left behind')
+  assert.deepEqual(fs.readdirSync(path.join(repo, '.rig')).filter(f => f.endsWith('.lock') || f.endsWith('.tmp')), [], 'no lock or temp file is left behind')
 })
 
 test('a stale lock does not wedge a hook', () => {
   const repo = makeRepo()
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
-  const lock = path.join(repo, '.sdlc/.gate.lock')
+  const lock = path.join(repo, '.rig/.gate.lock')
   fs.mkdirSync(lock)
   const old = new Date(Date.now() - 60_000)
   fs.utimesSync(lock, old, old)
   hook(repo, 'prompt-submit', {})
-  assert.ok(fs.existsSync(path.join(repo, '.sdlc/.gate')))
+  assert.ok(fs.existsSync(path.join(repo, '.rig/.gate')))
 })
 
 test('a turn on a tree with many untracked files is fast and still sees a changed one', () => {
@@ -58,10 +58,10 @@ test('vendor refuses a downgrade, and a settings file with comments, before writ
   const bad = vend()
   assert.notEqual(bad.status, 0)
   assert.match(bad.stderr + bad.stdout, /not plain JSON/)
-  assert.equal(fs.existsSync(path.join(repo, '.sdlc/bin')), false, 'nothing written')
+  assert.equal(fs.existsSync(path.join(repo, '.rig/bin')), false, 'nothing written')
   fs.rmSync(path.join(repo, '.claude'), { recursive: true })
   assert.equal(vend().status, 0)
-  write(repo, '.sdlc/bin/VERSION', '99.0.0\n')
+  write(repo, '.rig/bin/VERSION', '99.0.0\n')
   const down = vend()
   assert.notEqual(down.status, 0)
   assert.match(down.stderr + down.stdout, /newer than this plugin/)

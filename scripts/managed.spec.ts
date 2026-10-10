@@ -55,7 +55,7 @@ test('the managed template carries every rig rule in ./ form, since allowManaged
 test('the managed template is the p.42 worked example with rig force-enabled and the production gate wired', () => {
   const m = tpl('managed-settings.json')
   assert.equal(m.permissions.disableBypassPermissionsMode, 'disable')
-  for (const r of ['Read(.env*)', 'Read(./secrets/**)', 'WebFetch', 'Bash(curl *)', 'Bash(wget *)', 'Edit(./.sdlc/gates.jsonl)']) assert.ok(m.permissions.deny.includes(r), r)
+  for (const r of ['Read(.env*)', 'Read(./secrets/**)', 'WebFetch', 'Bash(curl *)', 'Bash(wget *)', 'Edit(./.rig/gates.jsonl)']) assert.ok(m.permissions.deny.includes(r), r)
   for (const k of ['allowManagedPermissionRulesOnly', 'allowManagedHooksOnly', 'disableSideloadFlags', 'allowManagedMcpServersOnly']) assert.equal(m[k], true, k)
   assert.deepEqual([m.sandbox.enabled, m.sandbox.failIfUnavailable, m.sandbox.allowUnsandboxedCommands], [true, true, false])
   assert.ok(m.sandbox.network.allowedDomains.includes('api.github.com'), 'gh, used by /rig:pr, needs GitHub')
@@ -72,7 +72,7 @@ test('the managed template is the p.42 worked example with rig force-enabled and
 
 test('the project template denies the gate log and asks before edits to protected paths', () => {
   const p = tpl('settings.json').permissions
-  assert.ok(p.deny.includes('Edit(/.sdlc/gates.jsonl)'))
+  assert.ok(p.deny.includes('Edit(/.rig/gates.jsonl)'))
   for (const r of ['Edit(/migrations/**)', 'Edit(/infra/**)']) assert.ok(p.ask.includes(r), r)
 })
 
@@ -83,33 +83,33 @@ const posix = { skip: process.platform === 'win32' ? 'POSIX sh only' : false }
 
 test('the gate blocks a production deploy without approval, explains the route, and allows it with approval', posix, () => {
   const repo = makeRepo()
-  fs.mkdirSync(path.join(repo, '.sdlc'), { recursive: true })
+  fs.mkdirSync(path.join(repo, '.rig'), { recursive: true })
   const blocked = gate('./scripts/deploy.sh --env production', { CLAUDE_PROJECT_DIR: repo })
   assert.equal(blocked.status, 2)
   assert.match(blocked.stderr, /production[\s\S]*release manager[\s\S]*RELEASE_APPROVAL/i)
   assert.equal(gate('./scripts/deploy.sh --env production', { CLAUDE_PROJECT_DIR: repo, RELEASE_APPROVAL: 'CHG-1234' }).status, 0)
   assert.equal(gate('./scripts/deploy.sh --env staging', { CLAUDE_PROJECT_DIR: repo }).status, 0)
   assert.equal(gate('cat production.md', { CLAUDE_PROJECT_DIR: repo }).status, 0, 'deploy and the environment must both appear')
-  const rows = fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  const rows = fs.readFileSync(path.join(repo, '.rig', 'gates.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
   assert.deepEqual(rows.map(r => [r.decision, r.session]), [['block', 'sess-1'], ['allow', 'sess-1']], 'only matching commands are logged')
   assert.match(rows[0].at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/)
-  assert.doesNotMatch(fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8'), /deploy|scripts/, 'command text is never logged')
+  assert.doesNotMatch(fs.readFileSync(path.join(repo, '.rig', 'gates.jsonl'), 'utf8'), /deploy|scripts/, 'command text is never logged')
 })
 
-test('the gate never fails open: no jq, no env name, no .sdlc, a symlinked log, a hostile session id', posix, () => {
+test('the gate never fails open: no jq, no env name, no .rig, a symlinked log, a hostile session id', posix, () => {
   const repo = makeRepo()
   assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo, PATH: '/usr/bin:/bin' }).status, 2, 'needs no jq or node')
   assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo, RIG_PRODUCTION_ENV: '' }).status, 2, 'empty env name means production')
   assert.equal(gate('DEPLOY to PROD-EU', { CLAUDE_PROJECT_DIR: repo, RIG_PRODUCTION_ENV: 'prod-eu' }).status, 2, 'case-insensitive, env name from the variable')
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc')), 'no .sdlc: still gated, nothing created')
-  fs.mkdirSync(path.join(repo, '.sdlc'))
+  assert.ok(!fs.existsSync(path.join(repo, '.rig')), 'no .rig: still gated, nothing created')
+  fs.mkdirSync(path.join(repo, '.rig'))
   const target = path.join(repo, 'elsewhere.txt')
-  fs.symlinkSync(target, path.join(repo, '.sdlc', 'gates.jsonl'))
+  fs.symlinkSync(target, path.join(repo, '.rig', 'gates.jsonl'))
   assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo }).status, 2, 'a symlinked log never changes the decision')
   assert.ok(!fs.existsSync(target), 'and is never followed')
-  fs.unlinkSync(path.join(repo, '.sdlc', 'gates.jsonl'))
+  fs.unlinkSync(path.join(repo, '.rig', 'gates.jsonl'))
   gate('deploy production', { CLAUDE_PROJECT_DIR: repo }, { session_id: 'x","decision":"allow' })
-  const row = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), 'utf8').trim())
+  const row = JSON.parse(fs.readFileSync(path.join(repo, '.rig', 'gates.jsonl'), 'utf8').trim())
   assert.deepEqual([row.decision, row.session], ['block', ''], 'a session id outside the UUID charset is dropped')
   assert.equal(gate('deploy \\"production\\"', { CLAUDE_PROJECT_DIR: repo }).status, 2, 'escaped quotes in the command still match')
 })
@@ -135,8 +135,8 @@ test('preflight managed warns when the managed file would switch rig off or prot
   assert.match(noRig.line, /rig's hooks are off: allowManagedHooksOnly without rig force-enabled/)
   const noRules = managedCheck({ ...full, permissions: { ...full.permissions, deny: ['Read(.env*)'] } }, 1)
   assert.match(noRules.line, /rig's evidence rules are dropped/)
-  const anchored = managedCheck({ ...full, permissions: { ...full.permissions, deny: [...full.permissions.deny, 'Edit(/.sdlc/approvals.jsonl)'] } }, 1)
-  assert.match(anchored.line, /Edit\(\/\.sdlc\/approvals\.jsonl\) anchors at the managed settings folder: use \.\//)
+  const anchored = managedCheck({ ...full, permissions: { ...full.permissions, deny: [...full.permissions.deny, 'Edit(/.rig/approvals.jsonl)'] } }, 1)
+  assert.match(anchored.line, /Edit\(\/\.rig\/approvals\.jsonl\) anchors at the managed settings folder: use \.\//)
 })
 
 test('preflight reports the managed row from RIG_MANAGED_DIR, skipping when there is none', () => {
@@ -152,12 +152,12 @@ test('metrics: gate waits pair a block with the next allow in the same session; 
   const repo = makeRepo()
   sdlc(repo, ['init'])
   const row = (h: number, decision: string, session: string) => JSON.stringify({ at: new Date(Date.UTC(2026, 9, 1, h)).toISOString(), decision, session })
-  write(repo, '.sdlc/gates.jsonl', [
+  write(repo, '.rig/gates.jsonl', [
     row(0, 'block', 'a'), row(1, 'block', 'b'), row(2, 'block', 'a'), row(3, 'allow', 'a'), row(5, 'allow', 'b'),
     row(6, 'block', 'c'), row(7, 'allow', ''), row(8, 'block', 'd'), row(9, 'allow', 'd'), row(10, 'block', 'e'),
     row(11, 'block', 'f'), row(12, 'block', 'g'), row(13, 'allow', 'f'), row(17, 'allow', 'g'), '{ torn',
   ].join('\n') + '\n')
-  for (const [f, cls] of [['1-x', 'gate'], ['2-y', 'perf'], ['3-z', 'gate']]) write(repo, `.sdlc/incidents/2026100${f}.md`, `---\ndetected: 2026-10-01T00:00:00Z\nclass: ${cls}\n---\n`)
+  for (const [f, cls] of [['1-x', 'gate'], ['2-y', 'perf'], ['3-z', 'gate']]) write(repo, `.rig/incidents/2026100${f}.md`, `---\ndetected: 2026-10-01T00:00:00Z\nclass: ${cls}\n---\n`)
   const m = JSON.parse(sdlc(repo, ['metrics', '--json'], { env: { RIG_MANAGED_DIR: tmpDir() } }).stdout).metrics
   assert.deepEqual({ value: m.gate_wait_hours.value, n: m.gate_wait_hours.n }, { value: 3, n: 5 }, 'a 3h, b 4h, d 1h, f 2h, g 5h (MIN_SAMPLE is 5); c and e never allowed; the empty session is dropped')
   assert.deepEqual({ value: m.gate_violations_escaped.value, n: m.gate_violations_escaped.n }, { value: 2, n: 3 })
@@ -211,9 +211,9 @@ test('the gate reads every command key, needs only sh/sed/grep/date/cat, hides l
   const bin = tmpDir()
   for (const t of ['sed', 'grep', 'date', 'cat']) fs.symlinkSync(spawnSync('/bin/sh', ['-c', `command -v ${t}`], { encoding: 'utf8' }).stdout.trim(), path.join(bin, t))
   assert.equal(gate('deploy production', { CLAUDE_PROJECT_DIR: repo, PATH: bin }).status, 2, 'no jq, no node on PATH')
-  fs.mkdirSync(path.join(repo, '.sdlc'))
-  fs.writeFileSync(path.join(repo, '.sdlc', 'gates.jsonl'), '')
-  fs.chmodSync(path.join(repo, '.sdlc', 'gates.jsonl'), 0o444)
+  fs.mkdirSync(path.join(repo, '.rig'))
+  fs.writeFileSync(path.join(repo, '.rig', 'gates.jsonl'), '')
+  fs.chmodSync(path.join(repo, '.rig', 'gates.jsonl'), 0o444)
   const r = gate('deploy production', { CLAUDE_PROJECT_DIR: repo })
   assert.equal(r.status, 2, 'an unwritable log never changes the decision')
   assert.doesNotMatch(r.stderr, /denied|gates\.jsonl/i, 'and its error never reaches Claude')

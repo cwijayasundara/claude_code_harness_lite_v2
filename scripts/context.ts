@@ -20,7 +20,7 @@ export function contextWarnings(row: Partial<UsageRow>, plugins: string[]): stri
   if (row.first && ctx > FIRST_CALL_LIMIT) {
     out.push(`rig: the first call of this session is ${kilo(ctx)} tokens before any work (limit ${kilo(FIRST_CALL_LIMIT)}); every call re-reads it. enabled plugins: ${plugins.length ? plugins.join(', ') : 'none listed'}. Disable the ones this repo does not use.`)
   }
-  if (ctx > TURN_LIMIT) out.push(`rig: context is ${kilo(ctx)} (over ${kilo(TURN_LIMIT)}): finish this step, then /compact (the active change lives in .sdlc/STATE.md).`)
+  if (ctx > TURN_LIMIT) out.push(`rig: context is ${kilo(ctx)} (over ${kilo(TURN_LIMIT)}): finish this step, then /compact (the active change lives in .rig/STATE.md).`)
   return out
 }
 

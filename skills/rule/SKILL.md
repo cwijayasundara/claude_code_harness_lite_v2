@@ -1,6 +1,6 @@
 ---
 name: rule
-description: Turn a convention the agent keeps breaking into a mechanical rule in .sdlc/rules.json, or into one line of CLAUDE.md when no pattern can catch it (promote prose to a sensor). Use when metrics or a review show a recurring finding category, or the person says "this keeps happening".
+description: Turn a convention the agent keeps breaking into a mechanical rule in .rig/rules.json, or into one line of CLAUDE.md when no pattern can catch it (promote prose to a sensor). Use when metrics or a review show a recurring finding category, or the person says "this keeps happening".
 argument-hint: '"<what keeps recurring>"'
 effort: medium
 allowed-tools: Bash(node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts *), Read, Grep, Glob, AskUserQuestion
@@ -17,7 +17,7 @@ A lesson is earned only by a real, recurring finding. It becomes a regular expre
 
    If it cannot be stated as a regular expression (a design habit, a wrong assumption, a step it skips), draft one line for CLAUDE.md's `## Things Claude gets wrong` section instead: what to do, in at most 25 words, ending with `(seen: <slug>, <slug>)`. Skip step 3 for a CLAUDE.md line.
 3. **Check** with `node --disable-warning=ExperimentalWarning ${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts check --at ship --json` on a branch that contains a known occurrence: the rule must fire exactly there.
-4. **Hand over.** `.sdlc/rules.json` is a harness file and CLAUDE.md is a protected harness file too, so show the person the entry or the line and ask them to add it (for CLAUDE.md, under `## Things Claude gets wrong`, adding that heading if it is missing). It goes through PR review like any harness change.
+4. **Hand over.** `.rig/rules.json` is a harness file and CLAUDE.md is a protected harness file too, so show the person the entry or the line and ask them to add it (for CLAUDE.md, under `## Things Claude gets wrong`, adding that heading if it is missing). It goes through PR review like any harness change.
 
 Rules that never fire for 90 days show up in `/rig:metrics` as prune candidates. Fire counts come from this machine's usage.jsonl, so treat prune candidates as suggestions to confirm. Remove them in the same way.
 

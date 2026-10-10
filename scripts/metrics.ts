@@ -88,7 +88,7 @@ export function cmdMetrics(args: Args): void {
   const rel = (c: Change, f: string): string => toPosix(path.relative(ROOT, path.join(c.dir, f)))
   const approvals = readJsonl<Approval>(APPROVALS)
   const prs = ghPrs()
-  const prFor = (c: Change): PullRequest | undefined => prs?.find(p => p.body?.includes(`.sdlc/changes/${c.slug}`))
+  const prFor = (c: Change): PullRequest | undefined => prs?.find(p => p.body?.includes(`.rig/changes/${c.slug}`))
   const needsGh: Metric = { value: null, n: 0, note: 'needs gh' }
   const m: Record<string, Metric> = {}
 
@@ -100,7 +100,7 @@ export function cmdMetrics(args: Args): void {
   // (accepted or shipped) out of every decided one (closed included); drafts and unknown statuses are undecided.
   const decidedInbox = inboxEntries().filter(e => e.status !== 'draft' && e.status !== 'unknown')
   m.inbox_survival = share(decidedInbox.filter(e => e.status !== 'closed').length, decidedInbox.length)
-  // Maintain (p.51): rig-watch's breach intents (.sdlc/intent/breach-<band>-<date>.md) a person decided: how many shipped as a fix,
+  // Maintain (p.51): rig-watch's breach intents (.rig/intent/breach-<band>-<date>.md) a person decided: how many shipped as a fix,
   // and how many were dismissed (closed), overall and per band. Dismissals also widen the band (watch.ts).
   const breaches = decidedInbox.filter(e => /^breach-[a-z0-9-]+-\d{8}\.md$/.test(e.file))
   const bandOf = (f: string): string => f.replace(/^breach-/, '').replace(/-\d{8}\.md$/, '')
@@ -172,7 +172,7 @@ export function cmdMetrics(args: Args): void {
     const ev = evalSources.find(e => e.source === `incident:${i.file}`)
     return ev ? hours(i.detected, firstCommitTime(ev.rel)) : null
   }))
-  // Govern: the production gate's log (.sdlc/gates.jsonl, written only by the managed hook) and the managed settings on this machine.
+  // Govern: the production gate's log (.rig/gates.jsonl, written only by the managed hook) and the managed settings on this machine.
   const waits: (number | null)[] = []
   const open = new Map<string, string>()
   for (const g of readJsonl<{ at?: string; decision?: string; session?: string }>(path.join(SDLC, 'gates.jsonl'))) {
@@ -295,7 +295,7 @@ export function cmdMetrics(args: Args): void {
   const ruleIds = parseRules(read(path.join(SDLC, 'rules.json'))).rules.map(r => r.id)
   const ninetyDays = Date.now() - 90 * 86_400_000
   const introduced = (id: string): number | null => {
-    const t = git(['log', '--format=%aI', `-S"${id}"`, '--', '.sdlc/rules.json'])?.split('\n').filter(Boolean).at(-1)
+    const t = git(['log', '--format=%aI', `-S"${id}"`, '--', '.rig/rules.json'])?.split('\n').filter(Boolean).at(-1)
     return t ? Date.parse(t) : null
   }
   const recent = new Set(fired.filter(e => Date.parse(e.at) >= ninetyDays).map(e => e.rule))

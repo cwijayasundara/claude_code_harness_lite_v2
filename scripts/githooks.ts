@@ -10,7 +10,7 @@ import { verificationFresh, sensorsFresh } from './stamp.ts'
 import { tierFromDiff, isProtected } from './sensors.ts'
 import { formatFindings, warnLines, isSource, type Finding } from './model.ts'
 
-export const HOOKS_DIR = '.sdlc/githooks'
+export const HOOKS_DIR = '.rig/githooks'
 const NAMES = ['pre-commit', 'pre-push'] as const
 const AT = { 'pre-commit': 'commit', 'pre-push': 'push' } as const
 
@@ -22,8 +22,8 @@ const script = (name: (typeof NAMES)[number]): string => [
   `if ! command -v node >/dev/null 2>&1 || ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'; then`,
   `  echo "rig: Node >= 22.18 not found, skipping ${name} (CI still checks)" >&2; exit 0`,
   'fi',
-  `[ -f .sdlc/bin/sdlc.ts ] || { echo "rig: .sdlc/bin/sdlc.ts is missing, skipping ${name} (run vendor, then hooks install)" >&2; exit 0; }`,
-  `exec node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts check --at ${AT[name]}`,
+  `[ -f .rig/bin/sdlc.ts ] || { echo "rig: .rig/bin/sdlc.ts is missing, skipping ${name} (run vendor, then hooks install)" >&2; exit 0; }`,
+  `exec node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts check --at ${AT[name]}`,
   '',
 ].join('\n')
 
@@ -47,13 +47,13 @@ export function hooksState(): { state: HooksState; path: string } {
 }
 
 export function installHooks(force = false): { ok: boolean; message: string } {
-  if (!exists(path.join(SDLC, 'bin', 'sdlc.ts'))) return { ok: false, message: 'git hooks run the vendored checker: run `vendor` (or `vendor --standalone`) first so .sdlc/bin/sdlc.ts exists' }
+  if (!exists(path.join(SDLC, 'bin', 'sdlc.ts'))) return { ok: false, message: 'git hooks run the vendored checker: run `vendor` (or `vendor --standalone`) first so .rig/bin/sdlc.ts exists' }
   // An older vendored checker does not know `check --at commit` and would refuse every commit.
-  if (!exists(path.join(SDLC, 'bin', 'githooks.ts'))) return { ok: false, message: '.sdlc/bin is older than the git hooks (no githooks.ts): re-run `vendor` to update it, then hooks install' }
+  if (!exists(path.join(SDLC, 'bin', 'githooks.ts'))) return { ok: false, message: '.rig/bin is older than the git hooks (no githooks.ts): re-run `vendor` to update it, then hooks install' }
   writeHookScripts()
   const { state, path: current } = hooksState()
   if (state === 'other' && !force) {
-    return { ok: false, message: `core.hooksPath is already ${current}, so it was left alone. Call rig from your existing hooks instead:\n  sh .sdlc/githooks/pre-commit\n  sh .sdlc/githooks/pre-push "$@"\nor re-run with --force to replace it.` }
+    return { ok: false, message: `core.hooksPath is already ${current}, so it was left alone. Call rig from your existing hooks instead:\n  sh .rig/githooks/pre-commit\n  sh .rig/githooks/pre-push "$@"\nor re-run with --force to replace it.` }
   }
   if (git(['config', '--local', 'core.hooksPath', HOOKS_DIR]) === null) return { ok: false, message: 'could not set core.hooksPath in the local git config (is this a git repository with a writable .git/config?)' }
   git(['config', '--local', '--unset', 'rig.githooks']) // clears an earlier opt-out; a missing key is fine
@@ -75,16 +75,16 @@ function wireAtSessionStart(): string {
   if (git(['config', '--get', 'rig.githooks']) === 'off') return ''
   const { state, path: current } = hooksState()
   if (state === 'installed') return ''
-  if (state === 'other') return `Git hooks: core.hooksPath is ${current}, so the rig commit and push checks are not wired. Do not change it yourself: ask the person to run \`node .sdlc/bin/sdlc.ts hooks install --force\` if they want rig's hooks.`
+  if (state === 'other') return `Git hooks: core.hooksPath is ${current}, so the rig commit and push checks are not wired. Do not change it yourself: ask the person to run \`node .rig/bin/sdlc.ts hooks install --force\` if they want rig's hooks.`
   const r = installHooks()
-  return r.ok ? `Git hooks: installed the rig pre-commit and pre-push checks (core.hooksPath = ${HOOKS_DIR}). Opt out with: node .sdlc/bin/sdlc.ts hooks uninstall` : `Git hooks: ${r.message}`
+  return r.ok ? `Git hooks: installed the rig pre-commit and pre-push checks (core.hooksPath = ${HOOKS_DIR}). Opt out with: node .rig/bin/sdlc.ts hooks uninstall` : `Git hooks: ${r.message}`
 }
 
 export function uninstallHooks(): string {
   git(['config', '--local', 'rig.githooks', 'off']) // session start will not wire them again
   if (hooksState().state !== 'installed') return 'rig git hooks are not installed (session start will not wire them; `hooks install` undoes this)'
   git(['config', '--local', '--unset', 'core.hooksPath'])
-  return 'rig git hooks uninstalled (core.hooksPath unset); the scripts stay in .sdlc/githooks'
+  return 'rig git hooks uninstalled (core.hooksPath unset); the scripts stay in .rig/githooks'
 }
 
 export function cmdHooks(args: Args): void {
@@ -139,7 +139,7 @@ export function cmdCheckPush(_args: Args): void {
   const refs = all.filter(judged)
   if (!refs.length) return out('sdlc check push: nothing to judge (a delete or tag push)')
   const t0 = Date.now()
-  const findings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.sdlc/sensors.json', message: e, fix: 'fix the file' }))
+  const findings: Finding[] = errors.map(e => ({ sensor: 'config', severity: 'block', file: '.rig/sensors.json', message: e, fix: 'fix the file' }))
   const notes = all.filter(r => !judged(r)).map(r => `${r.remoteRef}: skipped (a delete or tag)`)
   const head = git(['rev-parse', 'HEAD'])
   if (refs.some(r => r.localSha !== head) || git(['status', '--porcelain', '--untracked-files=no'])) notes.push('note: the full commands and quality ratchet run against your working tree, not the pushed commits')
@@ -156,7 +156,7 @@ export function cmdCheckPush(_args: Args): void {
     // A rig-managed change in flight is gated by /rig:pr; only ad-hoc work gets ship verdicts here.
     const shipSlugs = slug?.startsWith('adhoc-') ? [slug] : []
     // A rig change verified and sensed on exactly this tree, pushed from a clean checkout of it, needs neither again.
-    const stamped = Boolean(slug) && !slug?.startsWith('adhoc-') && r.localSha === head && !git(['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).sdlc'])
+    const stamped = Boolean(slug) && !slug?.startsWith('adhoc-') && r.localSha === head && !git(['status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude).rig'])
     const covered = stamped && verificationFresh(slug as string).fullCovered // knownRed is not tightened here either
     const result = runChecks({
       point: 'ship', diffs, config, rules, slugs: shipSlugs, commands: covered ? 'none' : 'full', budgetMs: config.githooks.budgetMs,
@@ -168,7 +168,7 @@ export function cmdCheckPush(_args: Args): void {
       else findings.push(...runQuality(slug, base).blocks.filter(b => b.sensor.startsWith('quality.') || b.sensor === 'invariant'))
     }
   }
-  if (!Object.values(config.quality).some(Boolean)) notes.push('quality ratchet skipped: no quality commands declared in .sdlc/sensors.json')
+  if (!Object.values(config.quality).some(Boolean)) notes.push('quality ratchet skipped: no quality commands declared in .rig/sensors.json')
   const blocks = findings.filter(f => f.severity === 'block')
   out([formatFindings(findings) || 'sdlc check push: pass', ...warnLines(findings), ...notes].join('\n'))
   process.exitCode = blocks.length ? 1 : 0

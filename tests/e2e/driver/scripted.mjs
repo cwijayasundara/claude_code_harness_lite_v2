@@ -7,7 +7,7 @@ const must = (r, what) => {
   return r.stdout
 }
 const intentMd = (sb, slug, p) => {
-  const cur = sb.read(`.sdlc/changes/${slug}/intent.md`)
+  const cur = sb.read(`.rig/changes/${slug}/intent.md`)
   const head = /^---\n[\s\S]*?\n---\n/.exec(cur)[0]
   return `${head}# ${p.title}\n\n## Problem\n${p.intent.problem}\n\n## Outcome\n${p.intent.outcome}\n\n## Non-goals\n${p.intent.nonGoals}\n\n## Risks\n${p.intent.risks}\n\n## Decisions\nnone\n\n## Open questions\nnone\n`
 }
@@ -15,7 +15,7 @@ const copy = (sb, files) => files.forEach(f => { fs.mkdirSync(path.dirname(sb.fi
 
 export function scriptedDriver(sb, phase) {
   const slug = phase.slug
-  const dir = `.sdlc/changes/${slug}`
+  const dir = `.rig/changes/${slug}`
   return {
     async begin() {
       sb.git('checkout', '-q', '-b', `sdlc/${slug}`)
@@ -40,7 +40,7 @@ export function scriptedDriver(sb, phase) {
           must(sb.sdlc(['run', '--slug', slug, '--expect-fail', '--', 'npm test']), 'red run')
           copy(sb, phase.impl)
           must(sb.sdlc(['run', '--slug', slug, '--', 'npm test']), 'green run')
-          const evalPath = phase.incident ? `.sdlc/evals/incident-${phase.incident.date}-${phase.incident.class}.json` : null
+          const evalPath = phase.incident ? `.rig/evals/incident-${phase.incident.date}-${phase.incident.class}.json` : null
           sb.write(`${dir}/plan.md`, ['## Files', ...phase.tests.concat(phase.impl).map(f => `- ${f.dest}`), ...(evalPath ? [`- ${evalPath}`] : []), '', '## Verification', '- npm test', ''].join('\n'))
           if (phase.incident) {
             const test = phase.tests[0].dest

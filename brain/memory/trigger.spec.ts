@@ -12,7 +12,7 @@ const plus = (ms: number) => new Date(T0.getTime() + ms)
 const sig = (i: number, dreamed = false): Signal =>
   ({ id: `id${i}`, ts: T0.toISOString(), session_id: 's', transcript_path: '', transcript_line: 0, kind: 'cmd-fail', data: {}, dreamed })
 const repo = (pending: number, dreamed = 0) => {
-  const dir = makeRepo({ '.sdlc/memory.json': JSON.stringify({ enabled: true }) }, { git: false })
+  const dir = makeRepo({ '.rig/memory.json': JSON.stringify({ enabled: true }) }, { git: false })
   writeSignals(dir, [...Array.from({ length: dreamed }, (_, i) => sig(100 + i, true)), ...Array.from({ length: pending }, (_, i) => sig(i))])
   return dir
 }
@@ -37,7 +37,7 @@ test('releaseLock with a token leaves a lock that another owner now holds', () =
   const dir = repo(0)
   assert.equal(acquireLock(dir, T0), true)
   const mine = readLock(dir)
-  const lock = path.join(dir, '.sdlc/memory/.cache/dream.lock')
+  const lock = path.join(dir, '.rig/memory/.cache/dream.lock')
   fs.writeFileSync(lock, JSON.stringify({ pid: 1, ts: plus(5).toISOString() }))
   releaseLock(dir, mine)
   assert.equal(fs.existsSync(lock), true)
@@ -53,7 +53,7 @@ test('lock: exclusive, released, stale after 15 min, corrupt counts as stale', (
   assert.equal(acquireLock(dir, plus(LOCK_STALE_MS + 1)), true)
   releaseLock(dir); releaseLock(dir)
   assert.equal(acquireLock(dir, T0), true)
-  const lock = path.join(dir, '.sdlc/memory/.cache/dream.lock')
+  const lock = path.join(dir, '.rig/memory/.cache/dream.lock')
   fs.writeFileSync(lock, 'garbage')
   const old = new Date(Date.now() - LOCK_STALE_MS - 60_000)
   fs.utimesSync(lock, old, old)
@@ -62,7 +62,7 @@ test('lock: exclusive, released, stale after 15 min, corrupt counts as stale', (
 
 test('a fresh corrupt or empty lock is not taken over', () => {
   const dir = repo(0)
-  const lock = path.join(dir, '.sdlc/memory/.cache/dream.lock')
+  const lock = path.join(dir, '.rig/memory/.cache/dream.lock')
   fs.mkdirSync(path.dirname(lock), { recursive: true })
   fs.writeFileSync(lock, '')
   assert.equal(acquireLock(dir, new Date()), false)

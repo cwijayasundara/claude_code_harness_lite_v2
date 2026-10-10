@@ -1,4 +1,4 @@
-// Copies the harness into a project. Plain `vendor` copies the checker CI runs (.sdlc/bin). `vendor --standalone`
+// Copies the harness into a project. Plain `vendor` copies the checker CI runs (.rig/bin). `vendor --standalone`
 // (alias --cloud) also writes the skills, agents and hooks into .claude/, so the repo needs no plugin, cloud sessions included.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -6,7 +6,7 @@ import { ROOT, SDLC, PLUGIN_ROOT, IS_VENDORED, read, out, fail, sanctionWrites, 
 import { writeHookScripts, installHooks } from './githooks.ts'
 
 export const VENDORED = ['core', 'graph', 'model', 'sensors', 'diffs', 'runs', 'check', 'ratchet', 'stamp', 'slicecheck', 'checkpoint', 'slices', 'stale', 'shards', 'quality', 'basetree', 'configparse', 'routing', 'context', 'scopes', 'toolchain', 'preflight', 'levels', 'verify', 'hooks', 'metrics', 'evals', 'inbox', 'watch', 'scorecard', 'points', 'timing', 'flow', 'pr', 'spend', 'sdlc', 'githooks', 'vendor']
-const SDLC_HOOK = '.sdlc/bin/sdlc.ts'
+const SDLC_HOOK = '.rig/bin/sdlc.ts'
 type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number; async?: boolean }[] }
 
 // Plugin references rewritten for a project copy: script paths, /rig:x skills, rig:x agents and the skill's name.
@@ -15,7 +15,7 @@ export function forProject(text: string): string {
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('<plugin>/scripts/sdlc.ts', SDLC_HOOK)
     .replaceAll('${CLAUDE_PLUGIN_ROOT}/workflows/', '.claude/workflows/')
-    .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.sdlc/templates/')
+    .replaceAll('${CLAUDE_PLUGIN_ROOT}/templates/', '.rig/templates/')
     .replace(/\/rig:([a-z][a-z-]*)/g, '/rig-$1')
     .replace(/\brig:(?!allow-secret)([a-z][a-z-]*)/g, 'rig-$1')
     .replace(/^name: (?!rig-)(\S+)$/m, 'name: rig-$1')
@@ -80,16 +80,16 @@ function vendorStandalone(written: string[], version: string): void {
     writeFile(`.claude/agents/rig-${file}`, forProject(read(path.join(PLUGIN_ROOT, 'agents', file))), written)
   }
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'templates'))) {
-    writeFile(`.sdlc/templates/${file}`, read(path.join(PLUGIN_ROOT, 'templates', file)), written)
+    writeFile(`.rig/templates/${file}`, read(path.join(PLUGIN_ROOT, 'templates', file)), written)
   }
   for (const file of fs.readdirSync(path.join(PLUGIN_ROOT, 'workflows')).filter(f => f.endsWith('.js'))) {
     writeFile(`.claude/workflows/${file}`, read(path.join(PLUGIN_ROOT, 'workflows', file)), written)
   }
-  for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, 'hooks')).filter(f => /\.(?:ts|tsx)$/.test(f))) writeFile(`.sdlc/mod/hooks/${f}`, read(path.join(PLUGIN_ROOT, 'hooks', f)), written)
-  writeFile('.sdlc/mod/hooks/hooks.json', JSON.stringify({ modules: ['./register.ts'] }, null, 2) + '\n', written)
-  writeFile('.sdlc/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'rig-mod', version }, null, 2) + '\n', written)
-  writeFile('.sdlc/mod/types/index.d.ts', read(path.join(PLUGIN_ROOT, 'types', 'index.d.ts')), written)
-  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'rig-local', owner: { name: 'sdlc' }, plugins: [{ name: 'rig-mod', source: './.sdlc/mod' }] }, null, 2) + '\n', written)
+  for (const f of fs.readdirSync(path.join(PLUGIN_ROOT, 'hooks')).filter(f => /\.(?:ts|tsx)$/.test(f))) writeFile(`.rig/mod/hooks/${f}`, read(path.join(PLUGIN_ROOT, 'hooks', f)), written)
+  writeFile('.rig/mod/hooks/hooks.json', JSON.stringify({ modules: ['./register.ts'] }, null, 2) + '\n', written)
+  writeFile('.rig/mod/.claude-plugin/plugin.json', JSON.stringify({ name: 'rig-mod', version }, null, 2) + '\n', written)
+  writeFile('.rig/mod/types/index.d.ts', read(path.join(PLUGIN_ROOT, 'types', 'index.d.ts')), written)
+  writeFile('.claude-plugin/marketplace.json', JSON.stringify({ name: 'rig-local', owner: { name: 'sdlc' }, plugins: [{ name: 'rig-mod', source: './.rig/mod' }] }, null, 2) + '\n', written)
   mergeHooks(written)
 }
 
@@ -104,18 +104,18 @@ export function cmdVendor(args: Args): void {
   if (older(process.versions.node, '22.18.0')) fail(`rig needs Node >= 22.18 (this is ${process.versions.node}); on an older Node its hooks fail silently and every gate is off`)
   const have = read(path.join(SDLC, 'bin', 'VERSION')).trim()
   const next = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
-  if (have && older(next, have) && !args.opt.force) fail(`.sdlc/bin is ${have}, newer than this plugin (${next}); upgrade the plugin first, or pass --force to downgrade`)
+  if (have && older(next, have) && !args.opt.force) fail(`.rig/bin is ${have}, newer than this plugin (${next}); upgrade the plugin first, or pass --force to downgrade`)
   try { if (read(path.join(ROOT, '.claude', 'settings.json'))) JSON.parse(read(path.join(ROOT, '.claude', 'settings.json'))) } catch { fail('.claude/settings.json is not plain JSON (comments or trailing commas?); fix it first so vendoring does not leave a half-written tree') }
   const written: string[] = []
-  for (const name of VENDORED) writeFile(`.sdlc/bin/${name}.ts`, read(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`)), written)
+  for (const name of VENDORED) writeFile(`.rig/bin/${name}.ts`, read(path.join(PLUGIN_ROOT, 'scripts', `${name}.ts`)), written)
   writeHookScripts(written)
   const version = (JSON.parse(read(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'))) as { version?: string }).version ?? 'unknown'
-  writeFile('.sdlc/bin/VERSION', `${version}\n`, written)
+  writeFile('.rig/bin/VERSION', `${version}\n`, written)
   const standalone = Boolean(args.opt.standalone || args.opt.cloud)
   if (standalone) vendorStandalone(written, version)
   sanctionWrites(written)
   out(standalone
-    ? `vendored sdlc ${version} standalone: .sdlc/bin, .claude/skills/rig-*, .claude/agents/rig-*, the mod in .sdlc/mod, hooks in .claude/settings.json. Commit .sdlc/ and .claude/; re-run from the plugin to upgrade.`
+    ? `vendored sdlc ${version} standalone: .rig/bin, .claude/skills/rig-*, .claude/agents/rig-*, the mod in .rig/mod, hooks in .claude/settings.json. Commit .rig/ and .claude/; re-run from the plugin to upgrade.`
     : `vendored sdlc ${version} into ${path.relative(ROOT, path.join(SDLC, 'bin'))} (${VENDORED.length} files). Commit it; CI runs the base branch's copy.`)
 }
 

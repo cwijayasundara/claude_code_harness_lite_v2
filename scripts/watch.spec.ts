@@ -67,8 +67,8 @@ test('pointOf: a number, or with count, the share of a JSON list matching it; an
 function watched(history: number[], band: Record<string, unknown> = {}): string {
   const repo = makeRepo()
   sdlc(repo, ['init'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ bands: [{ id: 'p95', query: 'cat value.txt', ...band }] }))
-  write(repo, '.sdlc/watch/p95.jsonl', history.map((v, i) => JSON.stringify({ at: new Date(Date.UTC(2026, 8, 1 + i)).toISOString(), value: v })).join('\n') + '\n')
+  write(repo, '.rig/sensors.json', JSON.stringify({ bands: [{ id: 'p95', query: 'cat value.txt', ...band }] }))
+  write(repo, '.rig/watch/p95.jsonl', history.map((v, i) => JSON.stringify({ at: new Date(Date.UTC(2026, 8, 1 + i)).toISOString(), value: v })).join('\n') + '\n')
   return repo
 }
 const watchJson = (repo: string) => JSON.parse(sdlc(repo, ['watch', '--json']).stdout)
@@ -82,7 +82,7 @@ test('watch records the point and prints the tier, the breach id and the tier-2 
   assert.match(v.breach, /^breach-p95-\d{8}$/)
   assert.equal(v.tools, 'Read,Bash(gh run view *)')
   assert.deepEqual(v.routes, ['pull_request', 'runbook:rollback'])
-  const rows = fs.readFileSync(path.join(repo, '.sdlc/watch/p95.jsonl'), 'utf8').trim().split('\n')
+  const rows = fs.readFileSync(path.join(repo, '.rig/watch/p95.jsonl'), 'utf8').trim().split('\n')
   assert.deepEqual({ value: JSON.parse(rows.at(-1) ?? '{}').value, tier: JSON.parse(rows.at(-1) ?? '{}').tier }, { value: 15, tier: 3 })
   write(repo, 'value.txt', '11\n')
   assert.equal(watchJson(repo)[0].breach, null, 'below tier 2 there is no breach')
@@ -91,11 +91,11 @@ test('watch records the point and prints the tier, the breach id and the tier-2 
 
 test('a failed query is tier 0 with no point; two misses in a row warn in status', () => {
   const repo = watched(history, { query: 'exit 3' })
-  const before = fs.readFileSync(path.join(repo, '.sdlc/watch/p95.jsonl'), 'utf8')
+  const before = fs.readFileSync(path.join(repo, '.rig/watch/p95.jsonl'), 'utf8')
   const [v] = watchJson(repo)
   assert.deepEqual([v.tier, v.value, v.breach], [0, null, null])
   assert.match(v.rule, /query failed/)
-  const rows = fs.readFileSync(path.join(repo, '.sdlc/watch/p95.jsonl'), 'utf8').slice(before.length).trim().split('\n')
+  const rows = fs.readFileSync(path.join(repo, '.rig/watch/p95.jsonl'), 'utf8').slice(before.length).trim().split('\n')
   assert.deepEqual(rows.map(r => JSON.parse(r).miss), [true], 'a miss, never a point')
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /watch: p95/)
   watchJson(repo)
@@ -104,22 +104,22 @@ test('a failed query is tier 0 with no point; two misses in a row warn in status
 
 test('a person closing a breach intent widens that band only', () => {
   const repo = watched(history)
-  const reset = () => write(repo, '.sdlc/watch/p95.jsonl', history.map(v => JSON.stringify({ at: '2026-09-01T00:00:00Z', value: v })).join('\n') + '\n')
+  const reset = () => write(repo, '.rig/watch/p95.jsonl', history.map(v => JSON.stringify({ at: '2026-09-01T00:00:00Z', value: v })).join('\n') + '\n')
   write(repo, 'value.txt', '14.25\n')
-  for (const d of [1, 2, 3]) write(repo, `.sdlc/intent/breach-other-2026090${d}.md`, '---\nstatus: closed\n---\n# another band\n')
+  for (const d of [1, 2, 3]) write(repo, `.rig/intent/breach-other-2026090${d}.md`, '---\nstatus: closed\n---\n# another band\n')
   assert.equal(watchJson(repo)[0].tier, 3, "another band's dismissals do not widen this one")
   reset()
-  write(repo, '.sdlc/intent/breach-p95-20260901.md', '---\nstatus: closed\n---\n# noise\n')
+  write(repo, '.rig/intent/breach-p95-20260901.md', '---\nstatus: closed\n---\n# noise\n')
   assert.equal(watchJson(repo)[0].tier, 0, 'one dismissal at step 0.5: z 3.25 no longer trips')
 })
 
 test('watch with no bands says so; the evidence is denied to the Edit tool in both templates', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
-  assert.match(sdlc(repo, ['watch']).stdout, /no bands in \.sdlc\/sensors\.json/)
+  assert.match(sdlc(repo, ['watch']).stdout, /no bands in \.rig\/sensors\.json/)
   const tpl = (f: string) => JSON.parse(fs.readFileSync(path.join(ROOT, 'templates', f), 'utf8')).permissions.deny as string[]
-  assert.ok(tpl('settings.json').includes('Edit(/.sdlc/watch/*.jsonl)'))
-  assert.ok(tpl('managed-settings.json').includes('Edit(./.sdlc/watch/*.jsonl)'))
+  assert.ok(tpl('settings.json').includes('Edit(/.rig/watch/*.jsonl)'))
+  assert.ok(tpl('managed-settings.json').includes('Edit(./.rig/watch/*.jsonl)'))
 })
 
 const yml = fs.readFileSync(path.join(ROOT, 'templates', 'rig-watch.yml'), 'utf8')
@@ -155,7 +155,7 @@ test('rig-watch decide: tier 2 or above becomes a breach to diagnose; below that
 })
 
 test('rig-watch decide: a breach already in the inbox or open as a branch is not raised twice; a bad id is refused', posix, () => {
-  assert.deepEqual(runCut('watch-decide', { 'watch.json': verdict(3), '.sdlc/intent/breach-p95-20261008.md': 'x' }).outputs, { rollback: 'false' })
+  assert.deepEqual(runCut('watch-decide', { 'watch.json': verdict(3), '.rig/intent/breach-p95-20261008.md': 'x' }).outputs, { rollback: 'false' })
   const branch = runCut('watch-decide', { 'watch.json': verdict(3) }, {}, 'case "$*" in *branches/rig-watch/breach-p95-20261008*) exit 0 ;; *) exit 1 ;; esac')
   assert.deepEqual(branch.outputs, { rollback: 'false' })
   const bad = runCut('watch-decide', { 'watch.json': verdict(3, { breach: 'breach-../../x-1' }) })
@@ -194,8 +194,8 @@ test('rig-watch intent: a checked diagnosis becomes a draft Stage 1 intent; cred
 test('rig-watch: hourly, a read-only model job, a model-free publish job, and a rollback behind the production environment', () => {
   assert.match(yml, /schedule:\n\s+- cron: '[^']+'/)
   assert.match(yml, /--model claude-haiku-5-5/)
-  assert.match(yml, /node --disable-warning=ExperimentalWarning \.sdlc\/bin\/sdlc\.ts watch --json > watch\.json/)
-  assert.match(yml, /actions\/cache@v4[\s\S]*path: \.sdlc\/watch/)
+  assert.match(yml, /node --disable-warning=ExperimentalWarning \.rig\/bin\/sdlc\.ts watch --json > watch\.json/)
+  assert.match(yml, /actions\/cache@v4[\s\S]*path: \.rig\/watch/)
   const detectJob = yml.slice(yml.indexOf('\n  detect:\n'), yml.indexOf('\n  diagnose:\n'))
   const diagnoseJob = yml.slice(yml.indexOf('\n  diagnose:\n'), yml.indexOf('\n  publish:\n'))
   const publishJob = yml.slice(yml.indexOf('\n  publish:\n'), yml.indexOf('\n  rollback:\n'))
@@ -221,7 +221,7 @@ test('rig-watch: hourly, a read-only model job, a model-free publish job, and a 
 test('metrics: findings_merged_share and dismissal_rate per band, from breach intents', () => {
   const repo = makeRepo()
   sdlc(repo, ['init'])
-  const intent = (f: string, status: string) => write(repo, `.sdlc/intent/${f}`, `---\nstatus: ${status}\n---\n# x\n`)
+  const intent = (f: string, status: string) => write(repo, `.rig/intent/${f}`, `---\nstatus: ${status}\n---\n# x\n`)
   intent('breach-p95-20261001.md', 'closed')
   intent('breach-p95-20261002.md', 'closed')
   intent('breach-p95-20261003.md', 'accepted')
@@ -229,8 +229,8 @@ test('metrics: findings_merged_share and dismissal_rate per band, from breach in
   intent('breach-ci-rate-20261002.md', 'closed')
   intent('breach-ci-rate-20261003.md', 'draft')
   intent('not-a-breach.md', 'closed')
-  sdlc(repo, ['new', 'fix-p95', '--type', 'bugfix', '--tier', 'S', '--source', '.sdlc/intent/breach-p95-20261003.md'])
-  write(repo, '.sdlc/changes/fix-p95/ship.json', '{}')
+  sdlc(repo, ['new', 'fix-p95', '--type', 'bugfix', '--tier', 'S', '--source', '.rig/intent/breach-p95-20261003.md'])
+  write(repo, '.rig/changes/fix-p95/ship.json', '{}')
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'ship')
   const m = JSON.parse(sdlc(repo, ['metrics', '--json']).stdout).metrics
@@ -241,7 +241,7 @@ test('metrics: findings_merged_share and dismissal_rate per band, from breach in
 
 test('dismissals widen a band by at most 2σ in total, so closing breach intents can never silence it', () => {
   const repo = watched(history, { step: 3 })
-  for (let d = 1; d <= 5; d++) write(repo, `.sdlc/intent/breach-p95-2026090${d}.md`, '---\nstatus: closed\n---\n# noise\n')
+  for (let d = 1; d <= 5; d++) write(repo, `.rig/intent/breach-p95-2026090${d}.md`, '---\nstatus: closed\n---\n# noise\n')
   write(repo, 'value.txt', '16.5\n')
   const [v] = watchJson(repo)
   assert.equal(v.tier, 3, 'z 5.5 is beyond 3 + the 2σ cap')
@@ -249,7 +249,7 @@ test('dismissals widen a band by at most 2σ in total, so closing breach intents
 
 test('rig-watch runs rig\'s own secrets scanner on the diagnosis before the intent is written', () => {
   const step = yml.slice(yml.indexOf('- name: Write the draft intent (no model)'), yml.indexOf('# watch-intent:start'))
-  assert.match(step, /node --disable-warning=ExperimentalWarning \.sdlc\/bin\/sdlc\.ts secrets diagnosis\.md > \/dev\/null \|\| \{[^}]*exit 1; \}/)
+  assert.match(step, /node --disable-warning=ExperimentalWarning \.rig\/bin\/sdlc\.ts secrets diagnosis\.md > \/dev\/null \|\| \{[^}]*exit 1; \}/)
 })
 
 test('docs: rig-watch setup, the Claude Tag handoff and the security row', () => {
@@ -266,7 +266,7 @@ test('rig-watch decide: an already-raised band still rolls back at tier 3, and t
     { id: 'p95', tier: 3, value: 15, mean: 11, sd: 1, rule: 'one point beyond 3σ', breach: 'breach-p95-20261008', tools: 'Read', routes: ['pull_request', 'runbook:rollback'] },
     { id: 'errors', tier: 2, value: 9, mean: 4, sd: 2, rule: 'two of three beyond 2σ', breach: 'breach-errors-20261008', tools: 'Read,Grep', routes: ['pull_request'] },
   ])
-  const r = runCut('watch-decide', { 'watch.json': two, '.sdlc/intent/breach-p95-20261008.md': 'raised at tier 2 this morning' }, {}, 'case "$*" in *rig-rehearse*) echo success ;; *) exit 1 ;; esac')
+  const r = runCut('watch-decide', { 'watch.json': two, '.rig/intent/breach-p95-20261008.md': 'raised at tier 2 this morning' }, {}, 'case "$*" in *rig-rehearse*) echo success ;; *) exit 1 ;; esac')
   assert.equal(r.code, 0, r.out)
   assert.equal(r.outputs.rollback, 'true', 'escalation to tier 3 is not lost to the same-day dedupe')
   assert.equal(r.outputs.breach, 'breach-errors-20261008', 'the second band is raised')

@@ -8,17 +8,17 @@ import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 const GREEN = 'node -e "process.exit(0)"'
 let repo: string
 function change(tier: string) {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: GREEN } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: GREEN } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/feat')
   sdlc(repo, ['new', 'feat', '--type', 'feature', '--tier', tier])
-  write(repo, '.sdlc/changes/feat/plan.md', '## Files\n- src/a.js\n- test/a.test.js\n## Slices\n### Task 1: a\n')
+  write(repo, '.rig/changes/feat/plan.md', '## Files\n- src/a.js\n- test/a.test.js\n## Slices\n### Task 1: a\n')
   write(repo, 'src/a.js', 'export const a = 1\n')
   write(repo, 'test/a.test.js', "test('B1 a', () => {})\n")
 }
 const run = () => sdlc(repo, ['run', '--slug', 'feat', '--', GREEN])
 const record = () => sdlc(repo, ['ratchet', 'record', 'feat', 'build', '--checks'])
-const state = () => JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/changes/feat/ratchet.json'), 'utf8'))
+const state = () => JSON.parse(fs.readFileSync(path.join(repo, '.rig/changes/feat/ratchet.json'), 'utf8'))
 beforeEach(() => { repo = makeRepo() })
 
 test('a green declared run on the current tree records the slice as done', () => {
@@ -76,8 +76,8 @@ test('--checks applies to the build node only', () => {
 test('--checks takes no reply: combined with --from it refuses', () => {
   change('M')
   run()
-  write(repo, '.sdlc/changes/feat/r.md', 'verdict: pass\n')
-  const r = sdlc(repo, ['ratchet', 'record', 'feat', 'build', '--checks', '--from', '.sdlc/changes/feat/r.md'])
+  write(repo, '.rig/changes/feat/r.md', 'verdict: pass\n')
+  const r = sdlc(repo, ['ratchet', 'record', 'feat', 'build', '--checks', '--from', '.rig/changes/feat/r.md'])
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /--checks takes no reply/)
   assert.equal(state().slices['1'], undefined)
@@ -86,9 +86,9 @@ test('--checks takes no reply: combined with --from it refuses', () => {
 test('a declared command that rewrites files is recorded without a tree, so it cannot clear a slice', () => {
   change('M')
   const rewrite = `node -e "require('fs').appendFileSync('src/a.js','//x\\n')"`
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: rewrite } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: rewrite } }))
   assert.equal(sdlc(repo, ['run', '--slug', 'feat', '--', rewrite]).code, 0)
-  const rows = fs.readFileSync(path.join(repo, '.sdlc/changes/feat/runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  const rows = fs.readFileSync(path.join(repo, '.rig/changes/feat/runs.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
   assert.equal(rows[0].tree, undefined)
   const r = record()
   assert.notEqual(r.code, 0)

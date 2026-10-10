@@ -9,7 +9,7 @@ import { makeRepo } from '../shared/testkit.ts'
 
 const D = '2026-10-09'
 const repo = (files: Record<string, string> = {}) => makeRepo(files, { git: false })
-const mem = (dir: string, f: string) => fs.readFileSync(path.join(dir, '.sdlc/memory', f), 'utf8')
+const mem = (dir: string, f: string) => fs.readFileSync(path.join(dir, '.rig/memory', f), 'utf8')
 const add = (text: string, file = 'commands.md', source = 's1') => ({ op: 'add', file, text, source })
 
 test('add writes the entry line, MEMORY.md and the cache .gitignore', () => {
@@ -19,7 +19,7 @@ test('add writes the entry line, MEMORY.md and the cache .gitignore', () => {
   assert.match(mem(dir, 'commands.md'), /^# commands\n> Build, test and run invocations that work\n\n- Run tests with `npm test`, not `npx jest`\. \[source: s1; added: 2026-10-09; id: m-[0-9a-f]{6}\]\n$/)
   assert.match(mem(dir, 'MEMORY.md'), /- \[\[commands\]\] \(1\)/)
   assert.equal(mem(dir, '.gitignore'), '.cache/\n')
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/gotchas.md')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory/gotchas.md')), false)
 })
 
 test('textProblem rules', () => {
@@ -37,7 +37,7 @@ test('unicode line separators are rejected, not stored as invisible raw lines', 
   const r = applyOps(dir, cfg, [add('a\u2028b c'), { ...add('fine words', 'deploy.md'), description: 'x\u2029y' }], D)
   assert.equal(r.added, 1)
   assert.deepEqual(r.rejected.map(x => x.reason), ['text must be one line'])
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/commands.md')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory/commands.md')), false)
   assert.match(mem(dir, 'deploy.md'), /^# deploy\n> \n/)
 })
 
@@ -53,7 +53,7 @@ test('text is stored trimmed and re-parses to the same entry', () => {
 test('rejected op log redacts secrets and caps each op at 1000 chars', () => {
   const dir = repo(), cfg = loadMemConfig(dir)
   applyOps(dir, cfg, [add('key password: hunter22'), add('y'.repeat(5000) + ' key password: hunter22')], D)
-  const log = fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/rejected.jsonl'), 'utf8')
+  const log = fs.readFileSync(path.join(dir, '.rig/memory/.cache/rejected.jsonl'), 'utf8')
   assert.equal(log.includes('hunter22'), false)
   for (const line of log.trim().split('\n')) assert.ok(line.length <= 1100)
 })
@@ -65,8 +65,8 @@ test('apply rejects bad ops and writes them to rejected.jsonl without touching m
     { op: 'merge', ids: ['m-ffffff'], text: 'x' }]
   const r = applyOps(dir, cfg, bad, D)
   assert.equal(r.rejected.length, bad.length); assert.equal(r.added, 0)
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/MEMORY.md')), false)
-  assert.equal(fs.readFileSync(path.join(dir, '.sdlc/memory/.cache/rejected.jsonl'), 'utf8').trim().split('\n').length, bad.length)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory/MEMORY.md')), false)
+  assert.equal(fs.readFileSync(path.join(dir, '.rig/memory/.cache/rejected.jsonl'), 'utf8').trim().split('\n').length, bad.length)
   assert.deepEqual(applyOps(dir, cfg, { not: 'array' }, D).rejected[0].reason, 'ops must be an array')
 })
 
@@ -101,7 +101,7 @@ test('ops apply in order; a later op on a removed id is rejected, earlier ones k
 })
 
 test('caps: maxFiles and maxEntriesPerFile', () => {
-  const dir = repo({ '.sdlc/memory.json': JSON.stringify({ maxFiles: 5, maxEntriesPerFile: 1 }) }), cfg = loadMemConfig(dir)
+  const dir = repo({ '.rig/memory.json': JSON.stringify({ maxFiles: 5, maxEntriesPerFile: 1 }) }), cfg = loadMemConfig(dir)
   assert.equal(applyOps(dir, cfg, [add('aa bb', 'extra.md')], D).added, 1)
   assert.equal(applyOps(dir, cfg, [add('cc dd', 'more.md')], D).rejected[0].reason, 'too many topic files')
   assert.equal(applyOps(dir, cfg, [add('ee ff', 'extra.md')], D).rejected[0].reason, 'topic file full')
@@ -117,11 +117,11 @@ test('writeStore refuses names that collide case-insensitively, before touching 
   const dir = repo(), s = loadStore(dir)
   s.set('memory.md', { file: 'memory.md', description: 'x', lines: [{ text: 'a b c', source: 's', added: D, id: 'm-aaaaaa' }] })
   assert.throws(() => writeStore(dir, s), /collide/)
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/MEMORY.md')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory/MEMORY.md')), false)
 })
 
 test('apply preserves hand-written lines and rebuilds MEMORY.md byte-identically', () => {
-  const dir = repo({ '.sdlc/memory/gotchas.md': '# gotchas\n> Traps\n\nPerson note: CI is slow on Mondays.\n' }), cfg = loadMemConfig(dir)
+  const dir = repo({ '.rig/memory/gotchas.md': '# gotchas\n> Traps\n\nPerson note: CI is slow on Mondays.\n' }), cfg = loadMemConfig(dir)
   applyOps(dir, cfg, [add('the db port is 5433', 'gotchas.md')], D)
   assert.match(mem(dir, 'gotchas.md'), /Person note: CI is slow on Mondays\.\n- the db port is 5433/)
   const before = [mem(dir, 'MEMORY.md'), mem(dir, 'gotchas.md')]
@@ -130,9 +130,9 @@ test('apply preserves hand-written lines and rebuilds MEMORY.md byte-identically
 })
 
 test('a failed write leaves existing memory unchanged', () => {
-  const dir = repo({ '.sdlc/memory/gotchas.md': '# gotchas\n> Traps\n\n- old [source: s; added: 2026-10-01; id: m-aaaaaa]\n' }), cfg = loadMemConfig(dir)
-  fs.mkdirSync(path.join(dir, '.sdlc/memory/commands.md'))
+  const dir = repo({ '.rig/memory/gotchas.md': '# gotchas\n> Traps\n\n- old [source: s; added: 2026-10-01; id: m-aaaaaa]\n' }), cfg = loadMemConfig(dir)
+  fs.mkdirSync(path.join(dir, '.rig/memory/commands.md'))
   assert.throws(() => applyOps(dir, cfg, [add('new gotcha here', 'gotchas.md')], D))
   assert.equal(mem(dir, 'gotchas.md'), '# gotchas\n> Traps\n\n- old [source: s; added: 2026-10-01; id: m-aaaaaa]\n')
-  assert.equal(fs.existsSync(path.join(dir, '.sdlc/memory/MEMORY.md')), false)
+  assert.equal(fs.existsSync(path.join(dir, '.rig/memory/MEMORY.md')), false)
 })

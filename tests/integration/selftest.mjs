@@ -39,7 +39,7 @@ const must = (r, what) => {
 // What `/rig:init --defaults` does, minus the model: sensors, stack levels, standalone install, preflight, CLAUDE.md.
 function onboard(sb, claudeMd) {
   must(sb.sdlc(['init']), 'init')
-  sb.write('.sdlc/sensors.json', JSON.stringify({ fast: { test: 'npm test' }, full: { test: 'npm test' } }, null, 2) + '\n')
+  sb.write('.rig/sensors.json', JSON.stringify({ fast: { test: 'npm test' }, full: { test: 'npm test' } }, null, 2) + '\n')
   must(sb.sdlc(['init', '--stack']), 'init --stack')
   must(sb.sdlc(['init', '--full']), 'init --full')
   sb.write('CLAUDE.md', claudeMd)
@@ -60,7 +60,7 @@ function markThen(sb, branch, fn) {
 // A scripted tier M feature through the whole route, the way the skills drive it.
 function shipBestsellers(sb) {
   const slug = 'bestsellers'
-  const dir = `.sdlc/changes/${slug}`
+  const dir = `.rig/changes/${slug}`
   sb.git('checkout', '-q', '-b', `sdlc/${slug}`)
   must(sb.sdlc(['new', slug, '--type', 'feature', '--tier', 'M']), 'new')
   sb.write(`${dir}/design.md`, [
@@ -128,14 +128,14 @@ const slug = shipBestsellers(shop)
 
 // Seeded-bad evidence: each must trip the assertion written to catch it.
 {
-  const approvals = shop.read('.sdlc/approvals.jsonl')
-  shop.write('.sdlc/approvals.jsonl', '')
+  const approvals = shop.read('.rig/approvals.jsonl')
+  shop.write('.rig/approvals.jsonl', '')
   shop.write('stray.txt', 'left behind\n')
   const c = new Checks('shop change with its approval removed and a stray file')
   await assertChange(c, shop, slug, { operator: OPERATOR, label: slug })
   // The CI check still passes here because it judges the committed tree, where the approval is intact.
   expect(c, [/approved exactly the gates/, /done \(nothing left/, /tree clean/, /no scope drift/])
-  shop.write('.sdlc/approvals.jsonl', approvals)
+  shop.write('.rig/approvals.jsonl', approvals)
   fs.rmSync(shop.file('stray.txt'))
 }
 {
@@ -160,7 +160,7 @@ const slug = shipBestsellers(shop)
 // approvals, so a tier M feature whose design approval was never committed still passes CI.
 {
   markThen(shop, 'kept2', () => {
-    shop.write('.sdlc/approvals.jsonl', '')
+    shop.write('.rig/approvals.jsonl', '')
     shop.commitAll('drop the design approval')
   })
   const c = new Checks('CI on a gated change with no approval committed')

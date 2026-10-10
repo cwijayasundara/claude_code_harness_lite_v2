@@ -15,9 +15,9 @@ const FILL_IN: Record<string, string> = {
 // One-time setup from /rig:init: turn memory on, optionally lay down placeholder topic files, add the given entries.
 // Never overwrites an existing memory.json or topic file, so a re-run only adds what is missing.
 export function seedMemory(root: string, ops: unknown, today: string, opts: { placeholders?: boolean } = {}): ApplyResult {
-  const cfgFile = path.join(root, '.sdlc/memory.json')
+  const cfgFile = path.join(root, '.rig/memory.json')
   if (!fs.existsSync(cfgFile)) writeJson(cfgFile, { enabled: true })
-  else if (readJson<Record<string, unknown>>(cfgFile, {}).enabled !== true) throw new Error('.sdlc/memory.json exists with memory disabled: not overriding it')
+  else if (readJson<Record<string, unknown>>(cfgFile, {}).enabled !== true) throw new Error('.rig/memory.json exists with memory disabled: not overriding it')
   if (opts.placeholders) {
     fs.mkdirSync(memDir(root), { recursive: true })
     for (const [file, description] of Object.entries(DEFAULT_TOPICS)) {

@@ -9,13 +9,13 @@ const E = '- Run tests with `npm test`; `npx jest` misses the loader. [source: s
 
 test('loadMemConfig defaults to disabled with spec defaults', () => {
   assert.deepEqual(loadMemConfig(makeRepo({}, { git: false })), { enabled: false, minSignals: 3, cooldownMin: 30, maxDreamsPerDay: 6, model: 'haiku', maxFiles: 12, maxEntriesPerFile: 80 })
-  const dir = makeRepo({ '.sdlc/memory.json': JSON.stringify({ enabled: true, minSignals: 1, model: 'sonnet' }) }, { git: false })
+  const dir = makeRepo({ '.rig/memory.json': JSON.stringify({ enabled: true, minSignals: 1, model: 'sonnet' }) }, { git: false })
   assert.equal(loadMemConfig(dir).enabled, true); assert.equal(loadMemConfig(dir).minSignals, 1); assert.equal(loadMemConfig(dir).model, 'sonnet')
 })
 
 test('loadMemConfig falls back on bad values', () => {
   for (const body of ['null', '"x"', '{{', JSON.stringify({ enabled: 'yes', minSignals: -1, cooldownMin: '5', model: 'a b; rm -rf' })]) {
-    const c = loadMemConfig(makeRepo({ '.sdlc/memory.json': body }, { git: false }))
+    const c = loadMemConfig(makeRepo({ '.rig/memory.json': body }, { git: false }))
     assert.equal(c.enabled, false); assert.equal(c.minSignals, 3); assert.equal(c.cooldownMin, 30); assert.equal(c.model, 'haiku')
   }
 })
@@ -39,8 +39,8 @@ test('parseTopic keeps non-entry lines', () => {
 
 test('loadStore has default topics, reads lowercase .md files, skips MEMORY.md and bad names', () => {
   const dir = makeRepo({
-    '.sdlc/memory/MEMORY.md': '# Memory\n', '.sdlc/memory/commands.md': `# commands\n> x\n\n${E}\n`,
-    '.sdlc/memory/Bad Name.md': `${E}\n`, '.sdlc/memory/notes.txt': `${E}\n`,
+    '.rig/memory/MEMORY.md': '# Memory\n', '.rig/memory/commands.md': `# commands\n> x\n\n${E}\n`,
+    '.rig/memory/Bad Name.md': `${E}\n`, '.rig/memory/notes.txt': `${E}\n`,
   }, { git: false })
   const s = loadStore(dir)
   assert.deepEqual([...s.keys()].sort(), ['commands.md', 'conventions.md', 'dead-ends.md', 'gotchas.md'])
@@ -51,7 +51,7 @@ test('loadStore has default topics, reads lowercase .md files, skips MEMORY.md a
 })
 
 test('loadStore ignores a memory.md file (collides with MEMORY.md on case-insensitive filesystems)', () => {
-  const dir = makeRepo({ '.sdlc/memory/memory.md': `# memory\n> x\n\n${E}\n` }, { git: false })
+  const dir = makeRepo({ '.rig/memory/memory.md': `# memory\n> x\n\n${E}\n` }, { git: false })
   assert.equal(allEntries(loadStore(dir)).length, 0)
   assert.equal(loadStore(dir).has('memory.md'), false)
 })
@@ -69,7 +69,7 @@ test('newId is m- plus 6 hex and extends on collision', () => {
 })
 
 test('searchEntries matches all terms case-insensitively in text or file name', () => {
-  const s = loadStore(makeRepo({ '.sdlc/memory/commands.md': `# commands\n> x\n\n${E}\n` }, { git: false }))
+  const s = loadStore(makeRepo({ '.rig/memory/commands.md': `# commands\n> x\n\n${E}\n` }, { git: false }))
   assert.equal(searchEntries(s, ['NPM', 'jest']).length, 1)
   assert.equal(searchEntries(s, ['commands']).length, 1)
   assert.equal(searchEntries(s, ['npm', 'pnpm']).length, 0)
@@ -80,7 +80,7 @@ test('buildMemoryMd lists topics with counts and recent entries, deterministic a
   s.get('commands.md')!.lines.push({ id: 'm-000001', text: 'old', source: 's', added: '2026-01-01' }, { id: 'm-000002', text: 'new', source: 's', added: '2026-02-01' })
   const md = buildMemoryMd(s)
   assert.equal(md, [
-    '# Memory', MEMORY_HEADER, 'Search with `/rig-brain:memory-find <terms>` or grep `.sdlc/memory/`.', '',
+    '# Memory', MEMORY_HEADER, 'Search with `/rig-brain:memory-find <terms>` or grep `.rig/memory/`.', '',
     '## Topics', '- [[commands]] (2): Build, test and run invocations that work', '',
     '## Recent', '- new ([[commands]], m-000002)', '- old ([[commands]], m-000001)', '',
   ].join('\n'))

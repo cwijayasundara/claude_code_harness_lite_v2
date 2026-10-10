@@ -4,7 +4,7 @@ import type { FlowStep, Status, Story, TurnPoint } from '../types'
 
 // The core script is TypeScript run by Node's built-in type stripping (Node >= 22.18).
 export function sdlcArgv(root: string, ...args: string[]): string[] {
-  const script = root.endsWith('/.sdlc/mod') ? `${root}/../bin/sdlc.ts` : `${root}/scripts/sdlc.ts`
+  const script = root.endsWith('/.rig/mod') ? `${root}/../bin/sdlc.ts` : `${root}/scripts/sdlc.ts`
   return ['node', '--disable-warning=ExperimentalWarning', script, ...args]
 }
 
@@ -31,7 +31,7 @@ export function stateChange(text: string): string | null | undefined {
   return value === undefined ? undefined : SLUG_RE.test(value) ? value : null
 }
 
-// Set at session start: true when this copy is the global plugin's and the project vendors its own (.sdlc/mod).
+// Set at session start: true when this copy is the global plugin's and the project vendors its own (.rig/mod).
 export const mod = { aside: false }
 
 // Pure display helpers for the band and the mission-control pane: no `$`, so both files can use them.

@@ -25,7 +25,7 @@ function gitCalls(args: string[]): { out: string; calls: string[] } {
 
 function shipped(slug: string, commit: boolean): void {
   sdlc(repo, ['new', slug, '--type', 'chore', '--tier', 'S'])
-  write(repo, `.sdlc/changes/${slug}/ship.json`, '{}\n')
+  write(repo, `.rig/changes/${slug}/ship.json`, '{}\n')
   if (commit) { gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', `ship ${slug}`) }
 }
 
@@ -51,15 +51,15 @@ test('status --band carries only the active change and skips the per-change warn
 
 // runs.jsonl is only Edit-protected: a shell append could forge a green row, so Stop runs its fast commands itself, always.
 test('Stop runs its fast commands even when a green run is recorded on this exact tree', () => {
-  const cmd = `node -e "require('fs').appendFileSync('.sdlc/count.txt','x')"`
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: cmd } }))
+  const cmd = `node -e "require('fs').appendFileSync('.rig/count.txt','x')"`
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: cmd } }))
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   hook(repo, 'prompt-submit', {})
   write(repo, 'src/a.js', 'export const a = 1\n')
   sdlc(repo, ['run', '--', cmd])
-  const count = (): number => fs.readFileSync(path.join(repo, '.sdlc/count.txt'), 'utf8').length
+  const count = (): number => fs.readFileSync(path.join(repo, '.rig/count.txt'), 'utf8').length
   assert.equal(count(), 1)
   hook(repo, 'stop', { session_id: 's1' })
   assert.equal(count(), 2, 'a recorded run never stands in for the gate')

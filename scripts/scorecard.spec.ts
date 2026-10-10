@@ -22,14 +22,14 @@ test('story: tokens, cost by node and value from the tier default', () => {
 })
 
 test('the architect can override value hours in plan.md, with a reason', () => {
-  write(repo, '.sdlc/changes/big/plan.md', '## Risks & rollback\nvalue_hours: 6 because the endpoint is additive and small\n')
+  write(repo, '.rig/changes/big/plan.md', '## Risks & rollback\nvalue_hours: 6 because the endpoint is additive and small\n')
   const s = JSON.parse(sdlc(repo, ['scorecard', 'big', '--json']).stdout)
   assert.equal(s.valueHours, 6)
   assert.equal(s.valueUsd, 600)
 })
 
 test('a value override without a reason is ignored', () => {
-  write(repo, '.sdlc/changes/big/plan.md', '## Risks & rollback\nvalue_hours: 6\n')
+  write(repo, '.rig/changes/big/plan.md', '## Risks & rollback\nvalue_hours: 6\n')
   assert.equal(JSON.parse(sdlc(repo, ['scorecard', 'big', '--json']).stdout).valueHours, 24)
 })
 
@@ -38,7 +38,7 @@ test('the scorecard markdown labels value as an estimate and lists rounds and au
   assert.match(md, /## Scorecard/)
   assert.match(md, /Cost \| \$2\.00/)
   assert.match(md, /Value \(estimate\) \| \$2,400 \(24 h × \$100\/h\)/)
-  assert.match(md, /Artifacts: `\.sdlc\/changes\/big\/`/)
+  assert.match(md, /Artifacts: `\.rig\/changes\/big\/`/)
 })
 
 test('the scorecard rejects a path-like or unknown slug', () => {
@@ -61,6 +61,6 @@ test('tokens and spend against budget per node', () => {
 })
 
 test('a value override whose reason is on the next line is ignored', () => {
-  write(repo, '.sdlc/changes/big/plan.md', 'value_hours: 6\nbecause x\n')
+  write(repo, '.rig/changes/big/plan.md', 'value_hours: 6\nbecause x\n')
   assert.equal(JSON.parse(sdlc(repo, ['scorecard', 'big', '--json']).stdout).valueHours, 24)
 })

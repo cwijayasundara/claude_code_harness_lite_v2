@@ -99,5 +99,5 @@ jobs:
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}-triage
         # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
         run: |
-          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
-          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"
+          if [ ! -f .rig/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"

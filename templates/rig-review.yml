@@ -57,7 +57,7 @@ jobs:
           # editing intent.md). Both come from the PR head, which the PR controls, so any doubt is Opus. rig-check's tier sensor
           # blocks a tier S or M change that reaches auth, payments, data or contracts until it is re-tiered; it does not pick this model.
           model=claude-opus-5-5; effort=high
-          slugs=$(git diff --name-only "origin/$BASE...HEAD" -- .sdlc/changes | cut -d/ -f3 | sort -u)
+          slugs=$(git diff --name-only "origin/$BASE...HEAD" -- .rig/changes | cut -d/ -f3 | sort -u)
           if [ -n "$slugs" ] && [ "$(printf '%s\n' "$slugs" | wc -l | tr -d ' ')" = 1 ]; then
             tier=$(node -e '
               const fs = require("fs"), dir = process.argv[1], rank = { S: 0, M: 1, L: 2 }
@@ -69,7 +69,7 @@ jobs:
                 const ity = (fm.match(/^type:[ \t]*["\x27]?([a-z-]+)["\x27]?[ \t]*$/m) || [])[1]
                 if (it && r.tier in rank && r.type !== "greenfield" && ity !== "greenfield") t = rank[it] > rank[r.tier] ? it : r.tier
               } catch {}
-              process.stdout.write(t)' ".sdlc/changes/$slugs")
+              process.stdout.write(t)' ".rig/changes/$slugs")
             case "$tier" in S) model=claude-sonnet-5-5; effort=medium ;; M) model=claude-sonnet-5-5; effort=high ;; esac
           fi
           # The one change this PR touches, so its CI cost counts toward that change's budget; anything doubtful is left out.
@@ -92,7 +92,7 @@ jobs:
             1. Review the PR diff in pr.diff. Read other files in the checkout only to confirm a finding.
                Report only findings you are at least 80% sure are real, on lines the diff changed, in this order:
                correctness, security, data loss, missing tests for a behaviour. Skip style and what linters or rig-check catch.
-            2. If the diff touches .sdlc/changes/<slug>/, check that each `## Contracts` line of its plan.md matches the diff.
+            2. If the diff touches .rig/changes/<slug>/, check that each `## Contracts` line of its plan.md matches the diff.
             3. Write the findings to review.md: one line each, `[high|medium] path:line: problem -> fix`, or "No findings."
                Contract mismatches are high. Quote only code from the diff.
             4. Write exactly one word to review-verdict.txt: HIGH if any finding is high severity, else PASS.
@@ -150,5 +150,5 @@ jobs:
           SLUG: ${{ needs.review.outputs.slug }}
         # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
         run: |
-          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
-          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" ${SLUG:+--slug "$SLUG"} || echo "::warning::rig spend publish failed"
+          if [ ! -f .rig/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" ${SLUG:+--slug "$SLUG"} || echo "::warning::rig spend publish failed"

@@ -23,7 +23,7 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
     step: { slug: 'add-login', node: 'build', verdict: 'continue', reason: '', command: '/rig:build add-login', round: 1 } as unknown,
     impact: { hold: false, slug: 'add-login', consumers: [] as string[], hits: 0 },
     fileFindings: [] as unknown[],
-    state: null as string | null, // .sdlc/STATE.md; null reads as the settings file (no change named)
+    state: null as string | null, // .rig/STATE.md; null reads as the settings file (no change named)
     impactFile: true,
     standalone: false,
     noFlow: false,
@@ -69,8 +69,8 @@ function worldOf(on: On, { contextTokens = 50_000, costUsd = 1 } = {}) {
   on('session.usage', () => ({
     value: { startedAt: 0, context: { tokens: world.contextTokens, window: 1_000_000, percent: 5 }, rateLimits: [], cost: { usd: world.costUsd } },
   }))
-  // .sdlc exists; the vendored approve skill exists only in a standalone repo.
-  on('fs.exists', ($, e) => ({ value: JSON.stringify(e).includes('impact.json') ? world.impactFile : JSON.stringify(e).includes('.sdlc/mod/') ? world.vendoredMod : !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
+  // .rig exists; the vendored approve skill exists only in a standalone repo.
+  on('fs.exists', ($, e) => ({ value: JSON.stringify(e).includes('impact.json') ? world.impactFile : JSON.stringify(e).includes('.rig/mod/') ? world.vendoredMod : !JSON.stringify(e).includes('.claude/skills/') || world.standalone }))
   on('agent.list', () => ({ value: [{ id: 'a1', description: 'slice 1', type: 'rig:implementer', status: 'running' }] }))
   on('ui.toast', ($, e) => {
     world.toasts.push(String(e.text ?? e))

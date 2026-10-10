@@ -1,9 +1,9 @@
-# rig watch (playbook p.49-51): closing the loop. Hourly, sdlc.ts watch reads each band in .sdlc/sensors.json, records the point and
+# rig watch (playbook p.49-51): closing the loop. Hourly, sdlc.ts watch reads each band in .rig/sensors.json, records the point and
 # prints a tier from Western Electric rules; detection runs no model. Tier 1 is logged. At tier 2 or 3, Haiku 5.5 diagnoses read-only
-# with the band's tier-2 tools, and a separate job with no model opens a pull request adding .sdlc/intent/breach-<band>-<date>.md
+# with the band's tier-2 tools, and a separate job with no model opens a pull request adding .rig/intent/breach-<band>-<date>.md
 # (status: draft) for a person to triage: accept it, or close it (status: closed), which widens that band. At tier 3, a band whose
 # routes include runbook:rollback also starts RIG_ROLLBACK_COMMAND in the `production` environment, only if the last rig-rehearse run
-# passed; give that environment required reviewers, so a person approves every rollback (a newer request replaces a pending one). Needs sdlc.ts vendored (.sdlc/bin).
+# passed; give that environment required reviewers, so a person approves every rollback (a newer request replaces a pending one). Needs sdlc.ts vendored (.rig/bin).
 # Copy to .github/workflows/ and list it in CODEOWNERS. Auth: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY. History lives in the Actions cache.
 name: rig-watch
 on:
@@ -35,7 +35,7 @@ jobs:
           node-version: 22
       - uses: actions/cache@v4
         with:
-          path: .sdlc/watch
+          path: .rig/watch
           key: rig-watch-${{ github.run_id }}
           restore-keys: rig-watch-
       - name: Detect (deterministic, no model)
@@ -43,7 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts watch --json > watch.json
+          node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts watch --json > watch.json
           cat watch.json
           # watch-decide:start
           node -e 'for (const v of JSON.parse(require("fs").readFileSync("watch.json", "utf8"))) if (v.value === null) console.log(`::warning::band ${v.id}: ${v.rule}`)'
@@ -65,7 +65,7 @@ jobs:
           i=0
           while breach=$(field "$i" breach); [ -n "$breach" ]; do
             need "$breach" '^breach-[a-z0-9-]+-[0-9]{8}$' "bad breach id"
-            if [ -e ".sdlc/intent/$breach.md" ] || gh api "repos/$GITHUB_REPOSITORY/branches/rig-watch/$breach" > /dev/null 2>&1; then
+            if [ -e ".rig/intent/$breach.md" ] || gh api "repos/$GITHUB_REPOSITORY/branches/rig-watch/$breach" > /dev/null 2>&1; then
               echo "$breach is already in the inbox or open as a pull request"; i=$((i + 1)); continue
             fi
             tools=$(field "$i" tools)
@@ -129,7 +129,7 @@ jobs:
           TIER: ${{ needs.detect.outputs.tier }}
           SUMMARY: ${{ needs.detect.outputs.summary }}
         run: |
-          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts secrets diagnosis.md > /dev/null || { echo "::error::the secrets scanner flagged diagnosis.md; not publishing it"; exit 1; }
+          node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts secrets diagnosis.md > /dev/null || { echo "::error::the secrets scanner flagged diagnosis.md; not publishing it"; exit 1; }
           # watch-intent:start
           printf '%s' "$BREACH" | grep -qE '^breach-[a-z0-9-]+-[0-9]{8}$' || { echo "::error::bad breach id"; exit 1; }
           [ -s diagnosis.md ] || { echo "::error::no diagnosis.md"; exit 1; }
@@ -169,8 +169,8 @@ jobs:
           [ "$(ls -A intent)" = "$BREACH.md" ] && [ -f "intent/$BREACH.md" ] && [ ! -L "intent/$BREACH.md" ] || { echo "::error::expected only $BREACH.md"; exit 1; }
           git config user.name rig-watch && git config user.email rig-watch@users.noreply.github.com
           git switch -c "rig-watch/$BREACH"
-          mkdir -p .sdlc/intent && mv "intent/$BREACH.md" ".sdlc/intent/$BREACH.md"
-          git add ".sdlc/intent/$BREACH.md" && git commit -qm "intent: $BREACH (draft from rig-watch)"
+          mkdir -p .rig/intent && mv "intent/$BREACH.md" ".rig/intent/$BREACH.md"
+          git add ".rig/intent/$BREACH.md" && git commit -qm "intent: $BREACH (draft from rig-watch)"
           git push origin "rig-watch/$BREACH"
           gh pr create --head "rig-watch/$BREACH" --title "Breach: $BREACH" --body "A monitored band left its range. Triage the draft intent: set status: accepted to act on it, or status: closed to dismiss it (each dismissal widens the band). Detection is deterministic; the diagnosis is Haiku 5.5's, read-only."
   rollback:
@@ -213,5 +213,5 @@ jobs:
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}-watch
         # The base branch may predate spend (the PR that adds it): skip with a notice, never fail.
         run: |
-          if [ ! -f .sdlc/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
-          node --disable-warning=ExperimentalWarning .sdlc/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"
+          if [ ! -f .rig/bin/spend.ts ]; then echo "::notice::rig spend not vendored on the base branch yet; CI spend not published"; exit 0; fi
+          node --disable-warning=ExperimentalWarning .rig/bin/sdlc.ts spend publish --ci --usd "$USD" --run "$RUN" || echo "::warning::rig spend publish failed"

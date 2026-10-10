@@ -28,14 +28,14 @@ export function staleness(slug: string, currentTree?: string | null): string[] {
 
 // The repo-level preflight report: missing in an initialised repo, or older than the config or a build manifest it judged.
 export function repoStale(root: string): string[] {
-  const sdlc = path.join(root, '.sdlc')
+  const sdlc = path.join(root, '.rig')
   if (!exists(path.join(sdlc, 'sensors.json'))) return []
   const report = path.join(sdlc, 'PREFLIGHT.md')
-  if (!exists(report)) return ['.sdlc/PREFLIGHT.md is missing: run /rig:init (it runs the preflight)']
+  if (!exists(report)) return ['.rig/PREFLIGHT.md is missing: run /rig:init (it runs the preflight)']
   const t = mtime(report)
   return [path.join(sdlc, 'sensors.json'), ...['package.json', 'pom.xml', 'go.mod', 'pyproject.toml', '.nvmrc', '.tool-versions'].map(f => path.join(root, f))]
     .filter(f => exists(f) && mtime(f) > t + TOLERANCE_MS)
-    .map(f => `.sdlc/PREFLIGHT.md is older than ${toPosix(path.relative(root, f))}: run preflight again`)
+    .map(f => `.rig/PREFLIGHT.md is older than ${toPosix(path.relative(root, f))}: run preflight again`)
 }
 
 export function openItems(slug: string): string[] {

@@ -69,7 +69,7 @@ test('a human verdict on budget or tier is a failure, not an approval', async ()
 })
 
 test('resolves policy concerns the approval refuses on, then approves and reports them', async () => {
-  const files = { '.sdlc/changes/s/design.md': '# d\n\n## Concerns\n- [policy-security] Rule 3: sku not validated → owner: <the team>\n- [policy-security] Rule 5: no audit → owner: <the team>\n' }
+  const files = { '.rig/changes/s/design.md': '# d\n\n## Concerns\n- [policy-security] Rule 3: sku not validated → owner: <the team>\n- [policy-security] Rule 5: no audit → owner: <the team>\n' }
   let tries = 0
   const sb = {
     read: f => files[f] ?? '',
@@ -78,7 +78,7 @@ test('resolves policy concerns the approval refuses on, then approves and report
       if (args[0] === 'next') return { status: 0, stdout: JSON.stringify(tries ? nextOf(null, 'ready') : nextOf('design', 'human')), stderr: '' }
       if (args[0] === 'status') return { status: 0, stdout: JSON.stringify({ changes: [{ slug: 's', next: { kind: 'approve', gate: 'design' } }] }), stderr: '' }
       if (args[0] === 'approve') {
-        if (!/→ resolved:/.test(files['.sdlc/changes/s/design.md'])) {
+        if (!/→ resolved:/.test(files['.rig/changes/s/design.md'])) {
           return { status: 1, stdout: '', stderr: 'resolve the concern(s) in s/design.md with their policy owners before approving: add " → resolved: <decision> (<owner>)" to each:\n  - [policy-security] Rule 3\n' }
         }
         tries++
@@ -90,7 +90,7 @@ test('resolves policy concerns the approval refuses on, then approves and report
   const out = await runRoute({ sb, slug: 's', driver: { step: async () => {} } })
   assert.deepEqual(out.approved, ['design'])
   assert.equal(out.resolvedConcerns, 2)
-  assert.match(files['.sdlc/changes/s/design.md'], /Rule 3: sku not validated.*→ resolved: .*\(operator\)/)
+  assert.match(files['.rig/changes/s/design.md'], /Rule 3: sku not validated.*→ resolved: .*\(operator\)/)
 })
 
 test('repeats: a live node may take a second session before it counts as no progress', async () => {
@@ -114,7 +114,7 @@ test('final review: an approve that exits 0 but leaves the gate open cannot loop
 
 test('final review: concerns are reported, capped, and a path with .. is refused', async () => {
   const mk = (file, lines) => {
-    const files = { [`.sdlc/changes/${file}`]: lines.join('\n') }
+    const files = { [`.rig/changes/${file}`]: lines.join('\n') }
     return {
       files,
       read: f => files[f] ?? '',

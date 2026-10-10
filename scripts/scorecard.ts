@@ -94,7 +94,7 @@ export function renderScorecard(slug: string): string {
     `| Tokens | ${s.tokens.toLocaleString('en-US')} |`,
     `| Cost | ${money(s.usd)} (${Object.entries(s.usdByNode).map(([n, u]) => `${n} ${money(u)}`).join(', ') || 'no turns logged'}) |`,
     `| Value (estimate) | ${money(s.valueUsd)} (${s.valueHours} h × $${config.value.rate}/h) |`,
-    '', `Artifacts: \`.sdlc/changes/${slug}/\``, '',
+    '', `Artifacts: \`.rig/changes/${slug}/\``, '',
   ].join('\n')
 }
 

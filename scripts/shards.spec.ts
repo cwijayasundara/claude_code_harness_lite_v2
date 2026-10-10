@@ -30,9 +30,9 @@ test('shard names are stable and say which directories they cover', () => {
   assert.deepEqual(makeShards([]), [])
 })
 
-test('the shards command splits the branch diff, leaves out .sdlc and ignored files, and prints JSON', () => {
+test('the shards command splits the branch diff, leaves out .rig and ignored files, and prints JSON', () => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', '{}')
+  write(repo, '.rig/sensors.json', '{}')
   write(repo, 'src/old-auth.ts', 'export const check = () => true\nexport const other = 1\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/big')
@@ -65,7 +65,7 @@ test('shards group by the key the caller gives, so a scope stays together', () =
 
 test('the shards command uses scope names when scopes are declared and (unscoped) for the rest', () => {
   const repo = makeRepo()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: { 'api/**': { name: 'api', root: 'api' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: { 'api/**': { name: 'api', root: 'api' } } }))
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'cfg')
   gitIn(repo, 'checkout', '-qb', 'sdlc/big')
   sdlc(repo, ['new', 'big', '--type', 'feature', '--tier', 'L'])

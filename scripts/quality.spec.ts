@@ -20,7 +20,7 @@ test('countFindings: exit, lines and json paths', () => {
 const LINT = 'node -e "const fs=require(\'fs\');for(const f of fs.readdirSync(\'src\'))if(fs.readFileSync(\'src/\'+f,\'utf8\').includes(\'TODO\'))console.log(f)"'
 
 function onBranch() {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { lint: { cmd: LINT, count: 'lines' }, security: { cmd: 'node -e "process.exit(0)"', count: 'exit' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { lint: { cmd: LINT, count: 'lines' }, security: { cmd: 'node -e "process.exit(0)"', count: 'exit' } } }))
   write(repo, 'src/a.js', '// TODO old debt\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
@@ -44,14 +44,14 @@ test('a category with no command is unmeasured, never pass', () => {
 
 test('a command that cannot run is fail, not pass', () => {
   onBranch()
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { deps: { cmd: 'definitely-not-a-command-xyz', count: 'json:a' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { deps: { cmd: 'definitely-not-a-command-xyz', count: 'json:a' } } }))
   const r = sdlc(repo, ['quality', 'tiny'])
   assert.equal(r.code, 2)
   assert.match(r.stdout, /deps\s+fail/)
 })
 
 test('with no base, quality categories are unmeasured and do not block', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { lint: { cmd: LINT, count: 'lines' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { lint: { cmd: LINT, count: 'lines' } } }))
   write(repo, 'src/a.js', '// TODO\n')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   const r = sdlc(repo, ['quality', 'tiny'])
@@ -79,14 +79,14 @@ test('the base worktree is removed afterwards and leaves no stale metadata', () 
 
 test('a slug that is a path or names no change is refused and nothing is written', () => {
   onBranch()
-  const before = fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')
+  const before = fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8')
   for (const args of [['quality', '../x'], ['quality', '..'], ['quality', '../..'], ['ratchet', 'show', '..'], ['ratchet', 'record', '../x', 'build']]) {
     const r = sdlc(repo, args, { input: 'verdict: pass\n' })
     assert.notEqual(r.code, 0, args.join(' '))
   }
-  assert.equal(fs.existsSync(`${repo}/.sdlc/ratchet.json`), false)
+  assert.equal(fs.existsSync(`${repo}/.rig/ratchet.json`), false)
   assert.equal(fs.existsSync(`${repo}/x`), false)
-  assert.equal(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8'), before)
+  assert.equal(fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8'), before)
   const r = sdlc(repo, ['quality', 'nosuch'])
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /no change named nosuch/)
@@ -94,7 +94,7 @@ test('a slug that is a path or names no change is refused and nothing is written
 
 test('the base worktree can use the checkout dependency directories', () => {
   write(repo, 'node_modules/fake-lint.js', "console.log('one')\n")
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { lint: { cmd: 'node node_modules/fake-lint.js', count: 'lines' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { lint: { cmd: 'node node_modules/fake-lint.js', count: 'lines' } } }))
   write(repo, '.gitignore', 'node_modules\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
@@ -106,14 +106,14 @@ test('the base worktree can use the checkout dependency directories', () => {
 test('the base cache is keyed on the command; unmeasured bases are not cached', () => {
   onBranch()
   sdlc(repo, ['quality', 'tiny'])
-  const cache = JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
+  const cache = JSON.parse(fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
   assert.deepEqual(cache.lint, { cmd: LINT, count: 'lines', n: 1 })
   const quiet = 'node -e "process.exit(0)"'
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { lint: { cmd: quiet, count: 'lines' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { lint: { cmd: quiet, count: 'lines' } } }))
   assert.match(sdlc(repo, ['quality', 'tiny']).stdout, /lint\s+base 0 → branch 0\s+pass/, 'a changed command is measured again on the base')
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ quality: { deps: { cmd: 'definitely-not-a-command-xyz', count: 'exit' } } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ quality: { deps: { cmd: 'definitely-not-a-command-xyz', count: 'exit' } } }))
   sdlc(repo, ['quality', 'tiny'])
-  assert.equal(JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality.deps, undefined)
+  assert.equal(JSON.parse(fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8')).baseline.quality.deps, undefined)
 })
 
 test('showMany reads many blobs in one call, maps a missing path to an empty string and survives a newline in a name', () => {
@@ -191,7 +191,7 @@ test('a test file that was text at base and became binary still counts at base',
 
 test('scoped quality counts only the affected scopes, and keys them by scope', () => {
   const lintApi = 'node -e "const fs=require(\'fs\');for(const f of fs.readdirSync(\'.\'))if(f.endsWith(\'.js\')&&fs.readFileSync(f,\'utf8\').includes(\'TODO\'))console.log(f)"'
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: {
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: {
     'api/**': { name: 'api', root: 'api', quality: { lint: { cmd: lintApi, count: 'lines' } } },
     'web/**': { name: 'web', root: 'web', quality: { lint: { cmd: 'node -e "console.log(\'always\')"', count: 'lines' } } },
   } }))
@@ -207,7 +207,7 @@ test('scoped quality counts only the affected scopes, and keys them by scope', (
 })
 
 test('with sparseBase the base is checked out sparse over the affected scopes and what they depend on', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ sparseBase: true, scopes: {
+  write(repo, '.rig/sensors.json', JSON.stringify({ sparseBase: true, scopes: {
     'api/**': { name: 'api', root: 'api', deps: ['shared/**'], quality: { lint: { cmd: 'node -e "const fs=require(\'fs\');console.log([fs.existsSync(\'../shared/s.js\'),fs.existsSync(\'../web/w.js\')].join(\'-\'))"', count: 'lines' } } },
     'shared/**': { name: 'shared', root: 'shared' }, 'web/**': { name: 'web', root: 'web' },
   } }))
@@ -217,13 +217,13 @@ test('with sparseBase the base is checked out sparse over the affected scopes an
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   write(repo, 'api/b.js', 'export {}\n')
   assert.equal(sdlc(repo, ['quality', 'tiny']).code, 0)
-  const cache = JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
+  const cache = JSON.parse(fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
   assert.equal(cache['api:lint'].n, 1, 'one output line on the base: shared exists there, web was left out')
 })
 
 test('the sparse base leaves out scopes the change does not reach (counted by what exists there)', () => {
   const probe = 'node -e "const fs=require(\'fs\');if(!fs.existsSync(\'../shared/s.js\'))console.log(\'no shared\');if(fs.existsSync(\'../web/w.js\'))console.log(\'web\')"'
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ sparseBase: true, scopes: {
+  write(repo, '.rig/sensors.json', JSON.stringify({ sparseBase: true, scopes: {
     'api/**': { name: 'api', root: 'api', deps: ['shared/**'], quality: { lint: { cmd: probe, count: 'lines' } } },
     'shared/**': { name: 'shared', root: 'shared' }, 'web/**': { name: 'web', root: 'web' },
   } }))
@@ -233,12 +233,12 @@ test('the sparse base leaves out scopes the change does not reach (counted by wh
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   write(repo, 'api/b.js', 'export {}\n')
   sdlc(repo, ['quality', 'tiny'])
-  const cache = JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
+  const cache = JSON.parse(fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
   assert.equal(cache['api:lint'].n, 0, 'shared is in the sparse base and web is not')
 })
 
 test('scoped quality: a failing affected command measures every scope and warns', () => {
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ affected: 'node -e "process.exit(3)"', scopes: {
+  write(repo, '.rig/sensors.json', JSON.stringify({ affected: 'node -e "process.exit(3)"', scopes: {
     'api/**': { name: 'api', root: 'api', quality: { lint: { cmd: 'node -e "0"', count: 'lines' } } },
     'web/**': { name: 'web', root: 'web', quality: { lint: { cmd: 'node -e "0"', count: 'lines' } } },
   } }))
@@ -255,7 +255,7 @@ test('scoped quality: a failing affected command measures every scope and warns'
 
 test('scoped quality: a scope root that resolves outside the repository fails instead of running there', () => {
   const outside = fs.mkdtempSync(`${repo}-outside-`)
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ scopes: {
+  write(repo, '.rig/sensors.json', JSON.stringify({ scopes: {
     'api/**': { name: 'api', root: 'link', quality: { lint: { cmd: 'node -e "0"', count: 'lines' } } },
   } }))
   fs.symlinkSync(outside, `${repo}/link`)
@@ -272,16 +272,16 @@ test('scoped quality: a scope root that resolves outside the repository fails in
 test('a cached base count is reused only for the same scope root and checkout', () => {
   const list = 'node -e "for(const f of require(\'fs\').readdirSync(\'.\'))console.log(f)"'
   const cfg = (root: string) => JSON.stringify({ scopes: { 'api/**': { name: 'api', root, quality: { lint: { cmd: list, count: 'lines' } } } } })
-  write(repo, '.sdlc/sensors.json', cfg('api'))
+  write(repo, '.rig/sensors.json', cfg('api'))
   write(repo, 'api/a.js', 'export {}\n'); write(repo, 'api2/a.js', 'export {}\n'); write(repo, 'api2/c.js', 'export {}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'base')
   gitIn(repo, 'checkout', '-qb', 'sdlc/tiny')
   sdlc(repo, ['new', 'tiny', '--type', 'chore', '--tier', 'S'])
   write(repo, 'api/b.js', 'export {}\n')
   sdlc(repo, ['quality', 'tiny'])
-  const cache = () => JSON.parse(fs.readFileSync(`${repo}/.sdlc/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
+  const cache = () => JSON.parse(fs.readFileSync(`${repo}/.rig/changes/tiny/ratchet.json`, 'utf8')).baseline.quality
   assert.equal(cache()['api:lint'].n, 1)
-  write(repo, '.sdlc/sensors.json', cfg('api2'))
+  write(repo, '.rig/sensors.json', cfg('api2'))
   sdlc(repo, ['quality', 'tiny'])
   assert.equal(cache()['api:lint'].n, 2, 'same key, command and base, another root: measured again')
   assert.equal(cache()['api:lint'].cwd, 'api2')

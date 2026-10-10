@@ -1,13 +1,13 @@
 import path from 'node:path'
 import { readJson } from '../shared/json.ts'
 
-export const MEM_DIR = '.sdlc/memory'
+export const MEM_DIR = '.rig/memory'
 export type MemConfig = { enabled: boolean; minSignals: number; cooldownMin: number; maxDreamsPerDay: number; model: string; maxFiles: number; maxEntriesPerFile: number }
 
 const num = (v: unknown, d: number): number => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d
 
 export function loadMemConfig(root: string): MemConfig {
-  const raw = readJson<unknown>(path.join(root, '.sdlc/memory.json'), {})
+  const raw = readJson<unknown>(path.join(root, '.rig/memory.json'), {})
   const c = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
   return {
     enabled: c.enabled === true,

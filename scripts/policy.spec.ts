@@ -10,7 +10,7 @@ const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf
 
 test('start reads an inbox file, passes --source, and never builds with --plan-only', () => {
   const start = read('skills/start/SKILL.md')
-  assert.match(start, /If the request is a file under `\.sdlc\/intent\/`/)
+  assert.match(start, /If the request is a file under `\.rig\/intent\/`/)
   assert.match(start, /--source <that path>/)
   assert.match(start, /`--plan-only`[^\n]*never build/)
   assert.match(start, /Tier S fast path\*\* \(not with `--plan-only`;/)
@@ -27,7 +27,7 @@ test('design, plan and spec apply policy skills and record conflicts as ## Conce
 test('the intent skill writes a draft inbox file in the playbook form and hands it to the product owner', () => {
   const text = read('skills/intent/SKILL.md')
   assert.match(text, /^name: intent$/m)
-  assert.match(text, /\.sdlc\/intent\/<kebab-name>\.md/)
+  assert.match(text, /\.rig\/intent\/<kebab-name>\.md/)
   assert.match(text, /status: draft/)
   for (const h of ['## Problem', '## Proposed outcome', '## Affected users and systems', '## Constraints', '## Open questions']) assert.ok(text.includes(h), h)
   assert.match(text, /status: accepted/)
@@ -50,7 +50,7 @@ test('new does not scaffold policy; plain init does not; init --full scaffolds o
   const repo = makeRepo()
   const file = path.join(repo, '.claude/skills/policy-security/SKILL.md')
   sdlc(repo, ['new', 'x', '--type', 'chore', '--tier', 'S'])
-  assert.equal(fs.existsSync(file), false, 'new initialises .sdlc but writes no policy skill')
+  assert.equal(fs.existsSync(file), false, 'new initialises .rig but writes no policy skill')
   sdlc(repo, ['init'])
   assert.equal(fs.existsSync(file), false, 'plain init does not write policy skill')
   const r = sdlc(repo, ['init', '--full'])

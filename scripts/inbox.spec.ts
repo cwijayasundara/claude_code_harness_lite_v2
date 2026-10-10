@@ -1,4 +1,4 @@
-// The intent inbox (.sdlc/intent/): files people write before a change exists, and the changes that come from them.
+// The intent inbox (.rig/intent/): files people write before a change exists, and the changes that come from them.
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -8,25 +8,25 @@ import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 let repo: string
 beforeEach(() => { repo = makeRepo() })
 const intent = (file: string, fm: string, body = '## Problem\nCustomers phone to ask where their claim is.\n') =>
-  write(repo, `.sdlc/intent/${file}`, `---\n${fm}\n---\n# Intent\n\n${body}`)
+  write(repo, `.rig/intent/${file}`, `---\n${fm}\n---\n# Intent\n\n${body}`)
 
 test('new --source records the inbox file in intent.md and refuses paths outside the inbox', () => {
   intent('claims-status.md', 'status: accepted')
-  const ok = sdlc(repo, ['new', 'claims-status', '--type', 'feature', '--tier', 'M', '--source', '.sdlc/intent/claims-status.md'])
+  const ok = sdlc(repo, ['new', 'claims-status', '--type', 'feature', '--tier', 'M', '--source', '.rig/intent/claims-status.md'])
   assert.equal(ok.code, 0, ok.stderr)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/changes/claims-status/intent.md'), 'utf8'), /^source: \.sdlc\/intent\/claims-status\.md$/m)
-  const bad = ['../x.md', '.sdlc/intent/../../etc.md', '.sdlc/intent/missing.md', '.sdlc/intent/claims-status.txt', 'README.md']
+  assert.match(fs.readFileSync(path.join(repo, '.rig/changes/claims-status/intent.md'), 'utf8'), /^source: \.rig\/intent\/claims-status\.md$/m)
+  const bad = ['../x.md', '.rig/intent/../../etc.md', '.rig/intent/missing.md', '.rig/intent/claims-status.txt', 'README.md']
   bad.forEach((source, i) => {
     const r = sdlc(repo, ['new', `other-${i}`, '--source', source])
     assert.notEqual(r.code, 0, source)
     assert.match(r.stderr, /--source/, source)
-    assert.equal(fs.existsSync(path.join(repo, `.sdlc/changes/other-${i}`)), false, `${source}: no change folder is created`)
+    assert.equal(fs.existsSync(path.join(repo, `.rig/changes/other-${i}`)), false, `${source}: no change folder is created`)
   })
 })
 
 test('new without --source writes no source line', () => {
   sdlc(repo, ['new', 'plain', '--type', 'chore', '--tier', 'S'])
-  assert.doesNotMatch(fs.readFileSync(path.join(repo, '.sdlc/changes/plain/intent.md'), 'utf8'), /^source:/m)
+  assert.doesNotMatch(fs.readFileSync(path.join(repo, '.rig/changes/plain/intent.md'), 'utf8'), /^source:/m)
 })
 
 type Entry = { file: string; status: string; change: string | null; type: string | null; tier: string | null; model: string }
@@ -37,8 +37,8 @@ test('inbox lists every intent with its status; shipped comes from the change th
   intent('b-closed.md', 'status: closed')
   intent('c-shipped.md', 'status: accepted')
   intent('d-odd.md', 'status: maybe')
-  sdlc(repo, ['new', 'c-change', '--type', 'chore', '--tier', 'S', '--source', '.sdlc/intent/c-shipped.md'])
-  write(repo, '.sdlc/changes/c-change/ship.json', '{}')
+  sdlc(repo, ['new', 'c-change', '--type', 'chore', '--tier', 'S', '--source', '.rig/intent/c-shipped.md'])
+  write(repo, '.rig/changes/c-change/ship.json', '{}')
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'ship c')
   assert.deepEqual(inbox().map(e => [e.file, e.status, e.change]), [
@@ -52,7 +52,7 @@ test('--pending: accepted, no change, a kebab name, and no rig-spec branch on th
   intent('three.md', 'status: draft')
   intent('Has Space.md', 'status: accepted')
   intent('four.md', 'status: accepted')
-  sdlc(repo, ['new', 'four-change', '--type', 'chore', '--tier', 'S', '--source', '.sdlc/intent/four.md'])
+  sdlc(repo, ['new', 'four-change', '--type', 'chore', '--tier', 'S', '--source', '.rig/intent/four.md'])
   gitIn(repo, 'add', '-A')
   gitIn(repo, 'commit', '-qm', 'inbox')
   gitIn(repo, 'update-ref', 'refs/remotes/origin/sdlc/intent-two', 'HEAD')
@@ -76,7 +76,7 @@ test('an empty or missing inbox lists nothing', () => {
 test('status names accepted intents that have no change yet; the per-turn band does not read the inbox', () => {
   intent('one.md', 'status: accepted')
   sdlc(repo, ['new', 'other', '--type', 'chore', '--tier', 'S'])
-  assert.match(sdlc(repo, ['status']).stdout, /^warn: intent one\.md is accepted and has no change: \/rig:start \.sdlc\/intent\/one\.md$/m)
+  assert.match(sdlc(repo, ['status']).stdout, /^warn: intent one\.md is accepted and has no change: \/rig:start \.rig\/intent\/one\.md$/m)
   assert.doesNotMatch(sdlc(repo, ['status', '--json', '--band']).stdout, /one\.md/)
 })
 
@@ -92,8 +92,8 @@ const next = (slug: string): StepJson => JSON.parse(sdlc(repo, ['next', slug, '-
 
 test('a published draft (source:, no ratchet.json) waits for /rig-approve tier before any node, then takes its own path', () => {
   intent('fix-z.md', 'status: accepted\ntype: bugfix\ntier: S')
-  assert.equal(sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.sdlc/intent/fix-z.md']).code, 0)
-  fs.rmSync(path.join(repo, '.sdlc/changes/fix-z/ratchet.json'))
+  assert.equal(sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.rig/intent/fix-z.md']).code, 0)
+  fs.rmSync(path.join(repo, '.rig/changes/fix-z/ratchet.json'))
   const waiting = next('fix-z')
   assert.equal(waiting.verdict, 'human')
   assert.match(waiting.command, /^\/rig-approve fix-z tier S bugfix$/)
@@ -108,8 +108,8 @@ test('a published draft (source:, no ratchet.json) waits for /rig-approve tier b
 
 test('status names the same next command as next while a published draft waits for its tier', () => {
   intent('fix-z.md', 'status: accepted\ntype: bugfix\ntier: S')
-  sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.sdlc/intent/fix-z.md'])
-  fs.rmSync(path.join(repo, '.sdlc/changes/fix-z/ratchet.json'))
+  sdlc(repo, ['new', 'fix-z', '--type', 'bugfix', '--tier', 'S', '--source', '.rig/intent/fix-z.md'])
+  fs.rmSync(path.join(repo, '.rig/changes/fix-z/ratchet.json'))
   const out = sdlc(repo, ['status']).stdout
   assert.match(out, /^next: \/rig-approve fix-z tier S bugfix$/m)
   assert.doesNotMatch(out, /^next: \/rig:design/m)
@@ -117,7 +117,7 @@ test('status names the same next command as next while a published draft waits f
 
 test('a legacy change with no source: and no recorded tier keeps the old behaviour', () => {
   sdlc(repo, ['new', 'old-y', '--type', 'bugfix', '--tier', 'S'])
-  fs.rmSync(path.join(repo, '.sdlc/changes/old-y/ratchet.json'))
+  fs.rmSync(path.join(repo, '.rig/changes/old-y/ratchet.json'))
   const s = next('old-y')
   assert.equal(s.verdict, 'continue')
   assert.equal(s.node, 'design')

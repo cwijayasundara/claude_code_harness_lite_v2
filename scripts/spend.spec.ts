@@ -93,7 +93,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { makeRepo, sdlc, write, gitIn } from './testkit.ts'
 
-// One bare remote, two clones (A and B), each with its own .sdlc ledger.
+// One bare remote, two clones (A and B), each with its own .rig ledger.
 function team(): { a: string; b: string; remote: string } {
   const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-remote-'))
   execFileSync('git', ['init', '-q', '--bare', remote])
@@ -102,10 +102,10 @@ function team(): { a: string; b: string; remote: string } {
   gitIn(a, 'push', '-q', 'origin', 'main')
   const b = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-clone-'))
   execFileSync('git', ['clone', '-q', remote, b])
-  for (const r of [a, b]) write(r, '.sdlc/sensors.json', JSON.stringify({ budget: { teamMonthlyUsd: 10, changeUsd: { M: 4 } } }))
+  for (const r of [a, b]) write(r, '.rig/sensors.json', JSON.stringify({ budget: { teamMonthlyUsd: 10, changeUsd: { M: 4 } } }))
   return { a, b, remote }
 }
-const ledger = (repo: string, rows: object[]) => fs.appendFileSync(path.join(repo, '.sdlc/usage.jsonl'), rows.map(r => JSON.stringify(r) + '\n').join(''))
+const ledger = (repo: string, rows: object[]) => fs.appendFileSync(path.join(repo, '.rig/usage.jsonl'), rows.map(r => JSON.stringify(r) + '\n').join(''))
 const spendRow = (usd: number, change: string | null = null) => ({ at: new Date().toISOString(), kind: 'main', change, stage: 'build', usd })
 const status = (repo: string, extra: string[] = []) => JSON.parse(sdlc(repo, ['spend', 'status', '--json', ...extra]).stdout)
 const lsRef = (repo: string) => gitIn(repo, 'ls-tree', '-r', '--name-only', 'refs/rig/spend').split('\n').filter(Boolean)
@@ -143,12 +143,12 @@ test('the clone id lives in the ledger: the first spend-id row wins, and a new l
   const { a } = team()
   ledger(a, [spendRow(2)])
   sdlc(a, ['spend', 'publish'])
-  const first = (JSON.parse(fs.readFileSync(path.join(a, '.sdlc/usage.jsonl'), 'utf8').split('\n').find(l => l.includes('spend-id')) ?? '{}') as { id: string }).id
+  const first = (JSON.parse(fs.readFileSync(path.join(a, '.rig/usage.jsonl'), 'utf8').split('\n').find(l => l.includes('spend-id')) ?? '{}') as { id: string }).id
   assert.match(first, /^[0-9a-f]{12}$/)
   ledger(a, [{ at: new Date().toISOString(), kind: 'event', change: null, stage: null, event: 'spend-id', id: 'ffffffffffff' }])
   sdlc(a, ['spend', 'publish'])
   assert.ok(!lsRef(a).some(p => p.includes('ffffffffffff')), 'a later forged id is ignored')
-  fs.rmSync(path.join(a, '.sdlc/usage.jsonl'))
+  fs.rmSync(path.join(a, '.rig/usage.jsonl'))
   ledger(a, [spendRow(1)])
   sdlc(a, ['spend', 'publish'])
   assert.equal(status(a, ['--no-fetch']).spentUsd, 3, 'old file (2) plus the new clone file (1)')
@@ -268,7 +268,7 @@ test('inherited-key slugs (constructor, toString) cannot break rollups, next, st
   sdlc(a, ['spend', 'publish'])
   sdlc(a, ['spend', 'status']) // fills the cache at the current tip
   const tip = gitIn(a, 'rev-parse', 'refs/rig/spend')
-  fs.writeFileSync(path.join(a, '.sdlc/spend-cache.json'), JSON.stringify({ tip, files: 'x', bad: [] }))
+  fs.writeFileSync(path.join(a, '.rig/spend-cache.json'), JSON.stringify({ tip, files: 'x', bad: [] }))
   assert.equal(sdlc(a, ['spend', 'status']).code, 0)
   assert.equal(status(a).spentUsd, 4, 'the corrupted cache is rebuilt from the ref')
   assert.equal(sdlc(a, ['next', 'add-login', '--json']).code, 0)

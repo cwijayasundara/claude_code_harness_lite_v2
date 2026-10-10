@@ -6,7 +6,7 @@ import { WIKI_DIR } from './core.ts'
 import { SECRET_PATH } from '../shared/secrets.ts'
 
 const SOURCE = /\.(tsx?|jsx?|mjs|cjs|py|go|java)$/
-const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next', '__pycache__', '.venv', 'vendor'])
+const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next', '__pycache__', '.venv', 'vendor', '.rig', '.sdlc', '.claude'])
 
 function gitFiles(root: string): string[] | null {
   const r = spawnSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })

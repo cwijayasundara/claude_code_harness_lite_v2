@@ -50,20 +50,20 @@ function declareStackLevels(opt: string | true): string {
   const stacks = JSON.parse(read(path.join(PLUGIN_ROOT, 'templates', 'stacks.json'))) as Record<string, { levels: Record<string, string> }>
   const name = typeof opt === 'string' ? opt : STACK_MARKERS.find(([f]) => exists(path.join(ROOT, f)))?.[1]
   const stack = name ? stacks[name] : undefined
-  if (!name || !stack) return `no stack template for ${name ?? 'this directory'} (known: ${Object.keys(stacks).join(', ')}); declare levels in .sdlc/sensors.json yourself`
+  if (!name || !stack) return `no stack template for ${name ?? 'this directory'} (known: ${Object.keys(stacks).join(', ')}); declare levels in .rig/sensors.json yourself`
   const file = path.join(SDLC, 'sensors.json')
-  if ((git(['ls-tree', '-r', '--name-only', 'HEAD']) ?? '').split('\n').includes('.sdlc/sensors.json')) return '.sdlc/sensors.json is committed; changing it is a reviewed harness edit, not onboarding'
+  if ((git(['ls-tree', '-r', '--name-only', 'HEAD']) ?? '').split('\n').includes('.rig/sensors.json')) return '.rig/sensors.json is committed; changing it is a reviewed harness edit, not onboarding'
   if (listChanges().length) return 'a change already exists; --stack is for onboarding only'
   let cfg: Record<string, unknown> = {}
   if (exists(file)) {
-    try { cfg = JSON.parse(read(file)) as Record<string, unknown> } catch { return '.sdlc/sensors.json does not parse; not touching it' }
+    try { cfg = JSON.parse(read(file)) as Record<string, unknown> } catch { return '.rig/sensors.json does not parse; not touching it' }
   }
   if (cfg.levels && Object.keys(cfg.levels as object).length) return 'levels already declared; left as they are'
   const unit = stack.levels.unit ?? ''
   cfg.levels = { ...stack.levels, acceptance: unit, api: unit }
   if (!cfg.fast && !cfg.full && unit) { cfg.fast = { test: unit }; cfg.full = { test: unit } }
   fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
-  sanctionWrites(['.sdlc/sensors.json'])
+  sanctionWrites(['.rig/sensors.json'])
   return `declared levels for ${name}: ${Object.entries(cfg.levels as Record<string, string>).map(([k, v]) => `${k}=${v}`).join(', ')} (acceptance and api default to the unit command; point them at a real e2e or HTTP test when you have one)`
 }
 
@@ -77,7 +77,7 @@ function cmdInit(args: Args): void {
   const guides = path.join(SDLC, 'guides')
   if (!exists(guides) && exists(path.join(PLUGIN_ROOT, 'guides'))) {
     fs.cpSync(path.join(PLUGIN_ROOT, 'guides'), guides, { recursive: true })
-    sanctionWrites(fs.readdirSync(guides).map(f => `.sdlc/guides/${f}`))
+    sanctionWrites(fs.readdirSync(guides).map(f => `.rig/guides/${f}`))
   }
   out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}${newRepo ? ' (ran git init: no repository was here)' : ''}`)
   if (args.opt.stack) out(declareStackLevels(args.opt.stack))
@@ -86,14 +86,14 @@ function cmdInit(args: Args): void {
 
 function cmdNew(args: Args): void {
   const slug = args.pos[0]
-  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N] [--source .sdlc/intent/<file>.md]')
+  if (!slug || !SLUG_RE.test(slug)) fail('usage: new <kebab-slug> --type <type> --tier S|M|L [--title "..."] [--points N] [--source .rig/intent/<file>.md]')
   const type = optString(args, 'type') ?? 'feature'
   const tier = optString(args, 'tier') ?? 'M'
   if (!isChangeType(type)) fail(`unknown type "${type}"; one of ${Object.keys(PATHS).join(', ')}`)
   if (!isTier(tier)) fail('tier must be S, M or L')
-  // An inbox file only: a plain kebab .md name under .sdlc/intent/ that exists (no `..`, no other directory).
+  // An inbox file only: a plain kebab .md name under .rig/intent/ that exists (no `..`, no other directory).
   const source = optString(args, 'source')
-  if (source !== undefined && (!/^\.sdlc\/intent\/[a-z0-9][a-z0-9-]{0,60}\.md$/.test(source) || !exists(path.join(ROOT, source)))) fail(`--source must name an existing .sdlc/intent/<kebab-name>.md file, not "${source}"`)
+  if (source !== undefined && (!/^\.rig\/intent\/[a-z0-9][a-z0-9-]{0,60}\.md$/.test(source) || !exists(path.join(ROOT, source)))) fail(`--source must name an existing .rig/intent/<kebab-name>.md file, not "${source}"`)
   const dir = path.join(CHANGES, slug)
   if (exists(dir)) fail(`change ${slug} already exists`)
   if (!exists(SDLC)) cmdInit({ pos: [], opt: {} })
@@ -157,7 +157,7 @@ function cmdStatus(args: Args): void {
     if (stacked) warnings.push(stacked)
     if (git(['remote', 'get-url', 'origin']) === null) warnings.push('no origin remote: ship commits locally, but no PR, PR review or gh metrics until one is added (git remote add origin <url>)')
   }
-  for (const e of pendingIntents()) warnings.push(`intent ${e.file} is accepted and has no change: ${skillRef('start')} .sdlc/intent/${e.file}`)
+  for (const e of pendingIntents()) warnings.push(`intent ${e.file} is accepted and has no change: ${skillRef('start')} .rig/intent/${e.file}`)
   warnings.push(...watchWarnings())
   const stale = [...repoStale(ROOT), ...stalenessAll(changes.map(c => c.slug))]
   const open = changes.flatMap(c => openItems(c.slug))

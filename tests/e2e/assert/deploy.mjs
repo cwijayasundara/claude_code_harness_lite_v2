@@ -12,9 +12,9 @@ function gate(sb, command, env = {}) {
 }
 
 export async function assertProductionGate(c, sb) {
-  // The gate logs only when .sdlc exists; never rely on it.
-  fs.mkdirSync(sb.file('.sdlc'), { recursive: true })
-  fs.rmSync(sb.file('.sdlc/gates.jsonl'), { force: true })
+  // The gate logs only when .rig exists; never rely on it.
+  fs.mkdirSync(sb.file('.rig'), { recursive: true })
+  fs.rmSync(sb.file('.rig/gates.jsonl'), { force: true })
 
   const blocked = gate(sb, 'npm run deploy -- --env production')
   await c.check('deploy gate: production without RELEASE_APPROVAL exits 2 with the route', () =>
@@ -30,11 +30,11 @@ export async function assertProductionGate(c, sb) {
   await c.check('deploy gate: an unrelated command is not gated', () => plain.status === 0 || `exit ${plain.status}`)
 
   await c.check('deploy gate: logs the block and the allow, and nothing else', () => {
-    const rows = sb.read('.sdlc/gates.jsonl').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+    const rows = sb.read('.rig/gates.jsonl').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
     const got = rows.map(r => r.decision).join(',')
     return got === 'block,allow' || `decisions: ${got}`
   })
-  await c.check('deploy gate: never logs the command text', () => !/deploy|npm/.test(sb.read('.sdlc/gates.jsonl')) || 'command text found in gates.jsonl')
+  await c.check('deploy gate: never logs the command text', () => !/deploy|npm/.test(sb.read('.rig/gates.jsonl')) || 'command text found in gates.jsonl')
 }
 
 // RIG_ROLLBACK_COMMAND is a script the project owns; the rehearsal is that command running and succeeding.

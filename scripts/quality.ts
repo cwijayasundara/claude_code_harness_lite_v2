@@ -49,7 +49,7 @@ function qualityPlan(config: SensorConfig, files: string[]): QualityPlan {
   const scoped = Object.values(config.scopes).some(s => Object.values(s.quality ?? {}).some(Boolean))
   const extra = files.length && scoped ? extraScopes(config) : []
   const sel = selectScopes(files, config, extra)
-  const warnings: Finding[] = extra === null ? [{ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .sdlc/sensors.json and fix it' }] : []
+  const warnings: Finding[] = extra === null ? [{ sensor: 'unscoped', severity: 'warn', message: `the affected command failed, so every scope ran: ${config.affected}`, fix: 'run the affected command in .rig/sensors.json and fix it' }] : []
   const items: QualityItem[] = sel.unscoped.length ? top : []
   for (const s of Object.values(config.scopes)) {
     if (!sel.affected.includes(s.name)) continue
@@ -138,7 +138,7 @@ export function runQuality(slug: string, baseRef: string | null = defaultBase())
   const categories = [...measured, ...undeclared].sort((a, b) => rank(a.category) - rank(b.category))
   const blocks: Finding[] = categories.filter(c => c.status === 'regressed' || c.status === 'fail').map(c => ({
     sensor: `quality.${c.category}`, severity: 'block', message: c.status === 'fail' ? `${c.category} could not run: ${c.note}` : `${c.category} rose from ${c.base} to ${c.branch}`,
-    fix: c.status === 'fail' ? 'install the tool or fix the command in .sdlc/sensors.json quality' : `fix the new ${c.category} findings; the base branch has ${c.base}`,
+    fix: c.status === 'fail' ? 'install the tool or fix the command in .rig/sensors.json quality' : `fix the new ${c.category} findings; the base branch has ${c.base}`,
   }))
   if (base) {
     const { before, after } = testDelta(base, diffs, config)

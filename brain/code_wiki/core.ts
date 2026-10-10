@@ -7,7 +7,7 @@ export type Index = { generated: string; modules: Record<string, ModuleInfo>; fi
 export type ModState = { hash: string; sigHash: string; status: 'fresh' | 'stale'; generated: string; fileHashes?: Record<string, string> }
 export type State = { version: 1; modules: Record<string, ModState>; architectureHash: string }
 
-export const WIKI_DIR = '.sdlc/wiki'
+export const WIKI_DIR = '.rig/wiki'
 
 export function safeName(s: string): string {
   const n = s.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[.-]+|[.-]+$/g, '')

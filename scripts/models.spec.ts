@@ -88,8 +88,8 @@ function pickModel(setup: (repo: string) => void): string {
 }
 // intent.md defaults to the floor (S feature), so the ratchet decides unless a case raises the intent.
 const change = (slug: string, ratchet: string, intent = '---\nslug: x\ntype: feature\ntier: S\n---\n# x\n') => (repo: string) => {
-  write(repo, `.sdlc/changes/${slug}/ratchet.json`, ratchet)
-  if (intent) write(repo, `.sdlc/changes/${slug}/intent.md`, intent)
+  write(repo, `.rig/changes/${slug}/ratchet.json`, ratchet)
+  if (intent) write(repo, `.rig/changes/${slug}/intent.md`, intent)
 }
 
 test('CI review model: S haiku, M sonnet, L opus', () => {

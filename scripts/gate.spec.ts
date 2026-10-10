@@ -16,7 +16,7 @@ test('a failed sdlc skill load injects the deterministic fallback command and lo
   const ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext
   assert.match(ctx, /sdlc\.ts" skill pr-review add-login/)
   assert.match(ctx, /skill fallback: rig:pr-review/)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /skill-load-failed/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/usage.jsonl'), 'utf8'), /skill-load-failed/)
   assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'superpowers:brainstorming' } }).stdout, '')
 })
 
@@ -27,11 +27,11 @@ test('Stop is silent outside sdlc repos and on turns that changed no source', ()
   write(repo, 'src/x.js', 'x\n')
   assert.equal(stop().stdout, '')
   sdlc(repo, ['init'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').writeFileSync(\'ran.txt\', \'1\')"' } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').writeFileSync(\'ran.txt\', \'1\')"' } }))
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   hook(repo, 'prompt-submit', {})
-  write(repo, '.sdlc/STATE.md', '---\nchange:\n---\nnotes\n')
+  write(repo, '.rig/STATE.md', '---\nchange:\n---\nnotes\n')
   assert.equal(stop().stdout, '')
   assert.ok(!fs.existsSync(path.join(repo, 'ran.txt')), 'no commands run on a no-op turn')
 })
@@ -47,10 +47,10 @@ test('Stop blocks twice, then lets the turn end with a system message and unreso
   }
   const third = JSON.parse(stop().stdout)
   assert.match(third.systemMessage, /1 problem\(s\) unresolved after 2 attempts/)
-  assert.ok(fs.existsSync(path.join(repo, '.sdlc/unresolved.json')))
+  assert.ok(fs.existsSync(path.join(repo, '.rig/unresolved.json')))
   write(repo, 'test/a.test.js', "it('x', () => {})\n")
   assert.equal(stop().stdout, '')
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/unresolved.json')))
+  assert.ok(!fs.existsSync(path.join(repo, '.rig/unresolved.json')))
 })
 
 test('a vibe-coded turn with no active change records an ad-hoc change with a computed tier', () => {
@@ -67,7 +67,7 @@ test('a turn that shipped (committed a ship.json) records no ad-hoc change; a pl
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'init sdlc')
   hook(repo, 'prompt-submit', {})
   for (const f of ['a', 'b', 'c', 'd', 'e']) write(repo, `src/${f}.js`, `export const ${f} = 1\n`)
-  write(repo, '.sdlc/changes/done-thing/ship.json', '{}\n')
+  write(repo, '.rig/changes/done-thing/ship.json', '{}\n')
   gitIn(repo, 'add', '.'); gitIn(repo, 'commit', '-qm', 'shipped')
   stop()
   assert.doesNotMatch(sdlc(repo, ['status']).stdout, /adhoc-/)
@@ -80,15 +80,15 @@ test('a turn that shipped (committed a ship.json) records no ad-hoc change; a pl
 
 test('a harness file changed by Bash blocks at Stop; the same change through Edit only warns', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   hook(repo, 'prompt-submit', {})
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 900 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 900 } }))
   assert.match(JSON.parse(stop().stdout).reason, /outside Write\/Edit/)
   hook(repo, 'prompt-submit', {})
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 950 } }))
-  hook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, '.sdlc/sensors.json') } })
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 950 } }))
+  hook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, '.rig/sensors.json') } })
   const warned = JSON.parse(stop().stdout) as { decision?: string; systemMessage?: string }
   assert.equal(warned.decision, undefined, 'a warning does not block')
   assert.match(warned.systemMessage ?? '', /1 warning.*harness-tamper/)
@@ -101,32 +101,32 @@ test('post-edit blocks a single edited file with exit 2 and records the edit', (
   const r = hook(repo, 'post-edit', { tool_input: { file_path: path.join(repo, 'test/a.test.js') } })
   assert.equal(r.code, 2)
   assert.match(r.stderr, /test skipped or focused/)
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8')).tool, ['test/a.test.js'])
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.rig/.gate'), 'utf8')).tool, ['test/a.test.js'])
 })
 
 test('a corrupt gate file never wedges the session', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   hook(repo, 'prompt-submit', {})
-  fs.writeFileSync(path.join(repo, '.sdlc/.gate'), '{not json')
+  fs.writeFileSync(path.join(repo, '.rig/.gate'), '{not json')
   tamper()
   assert.equal(JSON.parse(stop().stdout).decision, 'block')
 })
 
 test('a protected-only diff creates no ad-hoc change; contract edits are tier M', () => {
   sdlc(repo, ['init'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 500 } }))
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   hook(repo, 'prompt-submit', {})
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ limits: { diffLines: 900 } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ limits: { diffLines: 900 } }))
   stop()
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/changes')) || fs.readdirSync(path.join(repo, '.sdlc/changes')).length === 0)
+  assert.ok(!fs.existsSync(path.join(repo, '.rig/changes')) || fs.readdirSync(path.join(repo, '.rig/changes')).length === 0)
 })
 
 test('a gate file with wrongly typed fields never crashes the hooks', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   hook(repo, 'prompt-submit', {})
-  fs.writeFileSync(path.join(repo, '.sdlc/.gate'), '{"blocks":null,"agents":null}')
+  fs.writeFileSync(path.join(repo, '.rig/.gate'), '{"blocks":null,"agents":null}')
   tamper()
   assert.equal(JSON.parse(stop().stdout).decision, 'block')
 })
@@ -137,9 +137,9 @@ const edit = (rel: string, session = 's1') => {
   return hook(repo, 'post-edit', { session_id: session, tool_input: { file_path: path.join(repo, rel) } })
 }
 
-test('init copies the default guides into .sdlc/guides', () => {
+test('init copies the default guides into .rig/guides', () => {
   sdlc(repo, ['init'])
-  assert.deepEqual(fs.readdirSync(path.join(repo, '.sdlc/guides')).sort(), ['contracts.md', 'engineering.md', 'testing.md'])
+  assert.deepEqual(fs.readdirSync(path.join(repo, '.rig/guides')).sort(), ['contracts.md', 'engineering.md', 'testing.md'])
 })
 
 test('a guide is injected the first time a matching file is edited in a session, and again after compaction', () => {
@@ -164,13 +164,13 @@ test('session start lists guide names without their bodies', () => {
 test('I3: Stop ratchets a known-red command that now passes; it then blocks when it fails again', () => {
   sdlc(repo, ['new', 'xx', '--type', 'chore', '--tier', 'S'])
   const lint = 'node -e "process.exit(require(\'fs\').existsSync(\'bad.flag\') ? 1 : 0)"'
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { lint }, knownRed: ['fast.lint'] }, null, 2) + '\n')
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { lint }, knownRed: ['fast.lint'] }, null, 2) + '\n')
   gitIn(repo, 'add', '.')
   gitIn(repo, 'commit', '-qm', 'cfg')
   hook(repo, 'prompt-submit', {})
   write(repo, 'src/a.js', 'export const a = 1\n')
   assert.equal(stop().stdout, '')
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/sensors.json'), 'utf8')).knownRed, [])
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(repo, '.rig/sensors.json'), 'utf8')).knownRed, [])
   write(repo, 'src/a.js', 'export const a = 2\n')
   assert.equal(stop().stdout, '', 'the ratchet write is not harness-tamper')
   write(repo, 'bad.flag', 'x\n')
@@ -189,7 +189,7 @@ test('a failed superpowers SDD load sends the model back to native orchestration
   const repo = makeRepo(); sdlc(repo, ['init'])
   const r = JSON.parse(hook(repo, 'skill-failed', { tool_input: { skill: 'superpowers:subagent-driven-development' } }).stdout)
   assert.match(r.hookSpecificOutput.additionalContext, /Large builds: orchestrate/)
-  assert.match(fs.readFileSync(path.join(repo, '.sdlc/usage.jsonl'), 'utf8'), /"skill":"superpowers:subagent-driven-development"/)
+  assert.match(fs.readFileSync(path.join(repo, '.rig/usage.jsonl'), 'utf8'), /"skill":"superpowers:subagent-driven-development"/)
   assert.equal(hook(repo, 'skill-failed', { tool_input: { skill: 'other:thing' } }).stdout, '')
 })
 
@@ -217,15 +217,15 @@ test('a turn that only writes harness files (onboarding) opens no ad-hoc change'
   write(repo, '.github/workflows/rig-check.yml', 'name: rig-check\n')
   write(repo, '.claude/settings.json', '{}\n')
   stop()
-  assert.ok(!fs.existsSync(path.join(repo, '.sdlc/changes')) || !fs.readdirSync(path.join(repo, '.sdlc/changes')).some(d => d.startsWith('adhoc-')))
+  assert.ok(!fs.existsSync(path.join(repo, '.rig/changes')) || !fs.readdirSync(path.join(repo, '.rig/changes')).some(d => d.startsWith('adhoc-')))
   write(repo, 'src/a.js', 'export const a = 1\n')
   stop()
-  assert.ok(fs.readdirSync(path.join(repo, '.sdlc/changes')).some(d => d.startsWith('adhoc-')), 'real source work still opens one')
+  assert.ok(fs.readdirSync(path.join(repo, '.rig/changes')).some(d => d.startsWith('adhoc-')), 'real source work still opens one')
 })
 
 test('Stop skips the fast commands on a tree they already passed, and still judges the diff with the sensors', () => {
   sdlc(repo, ['init'])
-  write(repo, '.sdlc/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').appendFileSync(\'ran.txt\', \'1\')"' } }))
+  write(repo, '.rig/sensors.json', JSON.stringify({ fast: { test: 'node -e "require(\'fs\').appendFileSync(\'ran.txt\', \'1\')"' } }))
   // The marker is ignored, as a real test's scratch output would be: the stamp covers tracked and untracked files, not ignored ones.
   fs.appendFileSync(path.join(repo, '.gitignore'), 'ran.txt\n')
   gitIn(repo, 'add', '.')
@@ -243,7 +243,7 @@ test('Stop skips the fast commands on a tree they already passed, and still judg
   write(repo, 'src/x.js', 'export const x = 1\n')
   assert.equal(stop().stdout, '')
   assert.equal(ran(), 2, 'back on a tree that passed: the fast command is skipped')
-  const gate = JSON.parse(fs.readFileSync(path.join(repo, '.sdlc/.gate'), 'utf8'))
+  const gate = JSON.parse(fs.readFileSync(path.join(repo, '.rig/.gate'), 'utf8'))
   assert.equal(gate.trees.length, 2)
   // The sensors still judge the turn's diff on a cached tree.
   hook(repo, 'prompt-submit', {})

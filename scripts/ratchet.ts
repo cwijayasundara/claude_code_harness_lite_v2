@@ -119,7 +119,7 @@ function readFrom(slug: string, from: string): string {
   let root: string
   try { real = fs.realpathSync(path.resolve(from)); root = fs.realpathSync(dir) } catch { return fail(`--from ${from}: no such file`) }
   const rel = path.relative(root, real)
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || !fs.statSync(real).isFile()) fail(`--from must be a file inside .sdlc/changes/${slug}/`)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || !fs.statSync(real).isFile()) fail(`--from must be a file inside .rig/changes/${slug}/`)
   if (EVIDENCE_NAME_RE.test(path.basename(real)) || /^(?:verification|impact|pr)\.(?:md|json)$/.test(path.basename(real))) fail('--from cannot be an evidence file')
   return fs.readFileSync(real, 'utf8')
 }

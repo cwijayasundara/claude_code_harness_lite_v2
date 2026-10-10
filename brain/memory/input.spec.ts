@@ -35,7 +35,7 @@ const sig = (i: number, transcript_path: string, line = 1): Signal =>
   ({ id: `id${i}`, ts: `2026-10-09T10:00:0${i}Z`, session_id: `s${i}`, transcript_path, transcript_line: line, kind: 'cmd-fail', data: { cmd: `cmd${i}` }, dreamed: false })
 
 test('buildDreamInput includes signals in order with context and the current memory', () => {
-  const dir = makeRepo({ '.sdlc/memory/commands.md': '# commands\n> x\n\n- a [source: s; added: 2026-10-01; id: m-aaaaaa]\n' }, { git: false })
+  const dir = makeRepo({ '.rig/memory/commands.md': '# commands\n> x\n\n- a [source: s; added: 2026-10-01; id: m-aaaaaa]\n' }, { git: false })
   const t = path.join(dir, 't.jsonl')
   fs.writeFileSync(t, J({ type: 'user', message: { content: 'please run tests' } }) + '\n')
   const r = buildDreamInput(dir, { id: 'b', signals: [sig(1, t), sig(2, path.join(dir, 'missing.jsonl')), sig(3, path.join(dir, 'x.txt'))] })
@@ -59,7 +59,7 @@ test('buildDreamInput drops the oldest signals past the cap and leaves them out 
 })
 
 test('buildDreamInput redacts memory files and signal data', () => {
-  const dir = makeRepo({ '.sdlc/memory/commands.md': '# commands\npassword: hunter22\n' }, { git: false })
+  const dir = makeRepo({ '.rig/memory/commands.md': '# commands\npassword: hunter22\n' }, { git: false })
   const none = buildDreamInput(dir, { id: 'b', signals: [] }).text
   assert.match(none, /\[REDACTED\]/)
   assert.ok(!none.includes('hunter22'))
@@ -81,7 +81,7 @@ test('buildDreamInput only reads absolute regular .jsonl transcripts', () => {
 })
 
 test('buildDreamInput never exceeds maxChars, even for tight caps', () => {
-  const dir = makeRepo({ '.sdlc/memory/commands.md': `# commands\n${'m'.repeat(300)}\n` }, { git: false })
+  const dir = makeRepo({ '.rig/memory/commands.md': `# commands\n${'m'.repeat(300)}\n` }, { git: false })
   const signals = Array.from({ length: 6 }, (_, i) => ({ ...sig(i, ''), data: { cmd: 'c'.repeat(200) } }))
   for (let cap = 60; cap <= 1500; cap += 37) {
     const r = buildDreamInput(dir, { id: 'b', signals }, cap)
