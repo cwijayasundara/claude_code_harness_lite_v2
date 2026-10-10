@@ -144,6 +144,17 @@ The same commands are spelled two ways, by how they are loaded. Nothing else dif
 
 The colon is the host's plugin separator, so a plugin install cannot spell the skills with a hyphen. A repo that wants `/rig-*` everywhere vendors standalone. The rest of this README writes the plugin spelling (`/rig:x`) for skills; read it as `/rig-x` in a standalone repo.
 
+### Human steps and automatic steps
+
+| Step | Who | What happens |
+|---|---|---|
+| `/rig:init`, `/rig:start`, `/rig:design` | the person | scaffold, classify and write `intent.md`, write `design.md` |
+| `/rig-approve <slug> design` | the person | one approval covers `intent.md` and `design.md`; with the mod, it then starts the driver |
+| build, test, sensors, pr | automatic | the driver runs each node, with capped fix loops, and stops at a human step, a block, a budget limit, Esc, or the PR |
+| `/rig:pr-review` | the person | the next human step after the PR is raised |
+
+Without the mod, run `/rig:next` after approving: it chains the same nodes in one turn.
+
 ### Command atlas: when to reach for each
 
 **Drive the change** (the model runs these; `/rig:next` chains them)

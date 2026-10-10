@@ -95,6 +95,14 @@ async function advance($: EngineInterface): Promise<void> {
   $.prompt.submit({ text: promptFor(s, $.plugin.root) }).catch(err => { $.ui.log(`driver could not submit: ${String(err)}`); return stopDriver($, 'the prompt was not accepted; driver stopped') })
 }
 
+// Starts the driver once the calling hook has returned (prompt.submit would wait on the turn the hook holds); a refused timer never calls back, so
+// "running" is set only when it fires, and any failure on the first step resets it.
+async function startDriver($: EngineInterface): Promise<void> {
+  await update($, driverLast, () => '')
+  try { $.clock.after(0, () => { update($, driverRunning, () => true).then(() => advance($)).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined)) }) }
+  catch (err) { await stopDriver($, `driver stopped: ${String(err)}`) }
+}
+
 // The one human gate of a feature: a turn ending at the design gate starts the driver, which asks once and then drives build to PR.
 // `step` comes from this turn's band refresh (the same answer as `next --json`), so no extra process.
 async function offerDesignGate($: EngineInterface, step: StepInfo | null | undefined): Promise<void> {
@@ -164,7 +172,9 @@ export const register: Register = on => {
     const rest = stage === 'tier' ? more.slice(0, 2) : []
     if (!slug || !stage) return { text: 'usage: /rig-approve <slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' }
     const r = await $.process.run(sdlc($, ['approve', slug, stage, ...rest]), { env: { SDLC_HUMAN: '1' } })
-    await refreshBand($)
+    const status = await refreshBand($)
+    // Approving a pre-code gate on the active change hands the rest (build, test, sensors, pr) to the driver; it stops at a human step, a block or the PR.
+    if (r.exitCode === 0 && status?.active === slug && /^(?:intent|spec|plan|design)$/.test(stage ?? '') && !(await read($, driverRunning))) await startDriver($)
     return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
   })
 
@@ -184,17 +194,7 @@ export const register: Register = on => {
       return {}
     }
     if (!(await isInitialised($))) return { text: 'sdlc is not initialised here.' }
-    await update($, driverLast, () => '')
-    // prompt.submit cannot run inside a command.run hook (it would wait on the turn the hook holds): start once the command has returned.
-    // The driver is marked running only when the timer really fires (a refused timer never calls back and does not throw),
-    // and any failure on the first step resets it, so a later turn never starts driving unannounced.
-    try {
-      $.clock.after(0, () => {
-        update($, driverRunning, () => true).then(() => advance($)).catch(err => stopDriver($, `driver stopped: ${String(err)}`).catch(() => undefined))
-      })
-    } catch (err) {
-      await stopDriver($, `driver stopped: ${String(err)}`)
-    }
+    await startDriver($)
     return {}
   })
 

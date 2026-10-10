@@ -456,6 +456,21 @@ describe('sdlc mod', () => {
     expect(world.prompts.at(-1)).toContain('skill test add-login')
   })
 
+  test('approving a pre-code gate hands the rest to the driver; other approvals do not', async ($, on) => {
+    const world = worldOf(on)
+    const clock = mock.clock(on)
+    await $.session.start(SESSION)
+    await $.command.run(command('rig-approve', 'add-login tier M feature'))
+    await clock.advance(1)
+    expect(world.prompts.length).toBe(0)
+    await $.command.run(command('rig-approve', 'other-change design'))
+    await clock.advance(1)
+    expect(world.prompts.length).toBe(0)
+    await $.command.run(command('rig-approve', 'add-login design'))
+    await clock.advance(1)
+    expect(world.prompts.at(-1)).toContain('skill build add-login')
+  })
+
   test('the driver stops when a turn makes no progress', async ($, on) => {
     const world = worldOf(on)
     const clock = mock.clock(on)
