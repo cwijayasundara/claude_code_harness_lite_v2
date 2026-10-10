@@ -450,10 +450,10 @@ export function createChange(slug: string, type: ChangeType, tier: Tier, title: 
 
 // A body sdlc itself wrote (init, clearState, or this function) is replaced; anything else was written by
 // the model or the person and is kept.
-const GENERATED_STATE = /^\s*(?:# State\s*)?(?:(?:No active change\.|Active change: [a-z0-9-]+\. Next: see \/rig-status\.)[^\n]*)?\s*$/
+const GENERATED_STATE = /^\s*(?:# State\s*)?(?:(?:No active change\.|Active change: [a-z0-9-]+\. Next: see \/rig[:-]status\.)[^\n]*)?\s*$/
 export function setActive(slug: string): void {
   const { body } = frontmatter(read(STATE))
-  const kept = body && !GENERATED_STATE.test(body) ? body : `# State\n\nActive change: ${slug}. Next: see /rig-status.\n`
+  const kept = body && !GENERATED_STATE.test(body) ? body : `# State\n\nActive change: ${slug}. Next: see /rig:status.\n`
   fs.mkdirSync(SDLC, { recursive: true })
   fs.writeFileSync(STATE, `---\nchange: ${slug}\n---\n${kept}`)
 }

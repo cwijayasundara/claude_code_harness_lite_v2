@@ -1,8 +1,8 @@
-// The band above the prompt and the /rig-sensors pane: what the sensors saw, at zero tokens.
+// The band above the prompt and the /rig:sensors pane: what the sensors saw, at zero tokens.
 import { atom, read, update } from 'claude-code'
 import type { On } from 'claude-code'
 import type { Band, BudgetBand, SensorBand, Story, StepInfo, FlowStep, TurnPoint } from '../types'
-import { mod, sdlcArgv, spark, spendPerTurn, subway, gauge, heat, tokenMix } from './shared'
+import { cmdNames, mod, sdlcArgv, spark, spendPerTurn, subway, gauge, heat, tokenMix } from './shared'
 
 export const SOFT_CONTEXT = 120_000
 export const HARD_CONTEXT = 150_000
@@ -69,14 +69,14 @@ export function storyPaneText(s: Story | null, step: StepInfo | null = null, flo
 }
 
 export function registerBand(on: On): void {
-  on('command.run', { command: 'rig-sensors' }, async $ => {
+  for (const command of cmdNames('sensors')) on('command.run', { command }, async $ => {
     const r = await $.process.run(sdlcArgv($.plugin.root, 'sensors'))
     await update($, paneText, () => (r.stdout || r.stderr).trim())
     await $.ui.open({ id: PANE_ID, title: 'sdlc sensors' })
     return { text: (r.stdout || r.stderr).trim() }
   })
 
-  on('command.run', { command: 'rig-metrics-pane' }, async $ => {
+  for (const command of cmdNames('metrics-pane')) on('command.run', { command }, async $ => {
     const r = await $.process.run(sdlcArgv($.plugin.root, 'metrics'))
     await update($, metricsText, () => (r.stdout || r.stderr).trim())
     await $.ui.open({ id: METRICS_PANE, title: 'sdlc metrics' })

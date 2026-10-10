@@ -1,10 +1,10 @@
-// Mission control: /rig-map draws the SDLC as a subway line with a "you are here" marker, the fix loop as an arc,
+// Mission control: /rig:map draws the SDLC as a subway line with a "you are here" marker, the fix loop as an arc,
 // spend per station, and fuel gauges for context, tokens and dollars. register.ts registers the command and captures
 // each turn into `turns` (a module may not hook session.start or turn.complete twice).
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On } from 'claude-code'
 import type { Band, Status, TurnPoint } from '../types'
-import { parseStatus, sdlcArgv, money, kilo, spark, gauge, heat, spendPerTurn, tokenMix, stack, subway } from './shared'
+import { cmdNames, parseStatus, sdlcArgv, money, kilo, spark, gauge, heat, spendPerTurn, tokenMix, stack, subway } from './shared'
 import { HARD_CONTEXT, budgetText, budgetColor } from './band'
 
 export const MAP_PANE = 'rig-map'
@@ -25,7 +25,7 @@ async function refresh($: EngineInterface): Promise<void> {
 }
 
 export function registerMission(on: On): void {
-  on('command.run', { command: 'rig-map' }, async $ => {
+  for (const command of cmdNames('map')) on('command.run', { command }, async $ => {
     await refresh($)
     await $.ui.open({ id: MAP_PANE, title: 'sdlc mission control' })
     return {}

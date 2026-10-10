@@ -53,7 +53,7 @@ Thin layer with built-ins first; ceremony scales with risk; state lives in files
  ├────────────────────────────────────────────────────────────────────────┤
  │ SCRIPTS        sdlc.ts → check · sensors · graph · ratchet · runs …    │  the deterministic brain
  ├────────────────────────────────────────────────────────────────────────┤
- │ MOD (optional) band · /rig-status · /rig-story · /rig-run · cost       │  UI and telemetry only;
+ │ MOD (optional) band · /rig:status · /rig:story · /rig:run · cost       │  UI and telemetry only;
  │                capture                                                 │  nothing essential here
  ├────────────────────────────────────────────────────────────────────────┤
  │ EVIDENCE       .rig/changes/<slug>/  intent design plan runs.jsonl    │  committed; read by
@@ -137,7 +137,7 @@ For tier S and M the `pr-review` stop is dropped when the `rig-review` workflow 
 
 One spelling for every command.
 
-Skills and the human commands are spelled `/rig:x` in every install mode: a standalone repo names its vendored skills `rig:x`, the same as the plugin. `/rig-approve` is also accepted when typed, because the prompt hook reads both. The mod's zero-token panes keep a hyphen (`/rig-status`, `/rig-run`, `/rig-map`, `/rig-sensors`, `/rig-story`): the host registers them by name, and a colon there is not yet verified.
+Skills and the human commands are spelled `/rig:x` in every install mode: a standalone repo names its vendored skills `rig:x`, the same as the plugin. `/rig-approve` is also accepted when typed, because the prompt hook reads both. The mod's zero-token panes follow the same rule (`/rig:status`, `/rig:run`, `/rig:map`, `/rig:sensors`, `/rig:story`). If a host version refuses a colon in a mod command, that one command falls back to its hyphen form, `/rig-status`.
 
 **One typed command per feature.** `/rig:start "<what you want>"` classifies, writes intent.md and design.md in the same turn, and stops at the design gate. The person types `/rig:approve` (no arguments approves the gate the active change waits at); a hook records it from their own prompt, even in a session started before the harness was installed, and the build, tests, sensors and PR then run on their own.
 
@@ -173,12 +173,12 @@ Without the mod, run `/rig:next` after approving: it chains the same nodes in on
 
 | Command | Shows |
 |---|---|
-| `/rig-status` | Where every change stands and the next command. |
-| `/rig-map` | Mission control: the SDLC as a subway map with where you are, the fix loop, spend per station, and token and dollar gauges. |
-| `/rig-story` | The active change's nodes, rounds and cost against budget. |
+| `/rig:status` | Where every change stands and the next command. |
+| `/rig:map` | Mission control: the SDLC as a subway map with where you are, the fix loop, spend per station, and token and dollar gauges. |
+| `/rig:story` | The active change's nodes, rounds and cost against budget. |
 | `/rig:sensors` | Findings, known-red items and waivers. |
-| `/rig-metrics-pane` | The scorecard: cost, tokens and value per change and node. |
-| `/rig-run` | Drives the change one node per turn; stops at a gate, a block, or no progress (`/rig-run stop` pauses). |
+| `/rig:metrics-pane` | The scorecard: cost, tokens and value per change and node. |
+| `/rig:run` | Drives the change one node per turn; stops at a gate, a block, or no progress (`/rig:run stop` pauses). |
 
 **Decide, human only** (the model cannot invoke these and cannot set `SDLC_HUMAN`)
 
@@ -270,7 +270,7 @@ The harness lives in each repo it runs on, so a repo never depends on the plugin
 
 **Upgrade** by re-running `node <plugin>/scripts/sdlc.ts vendor --standalone` from a newer plugin and committing; `.rig/bin/VERSION` records the version in the repo. To keep a repo on the plugin instead (central upgrades, no copy), tell onboarding the team installs the plugin.
 
-**With and without the plugin.** A standalone repo has everything that decides what may happen: skills, agents, hooks, sensors, gates and the CI check. `/rig:approve` and `/rig:waive` are skills only the person can invoke: the model cannot call them, and it cannot set `SDLC_HUMAN` itself. Installing the plugin as well adds the mod: the band, the `/rig:sensors` pane, the impact dialog, `/rig-status` with no model call, and per-stage cost capture for `/rig:metrics`. The plugin's own hooks step aside in a standalone repo, so none runs twice. The mod needs Claude Code 2.1.287 or later.
+**With and without the plugin.** A standalone repo has everything that decides what may happen: skills, agents, hooks, sensors, gates and the CI check. `/rig:approve` and `/rig:waive` are skills only the person can invoke: the model cannot call them, and it cannot set `SDLC_HUMAN` itself. Installing the plugin as well adds the mod: the band, the `/rig:sensors` pane, the impact dialog, `/rig:status` with no model call, and per-stage cost capture for `/rig:metrics`. The plugin's own hooks step aside in a standalone repo, so none runs twice. The mod needs Claude Code 2.1.287 or later.
 
 ## User guide: rig + rig-brain, greenfield and brownfield
 

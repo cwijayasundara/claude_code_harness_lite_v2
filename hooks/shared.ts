@@ -111,3 +111,6 @@ export const turnPoint = (usage: Usage, isAgent: boolean, usd: number): TurnPoin
 
 // The coordinator's model under budget pressure: pinned like templates/settings.json, never an alias (DESIGN.md principle 7).
 export const COORDINATOR_DOWNSHIFT = 'claude-sonnet-5-5'
+
+// A mod command is `rig:<name>` like the skills; the hyphen spelling stays registered only if the host refuses the colon.
+export const cmdNames = (name: string): string[] => [`rig:${name}`, `rig-${name}`]

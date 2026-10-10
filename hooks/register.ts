@@ -1,8 +1,8 @@
 // The sdlc mod: what settings hooks cannot do.
-//  - /rig-status and /rig:approve: zero-token commands; approve runs only from the person's own prompt
-//  - /rig:waive and /rig-sensors (human-only, zero tokens)
+//  - /rig:status and /rig:approve: zero-token commands; approve runs only from the person's own prompt
+//  - /rig:waive and /rig:sensors (human-only, zero tokens)
 //  - per-turn usage capture (tokens from turn.complete, dollars from the session's /cost ledger)
-//  - /rig-map: mission control pane (mission.tsx): SDLC subway map, fix-loop arc, spend by station, fuel gauges
+//  - /rig:map: mission control pane (mission.tsx): SDLC subway map, fix-loop arc, spend by station, fuel gauges
 //  - a band above the prompt: active change, stage, context size, session spend, sensor state
 //  - the impact dialog (gates.ts); the band and pane (band.tsx)
 //  - a context budget: a toast at the soft limit and a nudge to Claude at the hard limit
@@ -11,7 +11,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Band, Status, StepInfo, TurnPoint } from '../types'
-import { sdlcArgv, parseStatus, SLUG_RE, NODES, mod, money, kilo, turnPoint, KEEP_TURNS, COORDINATOR_DOWNSHIFT } from './shared'
+import { cmdNames, sdlcArgv, parseStatus, SLUG_RE, NODES, mod, money, kilo, turnPoint, KEEP_TURNS, COORDINATOR_DOWNSHIFT } from './shared'
 import { PANE_ID, STORY_PANE, SOFT_CONTEXT, HARD_CONTEXT, registerBand } from './band'
 import { registerGates } from './gates'
 import { registerMission } from './mission'
@@ -132,6 +132,10 @@ async function vendoredCopyActive($: EngineInterface): Promise<boolean> {
   return false
 }
 
+type CommandSpec = Omit<Parameters<EngineInterface['command']['register']>[0], 'name'>
+const registerCmd = ($: EngineInterface, name: string, spec: CommandSpec): Promise<unknown> =>
+  $.command.register({ name: `rig:${name}`, ...spec }).catch(() => $.command.register({ name: `rig-${name}`, ...spec }))
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     mod.aside = await vendoredCopyActive($)
@@ -142,31 +146,28 @@ export const register: Register = on => {
     await update($, driverLast, () => '')
     lastCostUsd = (await $.session.usage()).cost?.usd ?? 0
     try {
-      await $.command.register({ name: 'rig-status', description: 'rig: where every change stands and the next command (no model call)', immediate: true })
+      await registerCmd($, 'status', { description: 'rig: where every change stands and the next command (no model call)', immediate: true })
       // A standalone repo ships its own human-only /rig:approve and /rig:waive skills; registering ours too would clash.
       if (!(await $.fs.exists('.claude/skills/rig-approve/SKILL.md'))) {
-        await $.command.register({ name: 'rig-approve', description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' })
-        await $.command.register({ name: 'rig-waive', description: 'rig: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
+        await registerCmd($, 'approve', { description: 'rig: approve a gated artifact (human only)', argumentHint: '<slug> <intent|spec|plan|design|impact|budget|full-route|tier S|M|L [type]>' })
+        await registerCmd($, 'waive', { description: 'rig: waive a sensor finding for the active change (human only)', argumentHint: '<sensor> <file|*> <reason>' })
       }
-      await $.command.register({ name: 'rig-sensors', description: 'rig: what the sensors found, known-red and waivers (no model call)', immediate: true })
-      await $.command.register({ name: 'rig-story', description: 'rig: the active story - node, rounds, cost by node (no model call)', immediate: true })
-      await $.command.register({ name: 'rig-run', description: 'rig: drive the active change node by node to the next gate (no model call to decide); /rig-run stop pauses', argumentHint: '[stop]', immediate: true })
-      await $.command.register({ name: 'rig-map', description: 'rig: mission control - the SDLC map, where you are, tokens and dollars (no model call)', immediate: true })
-      await $.command.register({ name: 'rig-metrics-pane', description: 'rig: leading and lagging indicators in a pane (no model call)', immediate: true })
+      await registerCmd($, 'sensors', { description: 'rig: what the sensors found, known-red and waivers (no model call)', immediate: true })
+      await registerCmd($, 'story', { description: 'rig: the active story - node, rounds, cost by node (no model call)', immediate: true })
+      await registerCmd($, 'run', { description: 'rig: drive the active change node by node to the next gate (no model call to decide); /rig:run stop pauses', argumentHint: '[stop]', immediate: true })
+      await registerCmd($, 'map', { description: 'rig: mission control - the SDLC map, where you are, tokens and dollars (no model call)', immediate: true })
+      await registerCmd($, 'metrics-pane', { description: 'rig: leading and lagging indicators in a pane (no model call)', immediate: true })
     } catch (err) { $.ui.log(`could not register commands: ${String(err)}`) }
     await refreshBand($).catch(() => undefined)
     return next(e)
   })
 
-  on('command.run', { command: 'rig-status' }, async $ => {
-    const r = await $.process.run(sdlc($, ['status']))
-    return { text: (r.stdout || r.stderr).trim() }
-  })
+  for (const command of cmdNames('status')) on('command.run', { command }, async $ => ({ text: (r => (r.stdout || r.stderr).trim())(await $.process.run(sdlc($, ['status']))) }))
 
-  on('command.run', { command: 'rig-approve' }, async ($, e) => {
+  for (const command of cmdNames('approve')) on('command.run', { command }, async ($, e) => {
     // Approval is the person's act: refuse anything that did not come from their own prompt.
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') {
-      return { text: 'rig-approve runs only when the person types it.' }
+      return { text: 'rig:approve runs only when the person types it.' }
     }
     const [slug, stage, ...more] = e.args.trim().split(/\s+/)
     const rest = stage === 'tier' ? more.slice(0, 2) : []
@@ -178,8 +179,8 @@ export const register: Register = on => {
     return { text: (r.stdout || r.stderr).trim(), context: r.exitCode === 0 ? [`The person approved ${slug} ${[stage, ...rest].join(' ')}.`] : undefined }
   })
 
-  on('command.run', { command: 'rig-waive' }, async ($, e) => {
-    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig-waive runs only when the person types it.' }
+  for (const command of cmdNames('waive')) on('command.run', { command }, async ($, e) => {
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig:waive runs only when the person types it.' }
     const parts = e.args.trim().split(/\s+/)
     if (parts.length < 3) return { text: 'usage: /rig:waive <sensor> <file|*> <reason>' }
     const r = await $.process.run(sdlc($, ['waive', ...parts]), { env: { SDLC_HUMAN: '1' } })
@@ -187,21 +188,16 @@ export const register: Register = on => {
     return { text: (r.stdout || r.stderr).trim() }
   })
 
-  on('command.run', { command: 'rig-run' }, async ($, e) => {
-    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig-run runs only when the person types it.' }
-    if (e.args.trim() === 'stop') {
-      await stopDriver($, 'driver paused')
-      return {}
-    }
+  for (const command of cmdNames('run')) on('command.run', { command }, async ($, e) => {
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'rig:run runs only when the person types it.' }
+    if (e.args.trim() === 'stop') return stopDriver($, 'driver paused').then(() => ({}))
     if (!(await isInitialised($))) return { text: 'sdlc is not initialised here.' }
-    await startDriver($)
-    return {}
+    return startDriver($).then(() => ({}))
   })
 
-  on('command.run', { command: 'rig-story' }, async $ => {
+  for (const command of cmdNames('story')) on('command.run', { command }, async $ => {
     await refreshBand($)
-    await $.ui.open({ id: STORY_PANE, title: 'sdlc story' })
-    return {}
+    return $.ui.open({ id: STORY_PANE, title: 'sdlc story' }).then(() => ({}))
   })
 
   on('turn.start', async ($, e, next) => {
