@@ -43,3 +43,16 @@ test('init skill: enabling rig-brain seeds memory and the wiki rather than only 
   assert.match(skill, /\*\*Greenfield:\*\* run only `\$W index`/)
   assert.match(skill, /\.sdlc\/wiki\/` and `\.sdlc\/memory\/`/)
 })
+
+test('init skill: writes rig docs into README.md between markers, brownfield in place and greenfield new', () => {
+  const tpl = fs.readFileSync(path.resolve(import.meta.dirname, '../templates/readme-rig.md'), 'utf8')
+  assert.match(skill, /templates\/readme-rig\.md/)
+  assert.match(skill, /\*\*Brownfield:\*\* keep the existing `README\.md`/)
+  assert.match(skill, /\*\*Greenfield:\*\* create `README\.md`/)
+  assert.match(tpl, /^<!-- rig:begin/)
+  assert.match(tpl.trimEnd(), /<!-- rig:end -->$/)
+  assert.match(tpl, /### Architecture/)
+  assert.match(tpl, /### User guide/)
+  assert.match(tpl, /\{\{P\}\}/)
+  assert.match(tpl, /\{\{BRAIN\}\}/)
+})
