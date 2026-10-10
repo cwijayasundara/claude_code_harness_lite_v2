@@ -35,6 +35,7 @@ test('a concern whose owner is the unfilled policy placeholder tells the person 
   assert.notEqual(r.code, 0)
   assert.match(r.stderr, /owner is not set/)
   assert.match(r.stderr, /you can resolve it yourself/)
+  assert.match(r.stderr, /1\. set "owner: .+" in \.claude\/skills\/policy-\*\/SKILL\.md/)
 })
 
 test('approve accepts a design whose concerns are all resolved', () => {

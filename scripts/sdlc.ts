@@ -67,6 +67,11 @@ function declareStackLevels(opt: string | true): string {
   return `declared levels for ${name}: ${Object.entries(cfg.levels as Record<string, string>).map(([k, v]) => `${k}=${v}`).join(', ')} (acceptance and api default to the unit command; point them at a real e2e or HTTP test when you have one)`
 }
 
+// Who approvals, waivers and a scaffolded policy owner are recorded as: the git identity, then the OS user.
+function whoami(): string | null {
+  return git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || null
+}
+
 function cmdInit(args: Args): void {
   // Ship and the PR gate read git, so a directory outside any repo gets one.
   const newRepo = git(['rev-parse', '--is-inside-work-tree']) !== 'true' && git(['init', '-q', '-b', 'main']) !== null
@@ -82,6 +87,8 @@ function cmdInit(args: Args): void {
   out(`initialised ${toPosix(path.relative(ROOT, SDLC)) || SDLC}${newRepo ? ' (ran git init: no repository was here)' : ''}`)
   if (args.opt.stack) out(declareStackLevels(args.opt.stack))
   if (args.opt.full) out(installStandalone(Boolean(args.opt.workflows)))
+  const me = whoami()
+  out(me ? `approvals and waivers are recorded as "${me}" (git user.name); change it with: git config user.name "<name>"` : 'no user name found: set one with `git config user.name "<name>"` so approvals say who approved')
 }
 
 function cmdNew(args: Args): void {
@@ -236,10 +243,11 @@ function cmdApprove(args: Args): void {
   if (concerns.length) {
     // A policy skill copied from the template still has `owner: <the team or person ...>`; naming that as who to ask sends the person nowhere.
     const ghost = concerns.some(c => /→ owner: <[^>]*>/.test(c))
-    const hint = ghost ? `\nThe policy's owner is not set (.claude/skills/policy-*/SKILL.md still has the template placeholder). If you own the policy, you can resolve it yourself: edit ${slug}/${artifact}, append " → resolved: <decision> (<your name>)" to each bullet, then run /rig:approve ${slug} ${stage} again. Set owner: in the policy skill so later concerns name a real person.` : ''
+    const me = whoami() ?? '<your name>'
+    const hint = ghost ? `\nThe policy's owner is not set (.claude/skills/policy-*/SKILL.md still has the template placeholder), so no one is named to decide. If you own the policy, you can resolve it yourself:\n  1. set "owner: ${me}" in .claude/skills/policy-*/SKILL.md\n  2. edit ${slug}/${artifact} and append " → resolved: <decision> (${me})" to each bullet\n  3. run /rig:approve ${slug} ${stage} again` : ''
     fail(`resolve the concern(s) in ${slug}/${artifact} with their policy owners before approving: add " → resolved: <decision> (<owner>)" to each:\n${concerns.map(c => `  - ${c}`).join('\n')}${hint}`)
   }
-  const by = optString(args, 'by') || git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
+  const by = optString(args, 'by') || whoami() || 'unknown'
   if (stage === 'impact' && !exists(path.join(CHANGES, slug, 'impact.json'))) fail(`nothing to approve: ${slug}/impact.json does not exist (run check --at plan first)`)
   const row: Approval = { slug, stage, by, at: now(), digest: approvalDigest(slug, stage as GatedStage) }
   // The prompt hook and the /rig:approve skill can both run for one typed command: the second finds the row and adds nothing.
@@ -345,7 +353,7 @@ function cmdWaive(args: Args): void {
   const slug = given ? checkSlug(given) : activeSlug()
   if (!sensor || !file || !reason.length || !slug) fail('usage: waive <sensor> <file|*> <reason...>  (needs an active change)')
   if (!SENSOR_NAMES.includes(sensor)) fail(`unknown sensor "${sensor}"; known: ${SENSOR_NAMES.join(', ')}`)
-  const by = git(['config', 'user.name']) || process.env.USER || process.env.USERNAME || 'unknown'
+  const by = whoami() || 'unknown'
   const row: Waiver = { slug, sensor, file, reason: reason.join(' '), by, at: now() }
   fs.appendFileSync(WAIVERS, JSON.stringify(row) + '\n')
   out(`waived ${sensor} for ${file} in ${slug}: ${row.reason} (by ${by})`)
@@ -393,9 +401,11 @@ function scaffoldPolicy(): string {
   const src = path.join(PLUGIN_ROOT, 'templates', 'policy-security.md')
   if (exists(path.join(ROOT, rel)) || !exists(src)) return ''
   fs.mkdirSync(path.dirname(path.join(ROOT, rel)), { recursive: true })
-  fs.copyFileSync(src, path.join(ROOT, rel))
+  const me = whoami()
+  const text = read(src)
+  fs.writeFileSync(path.join(ROOT, rel), me ? text.replace(/^owner: <[^>\n]*>$/m, `owner: ${me}`) : text)
   sanctionWrites([rel])
-  return `wrote ${rel}: set its owner and source`
+  return `wrote ${rel}: ${me ? `owner is ${me}; change it if someone else owns the policy, and set its source` : 'set its owner and source'}`
 }
 
 const COMMANDS: Record<string, (args: Args) => void> = {
